@@ -184,6 +184,19 @@ html.no-motion .marquee__track { animation: none; }
 .showcase__track { display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px var(--gutter) 24px; scrollbar-width: none; }
 .showcase__track::-webkit-scrollbar { display: none; }
 .showcase__track .pcard { flex: 0 0 min(78vw, 360px); scroll-snap-align: start; }
+@media (max-width: 1023px) {
+  .showcase__track { gap: 16px; padding-left: calc((100vw - min(82vw, 420px)) / 2); padding-right: calc((100vw - min(82vw, 420px)) / 2); padding-bottom: 12px; }
+  .showcase__track .pcard { flex: 0 0 min(82vw, 420px); scroll-snap-align: center; transform-origin: center bottom; opacity: .72; transition: opacity .4s ease, border-color .4s ease, box-shadow .4s ease; }
+  .showcase__track .pcard.is-current { opacity: 1; border-color: var(--amber); box-shadow: var(--shadow); }
+  .showcase__progress { display: block; margin: 16px var(--gutter) 0; }
+}
+.showcase__track .pcard { position: relative; }
+.showcase__track .pcard::before { content: ""; position: absolute; left: 0; top: 0; z-index: 2; height: 3px; width: 100%; background: var(--amber); transform: scaleX(0); transform-origin: left; transition: transform .7s var(--ease); }
+.showcase__track .pcard.is-current::before { transform: scaleX(1); }
+.pcard__media { position: relative; }
+.pcard__media::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .6) 50%, transparent 62%); transform: translateX(-130%); }
+.pcard.is-current .pcard__media::after { animation: card-shine 1.3s var(--ease) .25s 1 both; }
+@keyframes card-shine { to { transform: translateX(130%); } }
 @media (min-width: 1024px) {
   .showcase { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
   .showcase__track {
@@ -544,3 +557,4 @@ body.lightbox-open { overflow: hidden; }
   .lightbox__img { max-height: calc(100vh - 200px); }
   .lightbox__caption { font-size: 14px; }
 }
+@media (max-width: 1023px) { .showcase__progress { display: block; margin: 18px var(--gutter) 0; } }

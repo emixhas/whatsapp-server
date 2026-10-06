@@ -3,10 +3,19 @@ require_once __DIR__ . '/includes/partials.php';
 
 $pageTitle = '';
 $bodyClass = 'page-home';
-$featured  = get_products(null, true);
-if (count($featured) < 4) {
-    $featured = get_products(null, false, 8);
+$featured = get_products(null, true);
+if (count($featured) < 6) {
+    $ids = array_column($featured, 'id');
+    foreach (get_products() as $extra) {
+        if (count($featured) >= 6) {
+            break;
+        }
+        if (!in_array($extra['id'], $ids, true)) {
+            $featured[] = $extra;
+        }
+    }
 }
+$featured = array_slice($featured, 0, 6);
 $heroProduct   = $featured[0] ?? null;
 $categories    = get_categories();
 $productCount  = (int) db()->query('SELECT COUNT(*) FROM products WHERE is_active = 1')->fetchColumn();
@@ -71,7 +80,7 @@ require __DIR__ . '/includes/header.php';
         </div>
         <a class="link-arrow" href="<?= e(url('urunler')) ?>">Tüm ürünler <i class="ph-bold ph-arrow-right" aria-hidden="true"></i></a>
     </div>
-    <div class="showcase__track" data-hpan-track>
+    <div class="showcase__track" data-hpan-track data-lenis-prevent>
         <?php foreach ($featured as $p): ?>
             <?= product_card($p, false) ?>
         <?php endforeach; ?>

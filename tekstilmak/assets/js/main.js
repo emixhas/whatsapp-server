@@ -464,6 +464,56 @@
     return function () { pan.kill(); };
   });
 
+  /* Makine parkuru (mobil): kendiliğinden kayan, ortadaki kartın öne çıktığı karusel */
+  mm.add('(max-width: 1023px)', function () {
+    var wrap = document.querySelector('[data-hpan]');
+    if (!wrap) return;
+    var track = wrap.querySelector('[data-hpan-track]');
+    if (!track) return;
+    var cards = gsap.utils.toArray(track.querySelectorAll('.pcard'));
+    if (cards.length < 2) return;
+    var bar = wrap.querySelector('.showcase__progress span');
+    var current = 0, userHold = 0, inView = false, timer = null;
+
+    /* bölüm görünüme girince kartlar sağdan sıralı gelir */
+    gsap.from(cards, { x: 90, duration: 1, ease: 'expo.out', stagger: 0.08, scrollTrigger: { trigger: wrap, start: 'top 80%', once: true } });
+
+    cards.forEach(function (card, i) {
+      gsap.timeline({ scrollTrigger: { trigger: card, scroller: track, horizontal: true, start: 'left right', end: 'right left', scrub: true } })
+        .fromTo(card, { scale: 0.9 }, { scale: 1, ease: 'none' })
+        .to(card, { scale: 0.9, ease: 'none' });
+      ScrollTrigger.create({
+        trigger: card, scroller: track, horizontal: true, start: 'left center', end: 'right center',
+        onToggle: function (self) {
+          if (!self.isActive) return;
+          current = i;
+          cards.forEach(function (c) { c.classList.remove('is-current'); });
+          card.classList.add('is-current');
+          if (bar) gsap.to(bar, { scaleX: (i + 1) / cards.length, duration: 0.5, ease: 'power2.out' });
+        }
+      });
+    });
+
+    function goTo(i) {
+      var c = cards[i];
+      track.scrollTo({ left: c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2, behavior: 'smooth' });
+    }
+    function schedule() {
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        if (inView && !document.hidden && Date.now() > userHold) goTo((current + 1) % cards.length);
+        schedule();
+      }, 2600);
+    }
+    var hold = function () { userHold = Date.now() + 6000; };
+    track.addEventListener('pointerdown', hold);
+    track.addEventListener('touchstart', hold, { passive: true });
+    track.addEventListener('wheel', hold, { passive: true });
+    ScrollTrigger.create({ trigger: wrap, start: 'top bottom', end: 'bottom top', onToggle: function (self) { inView = self.isActive; } });
+    schedule();
+    return function () { clearTimeout(timer); cards.forEach(function (c) { c.classList.remove('is-current'); }); };
+  });
+
   /* Neden REMAK: kartlar üst üste yığılır */
   mm.add('(min-width: 1024px)', function () {
     var list = document.querySelector('[data-stack]');
