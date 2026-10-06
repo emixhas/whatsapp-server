@@ -1,0 +1,6 @@
+install.lock
+uploads/*
+!uploads/.htaccess
+!uploads/.gitkeep
+.DS_Store
+Thumbs.db
