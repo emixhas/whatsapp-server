@@ -37,7 +37,9 @@ function render_gallery(string $title = 'Üretim tesisimiz', string $text = 'Had
             <div class="gallery__grid">
                 <?php foreach ($photos as $i => $ph): ?>
                     <figure class="gallery__item gallery__item--<?= $i + 1 ?>" data-reveal="clip" data-speed="<?= [1.0, 0.92, 1.08, 0.96, 1.05][$i] ?>">
-                        <img src="<?= e(asset('img/factory/' . $ph[0])) ?>" alt="<?= e($ph[1]) ?>" loading="lazy" width="<?= $ph[2] ?>" height="<?= $ph[3] ?>">
+                        <a href="<?= e(asset('img/factory/' . $ph[0])) ?>" data-lightbox="tesis" data-caption="<?= e($ph[1]) ?>">
+                            <img src="<?= e(asset('img/factory/' . $ph[0])) ?>" alt="<?= e($ph[1]) ?>" loading="lazy" width="<?= $ph[2] ?>" height="<?= $ph[3] ?>">
+                        </a>
                     </figure>
                 <?php endforeach; ?>
             </div>

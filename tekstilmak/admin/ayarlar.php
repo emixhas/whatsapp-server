@@ -11,6 +11,7 @@ $groups = [
         'meta_description' => ['Arama motoru açıklaması (meta description)', 'textarea', 2],
         'hero_title' => ['Anasayfa başlığı', 'input'],
         'hero_text' => ['Anasayfa alt metni', 'textarea', 2],
+        'hero_slide_ms' => ['Anasayfadaki ürün görselinin ekranda kalma süresi (milisaniye; 1000 = 1 saniye)', 'input'],
         'about_short' => ['Kısa tanıtım (anasayfa ve alt bilgi)', 'textarea', 4],
     ],
     'İletişim' => [

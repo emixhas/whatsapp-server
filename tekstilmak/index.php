@@ -30,14 +30,20 @@ require __DIR__ . '/includes/header.php';
         </div>
         <?php if ($heroProduct): ?>
         <div class="hero__visual">
-            <div class="hero__panel" data-tilt="4">
-                <img src="<?= e(product_image($heroProduct)) ?>" alt="<?= e($heroProduct['model'] . ' ' . $heroProduct['name']) ?>" width="1200" height="900" fetchpriority="high">
+            <div class="hero__panel" data-tilt="4" data-slider data-interval="<?= (int) setting('hero_slide_ms', '1000') ?>">
+                <?php foreach ($featured as $i => $hp): ?>
+                    <img class="hero__slide<?= $i === 0 ? ' is-active' : '' ?>" src="<?= e(product_image($hp)) ?>" alt="<?= e($hp['model'] . ' ' . $hp['name']) ?>" width="1200" height="900"<?= $i === 0 ? ' fetchpriority="high"' : ' decoding="async"' ?>>
+                <?php endforeach; ?>
             </div>
-            <a class="hero__caption" href="<?= e(product_url($heroProduct['slug'])) ?>">
-                <span class="hero__caption-model"><?= e($heroProduct['model']) ?></span>
-                <span><?= e($heroProduct['name']) ?></span>
-                <i class="ph-bold ph-arrow-up-right" aria-hidden="true"></i>
-            </a>
+            <div class="hero__captions">
+                <?php foreach ($featured as $i => $hp): ?>
+                    <a class="hero__caption<?= $i === 0 ? ' is-active' : '' ?>" href="<?= e(product_url($hp['slug'])) ?>">
+                        <span class="hero__caption-model"><?= e($hp['model']) ?></span>
+                        <span><?= e($hp['name']) ?></span>
+                        <i class="ph-bold ph-arrow-up-right" aria-hidden="true"></i>
+                    </a>
+                <?php endforeach; ?>
+            </div>
         </div>
         <?php endif; ?>
     </div>
@@ -102,7 +108,9 @@ require __DIR__ . '/includes/header.php';
 <section class="about-teaser">
     <div class="container split">
         <div class="split__media" data-parallax data-reveal="clip">
-            <img src="<?= e(asset('img/factory/factory-2.jpg')) ?>" alt="REMAK MAKİNA üretim tesisi" loading="lazy" width="478" height="402">
+            <a href="<?= e(asset('img/factory/factory-2.jpg')) ?>" data-lightbox="tesis" data-caption="REMAK MAKİNA üretim tesisi">
+                <img src="<?= e(asset('img/factory/factory-2.jpg')) ?>" alt="REMAK MAKİNA üretim tesisi" loading="lazy" width="478" height="402">
+            </a>
         </div>
         <div class="split__copy" data-reveal>
             <span class="eyebrow">Kurumsal</span>

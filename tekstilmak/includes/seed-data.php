@@ -21,6 +21,7 @@ return [
     'youtube'          => 'https://www.youtube.com/@remakmakina4185',
     'telegram'         => 'https://t.me/remakmakin',
     'hero_title'       => 'Tekstil endüstrisi için yenilikçi makineler',
+    'hero_slide_ms'    => '1000',
     'hero_text'        => 'Kumaş açma, kesim, kalite kontrol, paketleme ve laminasyon makinelerini İstanbul\'da tasarlıyor ve üretiyoruz.',
     'about_short'      => "REMAK MAKİNA, tekstil endüstrisinin ihtiyaçlarına yönelik ileri teknolojiye sahip makineler üretir. Kalite, güven ve müşteri memnuniyetini ilke edinerek yenilikçi çözümler sunuyoruz.\n\nModern üretim altyapımız, deneyimli ekibimiz ve sürekli gelişen teknolojilerimiz ile tekstil sektörüne değer katmaya devam ediyoruz.",
     'vision'           => "REMAK MAKİNA olarak vizyonumuz; tekstil makineleri sektöründe yenilikçi teknolojileri, yüksek kalite standartlarını ve sürdürülebilir üretim anlayışını bir araya getirerek Türkiye'nin ve dünyanın güvenilir makine üreticileri arasında yer almaktır.\n\nMüşterilerimizin üretim süreçlerine değer katan, verimliliği artıran ve uzun ömürlü çözümler sunan makineler geliştirerek sektöre yön veren bir marka olmayı hedefliyoruz. Sürekli gelişen teknolojiyi yakından takip ederek Ar-Ge, tasarım ve üretim gücümüzü her geçen gün daha ileri taşımayı amaçlıyoruz.\n\nKalite, güven, müşteri memnuniyeti ve sürekli gelişim ilkelerimiz doğrultusunda; yerli üretim gücümüzü uluslararası pazarlarda temsil eden, ihracat odaklı ve dünya standartlarında üretim yapan bir marka olarak büyümeyi hedefliyoruz.",

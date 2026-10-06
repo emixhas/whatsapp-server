@@ -65,7 +65,9 @@ require __DIR__ . '/includes/header.php';
             </div>
         </div>
         <div class="product-hero__media" data-tilt="4">
-            <img src="<?= e(product_image($p)) ?>" alt="<?= e($p['model'] . ' ' . $p['name']) ?>" width="1200" height="900" fetchpriority="high">
+            <a href="<?= e(product_image($p)) ?>" data-lightbox="urun" data-caption="<?= e($p['model'] . ' ' . $p['name']) ?>">
+                <img src="<?= e(product_image($p)) ?>" alt="<?= e($p['model'] . ' ' . $p['name']) ?>" width="1200" height="900" fetchpriority="high">
+            </a>
         </div>
     </div>
 </section>

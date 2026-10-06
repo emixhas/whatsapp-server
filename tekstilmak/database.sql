@@ -104,6 +104,7 @@ INSERT INTO `settings` VALUES ('about_short','REMAK MAKİNA, tekstil endüstrisi
 INSERT INTO `settings` VALUES ('address','Deliklikaya Mah. Deliklikaya Altınşehir Yolu No: 25, 34555 Hadımköy / İstanbul');
 INSERT INTO `settings` VALUES ('email','info@remakmakine.com');
 INSERT INTO `settings` VALUES ('footer_credit','Emixhas Yazılım Hizmetleri');
+INSERT INTO `settings` VALUES ('hero_slide_ms','1000');
 INSERT INTO `settings` VALUES ('hero_text','Kumaş açma, kesim, kalite kontrol, paketleme ve laminasyon makinelerini İstanbul\'da tasarlıyor ve üretiyoruz.');
 INSERT INTO `settings` VALUES ('hero_title','Tekstil endüstrisi için yenilikçi makineler');
 INSERT INTO `settings` VALUES ('instagram','https://www.instagram.com/remakmakina');

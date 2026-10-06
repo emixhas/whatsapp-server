@@ -19,7 +19,9 @@ require __DIR__ . '/includes/header.php';
     <div class="container">
         <div class="split split--wide">
             <div class="split__media" data-parallax data-reveal="clip">
-                <img src="<?= e(asset('img/factory/factory-5.jpg')) ?>" alt="Tela pres makinesi test aşamasında" loading="lazy" width="478" height="328">
+                <a href="<?= e(asset('img/factory/factory-5.jpg')) ?>" data-lightbox="tesis" data-caption="Tela pres makinesi test aşamasında">
+                    <img src="<?= e(asset('img/factory/factory-5.jpg')) ?>" alt="Tela pres makinesi test aşamasında" loading="lazy" width="478" height="328">
+                </a>
             </div>
             <div class="split__copy prose" data-reveal>
                 <h2 data-split>Vizyonumuz</h2>
@@ -28,7 +30,9 @@ require __DIR__ . '/includes/header.php';
         </div>
         <div class="split split--wide split--reverse">
             <div class="split__media" data-parallax data-reveal="clip">
-                <img src="<?= e(asset('img/factory/factory-4.jpg')) ?>" alt="Şase imalat alanı" loading="lazy" width="259" height="328">
+                <a href="<?= e(asset('img/factory/factory-4.jpg')) ?>" data-lightbox="tesis" data-caption="Şase imalat alanı">
+                    <img src="<?= e(asset('img/factory/factory-4.jpg')) ?>" alt="Şase imalat alanı" loading="lazy" width="259" height="328">
+                </a>
             </div>
             <div class="split__copy prose" data-reveal>
                 <h2 data-split>Misyonumuz</h2>

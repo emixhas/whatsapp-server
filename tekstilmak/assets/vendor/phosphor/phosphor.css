@@ -8,6 +8,8 @@
 .ph.ph-arrow-up-right:before,.ph-bold.ph-arrow-up-right:before{content:"\e092"}
 .ph.ph-arrows-clockwise:before,.ph-bold.ph-arrows-clockwise:before{content:"\e094"}
 .ph.ph-arrows-horizontal:before,.ph-bold.ph-arrows-horizontal:before{content:"\eb06"}
+.ph.ph-caret-left:before,.ph-bold.ph-caret-left:before{content:"\e138"}
+.ph.ph-caret-right:before,.ph-bold.ph-caret-right:before{content:"\e13a"}
 .ph.ph-chart-line-up:before,.ph-bold.ph-chart-line-up:before{content:"\e156"}
 .ph.ph-chat-text:before,.ph-bold.ph-chat-text:before{content:"\e17a"}
 .ph.ph-check:before,.ph-bold.ph-check:before{content:"\e182"}
@@ -59,4 +61,5 @@
 .ph.ph-warning:before,.ph-bold.ph-warning:before{content:"\e4e0"}
 .ph.ph-whatsapp-logo:before,.ph-bold.ph-whatsapp-logo:before{content:"\e5d0"}
 .ph.ph-wrench:before,.ph-bold.ph-wrench:before{content:"\e5d4"}
+.ph.ph-x:before,.ph-bold.ph-x:before{content:"\e4f6"}
 .ph.ph-youtube-logo:before,.ph-bold.ph-youtube-logo:before{content:"\e4fc"}
