@@ -1,0 +1,57 @@
+# REMAK MAKİNA - Apache / LiteSpeed yapılandırması
+AddDefaultCharset UTF-8
+Options -Indexes
+<IfModule mod_negotiation.c>
+    Options -MultiViews
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # HTTPS yönlendirmesi (SSL kurulduktan sonra aşağıdaki iki satırın başındaki # işaretini kaldırın)
+    #RewriteCond %{HTTPS} !=on
+    #RewriteRule ^(.*)$ https://%{HTTP_HOST}/$1 [R=301,L]
+
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^urun/([a-z0-9-]+)/?$ urun.php?slug=$1 [L,QSA]
+
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^urunler/([a-z0-9-]+)/?$ urunler.php?kategori=$1 [L,QSA]
+
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(urunler|kurumsal|iletisim)/?$ $1.php [L,QSA]
+
+    RewriteRule ^sitemap\.xml$ sitemap.php [L]
+</IfModule>
+
+# Hassas dosyaları web üzerinden gizle
+<FilesMatch "^(config\.php|database\.sql|install\.lock|router\.php|README\.md)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Statik dosyalar için önbellek
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpeg "access plus 30 days"
+    ExpiresByType image/png "access plus 30 days"
+    ExpiresByType image/webp "access plus 30 days"
+    ExpiresByType image/svg+xml "access plus 30 days"
+    ExpiresByType text/css "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType font/woff2 "access plus 365 days"
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

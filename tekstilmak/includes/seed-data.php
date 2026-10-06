@@ -1,0 +1,211 @@
+<?php
+/**
+ * Kurulum verileri: 2026 e-katalogdan aktarılan ürünler, kategoriler ve site ayarları.
+ * install.php tarafından kullanılır.
+ */
+
+return [
+
+'settings' => [
+    'site_name'        => 'REMAK MAKİNA',
+    'site_slogan'      => 'Tekstil Makinaları Üreticisi',
+    'meta_description' => 'REMAK MAKİNA, tekstil endüstrisi için kumaş açma, kesim, kalite kontrol, paketleme, tela pres ve laminasyon makineleri tasarlar ve İstanbul Hadımköy\'de üretir.',
+    'phone'            => '+90 543 459 85 04',
+    'whatsapp'         => '905434598504',
+    'email'            => 'info@remakmakine.com',
+    'website'          => 'www.remakmakine.com',
+    'address'          => 'Deliklikaya Mah. Deliklikaya Altınşehir Yolu No: 25, 34555 Hadımköy / İstanbul',
+    'map_query'        => 'Deliklikaya Altınşehir Yolu No:25 Hadımköy Arnavutköy İstanbul',
+    'working_hours'    => 'Pazartesi - Cumartesi: 08:30 - 18:30',
+    'instagram'        => 'https://www.instagram.com/remakmakina',
+    'youtube'          => 'https://www.youtube.com/@remakmakina4185',
+    'telegram'         => 'https://t.me/remakmakin',
+    'hero_title'       => 'Tekstil endüstrisi için yenilikçi makineler',
+    'hero_text'        => 'Kumaş açma, kesim, kalite kontrol, paketleme ve laminasyon makinelerini İstanbul\'da tasarlıyor ve üretiyoruz.',
+    'about_short'      => "REMAK MAKİNA, tekstil endüstrisinin ihtiyaçlarına yönelik ileri teknolojiye sahip makineler üretir. Kalite, güven ve müşteri memnuniyetini ilke edinerek yenilikçi çözümler sunuyoruz.\n\nModern üretim altyapımız, deneyimli ekibimiz ve sürekli gelişen teknolojilerimiz ile tekstil sektörüne değer katmaya devam ediyoruz.",
+    'vision'           => "REMAK MAKİNA olarak vizyonumuz; tekstil makineleri sektöründe yenilikçi teknolojileri, yüksek kalite standartlarını ve sürdürülebilir üretim anlayışını bir araya getirerek Türkiye'nin ve dünyanın güvenilir makine üreticileri arasında yer almaktır.\n\nMüşterilerimizin üretim süreçlerine değer katan, verimliliği artıran ve uzun ömürlü çözümler sunan makineler geliştirerek sektöre yön veren bir marka olmayı hedefliyoruz. Sürekli gelişen teknolojiyi yakından takip ederek Ar-Ge, tasarım ve üretim gücümüzü her geçen gün daha ileri taşımayı amaçlıyoruz.\n\nKalite, güven, müşteri memnuniyeti ve sürekli gelişim ilkelerimiz doğrultusunda; yerli üretim gücümüzü uluslararası pazarlarda temsil eden, ihracat odaklı ve dünya standartlarında üretim yapan bir marka olarak büyümeyi hedefliyoruz.",
+    'mission'          => "REMAK MAKİNA olarak misyonumuz; tekstil sektörünün ihtiyaçlarına uygun, yüksek performanslı, güvenilir ve uzun ömürlü makineler tasarlayıp üreterek müşterilerimize verimli üretim çözümleri sunmaktır.\n\nYerli üretim gücümüz, mühendislik tecrübemiz ve kalite odaklı yaklaşımımızla her makinemizde dayanıklılığı, teknolojiyi ve kullanım kolaylığını bir araya getiriyoruz. Üretimin her aşamasında uluslararası kalite standartlarını esas alarak müşterilerimizin beklentilerini en üst düzeyde karşılamayı hedefliyoruz.\n\nMüşteri memnuniyetini temel ilkemiz kabul ederek satış öncesi ve satış sonrası teknik destek hizmetlerimizle güvenilir ve uzun soluklu iş ortaklıkları kuruyor, sürekli gelişim ve yenilik anlayışıyla tekstil makineleri sektöründe fark yaratmayı hedefliyoruz.",
+    'footer_credit'    => 'Emixhas Yazılım Hizmetleri',
+    'notify_email'     => '',
+],
+
+'categories' => [
+    ['name' => 'Kesim ve Dilimleme Makineleri', 'slug' => 'kesim-ve-dilimleme', 'description' => 'Eğimli kesim, rulo kesim, otomatik biye kesim ve çoklu dilimleme makineleri.', 'sort_order' => 1],
+    ['name' => 'Kalite ve Kenar Kontrol Makineleri', 'slug' => 'kalite-ve-kenar-kontrol', 'description' => 'Dokuma ve örme kumaşlar için kenar kontrol ve kalite kontrol makineleri.', 'sort_order' => 2],
+    ['name' => 'Rulo Açma, Dinlendirme ve Paketleme', 'slug' => 'rulo-acma-ve-paketleme', 'description' => 'Kumaş rulo açma, dinlendirme ve rulo kumaş paketleme makineleri.', 'sort_order' => 3],
+    ['name' => 'Tela Pres ve Laminasyon Makineleri', 'slug' => 'tela-pres-ve-laminasyon', 'description' => 'Tela pres, su bazlı laminasyon ve tela pres laminasyon makineleri.', 'sort_order' => 4],
+],
+
+'products' => [
+
+    [
+        'category' => 'kesim-ve-dilimleme', 'model' => 'RM-500', 'name' => 'Otomatik Biye Kesim Makinası', 'slug' => 'rm-500-otomatik-biye-kesim-makinasi',
+        'tagline' => 'Hassas Kesim • Kolay Kullanım • Yüksek Verimlilik',
+        'summary' => 'Biye kesim işlemlerini PLC kontrollü, 10 inç dokunmatik panelli sistemle otomatik olarak gerçekleştirir; üretimi hızlandırır, iş gücünden tasarruf sağlar.',
+        'description' => "RM-500 Otomatik Biye - Rulo Kumaş Kesim Makinası, biye kesim işlemlerini otomatik olarak gerçekleştirerek üretim süreçlerinizi hızlandırır.\n\nYüksek hız ve hassas kesim özelliği ile üretim süreçlerinizi hızlandırır, iş gücünden tasarruf sağlar.\n\nGelişmiş kontrol sistemi, kolay kullanım ve düşük bakım ihtiyacı ile uzun ömürlü ve verimli bir çözümdür.",
+        'image' => 'assets/img/products/rm-500.jpg', 'is_featured' => 1, 'sort_order' => 1,
+        'highlights' => ['Yüksek Kesim Hassasiyeti', 'Otomatik ve Kolay Kullanım', 'Hızlı ve Verimli Üretim', 'Güvenli ve Dayanıklı Yapı', 'Farklı Kumaş Tiplerine Uygun'],
+        'features' => ['Otomatik biye kesim sistemi', 'Yüksek hızda hassas ve düzgün kesim', 'Dokunmatik ekran ile kolay kontrol', 'PLC kontrol sistemi', 'Otomatik ölçü ayarı ve kalibrasyon', 'Farklı biye genişliklerine uygun kesim', 'Yüksek verimlilik ve zaman tasarrufu', 'Otomatik malzeme besleme sistemi', 'Güvenlik sensörleri ile maksimum koruma', 'Düşük bakım ihtiyacı', 'Güçlü motor ve sağlam şase yapısı', 'Tekstil, konfeksiyon ve ev tekstili için ideal', 'Ergonomik ve kullanıcı dostu tasarım'],
+        'specs' => [['Servo Motor', '1 kW'], ['Dokunmatik Operatör Paneli', '10 inç'], ['Kesim Bıçak Motoru', '4 kW'], ['Ürün Çevirme Motoru', '1,5 kW'], ['Bıçak İleri / Geri Motoru', '1 kW'], ['Bıçak Bileme Motoru', '0,25 kW'], ['Hava Basıncı', '0 - 6 Bar'], ['Enerji', '3 Faz 380 V'], ['Toplam Elektrik Gücü', '7,68 kW'], ['Makine Ölçüleri (En x Boy x Yükseklik)', '1700 x 3200 x 1500 mm'], ['Makine Ağırlığı', '1000 kg']],
+        'advantages' => ['Hızlı ve Hassas Kesim', 'Otomatik ve Kolay Kullanım', 'Yüksek Verimlilik', 'Güvenli Çalışma', 'Zaman ve İş Gücü Tasarrufu', 'Düşük Enerji Tüketimi', 'Uzun Ömürlü ve Dayanıklı Yapı', 'Düşük Bakım', 'Kompakt ve Ergonomik Tasarım'],
+        'applications' => ['Konfeksiyon', 'Ev Tekstili', 'Spor Giyim', 'İç Giyim', 'Teknik Tekstiller', 'Medikal Tekstiller', 'Ayakkabı ve Çanta', 'Döşemelik Kumaşlar', 'Ambalaj ve Film Kaplamalar'],
+    ],
+
+    [
+        'category' => 'kesim-ve-dilimleme', 'model' => 'RM-300', 'name' => 'Eğimli Kumaş Kesme Makinası', 'slug' => 'rm-300-egimli-kumas-kesme-makinasi',
+        'tagline' => 'Hassas Kesim • Kolay Kullanım • Yüksek Verimlilik',
+        'summary' => 'Kumaşları 45° açıyla hassas ve düzgün keser; kumaş israfını önler, fire oranını azaltır ve kesim kalitesini artırır.',
+        'description' => "REMAK RM-300 Eğimli Kumaş Kesme Makinası, kumaşları 45° açılı hassas ve düzgün şekilde kesmek için geliştirilmiştir. Eğimli kesim özelliği sayesinde kumaş israfını önler, daha düzgün kenarlar elde edilir, fire oranı azalır ve kesim kalitesi artar.\n\nModern tasarımı, güçlü yapısı ve kullanıcı dostu özellikleri ile tekstil üretim süreçlerinde yüksek verimlilik sağlar.\n\nKolay ayarlanabilir kesim hızı, kullanım kolaylığı, düşük bakım ihtiyacı ve uzun ömürlü yapısıyla tekstil atölyeleri, konfeksiyon fabrikaları ve ev tekstili üreticileri için ideal bir çözümdür.",
+        'image' => 'assets/img/products/rm-300.jpg', 'is_featured' => 1, 'sort_order' => 2,
+        'highlights' => ['Hassas ve Eğimli Kesim', 'Kolay ve Hızlı Ayarlama', 'Ayarlanabilir Kesim Hızı', 'Güvenli ve Dayanıklı Yapı', 'Tüm Kumaş Türlerine Uygun'],
+        'features' => ['Eğimli kesim (45°) özelliği', 'Yüksek kesim hassasiyeti ve düzgün kesim yüzeyi', 'Kumaş enini kolay ve hızlı ayarlama', 'Kullanımı kolay kontrol paneli', 'Pürüzsüz ve titreşimsiz çalışma', 'Tüm kumaş türlerine uygun kullanım', 'Ayarlanabilir kesim hızı', 'Güvenli kullanım için koruyucu sistemler', 'Düşük bakım ihtiyacı', 'Sağlam ve dayanıklı çelik konstrüksiyon', 'Ergonomik ve kompakt tasarım'],
+        'specs' => [['Model', 'RM-300'], ['Maks. Kumaş Genişliği', '2000 mm (opsiyonel)'], ['Kesim Açısı', '45°'], ['Kesim Tipi', 'Dairesel Bıçak'], ['Kesim Hızı', 'Ayarlanabilir'], ['Motor Gücü', '1,5 kW'], ['Elektrik Beslemesi', '380 V / 50 Hz'], ['Makine Ölçüleri (U x G x Y)', '2500 x 900 x 1200 mm'], ['Makine Ağırlığı', '300 kg (yaklaşık)']],
+        'advantages' => ['Hassas Kesim', 'Yüksek Verimlilik', 'Kolay Kullanım', 'Düşük Bakım', 'Uzun Ömürlü'],
+        'applications' => ['Konfeksiyon', 'Ev Tekstili', 'Spor Giyim', 'İç Giyim', 'Teknik Tekstiller', 'Medikal Tekstiller', 'Döşemelik Kumaşlar', 'Ayakkabı ve Çanta'],
+    ],
+
+    [
+        'category' => 'kesim-ve-dilimleme', 'model' => 'RM-450', 'name' => 'Rulo Kumaş Kesim Makinası', 'slug' => 'rm-450-rulo-kumas-kesim-makinasi',
+        'tagline' => 'Hızlı Kesim • Yüksek Verimlilik • Kolay Kullanım',
+        'summary' => 'Rulo halindeki kumaşları dairesel bıçak sistemiyle istenilen uzunlukta hızlı, temiz ve hassas şekilde keser.',
+        'description' => "RM-450 Rulo Kumaş Kesim Makinası, rulo halindeki kumaşları istenilen uzunlukta kesmek için tasarlanmıştır. Dairesel bıçak sistemi sayesinde hızlı, temiz ve hassas kesim sağlar.\n\nYüksek hız ve hassas kesim özelliği ile üretim süreçlerinizi hızlandırır, iş gücünden tasarruf sağlar.\n\nKullanımı kolay, güvenli ve dayanıklı yapısı ile tekstil üretim süreçlerinizi daha verimli hale getirir.",
+        'image' => 'assets/img/products/rm-450.jpg', 'is_featured' => 0, 'sort_order' => 3,
+        'highlights' => ['Hassas ve Temiz Kesim', 'Kolay ve Hızlı Ayarlama', 'Ayarlanabilir Kesim Hızı', 'Güvenli ve Dayanıklı Yapı', 'Tüm Kumaş Türlerine Uygun'],
+        'features' => ['Rulo kumaşları istenilen ölçüde kesme', 'Yüksek hızda hassas ve düzgün kesim', 'Dairesel bıçak sistemi ile temiz kesim', 'Farklı rulo çaplarına uyumlu yapı', 'Ayarlanabilir kesim uzunluğu', 'Kolay kullanım ve pratik ayar sistemi', 'Güvenlik koruma kapakları', 'Düşük bakım ihtiyacı', 'Güçlü motor ve dayanıklı şase', 'Tekstil, nonwoven ve teknik kumaşlara uygun', 'Uzun ömürlü ve sağlam yapı'],
+        'specs' => [['Maks. Kumaş Rulo Genişliği', '2000 mm (opsiyonel)'], ['Maks. Rulo Çapı', '300 mm'], ['Kesim Uzunluğu', '100 - 9999 mm (ayarlanabilir)'], ['Kesim Hızı', '60 - 120 m/dk (ayarlanabilir)'], ['Bıçak Tipi', 'Dairesel Bıçak'], ['Motor Gücü', '1,5 kW'], ['Elektrik Beslemesi', '380 V / 50 Hz'], ['Makine Ölçüleri (U x G x Y)', '2800 x 900 x 1200 mm'], ['Makine Ağırlığı', '250 kg (yaklaşık)']],
+        'advantages' => ['Hassas Kesim', 'Yüksek Verimlilik', 'Kolay Kullanım', 'Düşük Bakım', 'Uzun Ömürlü'],
+        'applications' => ['Konfeksiyon', 'Ev Tekstili', 'Spor Giyim', 'İç Giyim', 'Teknik Tekstiller', 'Medikal Tekstiller', 'Ayakkabı ve Çanta', 'Döşemelik Kumaşlar', 'Ambalaj ve Film Kaplamalar'],
+    ],
+
+    [
+        'category' => 'kesim-ve-dilimleme', 'model' => 'RM-550', 'name' => 'Çoklu Kumaş Dilimleme Makinası', 'slug' => 'rm-550-coklu-kumas-dilimleme-makinasi',
+        'tagline' => 'Hızlı • Pratik • Güvenli',
+        'summary' => 'Dokuma, örme, nonwoven ve teknik kumaşları minimum fire ile yüksek hassasiyette çoklu şeritler halinde dilimler.',
+        'description' => "REMAK RM-550 Çoklu Kumaş Dilimleme Makinası, dokuma, örme, nonwoven ve teknik tekstil kumaşlarının yüksek hassasiyetle çoklu şeritler halinde dilimlenmesi için geliştirilmiş profesyonel bir üretim çözümüdür.\n\nGelişmiş bıçak sistemi sayesinde minimum fire ile düzgün ve hassas kesim sağlayarak üretim verimliliğini artırır. Ayarlanabilir bıçak aralığı, kullanıcı dostu kontrol paneli ve sağlam çelik konstrüksiyonu sayesinde farklı kumaş tiplerinde güvenilir ve kesintisiz çalışma sunar.\n\nOpsiyonel otomatik bıçak bileme sistemi, düşük bakım maliyeti ve yüksek çalışma hızı ile tekstil üreticilerine uzun ömürlü, ekonomik ve yüksek performanslı bir dilimleme çözümü sağlar.",
+        'image' => 'assets/img/products/rm-550.jpg', 'is_featured' => 1, 'sort_order' => 4,
+        'highlights' => ['Yüksek Hassasiyet', 'Minimum Fire', 'Yüksek Verimlilik', 'Kullanıcı Dostu', 'Güvenli Çalışma', 'Uzun Ömürlü Yapı', 'Düşük Bakım Maliyeti', 'Sürekli Üretim'],
+        'features' => ['Yüksek hızlı ve hassas çoklu kumaş dilimleme', 'Dokuma, örme ve teknik kumaşlara uygun yapı', 'Ayarlanabilir bıçak aralık sistemi', 'Minimum fire ile maksimum verimlilik', 'Kullanıcı dostu kontrol paneli', 'Sağlam çelik gövde konstrüksiyonu', 'Yüksek hassasiyetli kesim teknolojisi', 'Opsiyonel otomatik bıçak bileme sistemi', 'Operatör güvenliği için emniyet sistemleri', 'Düşük bakım maliyeti', 'Uzun ömürlü mekanik yapı', 'Sürekli üretime uygun endüstriyel tasarım'],
+        'specs' => [['Ürün Açma ve Aktarma Motoru', '1 kW'], ['Bıçak Mili Motoru', '1 kW'], ['Sarım Motoru', '1 kW'], ['Elektrik Beslemesi', '380 V / 3 Faz'], ['Toplam Güç', '3 kW'], ['Hava Basıncı', '0 - 6 Bar'], ['Makine Ölçüleri (U x G x Y)', '4000 x 3000 x 1300 mm'], ['Makine Ağırlığı', 'Yaklaşık 1500 kg']],
+        'advantages' => ['Minimum Fire ile Maksimum Üretim', 'Homojen ve Düzgün Dilimleme', 'Yüksek Üretim Kapasitesi', 'Kolay Kullanım ve Hızlı Ayar', 'Düşük Enerji Tüketimi', 'Güvenli Çalışma Sistemi', 'Uzun Ömürlü Mekanik Sistem', 'Yüksek Kalite Standartlarında Üretim', 'Ekonomik Çözüm'],
+        'applications' => ['Dokuma Kumaşlar', 'Örme Kumaşlar', 'Nonwoven Kumaşlar', 'Teknik Tekstiller', 'Trikotaj Ürünleri', 'Otomotiv Tekstilleri', 'Medikal Tekstiller', 'Teknik Kumaş Uygulamaları', 'Diğer Tekstil Ürünleri'],
+    ],
+
+    [
+        'category' => 'kalite-ve-kenar-kontrol', 'model' => 'RM-600', 'name' => 'Kumaş Kenar Kontrol Makinası', 'slug' => 'rm-600-kumas-kenar-kontrol-makinasi',
+        'tagline' => 'Hassas Sensör • Otomatik Düzeltme • Kesintisiz Üretim',
+        'summary' => 'Fotoselli sensör teknolojisiyle kumaş kenarlarının hizasını anlık kontrol eder, kenar sapmalarını otomatik düzeltir.',
+        'description' => "REMAK RM-600 Kumaş Kenar Kontrol Makinası, tekstil üretim hatlarında kumaş kenarlarının düzgünlüğünü ve hizasını hassas sensör teknolojisi ile kontrol etmek için geliştirilmiştir. Üretim sırasında oluşabilecek kenar kaymalarını tespit ederek kumaşın düzgün ilerlemesini sağlar ve kaliteyi artırır.\n\nFotoselli algılama sistemi sayesinde kenar sapmalarını anlık olarak düzeltir. Sağlam çelik konstrüksiyonu, kullanıcı dostu kontrol sistemi ve düşük bakım ihtiyacı ile uzun ömürlü ve güvenilir bir üretim çözümü sunar.",
+        'image' => 'assets/img/products/rm-600.jpg', 'is_featured' => 0, 'sort_order' => 5,
+        'highlights' => ['Hassas Kenar Kontrolü', 'Fotoselli Otomatik Algılama', 'Otomatik Kenar Düzeltme', 'Dijital Kontrol', 'Güvenli ve Dayanıklı Yapı', 'Enerji Tasarrufu'],
+        'features' => ['Hassas kumaş kenar kontrol sistemi', 'Fotoselli otomatik kenar algılama', 'Otomatik kenar düzeltme mekanizması', 'Ayarlanabilir hassasiyet ve çalışma hızı', 'Farklı kumaş tiplerine uygun kullanım', 'Kullanıcı dostu kontrol paneli', 'Sağlam çelik gövde yapısı', 'Düşük bakım maliyeti', 'Uzun ömürlü mekanik sistem', 'Sürekli üretime uygun endüstriyel tasarım'],
+        'specs' => [['Aktarma Merdanesi Motoru', '1,5 kW'], ['Sarım Merdaneleri Motoru', '1,5 kW'], ['Kenar Kontrol Motoru', '1,5 kW'], ['Merdane Çapı', '160 mm'], ['Elektrik Beslemesi', '380 V / 3 Faz'], ['Toplam Güç', '4,5 kW'], ['Makine Ölçüleri (U x G x Y)', '2500 x 2250 x 1625 mm'], ['Makine Ağırlığı', 'Yaklaşık 900 kg']],
+        'advantages' => ['Yüksek Hassasiyet', 'Fire Azaltma', 'Zaman Tasarrufu', 'Kolay Ayar ve Kullanım', 'Dayanıklı ve Uzun Ömürlü'],
+        'applications' => ['Dokuma Kumaşlar', 'Örme Kumaşlar', 'Nonwoven Kumaşlar', 'Teknik Tekstiller', 'Ev Tekstili', 'Konfeksiyon Kumaşları', 'Otomotiv Tekstilleri', 'Diğer Kumaş Çeşitleri'],
+    ],
+
+    [
+        'category' => 'kalite-ve-kenar-kontrol', 'model' => 'RM-650', 'name' => 'Kumaş Kalite Kontrol Makinası', 'slug' => 'rm-650-kumas-kalite-kontrol-makinasi',
+        'tagline' => 'Hassas Sensör • Homojen LED Aydınlatma • Hata Raporlama',
+        'summary' => 'Dokuma, örme ve teknik kumaşlarda hata, leke, delik ve iplik çekmelerini sensör ve LED aydınlatma ile hızlı ve güvenilir tespit eder.',
+        'description' => "REMAK RM-650 Kumaş Kalite Kontrol Makinası, dokuma, örme ve teknik tekstil kumaşlarının üretim ve serim süreçlerinde yüksek hassasiyetle kalite kontrolü yapmak üzere geliştirilmiştir. Gelişmiş sensör teknolojisi ve güçlü LED aydınlatma sistemi sayesinde kumaş yüzeyindeki hata, leke, delik, iplik çekmesi ve dokuma kusurlarını hızlı ve güvenilir şekilde tespit eder.\n\nDokunmatik kontrol paneli, ayarlanabilir çalışma hızı ve ergonomik yapısı sayesinde operatöre kolay kullanım sunar. Dayanıklı çelik konstrüksiyonu, düşük bakım maliyeti ve yüksek performansı ile tekstil üretim hatlarında kaliteyi artırırken zaman ve maliyet tasarrufu sağlar.",
+        'image' => 'assets/img/products/rm-650.jpg', 'is_featured' => 1, 'sort_order' => 6,
+        'highlights' => ['Yüksek Hassasiyetli Sensör', 'Homojen LED Aydınlatma', 'Hata Tespiti ve Raporlama', 'Dokunmatik Kontrol', 'Güvenli ve Dayanıklı Yapı', 'Enerji Tasarrufu'],
+        'features' => ['Yüksek hassasiyetli sensör sistemi', 'Homojen ve gölgesiz LED aydınlatma', 'Hata tespiti ve raporlama sistemi', 'Delik, leke, iplik çekmesi ve dokuma hatalarını algılama', 'Dokunmatik operatör kontrol paneli', 'Dijital metraj sayacı', 'Ayarlanabilir çalışma hızı', 'Kumaşın her iki yüzeyini kontrol edebilme', 'Frenli sarım sistemi', 'Ergonomik ve kullanıcı dostu tasarım', 'Sağlam çelik konstrüksiyon', 'Düşük bakım maliyeti', 'Uzun ömürlü endüstriyel kullanım', 'Yüksek verimlilik sağlayan üretim sistemi'],
+        'specs' => [['Aktarma Merdanesi Motoru', '1,5 kW'], ['Sarım Merdaneleri Motoru', '1,5 kW'], ['Kenar Kontrol Motoru', '1,5 kW'], ['Enerji', '380 V / 3 Faz'], ['Toplam Güç', '4,5 kW'], ['LED Aydınlatma', 'Homojen Endüstriyel LED'], ['Kontrol Sistemi', 'Dokunmatik Operatör Paneli'], ['Hata Algılama', 'Sensör Kontrollü'], ['Merdane Çapı', '160 mm'], ['Çalışma Hızı', 'Ayarlanabilir'], ['Makine Ölçüleri (U x G x Y)', '2500 x 2250 x 1700 mm'], ['Makine Ağırlığı', 'Yaklaşık 1500 kg']],
+        'advantages' => ['Yüksek Hassasiyet', 'Hata Tespitinde Üstün Performans', 'Zaman ve Maliyet Tasarrufu', 'Kalite ve Verimlilik Artışı', 'Dokunmatik Ekran ile Kolay Kullanım'],
+        'applications' => ['Dokuma Kumaşlar', 'Örme Kumaşlar', 'Teknik Tekstiller', 'Trikotaj Ürünleri', 'Mobilya Kumaşları', 'Konfeksiyon Kumaşları', 'Otomotiv Tekstilleri', 'Diğer Tekstil Çeşitleri'],
+    ],
+
+    [
+        'category' => 'kalite-ve-kenar-kontrol', 'model' => 'RM-700', 'name' => 'Örme Kumaş Kalite Kontrol Makinası', 'slug' => 'rm-700-orme-kumas-kalite-kontrol-makinasi',
+        'tagline' => 'Yüksek Lümenli LED • Elektronik Metre Sayacı • Ayarlanabilir Hız',
+        'summary' => 'Örme kumaşlardaki delik, ilmek hatası, yağ lekesi ve iplik kaçaklarını güçlü LED aydınlatma ile üretim sırasında tespit eder.',
+        'description' => "REMAK RM-700 Örme Kumaş Kalite Kontrol Makinası, örme kumaşların üretim sırasında kalite kontrol işlemlerini yüksek hassasiyetle gerçekleştirmek üzere geliştirilmiştir. Güçlü LED aydınlatma sistemi sayesinde kumaş yüzeyindeki delik, ilmek hatası, yağ lekesi, iplik kaçağı ve diğer yüzey kusurları kolayca tespit edilir.\n\nElektronik metre sayacı, ayarlanabilir kumaş ilerleme hızı ve kullanıcı dostu kontrol paneli sayesinde operatöre hızlı ve güvenilir çalışma imkânı sunar. Dayanıklı çelik konstrüksiyonu, düşük enerji tüketimi ve uzun ömürlü mekanik yapısıyla tekstil üretim tesislerinde kaliteyi artırırken üretim verimliliğini de yükseltir.",
+        'image' => 'assets/img/products/rm-700.jpg', 'is_featured' => 0, 'sort_order' => 7,
+        'highlights' => ['Yüksek Hassasiyet', 'Yüksek Lümenli LED Aydınlatma', 'Elektronik Metre Sayacı', 'Dokunmatik Kontrol Paneli', 'Ayarlanabilir Hız', 'Sağlam Çelik Konstrüksiyon', 'Düşük Enerji Tüketimi', 'Uzun Ömürlü Mekanik Sistem'],
+        'features' => ['Yüksek lümenli LED aydınlatma sistemi', 'Örme kumaşlarda yüksek hassasiyetli kalite kontrol', 'Elektronik metre sayacı', 'Dijital operatör kontrol paneli', 'Ayarlanabilir kumaş ilerleme hızı', 'Kenar kontrol sistemi (opsiyonel)', 'Otomatik kumaş sarım sistemi', 'Ergonomik ve kullanıcı dostu tasarım', 'Düşük enerji tüketimi', 'Dayanıklı çelik konstrüksiyon', 'Uzun ömürlü mekanik sistem', 'Kolay bakım ve servis imkânı', 'Yüksek üretim verimliliği', 'Sürekli endüstriyel kullanıma uygun yapı'],
+        'specs' => [['Makine Modeli', 'RM-700'], ['Kumaş Türü', 'Örme Kumaş'], ['Maksimum Kumaş Genişliği', '2200 mm'], ['Maksimum Kumaş Topu Çapı', 'Ø 500 mm'], ['Kumaş İlerleme Hızı', '0 - 80 m/dk (ayarlanabilir)'], ['Aydınlatma Sistemi', 'LED (Yüksek Lümen)'], ['Motor Gücü', '1,5 kW'], ['Elektrik Beslemesi', '380 V / 3 Faz / 50 Hz'], ['Hava Basıncı (Opsiyonel)', '0 - 6 Bar'], ['Makine Ölçüleri (U x G x Y)', '3000 x 1800 x 2300 mm'], ['Makine Ağırlığı', 'Yaklaşık 1500 kg']],
+        'advantages' => ['Yüksek Hassasiyet', 'Hata Tespitinde Üstün Performans', 'Zaman ve Maliyet Tasarrufu', 'Kalite ve Verimlilik Artışı', 'Dokunmatik Ekran ile Kolay Kullanım'],
+        'applications' => ['Örme Kumaşlar', 'Tekstil Fabrikaları', 'Konfeksiyon Üreticileri', 'Teknik Tekstiller', 'Trikotaj Atölyeleri', 'Ev Tekstili Üreticileri', 'Spor Giyim Üreticileri', 'İç Giyim Üreticileri', 'Medikal Tekstil Üreticileri', 'Havlu ve Bornoz Üreticileri'],
+    ],
+
+    [
+        'category' => 'rulo-acma-ve-paketleme', 'model' => 'RM-2000', 'name' => 'Kumaş Rulo Açma Makinesi', 'slug' => 'rm-2000-kumas-rulo-acma-makinesi',
+        'tagline' => 'Pürüzsüz Açma • Otomatik Gerginlik • Hassas Çalışma',
+        'summary' => 'Kumaş rulolarını otomatik gerginlik kontrolü ve ayarlanabilir hızla pürüzsüz, eşit ve güvenli şekilde açar.',
+        'description' => "RM-2000 Kumaş Rulo Açma Makinesi, kumaş rulolarının pürüzsüz ve hassas bir şekilde açılmasını sağlar.\n\nAyarlanabilir hız kontrolü, güçlü tahrik sistemi ve dayanıklı yapısı ile farklı kumaş türleri için güvenli, verimli ve uzun ömürlü kullanım sunar.\n\nOtomatik gerginlik kontrol sistemi sayesinde kumaşın eşit açılması sağlanır. Kullanıcı dostu kontrol paneli ve güvenlik donanımları ile operatör konforu ve iş güvenliği en üst düzeye çıkarılmıştır.",
+        'image' => 'assets/img/products/rm-2000.jpg', 'is_featured' => 1, 'sort_order' => 8,
+        'highlights' => ['Pürüzsüz ve Yoğun Kumaş Açma', 'Ayarlanabilir Hız Kontrolü', 'Hassas ve Verimli Çalışma', 'Güvenli ve Dayanıklı Yapı', 'Farklı Kumaş Tiplerine Uygun'],
+        'features' => ['Metraj sayacı', 'Otomatik gerginlik kontrolü', 'Ayarlanabilir hız kontrolü', 'Kullanıcı dostu kontrol paneli', 'Dayanıklı makine yapısı', 'Ön ve geri çalışma özelliği', 'Acil durdurma butonu', 'Elektronik fren sistemi', 'Pnömatik gerginlik kolu', 'Dijital hız göstergesi', 'Kumaş kenar hizalama sistemi', 'Motor aşırı yük koruması', 'Titreşim azaltıcı sistem', 'Sessiz ve verimli çalışma'],
+        'specs' => [['Model', 'RM-2000'], ['Motor Gücü', '1 kW'], ['Rulo Çapı', '160 mm'], ['Güç Kaynağı', '220 V - 50/60 Hz AC'], ['Toplam Güç', '1 kW'], ['Çalışma Genişliği', '2000 mm'], ['Makine Ölçüleri (U x G x Y)', '2400 x 1000 x 1250 mm'], ['Makine Ağırlığı', '350 kg']],
+        'advantages' => ['Hızlı ve Pürüzsüz Açma', 'Kolay ve Pratik Kullanım', 'Yüksek Üretim Verimliliği', 'Güvenli Çalışma', 'Zaman ve İşçilikten Tasarruf', 'Düşük Enerji Tüketimi', 'Dayanıklı Yapı', 'Kolay Bakım', 'Uzun Ömürlü Kullanım', 'Hızlı Servis Desteği'],
+        'applications' => ['Kumaş Üretimi', 'Ev Tekstili', 'Spor Giyim', 'İç Giyim', 'Teknik Tekstiller', 'Medikal Tekstiller', 'Döşeme ve Perde', 'Dokunmamış Kumaşlar'],
+    ],
+
+    [
+        'category' => 'rulo-acma-ve-paketleme', 'model' => 'RM-250', 'name' => 'Kumaş Dinlendirme Makinası', 'slug' => 'rm-250-kumas-dinlendirme-makinasi',
+        'tagline' => 'Sallama • Dinlendirme • Metraj İlavesi',
+        'summary' => 'Likra oranı yüksek, gergin sarılmış kumaş toplarını serim öncesi sallama hale getirerek dinlendirir; kesim ve serimde hatasız sonuç sağlar.',
+        'description' => "REMAK RM-250 Kumaş Dinlendirme Makinası, likra oranı yüksek ve gergin sarılmış kumaş toplarını serim öncesi sallama hale getirmek için tasarlanmıştır.\n\nRulo kumaş topunu sallama hale getirerek dinlenmesini sağlar ve dokuma, kesim veya serim işlemlerinde daha kaliteli, hatasız ve verimli sonuçlar elde edilmesine yardımcı olur.\n\nİstendiğinde sallama kumaşı rulo haline getirme özelliği (kenar kontrolü olmadan) ve metraj ilavesi ile üretim süreçlerinizi daha esnek hale getirir.",
+        'image' => 'assets/img/products/rm-250.jpg', 'is_featured' => 0, 'sort_order' => 9,
+        'highlights' => ['Kumaşı Sallama ve Dinlendirme', 'Rulo Haline Getirme (Kenar Kontrolü Olmadan)', 'Metraj İlavesi', 'Ayarlanabilir Hız Kontrolü', 'Güvenli ve Dayanıklı Yapı', 'Sağlam ve Kompakt Tasarım'],
+        'features' => ['Likra oranı yüksek ve gergin sarılmış kumaş toplarını serim öncesi sallama hale getirir', 'Rulo kumaş topunu sallama hale getirerek dinlenmesini sağlar', 'İstendiğinde sallama kumaşı rulo haline getirme özelliği (kenar kontrolü olmadan)', 'İstendiğinde metraj ilavesi', 'Kullanımı kolay kontrol paneli', 'Pürüzsüz ve titreşimsiz çalışma', 'Tüm kumaş türlerine uygun kullanım', 'Ayarlanabilir çalışma hızı', 'Güvenli kullanım için koruyucu sistemler', 'Düşük bakım ihtiyacı', 'Sağlam ve dayanıklı çelik konstrüksiyon', 'Ergonomik ve kompakt tasarım'],
+        'specs' => [['Model', 'RM-250'], ['Maks. Kumaş Genişliği', '2000 mm (opsiyonel)'], ['Çalışma Hızı', 'Ayarlanabilir'], ['Motor Gücü', '1,5 kW'], ['Elektrik Beslemesi', '380 V / 50 Hz'], ['Makine Ölçüleri (U x G x Y)', '2200 x 900 x 1200 mm'], ['Makine Ağırlığı', '300 kg (yaklaşık)']],
+        'advantages' => ['Kumaşı Sallama ve Dinlendirme', 'Yüksek Verimlilik', 'Kolay Kullanım', 'Düşük Bakım', 'Uzun Ömürlü', 'Düşük Enerji Tüketimi', 'Güvenli Çalışma', 'Sağlam ve Kompakt Tasarım'],
+        'applications' => ['Konfeksiyon', 'Ev Tekstili', 'Spor Giyim', 'İç Giyim', 'Teknik Tekstiller', 'Medikal Kumaşlar', 'Döşemelik Kumaşlar', 'Otomotiv İç Döşemeleri', 'Ambalaj ve Film Kaplamalar'],
+    ],
+
+    [
+        'category' => 'rulo-acma-ve-paketleme', 'model' => 'RM-400', 'name' => 'Rulo Kumaş Paketleme Makinası', 'slug' => 'rm-400-rulo-kumas-paketleme-makinasi',
+        'tagline' => 'Hızlı • Pratik • Güvenli',
+        'summary' => 'Rulo kumaşları şeffaf PE film ile otomatik olarak paketler; toz, nem ve dış etkenlere karşı koruyarak sevkiyata hazır hale getirir.',
+        'description' => "REMAK MAKİNA RM-400 Rulo Kumaş Paketleme Makinası, rulo halindeki kumaşların şeffaf PE film ile hızlı, güvenli ve profesyonel şekilde paketlenmesi amacıyla geliştirilmiş endüstriyel bir paketleme çözümüdür.\n\nAyarlanabilir sarım gerginliği ve otomatik paketleme sistemi sayesinde kumaş rulolarını toz, nem ve dış etkenlere karşı koruyarak sevkiyata hazır hale getirir. Dokunmatik kontrol paneli ile kolay kullanım sunarken, farklı kumaş enleri ve rulo çaplarına uyum sağlayarak üretim süreçlerinde yüksek verimlilik sağlar.\n\nSağlam çelik konstrüksiyonu, düşük bakım ihtiyacı ve yüksek çalışma performansı ile tekstil üreticilerine uzun ömürlü, güvenilir ve ekonomik bir paketleme çözümü sunar. Endüstriyel kullanıma uygun yapısı sayesinde sürekli üretim hatlarında maksimum performans ve güvenli çalışma imkânı sağlar.",
+        'image' => 'assets/img/products/rm-400.jpg', 'is_featured' => 0, 'sort_order' => 10,
+        'highlights' => ['Rulo Kumaşları Korur', 'Hızlı ve Pratik Paketleme', 'Ayarlanabilir Sarım Gerginliği', 'Güvenli ve Emniyetli Çalışma', 'Dokunmatik Kontrol Paneli', 'Farklı Çap ve Enlere Uyumlu'],
+        'features' => ['Rulo kumaşları toz, nem ve dış etkenlere karşı korur', 'Hızlı ve pratik otomatik paketleme sistemi', 'Ayarlanabilir film sarım gerginliği', 'Manuel veya otomatik kesim sistemi', 'Dokunmatik ekran kontrol paneli', 'Farklı kumaş en ve rulo çaplarına uyumlu yapı', 'Şeffaf PE film ile güvenli paketleme', 'Ayarlanabilir paketleme hızı', 'Kullanıcı dostu kontrol sistemi', 'Güvenlik sensörleri ile emniyetli çalışma', 'Sağlam çelik gövde konstrüksiyonu', 'Düşük bakım maliyeti', 'Sürekli üretime uygun endüstriyel tasarım'],
+        'specs' => [['Model', 'RM-400'], ['Çalışma Genişliği', '4000 mm'], ['Maksimum Rulo Çapı', '400 mm'], ['Paketleme Hızı', '10 - 30 m/dk (ayarlanabilir)'], ['Film Genişliği', '500 mm'], ['Sarım Gerginliği', 'Ayarlanabilir'], ['Kesim Sistemi', 'Manuel / Otomatik (opsiyonel)'], ['Kontrol Sistemi', 'Dokunmatik Panel'], ['Motor Gücü', '1,5 kW'], ['Elektrik Beslemesi', '380 V / 50 Hz / 3 Faz'], ['Makine Ölçüleri (U x G x Y)', '2600 x 1100 x 1700 mm'], ['Makine Ağırlığı', 'Yaklaşık 550 kg']],
+        'advantages' => ['Hassas Paketleme', 'Yüksek Verimlilik', 'Kolay Kullanım', 'Düşük Bakım', 'Uzun Ömürlü'],
+        'applications' => ['Dokuma Kumaşlar', 'Örme Kumaşlar', 'Nonwoven Kumaşlar', 'Teknik Tekstiller', 'Trikotaj Ürünleri', 'Otomotiv Tekstilleri', 'Medikal Tekstiller', 'Diğer Tekstil Ürünleri'],
+    ],
+
+    [
+        'category' => 'tela-pres-ve-laminasyon', 'model' => 'RM-850', 'name' => 'Tela Pres Makinası', 'slug' => 'rm-850-tela-pres-makinasi',
+        'tagline' => 'Maksimum Kontrol, Mükemmel Sonuç',
+        'summary' => 'Örme, dokuma ve teknik kumaşları ısı transfer yağlı sistemle presler ve fikse eder; dijital sıcaklık ve pnömatik basınç kontrolü sunar.',
+        'description' => "RM-850 Tela Pres Makinası; örme, dokuma ve teknik tekstil kumaşlarının preslenmesi, fikse edilmesi ve yüzey düzgünlüğünün sağlanması amacıyla tasarlanmıştır.\n\nAyarlanabilir hız kontrolü, hassas sarım sistemi ve güçlü yapısı ile farklı kumaş tiplerinde maksimum performans sunar.",
+        'image' => 'assets/img/products/rm-850.jpg', 'is_featured' => 0, 'sort_order' => 11,
+        'highlights' => ['Kumaş Eni ve Gerginlik Kontrolü', 'Baskı Merdanesi', 'Isı Transfer Yağı', 'Dijital Kontrol', 'Güvenli ve Dayanıklı Yapı', 'Enerji Tasarrufu'],
+        'features' => ['Kumaş eni, boyu ve gerginlik kontrolü', 'Baskı merdanesi', 'Isı transfer yağı ile ısıtma sistemi', 'Dijital sıcaklık ve basınç kontrolü', 'Dokunmatik ekran kontrol paneli', 'Ayarlanabilir hız ve sıcaklık', 'Homojen ısı dağılımı', 'Farklı kumaş türlerinde kullanım', 'Enerji tasarruflu sistem', 'Düşük işletme maliyeti', 'Güvenli çalışma sistemi', 'Sağlam çelik konstrüksiyon'],
+        'specs' => [['Çalışma Genişliği', '1800 / 2200 / 2400 mm (opsiyonel)'], ['Bant Genişliği', '1900 / 2300 / 2500 mm'], ['Çalışma Hızı', '5 - 25 m/dk (ayarlanabilir)'], ['Isıtma Sistemi', 'Isı Transfer Yağı'], ['Sıcaklık Kontrolü', 'Dijital (0 - 200 °C)'], ['Basınç Kontrolü', 'Pnömatik (ayarlanabilir)'], ['Baskı Merdanesi', 'Var'], ['Enerji Tüketimi', '12 - 18 kW'], ['Elektrik Beslemesi', '380 V / 50 Hz / 3 Faz'], ['Makine Ölçüleri (U / G / Y)', '3200 / 2000 / 2000 mm'], ['Makine Ağırlığı', '800 - 1100 kg (yaklaşık)']],
+        'advantages' => ['Yüksek Kalite', 'Yüksek Verimlilik', 'Düşük Enerji Tüketimi', 'Güvenli Çalışma', 'Uzun Ömürlü Yapı'],
+        'applications' => ['Tekstil Kumaşları', 'Teknik Tekstiller', 'Spor Giyim Kumaşları', 'İç Giyim Kumaşları', 'Konfeksiyon Kumaşları', 'Ayakkabı ve Çanta Kumaşları', 'Döşemelik Kumaşlar'],
+    ],
+
+    [
+        'category' => 'tela-pres-ve-laminasyon', 'model' => 'RM-900', 'name' => 'Su Bazlı Laminasyon Makinası', 'slug' => 'rm-900-su-bazli-laminasyon-makinasi',
+        'tagline' => 'Mükemmel Laminasyon • Çevre Dostu • Yüksek Verimlilik',
+        'summary' => 'Tekstil, nonwoven, kağıt ve teknik malzemelere su bazlı yapıştırıcı ile çevre dostu, homojen ve yüksek kaliteli laminasyon uygular.',
+        'description' => "REMAK RM-900 Su Bazlı Laminasyon Makinası, tekstil, nonwoven, kağıt ve teknik malzemelerin yüzeylerine su bazlı yapıştırıcı kullanarak yüksek kaliteli laminasyon uygulamaları gerçekleştirmek üzere geliştirilmiştir.\n\nGelişmiş sıcaklık ve gergi kontrol sistemi sayesinde malzeme yüzeyinde homojen kaplama sağlayarak güçlü yapışma, yüksek üretim kalitesi ve uzun ömürlü kullanım sunar. Ayarlanabilir çalışma hızı, düşük enerji tüketimi ve kullanıcı dostu kontrol paneli ile üretim süreçlerini daha verimli ve ekonomik hale getirir.\n\nSu bazlı teknolojisi sayesinde çevre dostu üretim imkânı sunan RM-900, otomatik kenar hizalama sistemi, hassas kontrol mekanizması ve sağlam çelik konstrüksiyonu ile farklı sektörlerde güvenilir ve yüksek performanslı laminasyon çözümleri sağlar.",
+        'image' => 'assets/img/products/rm-900.jpg', 'is_featured' => 1, 'sort_order' => 12,
+        'highlights' => ['Su Bazlı Sistem', 'Çevre Dostu', 'Yüksek Kalite', 'Yüksek Verimlilik', 'Düşük Enerji', 'Güvenli Çalışma', 'Kolay Kullanım'],
+        'features' => ['Su bazlı laminasyon sistemi', 'Hassas sıcaklık kontrolü', 'Ayarlanabilir hız kontrolü', 'Gergi kontrol sistemi', 'Pürüzsüz ve kaliteli laminasyon', 'Kolay kullanım', 'Düşük enerji tüketimi', 'Dayanıklı ve sağlam yapı', 'Farklı malzemelere uygun çözüm', 'Otomatik kenar hizalama sistemi', 'Kolay bakım ve temizlik', 'Güvenli çalışma sistemi', '7 inç dokunmatik ekran'],
+        'specs' => [['Çalışma Genişliği', '1600 / 1800 / 2200 mm (opsiyonel)'], ['Maks. Mekanik Hız', '80 m/dk'], ['Laminasyon Tipi', 'Su Bazlı'], ['Isıtma Sistemi', 'Elektrikli'], ['Kurutma Tipi', 'Sirkülasyonlu Sıcak Hava'], ['Güç', '380 V / 50 Hz'], ['Toplam Güç', '18 - 35 kW (modele göre)'], ['Kullanılan Tutkal', 'Su Bazlı'], ['Makine Ölçüleri', 'Modele göre değişir'], ['Makine Ağırlığı', 'Modele göre değişir']],
+        'advantages' => ['Yüksek Kalite', 'Güçlü Performans', 'Yüksek Verimlilik', 'Uzun Ömürlü Kullanım', 'Çevre Dostu', 'Düşük İşletme Maliyeti', 'Güvenli Çalışma', 'Kolay Kullanım', 'Kolay Bakım', 'Sürekli Üretim'],
+        'applications' => ['Tekstil Kumaşları', 'Teknik Tekstiller', 'Nonwoven Kumaşlar', 'Kağıt', 'Döşemelik Kumaşlar', 'Ayakkabı ve Çanta Kumaşları', 'Otomotiv İç Döşemeleri', 'Ambalaj ve Film Kaplamalar'],
+    ],
+
+    [
+        'category' => 'tela-pres-ve-laminasyon', 'model' => 'RM-1020', 'name' => 'Tela Pres Laminasyon Makinası', 'slug' => 'rm-1020-tela-pres-laminasyon-makinasi',
+        'tagline' => 'Yüksek Kalite • Yüksek Verimlilik',
+        'summary' => 'Tela ve yapıştırma malzemelerini hassas sıcaklık ve basınç kontrolüyle kumaş yüzeyine homojen şekilde uygular; kesintisiz çalışmaya uygundur.',
+        'description' => "REMAK RM-1020 Tela Pres Laminasyon Makinası, tela ve yapıştırma malzemelerinin kumaş yüzeyine yüksek kaliteyle uygulanmasını sağlayan, verimli ve dayanıklı bir laminasyon çözümüdür. Hassas sıcaklık ve basınç kontrol sistemi sayesinde farklı kumaş türlerinde homojen yapıştırma sağlayarak üretim kalitesini artırır.\n\nAyarlanabilir bant hızı, güçlü rezistans sistemi ve sağlam çelik konstrüksiyonu ile uzun süre kesintisiz çalışmaya uygundur. Kullanıcı dostu kontrol sistemi, düşük bakım ihtiyacı ve yüksek enerji verimliliği sayesinde tekstil üretim hatlarında maksimum performans ve güvenilir kullanım sunar.",
+        'image' => 'assets/img/products/rm-1020.jpg', 'is_featured' => 0, 'sort_order' => 13,
+        'highlights' => ['Homojen Yapıştırma', 'Ayarlanabilir Basınç', 'Hassas Sıcaklık Kontrolü', 'Ayarlanabilir Bant Hızı', 'Farklı Kumaş ve Tela Türlerine Uygun', 'Güçlü Rezistanslı Isıtma', 'Kullanıcı Dostu Kontrol Paneli', 'Sağlam Çelik Gövde'],
+        'features' => ['Homojen sıcaklık dağılımı ile mükemmel yapıştırma', 'Ayarlanabilir basınç sistemi', 'Hassas sıcaklık kontrolü', 'Ayarlanabilir bant hızı', 'Farklı tela ve kumaş türlerine uygun kullanım', 'Güçlü rezistanslı ısıtma sistemi', 'Kullanıcı dostu kontrol paneli', 'Sağlam çelik gövde yapısı', 'Düşük enerji tüketimi', 'Düşük bakım maliyeti', 'Uzun servis ömrü', 'Sürekli endüstriyel kullanıma uygun tasarım'],
+        'specs' => [['Model', 'RM-1020'], ['Makine Tipi', 'Tela Pres Laminasyon Makinası'], ['Yapıştırma Genişliği', '600 mm'], ['Rezistans Gücü', '9,5 kW'], ['Maksimum Sıcaklık', '200 °C'], ['Maksimum Bant Hızı', '10 m/dk'], ['Pres Basıncı', '7 kg/cm²'], ['Yapıştırma Süresi', '5 - 35 sn'], ['Elektrik Beslemesi', '380 V / 3 Faz / 50 Hz'], ['Makine Ağırlığı', 'Yaklaşık 350 kg']],
+        'advantages' => ['Yüksek Kalite', 'Yüksek Verimlilik', 'Zaman ve Maliyet Tasarrufu', 'Enerji Verimliliği', 'Kolay Kullanım ve Bakım'],
+        'applications' => ['Tekstil', 'Nonwoven Kumaşlar', 'Döşemelik Kumaşlar', 'Teknik Tekstiller', 'Otomotiv Tekstilleri', 'Medikal Tekstil', 'Ambalaj Malzemeleri', 'Spor Giyim Kumaşları', 'İç Giyim Kumaşları', 'Ev Tekstili Ürünleri', 'Havlu ve Bornoz Ürünleri'],
+    ],
+
+],
+];
