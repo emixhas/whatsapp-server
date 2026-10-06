@@ -32,7 +32,7 @@ $canonical  = site_origin() . strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
 <link rel="stylesheet" href="<?= e(asset('fonts/fonts.css')) ?>">
 <link rel="stylesheet" href="<?= e(asset('vendor/phosphor/phosphor.css')) ?>">
 <link rel="stylesheet" href="<?= e(asset('css/style.css')) ?>">
-<script>document.documentElement.classList.replace('no-js','js');</script>
+<script>(function(){var d=document.documentElement;d.classList.replace('no-js','js');try{if(!sessionStorage.getItem('remak-intro')&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches){d.classList.add('preload');}}catch(e){}})();</script>
 <script type="application/ld+json">
 <?= json_encode([
     '@context' => 'https://schema.org',
@@ -49,6 +49,15 @@ $canonical  = site_origin() . strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
 </head>
 <body class="<?= e($bodyClass) ?>">
 <a class="skip-link" href="#icerik">İçeriğe geç</a>
+<div class="preloader" id="preloader" aria-hidden="true">
+    <div class="preloader__inner">
+        <img class="preloader__mark" src="<?= e(asset('img/logo-mark-amber.png')) ?>" alt="" width="76" height="76">
+        <div class="preloader__bar"><span></span></div>
+        <span class="preloader__count">0%</span>
+    </div>
+</div>
+<div class="progress" id="progress" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
 <div class="scroll-sentinel" aria-hidden="true"></div>
 <header class="site-header" id="site-header">
     <div class="container header__inner">
@@ -61,7 +70,7 @@ $canonical  = site_origin() . strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
             <a href="<?= e(url('kurumsal')) ?>" class="nav__link<?= is_active('kurumsal.php') ?>">Kurumsal</a>
             <a href="<?= e(url('urunler')) ?>" class="nav__link<?= is_active('urunler.php') ?: is_active('urun.php') ?>">Ürünler</a>
             <a href="<?= e(url('iletisim')) ?>" class="nav__link<?= is_active('iletisim.php') ?>">İletişim</a>
-            <a href="<?= e(wa_link($wa, $waText)) ?>" class="btn btn--amber nav__cta" target="_blank" rel="noopener"><i class="ph-bold ph-whatsapp-logo" aria-hidden="true"></i> Teklif Al</a>
+            <a href="<?= e(wa_link($wa, $waText)) ?>" class="btn btn--amber nav__cta" data-magnet="0.25" target="_blank" rel="noopener"><i class="ph-bold ph-whatsapp-logo" aria-hidden="true"></i> Teklif Al</a>
         </nav>
         <button class="nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="nav" aria-label="Menüyü aç/kapat"><span></span><span></span><span></span></button>
     </div>

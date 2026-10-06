@@ -20,17 +20,17 @@ $bodyClass = 'page-products';
 require __DIR__ . '/includes/header.php';
 ?>
 
-<section class="page-hero">
+<section class="page-hero page-hero--center">
     <div class="container">
         <nav class="crumbs" aria-label="Sayfa yolu"><a href="<?= e(url('')) ?>">Anasayfa</a><span>/</span><?php if ($category): ?><a href="<?= e(url('urunler')) ?>">Ürünler</a><span>/</span><strong><?= e($category['name']) ?></strong><?php else: ?><strong>Ürünler</strong><?php endif; ?></nav>
-        <h1 data-hero><?= e($category ? $category['name'] : 'Ürünler') ?></h1>
+        <h1 data-split><?= e($category ? $category['name'] : 'Ürünler') ?></h1>
         <p data-hero><?= e($category ? $category['description'] : 'Tekstil üretim hattının her adımı için tasarlanmış ' . $total . ' makine modeli. Teknik özellikler, kullanım alanları ve avantajlar için modeli seçin.') ?></p>
     </div>
 </section>
 
 <section class="catalog">
     <div class="container">
-        <nav class="filter" aria-label="Kategori filtresi">
+        <nav class="filter filter--center" aria-label="Kategori filtresi">
             <a class="filter__item<?= $category ? '' : ' is-active' ?>" href="<?= e(url('urunler')) ?>">Tümü <span><?= $total ?></span></a>
             <?php foreach ($categories as $c): ?>
                 <a class="filter__item<?= ($category && $category['id'] == $c['id']) ? ' is-active' : '' ?>" href="<?= e(category_url($c['slug'])) ?>"><?= e($c['name']) ?> <span><?= (int) $c['product_count'] ?></span></a>
@@ -54,10 +54,10 @@ require __DIR__ . '/includes/header.php';
 
         <div class="catalog__download" data-reveal>
             <div>
-                <h2>2026 E-Katalog</h2>
+                <h2 data-split>2026 E-Katalog</h2>
                 <p>Tüm makine modellerimizin teknik özellikleri, ölçüleri ve kullanım alanları tek dosyada.</p>
             </div>
-            <a class="btn btn--amber btn--lg" href="<?= e(asset('katalog/remak-makina-2026-e-katalog.pdf')) ?>" target="_blank" rel="noopener"><i class="ph-bold ph-file-pdf" aria-hidden="true"></i> Kataloğu İndir</a>
+            <a class="btn btn--amber btn--lg" data-magnet href="<?= e(asset('katalog/remak-makina-2026-e-katalog.pdf')) ?>" target="_blank" rel="noopener"><i class="ph-bold ph-file-pdf" aria-hidden="true"></i> Kataloğu İndir</a>
         </div>
     </div>
 </section>

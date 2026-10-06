@@ -56,16 +56,16 @@ require __DIR__ . '/includes/header.php';
                 <?php if ($p['category_name']): ?><a href="<?= e(category_url($p['category_slug'])) ?>"><?= e($p['category_name']) ?></a><span>/</span><?php endif; ?>
                 <strong><?= e($p['model']) ?></strong>
             </nav>
-            <h1 data-hero><span class="product-hero__model"><?= e($p['model']) ?></span><span class="product-hero__name"><?= e($p['name']) ?></span></h1>
+            <h1><span class="product-hero__model" data-split><?= e($p['model']) ?></span><span class="product-hero__name" data-split><?= e($p['name']) ?></span></h1>
             <?php if ($p['tagline']): ?><p class="product-hero__tagline" data-hero><?= e($p['tagline']) ?></p><?php endif; ?>
             <?php if ($p['summary']): ?><p class="lead" data-hero><?= e($p['summary']) ?></p><?php endif; ?>
             <div class="product-hero__actions" data-hero>
-                <a class="btn btn--amber btn--lg" href="<?= e(wa_link($wa, $waText)) ?>" target="_blank" rel="noopener"><i class="ph-bold ph-whatsapp-logo" aria-hidden="true"></i> Teklif Al</a>
-                <a class="btn btn--outline-ink btn--lg" href="#teknik"><i class="ph-bold ph-list-checks" aria-hidden="true"></i> Teknik Özellikler</a>
+                <a class="btn btn--amber btn--lg" data-magnet href="<?= e(wa_link($wa, $waText)) ?>" target="_blank" rel="noopener"><i class="ph-bold ph-whatsapp-logo" aria-hidden="true"></i> Teklif Al</a>
+                <a class="btn btn--outline-ink btn--lg" data-magnet href="#teknik"><i class="ph-bold ph-list-checks" aria-hidden="true"></i> Teknik Özellikler</a>
             </div>
         </div>
-        <div class="product-hero__media" data-hero>
-            <img src="<?= e(product_image($p)) ?>" alt="<?= e($p['model'] . ' ' . $p['name']) ?>" width="640" height="560" fetchpriority="high">
+        <div class="product-hero__media" data-tilt="4">
+            <img src="<?= e(product_image($p)) ?>" alt="<?= e($p['model'] . ' ' . $p['name']) ?>" width="1200" height="900" fetchpriority="high">
         </div>
     </div>
 </section>
@@ -87,14 +87,14 @@ require __DIR__ . '/includes/header.php';
         <div class="product-body__main">
             <?php if ($p['description']): ?>
                 <div class="prose" data-reveal>
-                    <h2>Ürün tanıtımı</h2>
+                    <h2 data-split>Ürün tanıtımı</h2>
                     <?= nl2p($p['description']) ?>
                 </div>
             <?php endif; ?>
 
             <?php if ($features): ?>
                 <div data-reveal>
-                    <h2>Makine özellikleri</h2>
+                    <h2 data-split>Makine özellikleri</h2>
                     <ul class="checklist">
                         <?php foreach ($features as $f): ?>
                             <li><i class="ph-bold ph-check" aria-hidden="true"></i><span><?= e($f) ?></span></li>
@@ -105,10 +105,10 @@ require __DIR__ . '/includes/header.php';
 
             <?php if ($specs): ?>
                 <div id="teknik" data-reveal>
-                    <h2>Teknik özellikler</h2>
+                    <h2 data-split>Teknik özellikler</h2>
                     <dl class="specs">
                         <?php foreach ($specs as $s): ?>
-                            <div class="spec"><dt><?= e($s['label'] ?? '') ?></dt><dd><?= e($s['value'] ?? '') ?></dd></div>
+                            <div class="spec" data-reveal><dt><?= e($s['label'] ?? '') ?></dt><dd><?= e($s['value'] ?? '') ?></dd></div>
                         <?php endforeach; ?>
                     </dl>
                     <p class="note">Teknik bilgiler ve ölçüler model ve opsiyonlara göre değişiklik gösterebilir. REMAK MAKİNA önceden haber vermeksizin teknik özelliklerde değişiklik yapma hakkını saklı tutar.</p>
@@ -144,7 +144,7 @@ require __DIR__ . '/includes/header.php';
 <section class="related">
     <div class="container">
         <div class="section-head section-head--row">
-            <h2>Aynı gruptaki diğer makineler</h2>
+            <h2 data-split>Aynı gruptaki diğer makineler</h2>
             <a class="link-arrow" href="<?= e(category_url($p['category_slug'])) ?>"><?= e($p['category_name']) ?> <i class="ph-bold ph-arrow-right" aria-hidden="true"></i></a>
         </div>
         <div class="pgrid pgrid--3">

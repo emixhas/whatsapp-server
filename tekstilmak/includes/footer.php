@@ -50,11 +50,12 @@ $aboutParts = preg_split('~(\r\n|\r|\n){2,}~', trim(setting('about_short')));
         <?php if (setting('footer_credit')): ?><span>Tasarım ve yazılım: <?= e(setting('footer_credit')) ?></span><?php endif; ?>
     </div>
 </footer>
-<a class="wa-float" href="<?= e(wa_link($fWa, $waText ?? 'Merhaba, REMAK MAKİNA ürünleri hakkında bilgi almak istiyorum.')) ?>" target="_blank" rel="noopener" aria-label="WhatsApp ile yazın">
+<a class="wa-float" data-magnet="0.35" href="<?= e(wa_link($fWa, $waText ?? 'Merhaba, REMAK MAKİNA ürünleri hakkında bilgi almak istiyorum.')) ?>" target="_blank" rel="noopener" aria-label="WhatsApp ile yazın">
     <i class="ph-bold ph-whatsapp-logo" aria-hidden="true"></i><span>WhatsApp</span>
 </a>
 <script src="<?= e(asset('js/vendor/gsap.min.js')) ?>" defer></script>
 <script src="<?= e(asset('js/vendor/ScrollTrigger.min.js')) ?>" defer></script>
+<script src="<?= e(asset('js/vendor/lenis.min.js')) ?>" defer></script>
 <script src="<?= e(asset('js/main.js')) ?>" defer></script>
 </body>
 </html>

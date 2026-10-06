@@ -11,7 +11,8 @@ Tekstil makineleri üreticisi REMAK MAKİNA için PHP + MySQL tabanlı kurumsal 
 - **Kurumsal:** vizyon, misyon, ilkeler, galeri. **İletişim:** form (veritabanına kaydeder, isteğe bağlı e-posta bildirimi), harita, sosyal medya.
 - **Yönetim paneli** (`/admin`): ürün ekle/düzenle/sil (görsel yükleme, otomatik küçültme), kategoriler, gelen mesajlar, site ayarları (iletişim, metinler, sosyal medya), şifre değiştirme.
 - SEO: temiz adresler (`/urun/rm-500-...`), meta açıklamaları, Open Graph, `sitemap.xml`, `robots.txt`, Organization JSON-LD.
-- Fontlar ve ikonlar (Barlow Condensed, Manrope, Phosphor) ve GSAP yerel olarak sunulur; harici CDN bağımlılığı yoktur.
+- **Hareket paketi:** Lenis yumuşak kaydırma, GSAP ScrollTrigger (sabitlenen yatay makine parkuru, kelime kelime başlık animasyonları, üst üste yığılan kartlar, paralaks, kaydırma hızına tepki veren yazı bandı), fareyle 3D eğilen kartlar, manyetik butonlar, ön yükleyici, kaydırma ilerleme çubuğu (CSS scroll-driven animation), sayfalar arası geçiş (View Transitions API). `prefers-reduced-motion` açıksa tüm hareketler kapanır; dokunmatik cihazlarda eğim/mıknatıs efektleri çalışmaz.
+- Fontlar ve ikonlar (Barlow Condensed, Manrope, Phosphor), GSAP ve Lenis yerel olarak sunulur; harici CDN bağımlılığı yoktur.
 
 ## Kurulum (Hostinger / cPanel benzeri paylaşımlı hosting)
 

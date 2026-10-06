@@ -62,7 +62,7 @@ require __DIR__ . '/includes/header.php';
 <section class="page-hero">
     <div class="container">
         <nav class="crumbs" aria-label="Sayfa yolu"><a href="<?= e(url('')) ?>">Anasayfa</a><span>/</span><strong>İletişim</strong></nav>
-        <h1 data-hero>Bize ulaşın</h1>
+        <h1 data-split>Bize ulaşın</h1>
         <p data-hero>Makine seçimi, teknik sorular, servis veya teklif talepleriniz için ekibimiz hazır.</p>
     </div>
 </section>
@@ -87,7 +87,7 @@ require __DIR__ . '/includes/header.php';
         </div>
 
         <div class="contact__form" id="form" data-reveal>
-            <h2>Mesaj gönderin</h2>
+            <h2 data-split>Mesaj gönderin</h2>
             <?php if ($success): ?>
                 <div class="alert alert--success" role="status"><i class="ph-bold ph-check-circle" aria-hidden="true"></i> <?= e($success) ?></div>
             <?php endif; ?>
