@@ -177,7 +177,8 @@
   /* ------------------------------------------------------------------
    * Lenis yumuşak kaydırma (ScrollTrigger ile senkron)
    * ---------------------------------------------------------------- */
-  if (typeof window.Lenis !== 'undefined') {
+  /* Yumuşak kaydırma yalnızca fare/dokunmatik yüzeyli cihazlarda; telefonlarda tarayıcının kendi kaydırması kalır */
+  if (typeof window.Lenis !== 'undefined' && finePointer) {
     lenis = new Lenis({ lerp: 0.09, smoothWheel: true, wheelMultiplier: 1 });
     lenis.on('scroll', ScrollTrigger.update);
     gsap.ticker.add(function (t) { lenis.raf(t * 1000); });
@@ -297,6 +298,14 @@
     var counter = { v: 0 };
     try { sessionStorage.setItem('remak-intro', '1'); } catch (e) { /* özel mod */ }
     if (lenis) lenis.stop();
+    /* emniyet: bir şey takılırsa 4,5 sn sonra sayfayı serbest bırak */
+    setTimeout(function () {
+      if (!html.classList.contains('preload')) return;
+      html.classList.remove('preload');
+      if (preloader.parentNode) preloader.remove();
+      if (lenis) lenis.start();
+      startIntro();
+    }, 4500);
     gsap.timeline({
       onComplete: function () {
         html.classList.remove('preload');
@@ -464,7 +473,8 @@
     return function () { pan.kill(); };
   });
 
-  /* Makine parkuru (mobil): kendiliğinden kayan, ortadaki kartın öne çıktığı karusel */
+  /* Makine parkuru (mobil): parmakla sürüklenen, kendiliğinden ilerleyen karusel.
+     Kaydırma kutusu kullanılmaz; şerit transform ile taşınır, dikey kaydırma tarayıcıda kalır. */
   mm.add('(max-width: 1023px)', function () {
     var wrap = document.querySelector('[data-hpan]');
     if (!wrap) return;
@@ -474,44 +484,87 @@
     if (cards.length < 2) return;
     var bar = wrap.querySelector('.showcase__progress span');
     var current = 0, userHold = 0, inView = false, timer = null;
+    var dragging = false, moved = false, pid = null, startX = 0, startTrackX = 0, lastX = 0, lastT = 0, vel = 0;
 
-    /* bölüm görünüme girince kartlar sağdan sıralı gelir */
-    gsap.from(cards, { x: 90, duration: 1, ease: 'expo.out', stagger: 0.08, scrollTrigger: { trigger: wrap, start: 'top 80%', once: true } });
+    function step() { return cards[1].offsetLeft - cards[0].offsetLeft; }
+    function offsetFor(i) { return -i * step(); }
+    function setCurrent(i) {
+      current = i;
+      cards.forEach(function (c, k) { c.classList.toggle('is-current', k === i); });
+      if (bar) gsap.to(bar, { scaleX: (i + 1) / cards.length, duration: 0.5, ease: 'power2.out' });
+    }
+    function goTo(i, immediate) {
+      i = gsap.utils.clamp(0, cards.length - 1, i);
+      setCurrent(i);
+      gsap.to(track, { x: offsetFor(i), duration: immediate ? 0 : 0.85, ease: 'expo.out', overwrite: true });
+    }
+    gsap.set(track, { x: 0 });
+    setCurrent(0);
 
-    cards.forEach(function (card, i) {
-      gsap.timeline({ scrollTrigger: { trigger: card, scroller: track, horizontal: true, start: 'left right', end: 'right left', scrub: true } })
-        .fromTo(card, { scale: 0.9 }, { scale: 1, ease: 'none' })
-        .to(card, { scale: 0.9, ease: 'none' });
-      ScrollTrigger.create({
-        trigger: card, scroller: track, horizontal: true, start: 'left center', end: 'right center',
-        onToggle: function (self) {
-          if (!self.isActive) return;
-          current = i;
-          cards.forEach(function (c) { c.classList.remove('is-current'); });
-          card.classList.add('is-current');
-          if (bar) gsap.to(bar, { scaleX: (i + 1) / cards.length, duration: 0.5, ease: 'power2.out' });
-        }
-      });
+    /* bölüm görünüme girince kart içerikleri sağdan sıralı gelir (kartın kendisi CSS ölçek geçişine bırakılır) */
+    ScrollTrigger.create({
+      trigger: wrap, start: 'top 80%', once: true,
+      onEnter: function () {
+        gsap.fromTo(track.querySelectorAll('.pcard__media, .pcard__body'), { x: 70, opacity: 0 }, { x: 0, opacity: 1, duration: 1, ease: 'expo.out', stagger: 0.05, clearProps: 'transform,opacity' });
+      }
     });
 
-    function goTo(i) {
-      var c = cards[i];
-      track.scrollTo({ left: c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2, behavior: 'smooth' });
+    /* sürükleme (yalnızca yatay; dikey hareketi tarayıcı sayfa kaydırması olarak alır) */
+    track.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      dragging = true; moved = false; pid = e.pointerId;
+      startX = lastX = e.clientX; lastT = e.timeStamp; vel = 0;
+      startTrackX = parseFloat(gsap.getProperty(track, 'x')) || 0;
+      gsap.killTweensOf(track);
+      userHold = Date.now() + 6000;
+    });
+    track.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - startX;
+      if (!moved) {
+        if (Math.abs(dx) < 6) return;
+        moved = true;
+        try { track.setPointerCapture(pid); } catch (err) { /* desteklenmiyor */ }
+      }
+      vel = (e.clientX - lastX) / Math.max(1, e.timeStamp - lastT);
+      lastX = e.clientX; lastT = e.timeStamp;
+      var min = offsetFor(cards.length - 1), max = 0, x = startTrackX + dx;
+      if (x > max) x = max + (x - max) * 0.3;
+      if (x < min) x = min + (x - min) * 0.3;
+      gsap.set(track, { x: x });
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      if (!moved) return;
+      var x = parseFloat(gsap.getProperty(track, 'x')) || 0;
+      var idx = Math.round(-x / step());
+      if (Math.abs(vel) > 0.35) idx = current + (vel < 0 ? 1 : -1);
+      goTo(idx);
     }
+    track.addEventListener('pointerup', endDrag);
+    track.addEventListener('pointercancel', endDrag);
+    track.addEventListener('click', function (e) { if (moved) { e.preventDefault(); e.stopPropagation(); } }, true);
+
+    /* kendiliğinden ilerleme */
     function schedule() {
       clearTimeout(timer);
       timer = setTimeout(function () {
-        if (inView && !document.hidden && Date.now() > userHold) goTo((current + 1) % cards.length);
+        if (inView && !dragging && !document.hidden && Date.now() > userHold) goTo((current + 1) % cards.length);
         schedule();
       }, 2600);
     }
-    var hold = function () { userHold = Date.now() + 6000; };
-    track.addEventListener('pointerdown', hold);
-    track.addEventListener('touchstart', hold, { passive: true });
-    track.addEventListener('wheel', hold, { passive: true });
     ScrollTrigger.create({ trigger: wrap, start: 'top bottom', end: 'bottom top', onToggle: function (self) { inView = self.isActive; } });
+    var onRefresh = function () { goTo(current, true); };
+    ScrollTrigger.addEventListener('refreshInit', onRefresh);
     schedule();
-    return function () { clearTimeout(timer); cards.forEach(function (c) { c.classList.remove('is-current'); }); };
+
+    return function () {
+      clearTimeout(timer);
+      ScrollTrigger.removeEventListener('refreshInit', onRefresh);
+      gsap.set(track, { clearProps: 'x' });
+      cards.forEach(function (c) { c.classList.remove('is-current'); });
+    };
   });
 
   /* Neden REMAK: kartlar üst üste yığılır */

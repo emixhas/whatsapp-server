@@ -80,7 +80,7 @@ require __DIR__ . '/includes/header.php';
         </div>
         <a class="link-arrow" href="<?= e(url('urunler')) ?>">Tüm ürünler <i class="ph-bold ph-arrow-right" aria-hidden="true"></i></a>
     </div>
-    <div class="showcase__track" data-hpan-track data-lenis-prevent>
+    <div class="showcase__track" data-hpan-track>
         <?php foreach ($featured as $p): ?>
             <?= product_card($p, false) ?>
         <?php endforeach; ?>

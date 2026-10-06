@@ -185,8 +185,12 @@ html.no-motion .marquee__track { animation: none; }
 .showcase__track::-webkit-scrollbar { display: none; }
 .showcase__track .pcard { flex: 0 0 min(78vw, 360px); scroll-snap-align: start; }
 @media (max-width: 1023px) {
-  .showcase__track { gap: 16px; padding-left: calc((100vw - min(82vw, 420px)) / 2); padding-right: calc((100vw - min(82vw, 420px)) / 2); padding-bottom: 12px; }
-  .showcase__track .pcard { flex: 0 0 min(82vw, 420px); scroll-snap-align: center; transform-origin: center bottom; opacity: .72; transition: opacity .4s ease, border-color .4s ease, box-shadow .4s ease; }
+  /* Mobil karusel: kaydırma kutusu yerine transform ile taşınır; dikey kaydırma tarayıcıda kalır (touch-action: pan-y) */
+  .showcase__track { overflow: visible; scroll-snap-type: none; width: max-content; min-width: 100%; gap: 16px; padding-left: calc((100vw - min(82vw, 420px)) / 2); padding-right: calc((100vw - min(82vw, 420px)) / 2); padding-bottom: 12px; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; will-change: transform; }
+  .showcase__track:active { cursor: grabbing; }
+  .showcase__track img { -webkit-user-drag: none; pointer-events: none; }
+  .showcase__track .pcard { flex: 0 0 min(82vw, 420px); transform-origin: center bottom; opacity: .72; transform: scale(.9); transition: opacity .5s ease, transform .6s var(--ease), border-color .4s ease, box-shadow .4s ease; }
+  .showcase__track .pcard.is-current { transform: scale(1); }
   .showcase__track .pcard.is-current { opacity: 1; border-color: var(--amber); box-shadow: var(--shadow); }
   .showcase__progress { display: block; margin: 16px var(--gutter) 0; }
 }
@@ -455,7 +459,6 @@ html.lenis, html.lenis body { height: auto; }
 /* Ön yükleyici (oturumda yalnızca ilk sayfada) */
 .preloader { position: fixed; inset: 0; z-index: 90; background: var(--ink); display: none; align-items: center; justify-content: center; color: #fff; }
 html.preload .preloader { display: flex; animation: preloader-kill 0s 5s forwards; }
-html.preload body { overflow: hidden; }
 @keyframes preloader-kill { to { visibility: hidden; opacity: 0; pointer-events: none; } }
 .preloader__inner { display: grid; justify-items: center; gap: 20px; }
 .preloader__mark { width: 76px; height: 76px; animation: preloader-pulse 1.4s var(--ease) infinite; }
