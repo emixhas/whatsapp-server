@@ -30,8 +30,14 @@ const py = async (script, args = []) => { const r = await run(PY, [`scripts/${sc
 const readJson = (p, d) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return d; } };
 const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
-const defaults = { autopublish: { youtube: false, instagram: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts" };
-const settings = () => ({ ...defaults, ...readJson(SETTINGS, {}) });
+const defaults = { autopublish: { youtube: false, instagram: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
+  assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "piper" };
+const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
+const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
+const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
+const IMPROVEMENTS = path.join(DATA, "improvements.md");
+const queueImprovement = (task) => { const head = "# Emixhas geliştirme kuyruğu\n\nBir görevi uygulamak için proje klasöründe Claude Code'u açıp bu dosyadaki ilk açık görevi vermeniz yeterli; uygulanınca [x] işaretleyin.\n\n"; const line = `- [ ] ${new Date().toISOString().slice(0, 16)} ${String(task).trim()}\n`; writeFileSync(IMPROVEMENTS, (existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : head) + line); return { ok: true, file: "data/improvements.md" }; };
 const label = (v) => (v.date ? `${v.date}, günün ${v.episodeOfDay}. özeti` : v.name.replace(/\.mp4$/, ""));
 
 function listVideos() {
@@ -80,14 +86,18 @@ async function setSchedule(enabled, hours) {
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart"]);
+const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
     case "sync_metrics": { const r = await py("sync_metrics.py"); await py("analyze.py"); return { ok: r.ok, ...(r.json || {}) }; }
-    case "autopublish": { const s = settings(); s.autopublish = { youtube: !!a.youtube, instagram: !!a.instagram }; writeJson(SETTINGS, s); return { ok: true }; }
+    case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram } }); return { ok: true };
+    case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
+    case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
+    case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
     case "publish": { const results = {}; for (const p of a.platforms || []) { const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; } await py("analyze.py"); return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     default: return { ok: false, error: "bilinmeyen eylem" };
@@ -96,7 +106,7 @@ async function execAction(a) {
 async function think(text, mode = "chat") {
   const r = await brain.ask(text, mode);
   const done = [], pending = [];
-  for (const a of r.actions) { if (SAFE.has(a.type)) done.push({ ...a, result: await execAction(a) }); else pending.push(a); }
+  for (const a of r.actions) { if (needsConfirm(a)) pending.push(a); else done.push({ ...a, result: await execAction(a) }); }
   const reportFile = brain.saveReport(mode === "chat" ? "not" : mode, r.report);
   return { ...r, done, pending, reportFile };
 }
@@ -117,7 +127,9 @@ app.post("/api/generate", (req, res) => res.json(startPipeline(req.body?.duratio
 app.get("/api/schedule", async (_req, res) => res.json(await getSchedule()));
 app.post("/api/schedule", async (req, res) => res.json(await setSchedule(!!req.body.enabled, Number(req.body.hours) || 5)));
 app.get("/api/settings", (_req, res) => res.json(settings()));
-app.post("/api/settings", (req, res) => { const s = { ...settings(), ...req.body }; writeJson(SETTINGS, s); res.json(s); });
+app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
+app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
+app.post("/api/restart", (_req, res) => { res.json({ ok: true }); setTimeout(() => process.exit(75), 500); });
 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
 app.get("/api/connections", async (_req, res) => res.json(await brain.connections()));
@@ -146,7 +158,11 @@ app.post("/api/command", async (req, res) => {
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
     case "sync_metrics": { const r = await execAction({ type: "sync_metrics" }); reply = r.ok ? `İzlenmeler güncellendi: YouTube ${r.youtube ?? 0}, Instagram ${r.instagram ?? 0} video.` : "İzlenmeler güncellenemedi. Bağlantıları kontrol edin."; break; }
-    case "publish": { if (!videos[0]) { reply = "Yayınlanacak video yok."; action = "none"; break; } const plats = cmd.platforms.length ? cmd.platforms : ["youtube", "instagram"]; action = "confirm"; payload = { actions: [{ type: "publish", video: videos[0].name, platforms: plats }] }; reply = `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlansın mı? Onaylamak için ekrandaki düğmeye basın.`; break; }
+    case "publish": { if (!videos[0]) { reply = "Yayınlanacak video yok."; action = "none"; break; } const plats = cmd.platforms.length ? cmd.platforms : ["youtube", "instagram"]; const act = { type: "publish", video: videos[0].name, platforms: plats };
+      if (needsConfirm(act)) { action = "confirm"; payload = { actions: [act] }; reply = `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlansın mı? Onaylamak için ekrandaki düğmeye basın.`; }
+      else { const r = await execAction(act); reply = r.ok ? `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlandı.` : "Yayında sorun oldu: " + Object.values(r.results || {}).map((x) => x.error).filter(Boolean).join("; "); } break; }
+    case "voice_speed": { const v = settings().voice; const rate = Math.max(140, Math.min(280, Number(v.rate) + cmd.delta)); patchSettings({ voice: { rate } }); reply = cmd.delta > 0 ? `Tamam, daha hızlı konuşuyorum. Hız ${rate}.` : `Tamam, daha yavaş konuşuyorum. Hız ${rate}.`; break; }
+    case "stop": reply = ""; break;
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }
@@ -169,4 +185,4 @@ setInterval(async () => {
   if (now.getHours() === Number(s.dailyReportHour) && lastReportDay !== day && !state.running) { lastReportDay = day; const r = await think("günlük rapor", "report"); announce(r.reply, { report: r.report, reportFile: r.reportFile }); push(`· günlük rapor hazır: ${r.reportFile}`); }
 }, 60000);
 
-app.listen(PORT, "0.0.0.0", () => console.log(`JARVIS paneli: http://localhost:${PORT}   (telefon: http://${lanIp()}:${PORT})`));
+app.listen(PORT, "0.0.0.0", () => console.log(`EMIXHAS paneli: http://localhost:${PORT}   (telefon: http://${lanIp()}:${PORT})`));

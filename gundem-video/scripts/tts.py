@@ -14,7 +14,11 @@ import sys
 import wave
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import settings  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
+_S = settings()
 VOICE = os.environ.get("PIPER_VOICE", str(ROOT / "voices" / "tr_TR-dfki-medium.onnx"))
 PIPER_LENGTH = os.environ.get("PIPER_LENGTH_SCALE", "0.82")  # <1 daha hızlı. 1.0 ≈ 120 kelime/dk, 0.82 ≈ 150 (haber temposu)
 PAUSE_SEC = 0.15  # her segment sonuna sessizlik (Piper zaten cümle sonu boşluğu ekler)
@@ -27,14 +31,16 @@ def wav_duration(path: Path) -> float:
 
 def tts_piper(text: str, out: Path) -> None:
     subprocess.run(
-        ["piper", "--model", VOICE, "--length_scale", PIPER_LENGTH, "--sentence_silence", "0.12", "--output_file", str(out)],
+        ["piper", "--model", VOICE, "--length_scale", PIPER_LENGTH, "--noise_scale", "0.5", "--noise_w_scale", "0.6",
+         "--sentence_silence", "0.12", "--output_file", str(out)],
         input=text.encode("utf-8"), check=True, capture_output=True,
     )
 
 
 def tts_macos_say(text: str, out: Path) -> None:
     aiff = out.with_suffix(".aiff")
-    subprocess.run(["say", "-v", "Yelda", "-r", "175", "-o", str(aiff), text], check=True)
+    v = _S.get("voice", {})
+    subprocess.run(["say", "-v", v.get("name", "Yelda"), "-r", str(int(v.get("rate", 195)) - 15), "-o", str(aiff), text], check=True)
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(aiff), "-ar", "44100", "-ac", "1", str(out)], check=True)
     aiff.unlink(missing_ok=True)
 
@@ -46,7 +52,7 @@ def tts_silent(text: str, out: Path) -> None:
 
 
 def pick_engine():
-    forced = os.environ.get("TTS_ENGINE")
+    forced = os.environ.get("TTS_ENGINE") or (_S.get("narrationEngine") if _S.get("narrationEngine") != "piper" else None)
     if forced == "silent":
         return "silent", tts_silent
     if forced == "say" and shutil.which("say"):

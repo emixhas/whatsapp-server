@@ -57,6 +57,11 @@ def settings():
         "metricsSyncMinutes": 60,
         "channelName": "Türkiye Gündemi",
         "hashtags": "#gündem #haber #türkiye #sondakika #shorts",
+        "assistantName": "Emixhas",
+        "wakeWords": ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"],
+        "fullAuthority": True,
+        "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
+        "narrationEngine": "piper",
     })
 
 

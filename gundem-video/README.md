@@ -43,7 +43,7 @@ gelir (ekonomi → grafik ve ₺ paralar + kasa sesi, spor → top ve kale + dü
 Eşleme `src/categories.ts`, sesler `scripts/make_sfx.py` ile kodla üretilir; indirilen dosya yok.
 Tam tablo `CLAUDE.md` içinde.
 
-## JARVIS paneli
+## EMIXHAS paneli
 
 ```bash
 pip install -r requirements.txt     # .venv aktifken
@@ -51,9 +51,17 @@ npm run panel
 ```
 
 Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanıma için mikrofon izni verin).
-- 🎙 düğmesine basıp konuşun: "altmış saniyelik video üret", "son videoyu oynat", "paylaş", "durum",
-  "zamanlayıcıyı kapat", "her 3 saatte bir otomatik üret". Yanıtları Piper seslendirir.
-- "Sürekli dinle" açıkken yalnızca "Jarvis" ile başlayan cümleler komut sayılır.
+- Küreye tıklayıp konuşun: "altmış saniyelik video üret", "son videoyu oynat", "paylaş", "durum",
+  "zamanlayıcıyı kapat", "her 3 saatte bir otomatik üret", "sesini hızlandır".
+- "Sürekli dinle" açıkken "Emixhas" deyince uyanır: "Emixhas, 60 saniyelik video üret" tek seferde
+  çalışır; sadece "Emixhas" derseniz "Buyur" der ve 8 saniye komut bekler. Konuşurken sizi dinlemez,
+  "dur" deyince susar.
+- Ses: macOS'ta en doğal sonuç için Sistem Ayarları → Erişilebilirlik → Konuşulan İçerik → Sistem Sesi
+  → Sesleri Yönet → Türkçe → **Yelda (Premium)** indirin. Panel bunu otomatik kullanır; yoksa Piper'a
+  döner. Hızı "sesini hızlandır / yavaşlat" ile ya da Ayarlar'dan değiştirin.
+- Emixhas kod değişikliği gerektiren bir istek alırsa (yeni animasyon, intro süresi gibi) görevi
+  `data/improvements.md` kuyruğuna yazar. Uygulamak için proje klasöründe Claude Code'u açıp o
+  dosyadaki görevi vermeniz yeterli; panel kendi kodunu kendisi değiştirmez.
 - Süre kaydırıcısı 15-120 sn; haber sayısı ve kelime bütçesi otomatik ayarlanır.
 - Videoya tıklayın: oynat, indir, Finder'da göster, sil, telefona QR ile gönder (aynı Wi-Fi).
 - Otomatik üretim anahtarı launchd zamanlayıcısını panelden açıp kapatır.

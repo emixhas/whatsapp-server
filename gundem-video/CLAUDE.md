@@ -16,18 +16,31 @@ Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2-12 arası). Prompt'taki
 `__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
 
-## JARVIS paneli (`npm run panel` → http://localhost:3131)
+## EMIXHAS paneli (`npm run panel` → http://localhost:3131)
 `app/server.js` (Express) + `app/ui/index.html` + `app/brain.js` + `app/commands.js`.
 - Sesli/yazılı komut: önce `commands.js` kuralları (hızlı, token yok: üret, oynat, durum, paylaş,
   zamanlayıcı, izlenme güncelle, yayınla). Kural yoksa veya cümle bileşikse → beyin.
 - Beyin (`brain.js`): bağlam (videolar+metrikler, insights, bağlantılar, zamanlayıcı, ayarlar, son
-  log, hafıza) + `prompts/jarvis.md` → `claude -p` → JSON {reply, report, actions}. Modlar: chat,
+  log, hafıza) + `prompts/emixhas.md` → `claude -p` → JSON {reply, report, actions}. Modlar: chat,
   report (günlük rapor), plan (7 günlük plan). Raporlar `data/reports/`, hafıza `data/memory.json`.
-- Eylem güvenliği: generate/schedule/note/sync_metrics/open_video doğrudan çalışır; publish ve
-  autopublish `pending` döner, UI onay ister, sonra `POST /api/actions`. Bu ayrımı gevşetme.
+- Eylemler: generate/schedule/note/sync_metrics/open_video/settings/improvement/restart doğrudan
+  çalışır. publish/autopublish: `settings.fullAuthority` true ise doğrudan (varsayılan), false ise
+  `pending` döner ve UI onay ister (`POST /api/actions`).
+- Kendini geliştirme: Emixhas kodu kendisi DEĞİŞTİRMEZ. `improvement` eylemi görevi
+  `data/improvements.md` kuyruğuna yazar; kullanıcı Claude Code ile uygular. Bu bilinçli bir sınır:
+  panelden tetiklenen izinsiz kod düzenleme ajanı kurulmaz. Ayarla çözülebilen şey `settings` ile.
+- Uyandırma: `settings.assistantName` ("Emixhas") ve `settings.wakeWords` (tanıma varyantları).
+  UI "Sürekli dinle" açıkken yalnızca uyandırma sözcüğü geçen cümleyi işler; sözcük tek başına
+  söylenirse 8 sn dinleme penceresi açar ("Buyur."). Konuşurken mikrofon kapatılır (kendini duymaz).
+  "dur/sus/yeter" konuşmayı keser.
+- Ses: `settings.voice` {engine auto|say|piper, name Yelda, rate kelime/dk, piperLength, piperNoise}.
+  auto: macOS'ta Yelda varsa `say` (daha doğal), yoksa Piper. "sesini hızlandır/yavaşlat" kuralı
+  rate'i ±25 değiştirir; beyin de `settings` eylemiyle değiştirebilir. Video anlatımı
+  `settings.narrationEngine` (piper|say).
+- `scripts/panel.sh` paneli döngüde çalıştırır; çıkış kodu 75 = yeniden başlat (`restart` eylemi).
 - Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
-- Küre: canvas, mikrofon ve Jarvis sesi için Web Audio analyser; renk = durum (hazır cyan,
+- Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,
   dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı).
 - Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.

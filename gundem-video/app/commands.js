@@ -22,10 +22,13 @@ function extractHours(t) {
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
+  if (/^(dur|sus|tamam dur|yeter|kes|sessiz ol|teşekkürler|sağ ol)$/.test(t)) return { action: "stop", reply: "" };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
   const words = t.split(" ").length;
   if (words > 9 || /(^| )(ve|bir de|sonra da|neden|niye|niçin|sence|hangisi|nasıl)( |$)/.test(t)) return { action: "brain", reply: "" };
+  if (/^(sesini|sesi|konuşmanı|biraz)?\s*(biraz\s*)?(daha\s*)?(hızlandır|hızlı konuş)\s*(lütfen)?$/.test(t) || /^(ses|konuşma)\s*(hızını)?\s*(biraz\s*)?(artır|yükselt|hızlandır)$/.test(t)) return { action: "voice_speed", delta: 25, reply: "" };
+  if (/^(sesini|sesi|konuşmanı|biraz)?\s*(biraz\s*)?(daha\s*)?(yavaşlat|yavaş konuş)\s*(lütfen)?$/.test(t) || /^(ses|konuşma)\s*(hızını)?\s*(biraz\s*)?(azalt|düşür|yavaşlat)$/.test(t)) return { action: "voice_speed", delta: -25, reply: "" };
   if (/(zamanlay|otomatik|periyodik)/.test(t)) {
     if (/(kapat|durdur|iptal)/.test(t)) return { action: "schedule_off", reply: "" };
     return { action: "schedule_on", hours: extractHours(t), reply: "" };

@@ -8,7 +8,7 @@
     "render": "remotion render src/index.ts GundemVideo",
     "pipeline": "bash pipeline.sh",
     "typecheck": "tsc",
-    "panel": "node app/server.js"
+    "panel": "bash scripts/panel.sh"
   },
   "keywords": [],
   "author": "",

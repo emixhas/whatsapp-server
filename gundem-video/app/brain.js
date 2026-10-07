@@ -1,4 +1,4 @@
-// Jarvis'in beyni: bağlamı toplar, claude -p ile düşünür, JSON yanıt döndürür.
+// Emixhas'ın beyni: bağlamı toplar, claude -p ile düşünür, JSON yanıt döndürür.
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -49,7 +49,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
 
   /** mode: chat | report | plan */
   async function ask(userText, mode = "chat") {
-    const system = readFileSync(path.join(ROOT, "prompts/jarvis.md"), "utf8");
+    const system = readFileSync(path.join(ROOT, "prompts/emixhas.md"), "utf8");
     const ctx = await context();
     const task = mode === "report"
       ? "GÖREV: Günlük performans raporu hazırla. Son 24 saat ve toplam; en iyi/en kötü video; kategori ve saat gözlemleri; yarın için 3 somut öneri. report alanına Markdown yaz, reply'da 2 cümleyle özetle."

@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>JARVIS · Türkiye Gündemi</title>
+<title>EMIXHAS · Türkiye Gündemi</title>
 <style>
   :root{--bg:#04060C;--panel:rgba(14,20,36,.72);--line:#1B2440;--txt:#E6EBFF;--mut:#8C97BA;--red:#E30A17;--cyan:#36D1C4;--green:#2ECC71;--amber:#F2B705;--pink:#FF4D8D;--violet:#8E7CFF;--c:var(--cyan)}
   *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 Inter,-apple-system,Helvetica,Arial,sans-serif;overflow-x:hidden}
@@ -62,7 +62,7 @@
 <canvas id="bg"></canvas>
 <div class="wrap">
 <header>
-  <h1>J.A.R.V.I.S <span style="color:var(--mut);font-weight:400;letter-spacing:1px">· TÜRKİYE</span> <b>GÜNDEMİ</b></h1>
+  <h1><span id="aName">EMIXHAS</span> <span style="color:var(--mut);font-weight:400;letter-spacing:1px">· TÜRKİYE</span> <b>GÜNDEMİ</b></h1>
   <span class="dot" id="dot"></span><span id="stateTxt" style="color:var(--mut);font-size:13px">hazır</span>
   <div class="conn"><span id="cYt">YouTube</span><span id="cIg">Instagram</span><span id="lan"></span></div>
 </header>
@@ -75,13 +75,14 @@
         <div class="state" id="stateLbl">HAZIR</div>
         <div class="heard" id="heard">Küreye tıklayın ve konuşun, ya da yazın</div>
         <div class="reply" id="reply"></div>
-        <label class="row" style="margin:0"><span class="sw" id="always"></span><span style="color:var(--mut);font-size:12px">Sürekli dinle ("Jarvis" ile başlayan komutlar)</span></label>
+        <label class="row" style="margin:0"><span class="sw" id="always"></span><span style="color:var(--mut);font-size:12px">Sürekli dinle: "<span class="wakeName">Emixhas</span>" deyince uyanır</span></label>
+        <div style="display:flex;gap:8px"><button class="ghost" id="stopBtn">■ Dur</button></div>
         <div class="chips">
           <span class="chip" data-say="otuz saniyelik video üret">30 sn üret</span><span class="chip" data-say="altmış saniyelik video üret">60 sn üret</span>
           <span class="chip" data-say="son videoyu oynat">Son video</span><span class="chip" data-say="günlük rapor ver">Rapor</span><span class="chip" data-say="bu hafta için plan yap">Plan</span><span class="chip" data-say="durum">Durum</span>
         </div>
       </div>
-      <form class="ask" id="askForm"><input id="askIn" placeholder="Jarvis'e yaz: hangi video en çok izlendi? / yarın için ne önerirsin?" autocomplete="off"><button>Gönder</button></form>
+      <form class="ask" id="askForm"><input id="askIn" placeholder="Emixhas'a yaz: hangi video en çok izlendi? / sesini hızlandır / yarın için plan" autocomplete="off"><button>Gönder</button></form>
       <div class="convo" id="convo"></div>
       <div id="pending"></div>
     </div>
@@ -107,7 +108,7 @@
       <h2 style="margin-top:14px">EN İYİ VİDEOLAR</h2><div id="top"></div>
       <h2 style="margin-top:14px">SENARYOYA GİDEN İPUCU</h2><div class="md" id="hint" style="color:var(--mut)"></div>
     </div>
-    <div class="card tab" id="tab-reports"><h2>RAPORLAR & PLANLAR <button class="ghost" id="repBtn" style="float:right">Şimdi rapor üret</button> <button class="ghost" id="planBtn" style="float:right;margin-right:6px">Plan yap</button></h2><div style="display:grid;grid-template-columns:220px 1fr;gap:14px"><div id="repList"></div><div class="md" id="repBody"><span class="empty">Soldan bir rapor seçin</span></div></div><h2 style="margin-top:16px">JARVIS HAFIZASI</h2><div id="memory" class="conninfo"></div></div>
+    <div class="card tab" id="tab-reports"><h2>RAPORLAR & PLANLAR <button class="ghost" id="repBtn" style="float:right">Şimdi rapor üret</button> <button class="ghost" id="planBtn" style="float:right;margin-right:6px">Plan yap</button></h2><div style="display:grid;grid-template-columns:220px 1fr;gap:14px"><div id="repList"></div><div class="md" id="repBody"><span class="empty">Soldan bir rapor seçin</span></div></div><h2 style="margin-top:16px">HAFIZA</h2><div id="memory" class="conninfo"></div><h2 style="margin-top:16px">GELİŞTİRME KUYRUĞU</h2><div id="improv" class="md conninfo">boş</div></div>
     <div class="card tab" id="tab-settings">
       <h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button></div>
       <h2 style="margin-top:18px">INSTAGRAM</h2><div class="conninfo" id="igInfo"></div>
@@ -133,7 +134,8 @@ const $=s=>document.querySelector(s);const api=(u,o)=>fetch(u,o).then(r=>r.json(
 let videos=[],current=null,status={},mode='idle';
 const COLORS={idle:'#36D1C4',listening:'#2ECC71',thinking:'#F2B705',speaking:'#FF4D8D',working:'#E30A17',error:'#ff5c5c'};
 const LABELS={idle:'HAZIR',listening:'DİNLİYORUM',thinking:'DÜŞÜNÜYOR',speaking:'KONUŞUYOR',working:'ÜRETİYOR',error:'HATA'};
-function setMode(m){mode=m;document.documentElement.style.setProperty('--c',COLORS[m]);$('#stateLbl').textContent=LABELS[m];$('#stateLbl').style.color=COLORS[m];}
+let wakeName='Emixhas',wakeRe=/\b(emixhas|emiks has|emiks|emix|emixas|emikhas|emihas|e mix has|emiş has|emişhas)\b/i;
+function setMode(m){mode=m;document.documentElement.style.setProperty('--c',COLORS[m]);let lbl=LABELS[m];if(m==='idle'&&always&&!armed)lbl=`BEKLİYOR · "${wakeName.toUpperCase()}" DE`;$('#stateLbl').textContent=lbl;$('#stateLbl').style.color=COLORS[m];}
 
 // ================= JARVIS KÜRE (ses tepkili)
 const orb=$('#orb'),ctx=orb.getContext('2d');const bg=$('#bg'),bctx=bg.getContext('2d');
@@ -165,7 +167,9 @@ function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on')
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
   $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';
   $('#sched').classList.toggle('on',!!s.schedule?.enabled);if(s.schedule?.hours)$('#hours').value=String(s.schedule.hours);
-  $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);renderConn(s);}
+  $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);
+  if(s.settings?.assistantName){wakeName=s.settings.assistantName;$('#aName').textContent=wakeName.toUpperCase();document.querySelectorAll('.wakeName').forEach(e=>e.textContent=wakeName);}
+  if(s.settings?.wakeWords?.length)wakeRe=new RegExp('(^|\\s)('+s.settings.wakeWords.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')(\\s|$|,)','i');renderConn(s);}
 async function refreshStatus(){setState(await api('/api/status'));}
 const es=new EventSource('/api/log');
 es.onmessage=e=>{const l=JSON.parse(e.data);if(l==='__done__'){refreshStatus();loadVideos();speak(status.exitCode===0?'Video hazır.':'Üretim hata verdi, loga bakın.');return;}const el=$('#log');el.textContent+=l+'\n';el.scrollTop=el.scrollHeight;if(l.startsWith('▶'))refreshStatus();};
@@ -209,7 +213,7 @@ async function loadInsights(){const i=await api('/api/insights');if(!i){$('#kpi'
 $('#syncBtn').onclick=async()=>{$('#syncBtn').disabled=true;const r=await post('/api/metrics/sync');$('#syncBtn').disabled=false;addMsg('j',r.ok?`İzlenmeler güncellendi (YouTube ${r.youtube??0}, Instagram ${r.instagram??0}).`:'Güncellenemedi: '+(r.errors||[]).join('; '));loadInsights();loadVideos();};
 
 // ================= raporlar, hafıza
-async function loadReports(open){const list=await api('/api/reports');$('#repList').innerHTML=list.map(n=>`<div class="chip" style="display:block;margin:4px 0" data-r="${n}">${n.replace('.md','')}</div>`).join('')||'<span class="empty">henüz rapor yok</span>';document.querySelectorAll('[data-r]').forEach(el=>el.onclick=()=>showReport(el.dataset.r));if(open)showReport(open);else if(list[0])showReport(list[0]);const m=await api('/api/memory');$('#memory').innerHTML=(m.notes||[]).slice().reverse().map(n=>`<div>· <span style="color:var(--mut)">${new Date(n.at).toLocaleString('tr-TR')}</span> ${n.text}</div>`).join('')||'henüz not yok';}
+async function loadReports(open){const list=await api('/api/reports');$('#repList').innerHTML=list.map(n=>`<div class="chip" style="display:block;margin:4px 0" data-r="${n}">${n.replace('.md','')}</div>`).join('')||'<span class="empty">henüz rapor yok</span>';document.querySelectorAll('[data-r]').forEach(el=>el.onclick=()=>showReport(el.dataset.r));if(open)showReport(open);else if(list[0])showReport(list[0]);const m=await api('/api/memory');$('#memory').innerHTML=(m.notes||[]).slice().reverse().map(n=>`<div>· <span style="color:var(--mut)">${new Date(n.at).toLocaleString('tr-TR')}</span> ${n.text}</div>`).join('')||'henüz not yok';const im=await fetch('/api/improvements').then(r=>r.text());$('#improv').innerHTML=im?md(im):'boş';}
 async function showReport(n){const t=await fetch('/api/reports/'+n).then(r=>r.text());$('#repBody').innerHTML=md(t);}
 const md=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g,'<b>$1</b>').replace(/^- (.*)$/gm,'• $1');
 $('#repBtn').onclick=()=>handle('günlük rapor ver');$('#planBtn').onclick=()=>handle('bu hafta için plan yap');
@@ -220,15 +224,18 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.query
 // ================= konuşma: Jarvis sesi (ses tepkili)
 let actx=null;const ensureCtx=()=>actx||(actx=new (window.AudioContext||window.webkitAudioContext)());
 function addMsg(who,text){if(!text)return;const d=document.createElement('div');d.className='msg '+who;d.textContent=text;$('#convo').appendChild(d);$('#convo').scrollTop=1e9;}
-async function speak(text){if(!text)return;$('#reply').textContent=text;setMode('speaking');
-  try{const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});if(r.status===200){const a=new Audio(URL.createObjectURL(await r.blob()));const c=ensureCtx();const src=c.createMediaElementSource(a);attachAnalyser(src,c);analyser.connect(c.destination);await a.play();await new Promise(res=>a.onended=res);analyser=null;setMode(status.running?'working':'idle');return;}}catch{}
-  if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';u.onend=()=>setMode(status.running?'working':'idle');speechSynthesis.speak(u);}else setMode('idle');}
+let curAudio=null;
+function stopSpeaking(){if(curAudio){curAudio.pause();curAudio=null;}if('speechSynthesis' in window)speechSynthesis.cancel();analyser=null;setMode(status.running?'working':'idle');}
+async function speak(text){if(!text)return;$('#reply').textContent=text;setMode('speaking');pauseRec();
+  try{const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});if(r.status===200){const a=new Audio(URL.createObjectURL(await r.blob()));curAudio=a;const c=ensureCtx();const src=c.createMediaElementSource(a);attachAnalyser(src,c);analyser.connect(c.destination);await a.play();await new Promise(res=>{a.onended=res;a.onpause=res;});curAudio=null;analyser=null;setMode(status.running?'working':'idle');resumeRec();return;}}catch{}
+  if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';u.onend=()=>{setMode(status.running?'working':'idle');resumeRec();};speechSynthesis.speak(u);}else{setMode('idle');resumeRec();}}
 
 // ================= komut işleme
 function renderPending(actions){if(!actions?.length){$('#pending').innerHTML='';return;}$('#pending').innerHTML=`<div class="pend">⚠ Onay bekleyen eylem:<br>${actions.map(a=>a.type==='publish'?`• ${a.video} → ${a.platforms.join(', ')} yayınla`:a.type==='autopublish'?`• otomatik yayın: YouTube ${a.youtube?'açık':'kapalı'}, Instagram ${a.instagram?'açık':'kapalı'}`:'• '+JSON.stringify(a)).join('<br>')}<br><button class="ghost ok" id="pOk">Onayla</button><button class="ghost" id="pNo">Vazgeç</button></div>`;
   $('#pOk').onclick=async()=>{setMode('working');const r=await post('/api/actions',{actions});setMode('idle');$('#pending').innerHTML='';addMsg('j',r.map(x=>`${x.type}: ${x.result?.ok?'tamam':'hata '+(x.result?.error||JSON.stringify(x.result?.results||''))}`).join('\n'));speak('Tamamlandı.');loadVideos();refreshStatus();};$('#pNo').onclick=()=>{$('#pending').innerHTML='';};}
 async function handle(text){if(!text)return;addMsg('u',text);$('#heard').textContent='“'+text+'”';setMode('thinking');
   const r=await post('/api/command',{text});
+  if(r.action==='stop'){stopSpeaking();$('#reply').textContent='';return;}
   if(r.action==='play_latest'||r.action==='play_named'){await loadVideos();openVideo(r.payload.name);}
   if(r.action==='share'){await loadVideos();openVideo(r.payload.name);showShare();}
   if(r.action==='refresh')loadVideos();if(r.action==='generate'||r.action==='sync_metrics')refreshStatus();
@@ -239,18 +246,30 @@ async function handle(text){if(!text)return;addMsg('u',text);$('#heard').textCon
 document.querySelectorAll('.chip[data-say]').forEach(c=>c.onclick=()=>handle(c.dataset.say));
 $('#askForm').onsubmit=e=>{e.preventDefault();const v=$('#askIn').value.trim();$('#askIn').value='';handle(v);};
 
-// ================= konuşma tanıma + mikrofon görselleştirme
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,always=false,listening=false,micStream=null;
+// ================= konuşma tanıma: uyandırma sözcüğü döngüsü
+// Tek tık: bir komut dinle. "Sürekli dinle": sadece uyandırma sözcüğünden sonra komut al;
+// konuşurken mikrofon kapalı (kendini duymasın); uyanınca 8 sn içinde komut gelmezse uyur.
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,always=false,listening=false,armed=false,armTimer=null,micStream=null,paused=false,lastHandled='';
 async function micViz(){try{const c=ensureCtx();micStream=micStream||await navigator.mediaDevices.getUserMedia({audio:true});attachAnalyser(c.createMediaStreamSource(micStream),c);}catch{}}
+function startRec(){if(!rec||listening||paused)return;try{rec.continuous=always;rec.start();}catch{}}
+function pauseRec(){paused=true;if(rec&&listening){try{rec.abort();}catch{}}}
+function resumeRec(){paused=false;if(always)setTimeout(startRec,250);}
+function arm(){armed=true;clearTimeout(armTimer);armTimer=setTimeout(()=>{armed=false;$('#heard').textContent=`Uyudum. "${wakeName}" deyince uyanırım.`;setMode(status.running?'working':'idle');},8000);setMode('listening');$('#heard').textContent='Dinliyorum…';}
+function stripWake(t){return t.replace(wakeRe,' ').replace(/\s+/g,' ').trim();}
+function onFinal(t){t=t.trim();if(!t||t===lastHandled)return;
+  if(!always){lastHandled=t;handle(stripWake(t)||t);return;}
+  if(armed){clearTimeout(armTimer);armed=false;lastHandled=t;handle(stripWake(t)||t);return;}
+  if(wakeRe.test(t)){const cmd=stripWake(t);if(cmd.length>2){lastHandled=t;handle(cmd);}else{arm();speak('Buyur.');}}}
 if(!SR){$('#heard').textContent='Bu tarayıcı konuşma tanımayı desteklemiyor (Safari/Chrome kullanın). Yazarak komut verebilirsiniz.';}
 else{rec=new SR();rec.lang='tr-TR';rec.interimResults=true;rec.continuous=false;
-  rec.onstart=()=>{listening=true;setMode('listening');$('#heard').textContent='Dinliyorum…';micViz();};
-  rec.onend=()=>{listening=false;analyser=null;if(mode==='listening')setMode(status.running?'working':'idle');if(always)setTimeout(()=>{try{rec.start()}catch{}},400);};
-  rec.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted'){$('#heard').textContent='Mikrofon hatası: '+e.error;setMode('error');setTimeout(()=>setMode('idle'),1500);}};
-  rec.onresult=e=>{let t='';for(const r of e.results)t+=r[0].transcript;$('#heard').textContent='“'+t+'”';if(e.results[e.results.length-1].isFinal){if(always&&!/jarvis/i.test(t))return;handle(t.replace(/jarvis/i,'').trim());}};
-  $('#always').onclick=()=>{always=!always;$('#always').classList.toggle('on',always);if(always&&!listening)try{rec.start()}catch{}};}
-$('#orb').onclick=()=>{ensureCtx();if(!rec)return $('#askIn').focus();if(listening)rec.stop();else try{rec.start()}catch{}};
-
+  rec.onstart=()=>{listening=true;if(!always||armed)setMode('listening');if(!always)$('#heard').textContent='Dinliyorum…';micViz();};
+  rec.onend=()=>{listening=false;if(mode==='listening'&&!armed)setMode(status.running?'working':'idle');if(always&&!paused)setTimeout(startRec,300);};
+  rec.onerror=e=>{if(e.error==='not-allowed'){$('#heard').textContent='Mikrofon izni verilmedi.';always=false;$('#always').classList.remove('on');}else if(e.error!=='no-speech'&&e.error!=='aborted'){$('#heard').textContent='Mikrofon hatası: '+e.error;}};
+  rec.onresult=e=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)onFinal(r[0].transcript);else interim+=r[0].transcript;}
+    if(interim){if(!always||armed||wakeRe.test(interim))$('#heard').textContent='“'+interim+'”';if(always&&!armed&&wakeRe.test(interim))setMode('listening');}};
+  $('#always').onclick=()=>{always=!always;$('#always').classList.toggle('on',always);armed=false;if(always){$('#heard').textContent=`Bekliyorum. "${wakeName}" deyince uyanırım.`;setMode('idle');if(listening){try{rec.abort();}catch{}}else startRec();}else{if(listening)try{rec.abort();}catch{};setMode('idle');$('#heard').textContent='Küreye tıklayın ve konuşun, ya da yazın';}};}
+$('#orb').onclick=()=>{ensureCtx();if(!rec)return $('#askIn').focus();if(always){if(mode==='speaking')return stopSpeaking();arm();return;}if(listening)rec.stop();else startRec();};
+$('#stopBtn').onclick=()=>{stopSpeaking();armed=false;};
 refreshStatus();loadVideos();setInterval(refreshStatus,10000);
 </script>
 </body>
