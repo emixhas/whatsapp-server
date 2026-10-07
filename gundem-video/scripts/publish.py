@@ -114,7 +114,11 @@ def main():
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
     if a.connect == "youtube":
-        yt_service(interactive=True); print(json.dumps({"ok": True, "message": "YouTube bağlandı"})); return
+        try:
+            yt_service(interactive=True)
+        except Exception as e:  # paneli okunur bir mesajla bilgilendir
+            print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)); sys.exit(1)
+        print(json.dumps({"ok": True, "message": "YouTube bağlandı"}, ensure_ascii=False)); return
     if not (a.file and a.platform):
         ap.error("--file ve --platform gerekli")
     path = Path(a.file) if Path(a.file).is_absolute() else OUT / Path(a.file).name
