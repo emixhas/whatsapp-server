@@ -1,0 +1,5 @@
+piper-tts>=1.3
+certifi
+# YouTube yükleme ve izlenme senkronu için:
+google-api-python-client
+google-auth-oauthlib

@@ -23,6 +23,9 @@ export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
+  // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
+  const words = t.split(" ").length;
+  if (words > 9 || /(^| )(ve|bir de|sonra da|neden|niye|niçin|sence|hangisi|nasıl)( |$)/.test(t)) return { action: "brain", reply: "" };
   if (/(zamanlay|otomatik|periyodik)/.test(t)) {
     if (/(kapat|durdur|iptal)/.test(t)) return { action: "schedule_off", reply: "" };
     return { action: "schedule_on", hours: extractHours(t), reply: "" };
@@ -35,7 +38,12 @@ export function parseCommand(raw) {
   if (/finder/.test(t)) return { action: "reveal", reply: "" };
   if (/(paylaş|gönder|telefon)/.test(t)) return { action: "share", reply: "" };
   if (/(durum|ne durumda|nasıl gidiyor|bitti mi|kaç video)/.test(t)) return { action: "status", reply: "" };
+  if (/(rapor|özet ver|nasıl gitti|performans)/.test(t)) return { action: "report", reply: "" };
+  if (/(plan|strateji|ne yapalım|öneri)/.test(t)) return { action: "plan", reply: "" };
+  if (/(izlenme|istatistik|metrik).*(güncelle|çek|yenile|tazele)/.test(t) || /(güncelle|tazele).*(izlenme|istatistik)/.test(t)) return { action: "sync_metrics", reply: "" };
+  if (/(yayınla|paylaş).*(youtube|instagram)/.test(t) || /(youtube|instagram).*(yayınla|paylaş|yükle)/.test(t))
+    return { action: "publish", platforms: ["youtube", "instagram"].filter((p) => t.includes(p)), reply: "" };
   if (/(listele|videoları göster|yenile)/.test(t)) return { action: "refresh", reply: "Liste yenilendi." };
   if (/(merhaba|selam|jarvis)/.test(t)) return { action: "none", reply: "Buradayım. Video üret, son videoyu oynat, paylaş veya durum diyebilirsiniz." };
-  return { action: "none", reply: "Bunu anlamadım. Örnek: altmış saniyelik video üret." };
+  return { action: "brain", reply: "" };  // kural yok → Jarvis'in beyni düşünsün
 }

@@ -16,17 +16,39 @@ Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2-12 arası). Prompt'taki
 `__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
 
-## Kontrol paneli (`npm run panel` → http://localhost:3131)
-`app/server.js` (Express) + `app/ui/index.html`. Tamamen yerel; aynı Wi-Fi'deki telefon da açabilir.
-- Sesli komut: tarayıcının Türkçe konuşma tanıması → `app/commands.js` kural tabanlı çözer (LLM yok).
-  Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
+## JARVIS paneli (`npm run panel` → http://localhost:3131)
+`app/server.js` (Express) + `app/ui/index.html` + `app/brain.js` + `app/commands.js`.
+- Sesli/yazılı komut: önce `commands.js` kuralları (hızlı, token yok: üret, oynat, durum, paylaş,
+  zamanlayıcı, izlenme güncelle, yayınla). Kural yoksa veya cümle bileşikse → beyin.
+- Beyin (`brain.js`): bağlam (videolar+metrikler, insights, bağlantılar, zamanlayıcı, ayarlar, son
+  log, hafıza) + `prompts/jarvis.md` → `claude -p` → JSON {reply, report, actions}. Modlar: chat,
+  report (günlük rapor), plan (7 günlük plan). Raporlar `data/reports/`, hafıza `data/memory.json`.
+- Eylem güvenliği: generate/schedule/note/sync_metrics/open_video doğrudan çalışır; publish ve
+  autopublish `pending` döner, UI onay ister, sonra `POST /api/actions`. Bu ayrımı gevşetme.
+- Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
+  `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
+- Küre: canvas, mikrofon ve Jarvis sesi için Web Audio analyser; renk = durum (hazır cyan,
+  dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı).
+- Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
-- Videolar: `out/*.mp4` + yanındaki `.json` meta (başlıklar, kategori, manşet). Küçük resimler
-  `work/thumbs/` içinde ffmpeg ile üretilir.
-- Paylaşım: QR kod ile telefona yerel link; telefonun paylaşım menüsü YouTube/WhatsApp/Instagram'a
-  gönderir. Dış servis yok. Finder'da göster ve indir de var.
+- Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg).
+- Paylaşım: QR ile telefona yerel link (aynı Wi-Fi); Finder'da göster; indir; YouTube/Instagram'a yükle.
 - Zamanlayıcı: panel launchd plist'ini yazar/siler (`~/Library/LaunchAgents/com.gundem.video.plist`).
-- Yeni sesli komut eklemek için `app/commands.js` içine kural, `server.js` içindeki switch'e eylem.
+- Yeni sesli komut: `app/commands.js` içine kural, `server.js` içindeki switch'e eylem. Kural
+  regex'lerinde kelime sınırı kullan ("niye" ↔ "saniyelik" tuzağı).
+
+## Yayın ve analitik
+- `scripts/publish.py`: YouTube (Data API v3, OAuth; `secrets/youtube_client.json` → token) ve
+  Instagram Reels (Graph API; videoyu `PUBLIC_BASE_URL/videos/<ad>` adresinden çeker, bu yüzden
+  herkese açık bir URL/tünel şart). Sonuç `data/metrics.json` → `videos.<ad>.<platform>`.
+- `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG).
+- `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 5, manşet etkisi → `data/insights.json`
+  ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:
+  öğrenme döngüsü budur. İpucu kurallarla çelişirse kurallar kazanır (prompt'ta yazılı).
+- `scripts/post_pipeline.py`: üretim sonunda ayarlardaki otomatik yayın + analiz. launchd ile
+  panel kapalıyken de çalışır.
+- Başlık/açıklama `scripts/common.py: build_caption` üretir (ilk haber başlığı + kanal adı + #Shorts).
+- YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
 
 ## Kanal kimliği (değiştirirken tutarlı kal)
 - Renkler `src/theme.ts`: koyu lacivert zemin, kırmızı vurgu (#E30A17), beyaz başlık, gri alt metin.

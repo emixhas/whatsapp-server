@@ -25,6 +25,9 @@ KURALLAR
   olsun. Her videoda zorunlu değil; sıradan bir günde hiçbirine verme.
 - Resmi, sakin, profesyonel ton. Sansasyon yok.
 
+PERFORMANS İPUCU (kanalın kendi verisinden; kurallarla çelişirse kurallar önce gelir)
+__IPUCU__
+
 ÇIKTI
 Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, ek metin yazma.
 

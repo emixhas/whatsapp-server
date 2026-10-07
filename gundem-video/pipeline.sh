@@ -25,7 +25,8 @@ $PY scripts/fetch_news.py work/news.json
 
 echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
-  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" prompts/senaryo.md; cat work/news.json; } \
+  HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
+  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" prompts/senaryo.md; cat work/news.json; } \
     | claude -p --output-format text > work/claude_out.json
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json
@@ -43,3 +44,5 @@ ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
 echo "== bitti: $OUT ($(du -h "$OUT" | cut -f1))"
+echo "-- yayın ve analiz"
+$PY scripts/post_pipeline.py "$OUT" || echo "  ! yayın/analiz adımı hata verdi (video hazır)"

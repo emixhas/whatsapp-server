@@ -7,3 +7,6 @@ voices/*.onnx
 voices/*.onnx.json
 .venv/
 __pycache__/
+data/*.json
+data/reports/
+secrets/

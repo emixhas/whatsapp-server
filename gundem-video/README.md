@@ -43,9 +43,10 @@ gelir (ekonomi → grafik ve ₺ paralar + kasa sesi, spor → top ve kale + dü
 Eşleme `src/categories.ts`, sesler `scripts/make_sfx.py` ile kodla üretilir; indirilen dosya yok.
 Tam tablo `CLAUDE.md` içinde.
 
-## Kontrol paneli (Jarvis)
+## JARVIS paneli
 
 ```bash
+pip install -r requirements.txt     # .venv aktifken
 npm run panel
 ```
 
@@ -57,7 +58,37 @@ Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanım
 - Videoya tıklayın: oynat, indir, Finder'da göster, sil, telefona QR ile gönder (aynı Wi-Fi).
 - Otomatik üretim anahtarı launchd zamanlayıcısını panelden açıp kapatır.
 
+- Jarvis'e yazın veya söyleyin: "günlük rapor ver", "bu hafta için plan yap", "hangi video en çok
+  izlendi", "izmir videosunu aç ve 45 saniyelik yeni bir tane başlat". Kural dışı her şey Claude'a
+  gider (token harcar); üret/oynat/durum gibi basit komutlar kural tabanlıdır (token harcamaz).
+- Yayınlama ve otomatik yayın gibi geri alınamaz eylemler panelde onay ister.
+
 Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme içindir.
+
+## YouTube ve Instagram bağlantısı
+
+**YouTube (önerilen ilk adım)**
+1. console.cloud.google.com → yeni proje → "YouTube Data API v3" etkinleştir.
+2. OAuth izin ekranı: Harici, test kullanıcısı olarak kendi Google hesabınızı ekleyin.
+3. Kimlik bilgileri → OAuth istemci kimliği → Masaüstü uygulaması → JSON indir →
+   `secrets/youtube_client.json` olarak kaydedin.
+4. Panelde "YouTube'u bağla" (veya `python3 scripts/publish.py --connect youtube`). Tarayıcıda
+   Google girişi açılır, kanal hesabınızla onaylayın.
+5. Videoda "YouTube'a yükle" düğmesi aktif olur. Kota: günde en fazla 6 yükleme.
+
+**Instagram Reels**
+1. Instagram hesabı İşletme veya İçerik Üretici olmalı ve bir Facebook Sayfasına bağlı olmalı.
+2. developers.facebook.com → uygulama → Instagram Graph API; `instagram_content_publish`,
+   `instagram_manage_insights`, `pages_read_engagement` izinleriyle uzun ömürlü token alın.
+3. Instagram videoyu yerel diskten almaz, herkese açık bir URL'den çeker. Panelin `/videos/` yolunu
+   dışarı açmanın en kolay yolu Cloudflare Tunnel: `brew install cloudflared` →
+   `cloudflared tunnel --url http://localhost:3131` → verilen `https://....trycloudflare.com` adresi.
+   Kalıcı kullanım için adlandırılmış tünel kurun; geçici adres her başlatmada değişir.
+4. `secrets/.env` içine `IG_USER_ID`, `IG_ACCESS_TOKEN`, `PUBLIC_BASE_URL` yazın (örnek:
+   `secrets/README.md`).
+
+Bağlantı yoksa yayınlama ve izlenme senkronu devre dışı kalır; üretim, QR ile telefona gönderme ve
+elle yükleme çalışmaya devam eder.
 
 ## 5 saatte bir otomatik çalıştırma (panelsiz)
 
