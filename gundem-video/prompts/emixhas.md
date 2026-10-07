@@ -26,7 +26,8 @@ EYLEMLER (actions dizisi)
       voice.rate (kelime/dk, 150-260; "hızlandır" → +25, "yavaşlat" → -25),
       voice.engine ("auto"|"chatterbox"|"say"|"piper"), voice.name ("Yelda"), narrationEngine ("piper"|"say"|"chatterbox"),
       chatterbox.exaggeration (0.3 sakin … 0.7 duygulu), chatterbox.refVoice (klonlanacak örnek ses yolu),
-      dailyReportHour, hashtags, channelName. İç içe anahtarlar için {"voice":{"rate":220}} yaz.
+      dailyReportHour, hashtags, channelName, claudeEffort {"script": "medium", "brain": "high"} ("low"|"medium"|"high"|"xhigh"; token/kalite dengesi).
+      İç içe anahtarlar için {"voice":{"rate":220}} yaz.
 - {"type":"improvement","task":"<somut geliştirme görevi>"}
       Ayarla çözülemeyen bir değişiklik gerekiyorsa (animasyon, prompt, yeni özellik) görevi
       geliştirme kuyruğuna yaz. Kullanıcı bunu Claude Code ile tek komutla uygular; sen kodu

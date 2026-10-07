@@ -18,6 +18,12 @@ süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2
 Token: Claude'a `scripts/slim_news.py` ile küçültülmüş set gider (en yeni `NEWS_MAX`=20 haber, 200
 karakter özet, link yok). Ölçüm (60 sn): ~45k girdi (çoğu Claude Code'un kendi yükü, önbellekli),
 ~2k çıktı, ≈0,11 $ API karşılığı. Haber setini büyütmek seçimi iyileştirmez, token artırır.
+Effort: `settings.claudeEffort` {script: "medium", brain: "high"} → `claude -p --effort`. Ölçüm: medium
+2,3k çıktı, high ~4k, xhigh 2-3k (değişken); haber/kategori seçimi üçünde aynı. Her çağrı
+`--output-format json` ile çalışır; `scripts/claude_result.py` (pipeline) ve `brain.js` kullanımı
+loga (🧮) ve `data/usage.json`a (gün/toplam/tür) yazar. Panel Ayarlar'da gösterir.
+Kaynak: `server.js` her 10 sn CPU/RAM örnekler; üretim, ses modeli yükleme veya geliştirme
+sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 
 ## EMIXHAS paneli (`npm run panel` → http://localhost:3131)
 `app/server.js` (Express) + `app/ui/index.html` + `app/brain.js` + `app/commands.js`.

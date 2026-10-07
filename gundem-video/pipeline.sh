@@ -15,10 +15,13 @@ DURATION="${DURATION:-30}"
 WORDS=$(( DURATION * 24 / 10 ))          # ~150 kelime/dk temposunda sığan kelime
 HABER=$(( DURATION / 8 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 12 ] && HABER=12
 export DURATION WORDS HABER
+# Senaryo için "medium" yeterli (ölçüldü: aynı 7 haber/kategori, çıktı tokenı high'ın yarısı).
+CLAUDE_EFFORT="${CLAUDE_EFFORT:-$($PY -c "import json;e=json.load(open('data/settings.json')).get('claudeEffort','medium');print(e.get('script','medium') if isinstance(e,dict) else e)" 2>/dev/null || echo medium)}"
+export CLAUDE_EFFORT
 mkdir -p work out public/audio
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
-echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
+echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime, effort ${CLAUDE_EFFORT})"
 
 echo "-- 1/4 haberler"
 $PY scripts/fetch_news.py work/news.json
@@ -29,7 +32,8 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
   $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-20}"
   { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" prompts/senaryo.md; cat work/news_prompt.json; } \
-    | claude -p --output-format text > work/claude_out.json
+    | claude -p --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json
+  $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json
 

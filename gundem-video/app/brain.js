@@ -33,14 +33,27 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
     };
   }
 
-  function runClaude(prompt, timeoutMs = 120000) {
+  const USAGE = path.join(DATA, "usage.json");
+  function recordUsage(kind, u) {
+    const d = readJson(USAGE, { days: {}, total: { calls: 0, input: 0, output: 0, cost: 0 } });
+    const day = (d.days[new Date().toISOString().slice(0, 10)] ||= { calls: 0, input: 0, output: 0, cost: 0, byKind: {} });
+    const k = (day.byKind[kind] ||= { calls: 0, input: 0, output: 0, cost: 0 });
+    for (const b of [day, d.total, k]) { b.calls++; b.input += u.input; b.output += u.output; b.cost = Math.round((b.cost + u.cost) * 10000) / 10000; }
+    writeFileSync(USAGE, JSON.stringify(d, null, 2));
+  }
+  const usageToday = () => { const d = readJson(USAGE, { days: {}, total: {} }); return { today: d.days[new Date().toISOString().slice(0, 10)] || null, total: d.total || null }; };
+
+  function runClaude(prompt, mode, timeoutMs = 120000) {
     return new Promise((resolve, reject) => {
-      const child = spawn("claude", ["-p", "--output-format", "text"], { cwd: ROOT, env: process.env });
+      const e = settings().claudeEffort; const effort = (e && typeof e === "object" ? e.brain : e) || "high";
+      const child = spawn("claude", ["-p", "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: process.env });
       let out = "", err = "";
       const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("Claude zaman aşımı")); }, timeoutMs);
       child.stdout.on("data", (c) => (out += c));
       child.stderr.on("data", (c) => (err += c));
-      child.on("close", (code) => { clearTimeout(t); code === 0 ? resolve(out) : reject(new Error(err || `claude çıkış kodu ${code}`)); });
+      child.on("close", (code) => { clearTimeout(t); if (code !== 0) return reject(new Error(err || `claude çıkış kodu ${code}`));
+        try { const j = JSON.parse(out); const u = j.usage || {}; const usage = { input: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0), output: u.output_tokens || 0, thinking: u.output_tokens_details?.thinking_tokens || 0, cost: Number(j.total_cost_usd || 0), effort };
+          recordUsage(mode, usage); resolve({ text: j.result || "", usage }); } catch { resolve({ text: out, usage: null }); } });
       child.stdin.end(prompt);
     });
   }
@@ -62,9 +75,9 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
         ? "GÖREV: Önümüzdeki 7 gün için içerik planı yap: günde kaç video, hangi süreler, hangi saatler, kategori ağırlıkları, denenecek 2 hipotez ve nasıl ölçüleceği. Veriye dayan; veri yoksa makul başlangıç planı kur ve bunu söyle. report alanına Markdown, reply'da özet. Planı note eylemiyle hafızana da kısa yaz."
         : `KULLANICI DEDİ Kİ: ${userText}`;
     const prompt = `${system}\n\nBAĞLAM:\n${JSON.stringify(ctx)}\n\n${task}\n\nSadece JSON döndür.`;
-    let raw;
-    try { raw = await runClaude(prompt); } catch (e) { return { reply: `Beyin şu an yanıt veremiyor: ${e.message}`, report: "", actions: [], error: true }; }
-    try { return parseJson(raw); } catch { return { reply: raw.slice(0, 300), report: "", actions: [] }; }
+    let r;
+    try { r = await runClaude(prompt, mode); } catch (e) { return { reply: `Beyin şu an yanıt veremiyor: ${e.message}`, report: "", actions: [], error: true }; }
+    try { return { ...parseJson(r.text), usage: r.usage }; } catch { return { reply: r.text.slice(0, 300), report: "", actions: [], usage: r.usage }; }
   }
 
   function saveReport(mode, md) {
@@ -75,5 +88,5 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
     return name;
   }
 
-  return { ask, addNote, memory, settings, connections, context, saveReport };
+  return { ask, addNote, memory, settings, connections, context, saveReport, usageToday };
 }
