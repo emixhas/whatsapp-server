@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.gundem.video</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__PROJE_YOLU__/pipeline.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__PROJE_YOLU__</string>
+  <!-- 5 saat = 18000 saniye. Mac uykudaysa uyanınca kaçan çalışmayı bir kez yapar. -->
+  <key>StartInterval</key>
+  <integer>18000</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>__PROJE_YOLU__/work/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__PROJE_YOLU__/work/launchd.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>

@@ -1,0 +1,10 @@
+{
+  "segments": [
+    {"kind": "intro", "narration": "Türkiye gündemi, günün özeti."},
+    {"kind": "haber", "title": "Merkez Bankası faizi sabit tuttu", "narration": "Merkez Bankası politika faizini beklentiler doğrultusunda değiştirmedi, kararın gerekçesi enflasyon görünümü oldu.", "source": "AA"},
+    {"kind": "haber", "title": "İstanbul'da yeni ulaşım tarifesi", "narration": "İstanbul'da toplu taşımada yeni tarife bugün yürürlüğe girdi, aylık abonman ücretleri de güncellendi.", "source": "TRT Haber"},
+    {"kind": "haber", "title": "Marmara için sağanak uyarısı", "narration": "Meteoroloji, Marmara ve Ege için yarın akşama kadar kuvvetli sağanak uyarısında bulundu.", "source": "NTV"},
+    {"kind": "haber", "title": "Milli takım kampa girdi", "narration": "A Milli Futbol Takımı, Dünya Kupası elemeleri öncesi Riva'da kamp çalışmalarına başladı.", "source": "AA"},
+    {"kind": "outro", "narration": "Beş saat sonra yeni özetle buradayız."}
+  ]
+}

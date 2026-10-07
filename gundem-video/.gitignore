@@ -1,0 +1,8 @@
+node_modules/
+out/
+public/audio/
+public/episode.json
+work/
+voices/*.onnx
+voices/*.onnx.json
+.venv/
