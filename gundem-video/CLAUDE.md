@@ -1,6 +1,7 @@
 # Türkiye Gündemi — otomatik Shorts üretim hattı
 
-Her 5 saatte bir, 30 saniyelik, dikey (1080x1920) "Türkiye Gündemi" videosu üretir.
+Her 5 saatte bir (veya panelden istendiğinde), 15-180 saniyelik, dikey (1080x1920) "Türkiye Gündemi"
+videosu üretir. Varsayılan 30 sn.
 Tüm üretim yerel makinede çalışır: Remotion (video), Piper veya macOS `say` (ses), ffmpeg.
 Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 
@@ -11,13 +12,27 @@ Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 4. `scripts/tts.py` → segment başına wav + süre (`public/episode.json`)
 5. `npx remotion render` → `out/YYYY-MM-DD-N.mp4` (N = günün kaçıncı videosu)
 
-`pipeline.sh` bu adımları sırayla çalıştırır; launchd 5 saatte bir tetikler.
+`pipeline.sh` bu adımları sırayla çalıştırır; launchd 5 saatte bir tetikler. `DURATION=60 bash pipeline.sh`
+süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2-12 arası). Prompt'taki
+`__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
+
+## Kontrol paneli (`npm run panel` → http://localhost:3131)
+`app/server.js` (Express) + `app/ui/index.html`. Tamamen yerel; aynı Wi-Fi'deki telefon da açabilir.
+- Sesli komut: tarayıcının Türkçe konuşma tanıması → `app/commands.js` kural tabanlı çözer (LLM yok).
+  Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
+- Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
+- Videolar: `out/*.mp4` + yanındaki `.json` meta (başlıklar, kategori, manşet). Küçük resimler
+  `work/thumbs/` içinde ffmpeg ile üretilir.
+- Paylaşım: QR kod ile telefona yerel link; telefonun paylaşım menüsü YouTube/WhatsApp/Instagram'a
+  gönderir. Dış servis yok. Finder'da göster ve indir de var.
+- Zamanlayıcı: panel launchd plist'ini yazar/siler (`~/Library/LaunchAgents/com.gundem.video.plist`).
+- Yeni sesli komut eklemek için `app/commands.js` içine kural, `server.js` içindeki switch'e eylem.
 
 ## Kanal kimliği (değiştirirken tutarlı kal)
 - Renkler `src/theme.ts`: koyu lacivert zemin, kırmızı vurgu (#E30A17), beyaz başlık, gri alt metin.
 - Ton: resmi, sakin, tarafsız haber dili. Yorum ve sansasyon yok.
-- Yapı: intro (kanal adı + tarih + "Günün N. özeti") → 4 haber kartı → outro ("5 saat sonra yeni özet").
-- Toplam seslendirme ≤ 90 kelime. Bu sınır `assemble_script.py` ile zorlanır.
+- Yapı: intro (kanal adı + tarih + "Günün N. özeti") → N haber kartı (30 sn'de 4) → outro.
+- Toplam seslendirme ≤ süre × 2.4 kelime. Bu sınır `assemble_script.py` ile zorlanır.
 - Her haber kartında kaynak adı görünür.
 
 ## Kategori sistemi (SABİT, her videoda aynı)

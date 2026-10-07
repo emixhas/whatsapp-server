@@ -11,8 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
-MAX_WORDS_TOTAL = 95   # ~30 sn Türkçe haber temposu
-HABER_MIN, HABER_MAX = 2, 5
+import os
+DURATION = int(os.environ.get("DURATION", "30"))
+MAX_WORDS_TOTAL = int(os.environ.get("WORDS", str(DURATION * 24 // 10))) + 6   # küçük tolerans
+_H = int(os.environ.get("HABER", str(max(2, DURATION // 8))))
+HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
 CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
 
 
@@ -49,7 +52,7 @@ def main(src: str, dst: str):
         s["breaking"] = False  # en fazla bir manşet
     words = sum(len(s["narration"].split()) for s in segs)
     if words > MAX_WORDS_TOTAL:
-        sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo 30 saniyeye sığmaz.")
+        sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 
     now = datetime.now()
     date = now.strftime("%Y-%m-%d")
@@ -58,6 +61,7 @@ def main(src: str, dst: str):
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
         "episodeOfDay": episode_of_day(date),
         "timeLabel": now.strftime("%H:%M"),
+        "targetDuration": DURATION,
         "segments": segs,
     }
     Path(dst).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

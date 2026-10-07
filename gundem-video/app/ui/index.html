@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gündem Paneli</title>
+<style>
+  :root{--bg:#070A12;--panel:#0E1424;--line:#1B2440;--txt:#E6EBFF;--mut:#8C97BA;--red:#E30A17;--cyan:#36D1C4;--amber:#F2B705;--ok:#2ECC71}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 Inter,-apple-system,Helvetica,Arial,sans-serif}
+  header{display:flex;align-items:center;gap:16px;padding:16px 24px;border-bottom:1px solid var(--line)}
+  header h1{font-size:18px;margin:0;letter-spacing:4px;font-weight:900}header h1 b{color:var(--red)}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--mut)}.dot.on{background:var(--ok);box-shadow:0 0 12px var(--ok)}.dot.busy{background:var(--amber);animation:blink 1s infinite}
+  @keyframes blink{50%{opacity:.3}}
+  .lan{margin-left:auto;color:var(--mut);font-size:13px}
+  main{display:grid;grid-template-columns:380px 1fr;gap:20px;padding:20px 24px}
+  @media(max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px}
+  .card h2{margin:0 0 12px;font-size:12px;letter-spacing:3px;color:var(--mut);font-weight:700}
+  .mic{display:flex;flex-direction:column;align-items:center;gap:12px;padding:10px 0 6px}
+  .micbtn{width:120px;height:120px;border-radius:50%;border:2px solid var(--cyan);background:radial-gradient(circle,#123 0%,#0b1020 70%);color:var(--cyan);font-size:44px;cursor:pointer;position:relative;transition:.2s}
+  .micbtn.listen{box-shadow:0 0 0 0 rgba(54,209,196,.6);animation:pulse 1.4s infinite;background:radial-gradient(circle,#1a4a46 0%,#0b1020 70%)}
+  @keyframes pulse{to{box-shadow:0 0 0 28px rgba(54,209,196,0)}}
+  .heard{color:var(--mut);min-height:20px;font-style:italic;text-align:center}
+  .reply{min-height:44px;text-align:center;font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+  .chip{border:1px solid var(--line);background:#0b1020;color:var(--txt);border-radius:999px;padding:6px 12px;font-size:13px;cursor:pointer}
+  .chip:hover{border-color:var(--cyan)}
+  label.row{display:flex;align-items:center;gap:10px;margin:10px 0}
+  input[type=range]{flex:1;accent-color:var(--red)}
+  .big{font-size:28px;font-weight:900;min-width:70px;text-align:right}
+  button.primary{width:100%;padding:14px;border:0;border-radius:12px;background:var(--red);color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+  button.primary:disabled{opacity:.5;cursor:not-allowed}
+  .ghost{border:1px solid var(--line);background:transparent;color:var(--txt);border-radius:10px;padding:8px 12px;cursor:pointer}
+  .ghost.danger{color:#ff7b86;border-color:#4a1d24}
+  .log{background:#05070e;border:1px solid var(--line);border-radius:12px;padding:12px;height:170px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#B8C2E6;white-space:pre-wrap}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px}
+  .vid{background:#0b1020;border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.15s}.vid:hover{border-color:var(--cyan);transform:translateY(-2px)}
+  .vid img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
+  .vid .m{padding:10px;font-size:13px}.vid .m b{display:block;font-size:14px}.vid .m span{color:var(--mut)}
+  .tag{display:inline-block;font-size:10px;letter-spacing:2px;padding:2px 7px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 4px 0 0}.tag.brk{background:var(--red);color:#fff}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.open{display:flex}
+  .box{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:18px;max-width:900px;width:100%;display:grid;grid-template-columns:300px 1fr;gap:18px}
+  @media(max-width:700px){.box{grid-template-columns:1fr}}
+  video{width:100%;border-radius:12px;background:#000;aspect-ratio:9/16}
+  .acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .qr{background:#0b1020;border-radius:14px;padding:14px;text-align:center}.qr svg{width:220px;height:220px}
+  .sw{position:relative;width:44px;height:24px;background:#1b2440;border-radius:12px;cursor:pointer}.sw::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}.sw.on{background:var(--ok)}.sw.on::after{left:23px}
+  select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:6px}
+  .empty{color:var(--mut);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>TÜRKİYE <b>GÜNDEMİ</b></h1>
+  <span class="dot" id="dot"></span><span id="stateTxt" style="color:var(--mut)">hazır</span>
+  <span class="lan" id="lan"></span>
+</header>
+<main>
+  <section style="display:flex;flex-direction:column;gap:20px">
+    <div class="card">
+      <h2>SESLİ KOMUT</h2>
+      <div class="mic">
+        <button class="micbtn" id="mic" title="Konuşmak için tıkla">🎙</button>
+        <div class="heard" id="heard">Tıklayın ve konuşun</div>
+        <div class="reply" id="reply"></div>
+        <label class="row" style="margin:0"><span class="sw" id="always"></span><span style="color:var(--mut);font-size:13px">Sürekli dinle ("Jarvis" ile başlayan komutlar)</span></label>
+        <div class="chips">
+          <span class="chip" data-say="otuz saniyelik video üret">30 sn üret</span>
+          <span class="chip" data-say="altmış saniyelik video üret">60 sn üret</span>
+          <span class="chip" data-say="son videoyu oynat">Son videoyu oynat</span>
+          <span class="chip" data-say="paylaş">Paylaş</span>
+          <span class="chip" data-say="durum">Durum</span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>ÜRETİM</h2>
+      <label class="row"><span>Süre</span><input type="range" id="dur" min="15" max="120" step="15" value="30"><span class="big"><span id="durTxt">30</span> sn</span></label>
+      <button class="primary" id="gen">Şimdi üret</button>
+      <label class="row" style="margin-top:16px"><span class="sw" id="sched"></span><span>Otomatik üretim, her</span>
+        <select id="hours"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>12</option></select><span>saatte bir</span></label>
+    </div>
+    <div class="card">
+      <h2>CANLI LOG</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+  <section class="card">
+    <h2>VİDEOLAR <span id="count" style="color:var(--txt)"></span></h2>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" style="display:none">Henüz video yok. "Şimdi üret" ile başlayın.</div>
+  </section>
+</main>
+
+<div class="modal" id="modal"><div class="box">
+  <div><video id="player" controls playsinline></video></div>
+  <div>
+    <h3 id="mTitle" style="margin:0 0 6px"></h3>
+    <div id="mMeta" style="color:var(--mut);margin-bottom:10px"></div>
+    <div id="mHead"></div>
+    <div class="acts">
+      <button class="ghost" id="aShare">📱 Telefona / paylaş</button>
+      <a class="ghost" id="aDl" download>⬇ İndir</a>
+      <button class="ghost" id="aReveal">📂 Finder'da göster</button>
+      <button class="ghost danger" id="aDel">🗑 Sil</button>
+      <button class="ghost" id="aClose">Kapat</button>
+    </div>
+    <div class="qr" id="qr" style="display:none;margin-top:14px"></div>
+  </div>
+</div></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const api=(u,o)=>fetch(u,o).then(r=>r.json());
+let videos=[], current=null, status={};
+
+// ---------- durum ve log
+function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor (${s.duration} sn)`:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='Telefon: '+s.lanUrl;}
+async function refreshStatus(){setState(await api('/api/status'));}
+const es=new EventSource('/api/log');
+es.onmessage=e=>{const l=JSON.parse(e.data);if(l==='__done__'){refreshStatus();loadVideos();speak(status.exitCode===0?'Video hazır.':'Üretim hata verdi, loga bakın.');return;}const el=$('#log');el.textContent+=l+'\n';el.scrollTop=el.scrollHeight;if(l.startsWith('▶'))refreshStatus();};
+
+// ---------- videolar
+async function loadVideos(){videos=await api('/api/videos');$('#count').textContent=videos.length?`(${videos.length})`:'';$('#empty').style.display=videos.length?'none':'block';
+  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy"><div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${(v.size/1e6).toFixed(1)} MB</span><div>${v.headlines.map(h=>`<span class="tag ${h.breaking?'brk':''}">${h.breaking?'SON DAKİKA':(h.category||'').toUpperCase()}</span>`).join('')}</div></div></div>`).join('');
+  document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));}
+function openVideo(name){current=videos.find(v=>v.name===name);if(!current)return;$('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}`;$('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} <span class="tag ${h.breaking?'brk':''}">${h.breaking?'SON DAKİKA':(h.category||'').toUpperCase()}</span></div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';$('#modal').classList.add('open');$('#player').play().catch(()=>{});}
+function closeModal(){$('#modal').classList.remove('open');$('#player').pause();$('#player').removeAttribute('src');}
+$('#aClose').onclick=closeModal;$('#modal').onclick=e=>{if(e.target.id==='modal')closeModal();};
+$('#aReveal').onclick=()=>api('/api/reveal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name:current.name})});
+$('#aDel').onclick=async()=>{if(!confirm('Bu video silinsin mi?'))return;await fetch('/api/videos/'+current.name,{method:'DELETE'});closeModal();loadVideos();};
+async function showShare(){const q=await api('/api/qr?name='+encodeURIComponent(current.name));$('#qr').innerHTML=q.svg+`<div style="margin-top:8px;color:var(--mut);font-size:13px">Telefonunuz aynı Wi-Fi'de olmalı.<br>Açılan videoyu kaydedip paylaşım menüsünden YouTube, WhatsApp veya Instagram'a gönderin.</div><div style="font-size:12px;margin-top:6px;word-break:break-all">${q.url}</div>`;$('#qr').style.display='block';}
+$('#aShare').onclick=showShare;
+
+// ---------- üretim
+$('#dur').oninput=e=>$('#durTxt').textContent=e.target.value;
+$('#gen').onclick=async()=>{const r=await api('/api/generate',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({duration:+$('#dur').value})});if(!r.ok)alert(r.error);refreshStatus();};
+
+// ---------- zamanlayıcı
+async function loadSched(){const s=await api('/api/schedule');$('#sched').classList.toggle('on',s.enabled);if(s.hours)$('#hours').value=String(s.hours);}
+$('#sched').onclick=async()=>{const on=!$('#sched').classList.contains('on');const r=await api('/api/schedule',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({enabled:on,hours:+$('#hours').value})});if(!r.ok)alert(r.error||'Ayarlanamadı');loadSched();};
+$('#hours').onchange=()=>{if($('#sched').classList.contains('on'))$('#sched').click(),setTimeout(()=>$('#sched').click(),300);};
+
+// ---------- Jarvis sesi
+async function speak(text){$('#reply').textContent=text;try{const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});if(r.status===200){const a=new Audio(URL.createObjectURL(await r.blob()));await a.play();return;}}catch{}
+  if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';speechSynthesis.speak(u);}}
+
+// ---------- komut işleme
+async function handle(text){$('#heard').textContent='“'+text+'”';const r=await api('/api/command',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});
+  if(r.action==='play_latest'){await loadVideos();openVideo(r.payload.name);}
+  if(r.action==='share'){await loadVideos();openVideo(r.payload.name);showShare();}
+  if(r.action==='refresh')loadVideos();
+  if(r.action==='generate')refreshStatus();
+  if(r.action.startsWith('schedule'))loadSched();
+  speak(r.reply);}
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>handle(c.dataset.say));
+
+// ---------- konuşma tanıma (tarayıcı)
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,always=false,listening=false;
+if(!SR){$('#heard').textContent='Bu tarayıcı konuşma tanımayı desteklemiyor. Safari veya Chrome kullanın; yazılı komut çipleri çalışır.';$('#mic').disabled=true;}
+else{rec=new SR();rec.lang='tr-TR';rec.interimResults=true;rec.continuous=false;
+  rec.onstart=()=>{listening=true;$('#mic').classList.add('listen');$('#heard').textContent='Dinliyorum…';};
+  rec.onend=()=>{listening=false;$('#mic').classList.remove('listen');if(always)setTimeout(()=>{try{rec.start()}catch{}},400);};
+  rec.onerror=e=>{if(e.error!=='no-speech'&&e.error!=='aborted')$('#heard').textContent='Mikrofon hatası: '+e.error;};
+  rec.onresult=e=>{let t='';for(const r of e.results)t+=r[0].transcript;$('#heard').textContent='“'+t+'”';if(e.results[e.results.length-1].isFinal){if(always&&!/jarvis/i.test(t))return;handle(t.replace(/jarvis/i,'').trim());}};
+  $('#mic').onclick=()=>{if(listening)rec.stop();else{try{rec.start()}catch{}}};
+  $('#always').onclick=()=>{always=!always;$('#always').classList.toggle('on',always);if(always&&!listening)try{rec.start()}catch{}};}
+
+refreshStatus();loadVideos();loadSched();setInterval(refreshStatus,10000);
+</script>
+</body>
+</html>

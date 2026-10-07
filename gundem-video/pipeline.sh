@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Tek komutla bir bölüm üretir: haber çek -> Claude senaryo -> yerel TTS -> Remotion render.
-# Kullanım: bash pipeline.sh          (normal)
+# Kullanım: bash pipeline.sh          (normal, 30 sn)
+#           DURATION=60 bash pipeline.sh         (60 saniyelik video)
 #           TTS_ENGINE=silent bash pipeline.sh   (sessiz test)
 #           SKIP_CLAUDE=1 bash pipeline.sh       (work/claude_out.json hazırsa Claude'u atla)
 set -euo pipefail
@@ -10,17 +11,22 @@ export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$P
 PY="python3"; [ -x ".venv/bin/python3" ] && PY=".venv/bin/python3"
 command -v claude >/dev/null || { echo "HATA: 'claude' komutu bulunamadı. Claude Code kurulu ve PATH'te olmalı."; exit 1; }
 command -v ffmpeg >/dev/null || { echo "HATA: ffmpeg bulunamadı (brew install ffmpeg)."; exit 1; }
+DURATION="${DURATION:-30}"
+WORDS=$(( DURATION * 24 / 10 ))          # ~150 kelime/dk temposunda sığan kelime
+HABER=$(( DURATION / 8 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 12 ] && HABER=12
+export DURATION WORDS HABER
 mkdir -p work out public/audio
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
-echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı"
+echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
 
 echo "-- 1/4 haberler"
 $PY scripts/fetch_news.py work/news.json
 
 echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
-  { cat prompts/senaryo.md; cat work/news.json; } | claude -p --output-format text > work/claude_out.json
+  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" prompts/senaryo.md; cat work/news.json; } \
+    | claude -p --output-format text > work/claude_out.json
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json
 

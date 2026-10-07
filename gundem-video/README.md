@@ -35,6 +35,7 @@ npm run studio                                     # tarayıcıda canlı önizle
 ```
 
 Çıktı: `out/2026-10-07-1.mp4` ve yanında `out/2026-10-07-1.json` (senaryo kaydı).
+Farklı süre: `DURATION=60 bash pipeline.sh` (15-180 sn).
 
 ## Görsel ve ses kimliği
 Her haber, Claude'un atadığı kategoriye göre sabit bir animasyonlu illüstrasyon ve ses efektiyle
@@ -42,7 +43,23 @@ gelir (ekonomi → grafik ve ₺ paralar + kasa sesi, spor → top ve kale + dü
 Eşleme `src/categories.ts`, sesler `scripts/make_sfx.py` ile kodla üretilir; indirilen dosya yok.
 Tam tablo `CLAUDE.md` içinde.
 
-## 5 saatte bir otomatik çalıştırma
+## Kontrol paneli (Jarvis)
+
+```bash
+npm run panel
+```
+
+Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanıma için mikrofon izni verin).
+- 🎙 düğmesine basıp konuşun: "altmış saniyelik video üret", "son videoyu oynat", "paylaş", "durum",
+  "zamanlayıcıyı kapat", "her 3 saatte bir otomatik üret". Yanıtları Piper seslendirir.
+- "Sürekli dinle" açıkken yalnızca "Jarvis" ile başlayan cümleler komut sayılır.
+- Süre kaydırıcısı 15-120 sn; haber sayısı ve kelime bütçesi otomatik ayarlanır.
+- Videoya tıklayın: oynat, indir, Finder'da göster, sil, telefona QR ile gönder (aynı Wi-Fi).
+- Otomatik üretim anahtarı launchd zamanlayıcısını panelden açıp kapatır.
+
+Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme içindir.
+
+## 5 saatte bir otomatik çalıştırma (panelsiz)
 
 ```bash
 sed "s|__PROJE_YOLU__|$(pwd)|g" launchd/com.gundem.video.plist > ~/Library/LaunchAgents/com.gundem.video.plist
