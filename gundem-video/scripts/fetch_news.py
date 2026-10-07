@@ -4,6 +4,7 @@
 Kullanım: python3 scripts/fetch_news.py work/news.json
 """
 import json
+import ssl
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -22,6 +23,18 @@ MAX_PER_FEED = 12
 UA = "Mozilla/5.0 (gundem-video; +local)"
 
 
+def ssl_context():
+    """python.org Python'u macOS'ta sistem sertifikalarını görmez; certifi varsa onu kullan."""
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+CTX = ssl_context()
+
+
 def strip_html(s: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", unescape(s or ""))).strip()
 
@@ -36,7 +49,7 @@ def parse_date(s: str):
 
 def fetch(source: str, url: str):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with urllib.request.urlopen(req, timeout=20, context=CTX) as r:
         root = ET.fromstring(r.read())
     items = []
     for it in root.iter("item"):

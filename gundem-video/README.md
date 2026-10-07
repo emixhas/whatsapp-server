@@ -12,7 +12,8 @@ npm install
 
 # Seslendirme — Seçenek A: Piper (önerilen, daha doğal)
 python3 -m venv .venv && source .venv/bin/activate
-pip install piper-tts
+pip install piper-tts certifi
+export SSL_CERT_FILE=$(python3 -c "import certifi; print(certifi.where())")
 python3 -m piper.download_voices tr_TR-fahrettin-medium --download-dir voices
 ls -la voices   # .onnx dosyası ~60 MB olmalı
 
