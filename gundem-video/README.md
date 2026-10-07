@@ -91,10 +91,8 @@ Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme 
 1. Instagram hesabı İşletme veya İçerik Üretici olmalı ve bir Facebook Sayfasına bağlı olmalı.
 2. developers.facebook.com → uygulama → Instagram Graph API; `instagram_content_publish`,
    `instagram_manage_insights`, `pages_read_engagement` izinleriyle uzun ömürlü token alın.
-3. Instagram videoyu yerel diskten almaz, herkese açık bir URL'den çeker. Panelin `/videos/` yolunu
-   dışarı açmanın en kolay yolu Cloudflare Tunnel: `brew install cloudflared` →
-   `cloudflared tunnel --url http://localhost:3131` → verilen `https://....trycloudflare.com` adresi.
-   Kalıcı kullanım için adlandırılmış tünel kurun; geçici adres her başlatmada değişir.
+3. Instagram videoyu yerel diskten almaz, herkese açık bir URL'den çeker. Bunun için Cloudflare Tunnel
+   (aşağıda). Panel tüneli kendisi yönetir ve PUBLIC_BASE_URL'yi otomatik yazar.
 4. `secrets/.env` içine `IG_USER_ID`, `IG_ACCESS_TOKEN`, `PUBLIC_BASE_URL` yazın (örnek:
    `secrets/README.md`).
 
@@ -109,6 +107,32 @@ Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme 
    uygulamanızı denetleyip onaylamadan paylaşımlar yalnızca size görünür. Onay 2-6 hafta sürebilir;
    onaydan sonra `direct`'e geçin.
 5. İzlenme/beğeni/paylaşım verisi `video.list` ile çekilir ve analitiğe girer.
+
+**Cloudflare Tunnel**
+
+```bash
+brew install cloudflared
+```
+
+*Hızlı tünel (hesap gerekmez):* Panelde Bağlantılar → "Tüneli başlat" ya da "Emixhas, tüneli aç".
+Panel `https://....trycloudflare.com` adresini yakalar, `secrets/.env` içine PUBLIC_BASE_URL olarak
+yazar. Adres her başlatmada değişir; "Panel açılınca otomatik başlat" açıksa her seferinde güncellenir.
+Instagram yayını için bu yeterlidir, çünkü adres yayın anında okunur.
+
+*Adlı tünel (kalıcı adres; Cloudflare hesabı ve Cloudflare'de yönetilen bir alan adı gerekir):*
+
+```bash
+cloudflared tunnel login                      # tarayıcıda Cloudflare girişi, alan adını seçin
+cloudflared tunnel create gundem
+cloudflared tunnel route dns gundem video.ALANADINIZ.com
+```
+
+Sonra `secrets/.env` içine `TUNNEL_NAME=gundem` ve `TUNNEL_HOSTNAME=video.ALANADINIZ.com` yazın; panel
+bundan sonra bu kalıcı adresi kullanır. TikTok redirect URI olarak da
+`https://video.ALANADINIZ.com/tiktok/callback` verebilirsiniz (panel bunu TikTok bağlama sürecine aktarır).
+
+*Güvenlik:* Tünel üzerinden gelen istekler yalnızca `/videos/` dosyalarını ve TikTok geri dönüşünü görür;
+panel, API ve ayarlar dışarıya kapalıdır. Yine de tünel adresini herkese açık yerlerde paylaşmayın.
 
 Bağlantı yoksa yayınlama ve izlenme senkronu devre dışı kalır; üretim, QR ile telefona gönderme ve
 elle yükleme çalışmaya devam eder.
