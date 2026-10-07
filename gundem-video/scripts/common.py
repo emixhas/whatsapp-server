@@ -61,9 +61,9 @@ def settings():
         "wakeWords": ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"],
         "fullAuthority": True,
         "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
-        "narrationEngine": "piper",
+        "narrationEngine": "auto",
         "claudeEffort": {"script": "medium", "brain": "high"},
-        "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.45, "cfg": 0.5, "autoStart": False},
+        "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
     })
 
 

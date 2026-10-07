@@ -42,7 +42,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "piper", tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false } };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
@@ -79,7 +79,7 @@ function startPipeline(duration) {
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration) } });
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push("__done__"); });
+  child.on("close", (code) => { state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 

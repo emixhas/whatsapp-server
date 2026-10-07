@@ -61,14 +61,29 @@ def tts_chatterbox(text: str, out: Path) -> None:
     tmp.replace(out)
 
 
+def say_has_voice(name: str) -> bool:
+    if not shutil.which("say"):
+        return False
+    try:
+        out = subprocess.run(["say", "-v", "?"], capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return False
+    return any(line.split()[0] == name and "tr_TR" in line for line in out.splitlines() if line.strip())
+
+
 def pick_engine():
-    forced = os.environ.get("TTS_ENGINE") or (_S.get("narrationEngine") if _S.get("narrationEngine") != "piper" else None)
+    forced = os.environ.get("TTS_ENGINE") or _S.get("narrationEngine", "auto")
     if forced == "silent":
         return "silent", tts_silent
-    if forced == "chatterbox":
+    if forced in ("auto", "chatterbox"):
         if chatterbox_ready():
             return "chatterbox", tts_chatterbox
-        print("  ! chatterbox sunucusu hazır değil, yedek motora düşülüyor", file=sys.stderr)
+        if forced == "chatterbox":
+            print("  ! chatterbox sunucusu hazır değil, yedek motora düşülüyor", file=sys.stderr)
+    if forced == "auto" and say_has_voice(_S.get("voice", {}).get("name", "Yelda")):
+        return "say", tts_macos_say
+    if forced == "piper" and shutil.which("piper") and Path(VOICE).exists():
+        return "piper", tts_piper
     if forced == "say" and shutil.which("say"):
         return "say", tts_macos_say
     if shutil.which("piper") and Path(VOICE).exists():
@@ -78,9 +93,16 @@ def pick_engine():
     sys.exit("Ne Piper modeli ne de macOS 'say' bulundu. README'deki kurulum adımlarına bakın.")
 
 
+# Yayın kalitesi işleme: alçak uğultuyu kes, konuşma netliğini (3 kHz) hafif kaldır, dinamikleri
+# toparla, sonuna kısa sessizlik. Tüm motorlarda uygulanır; Piper'ın düz tınısını belirgin iyileştirir.
+POLISH = "highpass=f=70,equalizer=f=180:t=q:w=1.2:g=-1.5,equalizer=f=3000:t=q:w=1:g=2.2,equalizer=f=8000:t=q:w=1.5:g=1," \
+         "acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=2,alimiter=limit=0.95"
+
+
 def add_pause(path: Path) -> None:
     tmp = path.with_name(path.stem + ".tmp.wav")
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-af", f"apad=pad_dur={PAUSE_SEC}", str(tmp)], check=True)
+    af = (POLISH + "," if os.environ.get("TTS_POLISH", "1") != "0" else "") + f"apad=pad_dur={PAUSE_SEC}"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-af", af, "-ar", "44100", "-ac", "1", str(tmp)], check=True)
     tmp.replace(path)
 
 

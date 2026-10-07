@@ -62,6 +62,8 @@ Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanım
 - Tarayıcı komutları: "Emixhas, YouTube'dan Sezen Aksu Gülümse'yi aç" ilk sonucu Safari'de açar
   (`pip install yt-dlp` kuruluysa doğrudan videoyu, yoksa arama sayfasını). "sabah.com.tr sitesini aç",
   "google'da dolar kuru ara" da çalışır.
+- Video anlatımı varsayılan olarak **Otomatik**: doğal ses sunucusu hazırsa Chatterbox, değilse Mac'in
+  Yelda sesi, o da yoksa Piper. Her anlatım yayın kalitesi işlemeden geçer (EQ, kompresyon).
 - **Doğal ses (ElevenLabs'e en yakın yerel seçenek):** Chatterbox Multilingual, MIT lisanslı, Türkçe
   destekli, 5-10 sn örnekle ses klonlar, Apple Silicon'da çalışır. Kurulum bir kez:
   `bash scripts/install_voice.sh` (~3 GB). Sonra panelde Ayarlar → "Doğal sesi başlat" (ilk açılışta
