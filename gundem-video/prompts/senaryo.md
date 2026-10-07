@@ -19,8 +19,15 @@ KURALLAR
 - Intro metni: "Türkiye gündemi, {tarih}, günün özeti." benzeri, en fazla 10 kelime. Tarihi
   haber verisindeki tarihten değil, bugünden yaz; emin değilsen tarihi hiç söyleme.
 - Outro metni: en fazla 10 kelime, yeni özetin 5 saat sonra geleceğini söyle.
-- Seslendirme için yazıyorsun: kısaltma kullanma (TCMB yerine Merkez Bankası), rakamları
-  sözcükle değil rakamla yaz ama okunabilir tut, parantez ve tire kullanma.
+- Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.
+  Zorunlu açılımlar: AKP → AK Parti; CHP → Cumhuriyet Halk Partisi; MHP → Milliyetçi Hareket Partisi;
+  İYİ Parti olduğu gibi; DEM Parti olduğu gibi; TCMB → Merkez Bankası; TBMM → Meclis;
+  MEB → Milli Eğitim Bakanlığı; İBB → İstanbul Büyükşehir Belediyesi; ABD → Amerika;
+  AB → Avrupa Birliği; BM → Birleşmiş Milletler; NATO olduğu gibi; TÜİK → Türkiye İstatistik Kurumu;
+  SGK → Sosyal Güvenlik Kurumu; ÖSYM → Ölçme Seçme ve Yerleştirme Merkezi; YÖK → Yükseköğretim Kurulu;
+  TSK → Türk Silahlı Kuvvetleri; MSB → Milli Savunma Bakanlığı; TFF → Futbol Federasyonu;
+  THY → Türk Hava Yolları; TL → lira; km → kilometre; yüzde işareti yerine "yüzde" yaz (% 30 → yüzde 30).
+  Rakamları rakamla yaz ama okunabilir tut (1.250.000 → 1 milyon 250 bin), parantez ve tire kullanma.
 - Günün açık ara en büyük haberi varsa SADECE o habere "breaking": true ekle; o haber ilk sırada
   olsun. Her videoda zorunlu değil; sıradan bir günde hiçbirine verme.
 - Resmi, sakin, profesyonel ton. Sansasyon yok.

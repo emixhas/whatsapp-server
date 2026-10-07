@@ -19,6 +19,79 @@ HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
 CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
 
 
+# Seslendirme motorları kısaltmaları yanlış okur; bilinen kısaltmalar açılır (kelime sınırı ile).
+ABBR = [
+    (r"\bAKP\b", "AK Parti"), (r"\bCHP\b", "Cumhuriyet Halk Partisi"),
+    (r"\bMHP\b", "Milliyetçi Hareket Partisi"), (r"\bTCMB\b", "Merkez Bankası"), (r"\bTBMM\b", "Meclis"),
+    (r"\bMEB\b", "Milli Eğitim Bakanlığı"), (r"\bİBB\b", "İstanbul Büyükşehir Belediyesi"), (r"\bABB\b", "Ankara Büyükşehir Belediyesi"),
+    (r"\bABD\b", "Amerika"), (r"\bAB\b", "Avrupa Birliği"), (r"\bBM\b", "Birleşmiş Milletler"),
+    (r"\bTÜİK\b", "Türkiye İstatistik Kurumu"), (r"\bSGK\b", "Sosyal Güvenlik Kurumu"), (r"\bÖSYM\b", "Ölçme Seçme ve Yerleştirme Merkezi"),
+    (r"\bYÖK\b", "Yükseköğretim Kurulu"), (r"\bTSK\b", "Türk Silahlı Kuvvetleri"), (r"\bMSB\b", "Milli Savunma Bakanlığı"),
+    (r"\bTFF\b", "Futbol Federasyonu"), (r"\bTHY\b", "Türk Hava Yolları"), (r"\bEPDK\b", "Enerji Piyasası Düzenleme Kurumu"),
+    (r"\bBDDK\b", "Bankacılık Düzenleme ve Denetleme Kurumu"), (r"\bSPK\b", "Sermaye Piyasası Kurulu"), (r"\bAFAD\b", "Afet ve Acil Durum Yönetimi"),
+    (r"\bMGK\b", "Milli Güvenlik Kurulu"), (r"\bDMO\b", "Devlet Malzeme Ofisi"), (r"\bKDV\b", "Katma Değer Vergisi"), (r"\bÖTV\b", "Özel Tüketim Vergisi"),
+    (r"(\d)\s*TL\b", r"\1 lira"), (r"\bTL\b", "lira"), (r"%\s*(\d)", r"yüzde \1"), (r"(\d)\s*%", r"yüzde \1"),
+    (r"(\d)\s*km\b", r"\1 kilometre"), (r"(\d)\s*kg\b", r"\1 kilogram"),
+]
+
+
+NOT_POSSESSIVE = {"AK Parti", "Birleşmiş Milletler", "Avrupa Birliği Komisyonu"}  # tamlama olmayan çok kelimeli açılımlar
+BACK = "aıou"
+VOICELESS = "pçtkfsşh"
+SUFFIX_RE = re.compile(r"'(de|da|te|ta|den|dan|ten|tan|ye|ya|e|a|yi|yı|yu|yü|i|ı|u|ü|nin|nın|nun|nün|in|ın|un|ün|yle|yla|le|la|nde|nda|nden|ndan|ne|na|ni|nı|nu|nü)\b")
+
+
+def _last_vowel(w: str):
+    for ch in reversed(w.lower()):
+        if ch in "aeıioöuü":
+            return ch
+    return "e"
+
+
+def _harmonize(word: str, suf: str) -> str:
+    """Açılım sonrası ek uyumu: Meclis'de → Meclis'te, ABD'den → Amerika'dan."""
+    v = _last_vowel(word); back = v in BACK; rounded = v in "oöuü"
+    ends_vowel = word[-1].lower() in "aeıioöuü"; voiceless = word[-1].lower() in VOICELESS
+    A = "a" if back else "e"
+    I = ("u" if back else "ü") if rounded else ("ı" if back else "i")
+    D = "t" if voiceless else "d"
+    kind = {"de": "LOC", "da": "LOC", "te": "LOC", "ta": "LOC", "nde": "LOC", "nda": "LOC",
+            "den": "ABL", "dan": "ABL", "ten": "ABL", "tan": "ABL", "nden": "ABL", "ndan": "ABL",
+            "ye": "DAT", "ya": "DAT", "e": "DAT", "a": "DAT", "ne": "DAT", "na": "DAT",
+            "yi": "ACC", "yı": "ACC", "yu": "ACC", "yü": "ACC", "i": "ACC", "ı": "ACC", "u": "ACC", "ü": "ACC", "ni": "ACC", "nı": "ACC", "nu": "ACC", "nü": "ACC",
+            "nin": "GEN", "nın": "GEN", "nun": "GEN", "nün": "GEN", "in": "GEN", "ın": "GEN", "un": "GEN", "ün": "GEN",
+            "yle": "INS", "yla": "INS", "le": "INS", "la": "INS"}[suf]
+    # Tamlama bitişleri ("Bakanlığı", "Kurumu", "Partisi", "Birliği") 3. tekil iyelik taşır → ek -n- ile bağlanır
+    possessive = len(word.split()) > 1 and word not in NOT_POSSESSIVE
+    if kind == "LOC":
+        return f"{word}'" + ("nd" + A if possessive else D + A)
+    if kind == "ABL":
+        return f"{word}'" + ("nd" + A + "n" if possessive else D + A + "n")
+    if kind == "DAT":
+        return f"{word}'" + ("n" + A if possessive else ("y" + A if ends_vowel else A))
+    if kind == "ACC":
+        return f"{word}'" + ("n" + I if possessive else ("y" + I if ends_vowel else I))
+    if kind == "GEN":
+        return f"{word}'" + ("n" + I + "n" if possessive else (("n" if ends_vowel else "") + I + "n"))
+    if kind == "INS":
+        return f"{word}'" + ("yl" + A if (ends_vowel or possessive) else "l" + A)
+    return f"{word}'{suf}"
+
+
+def expand_abbr(text: str) -> str:
+    targets = []
+    for pat, rep in ABBR:
+        if "\\1" in rep:
+            text = re.sub(pat, rep, text)
+            continue
+        if re.search(pat, text):
+            text = re.sub(pat, rep, text)
+            targets.append(rep)
+    for rep in set(targets):
+        text = re.sub(re.escape(rep) + SUFFIX_RE.pattern, lambda m: _harmonize(rep, m.group(1)), text)
+    return text
+
+
 def extract_json(text: str):
     m = re.search(r"\{.*\}", text, re.S)  # Claude kod bloğu eklerse içinden JSON'u al
     if not m:
@@ -42,6 +115,9 @@ def main(src: str, dst: str):
     for s in segs:
         if not s.get("narration", "").strip():
             sys.exit("Boş seslendirme metni")
+        s["narration"] = expand_abbr(s["narration"])
+        if s.get("title"):
+            s["title"] = expand_abbr(s["title"])
         if s["kind"] == "haber" and not s.get("title", "").strip():
             sys.exit("Haber segmentinde başlık yok")
         if s["kind"] == "haber" and s.get("category") not in CATEGORIES:
