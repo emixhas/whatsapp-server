@@ -34,7 +34,7 @@ def load_env():
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 env[k.strip()] = v.strip().strip('"').strip("'")
-    env.update({k: v for k, v in os.environ.items() if k in ("IG_USER_ID", "IG_ACCESS_TOKEN", "PUBLIC_BASE_URL")})
+    env.update({k: v for k, v in os.environ.items() if k.startswith(("IG_", "TIKTOK_")) or k == "PUBLIC_BASE_URL"})
     return env
 
 
@@ -52,7 +52,7 @@ def save_metrics(m):
 
 def settings():
     return load_json(DATA / "settings.json", {
-        "autopublish": {"youtube": False, "instagram": False},
+        "autopublish": {"youtube": False, "instagram": False, "tiktok": False},
         "dailyReportHour": 9,
         "metricsSyncMinutes": 60,
         "channelName": "Türkiye Gündemi",

@@ -98,6 +98,18 @@ Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme 
 4. `secrets/.env` içine `IG_USER_ID`, `IG_ACCESS_TOKEN`, `PUBLIC_BASE_URL` yazın (örnek:
    `secrets/README.md`).
 
+**TikTok**
+1. developers.tiktok.com → Manage apps → uygulama oluştur → ürün olarak **Login Kit** ve
+   **Content Posting API** ekleyin; scope'lar: user.info.basic, video.list, video.upload, video.publish.
+2. Login Kit → Redirect URI: `http://localhost:3137/tiktok/callback` (TikTok http localhost'u kabul
+   etmezse Cloudflare Tunnel adresinizi yazın ve `.env` içinde TIKTOK_REDIRECT_URI'yi aynı yapın).
+3. Client key ve secret'ı `secrets/.env` içine yazın (`secrets/README.md`), panelde "TikTok'u bağla".
+4. Mod: `TIKTOK_MODE=inbox` (varsayılan) videoyu TikTok gelen kutunuza taslak olarak gönderir; telefonda
+   bildirime dokunup yayınlarsınız, uygulama onayı gerekmez. `direct` doğrudan yayınlar ama TikTok
+   uygulamanızı denetleyip onaylamadan paylaşımlar yalnızca size görünür. Onay 2-6 hafta sürebilir;
+   onaydan sonra `direct`'e geçin.
+5. İzlenme/beğeni/paylaşım verisi `video.list` ile çekilir ve analitiğe girer.
+
 Bağlantı yoksa yayınlama ve izlenme senkronu devre dışı kalır; üretim, QR ile telefona gönderme ve
 elle yükleme çalışmaya devam eder.
 

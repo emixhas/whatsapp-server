@@ -16,7 +16,7 @@ def video_rows():
     for p in sorted(OUT.glob("*.mp4")):
         meta = episode_meta(p.name) or {}
         mv = m["videos"].get(p.name, {})
-        yt, ig = mv.get("youtube", {}), mv.get("instagram", {})
+        yt, ig, tt = mv.get("youtube", {}), mv.get("instagram", {}), mv.get("tiktok", {})
         haber = [s for s in meta.get("segments", []) if s.get("kind") == "haber"]
         rows.append({
             "name": p.name, "date": meta.get("date"), "time": meta.get("timeLabel"),
@@ -26,11 +26,12 @@ def video_rows():
             "categories": [h.get("category", "genel") for h in haber],
             "breaking": any(h.get("breaking") for h in haber),
             "firstTitle": haber[0]["title"] if haber else None,
-            "published": {"youtube": bool(yt.get("id")), "instagram": bool(ig.get("id"))},
+            "published": {"youtube": bool(yt.get("id")), "instagram": bool(ig.get("id")), "tiktok": bool(tt.get("publish_id"))},
             "yt_views": yt.get("views"), "yt_likes": yt.get("likes"),
             "ig_views": ig.get("views"), "ig_likes": ig.get("likes"), "ig_shares": ig.get("shares"), "ig_saves": ig.get("saves"),
-            "views": (yt.get("views") or 0) + (ig.get("views") or 0),
-            "urls": {k: v.get("url") for k, v in (("youtube", yt), ("instagram", ig)) if v.get("url")},
+            "tt_views": tt.get("views"), "tt_likes": tt.get("likes"), "tt_shares": tt.get("shares"),
+            "views": (yt.get("views") or 0) + (ig.get("views") or 0) + (tt.get("views") or 0),
+            "urls": {k: v.get("url") for k, v in (("youtube", yt), ("instagram", ig), ("tiktok", tt)) if v.get("url")},
         })
     return rows
 
@@ -75,7 +76,7 @@ def main():
         "withDataCount": len(with_data), "totalViews": sum(r["views"] for r in rows),
         "byCategory": cat_avg, "byDuration": dur_avg, "byHour": hour_avg,
         "breakingAvg": breaking_avg, "normalAvg": normal_avg,
-        "top": [{k: r[k] for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "categories", "targetDuration", "urls")} for r in top],
+        "top": [{k: r[k] for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "categories", "targetDuration", "urls")} for r in top],
         "hint": hint_text, "rows": rows,
     }
     save_json(DATA / "insights.json", insights)

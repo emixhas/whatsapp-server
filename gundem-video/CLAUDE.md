@@ -54,7 +54,11 @@ süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2
 - `scripts/publish.py`: YouTube (Data API v3, OAuth; `secrets/youtube_client.json` → token) ve
   Instagram Reels (Graph API; videoyu `PUBLIC_BASE_URL/videos/<ad>` adresinden çeker, bu yüzden
   herkese açık bir URL/tünel şart). Sonuç `data/metrics.json` → `videos.<ad>.<platform>`.
-- `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG).
+- TikTok (`tt_*` fonksiyonları): Login Kit OAuth (yerel geri dönüş sunucusu :3137), Content Posting API
+  FILE_UPLOAD. `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
+  `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Token 24 saat,
+  refresh otomatik. Metrikler `/v2/video/list/` (view/like/comment/share).
+- `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 5, manşet etkisi → `data/insights.json`
   ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:
   öğrenme döngüsü budur. İpucu kurallarla çelişirse kurallar kazanır (prompt'ta yazılı).

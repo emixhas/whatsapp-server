@@ -43,7 +43,7 @@
   .vid img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
   .vid .m{padding:9px;font-size:12px}.vid .m b{display:block;font-size:13px}.vid .m span{color:var(--mut)}
   .views{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border-radius:8px;padding:3px 8px;font-size:12px;font-weight:700}
-  .tag{display:inline-block;font-size:9px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 3px 0 0}.tag.brk{background:var(--red);color:#fff}.tag.yt{background:#3a0d12;color:#ff6b6b}.tag.ig{background:#3a1030;color:#ff8ad8}
+  .tag{display:inline-block;font-size:9px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 3px 0 0}.tag.brk{background:var(--red);color:#fff}.tag.yt{background:#3a0d12;color:#ff6b6b}.tag.ig{background:#3a1030;color:#ff8ad8}.tag.tt{background:#0f2a2e;color:#69f0e6}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.open{display:flex}
   .box{background:#0E1424;border:1px solid var(--line);border-radius:20px;padding:18px;max-width:960px;width:100%;display:grid;grid-template-columns:280px 1fr;gap:18px;max-height:92vh;overflow:auto}
   @media(max-width:700px){.box{grid-template-columns:1fr}}
@@ -64,7 +64,7 @@
 <header>
   <h1><span id="aName">EMIXHAS</span> <span style="color:var(--mut);font-weight:400;letter-spacing:1px">· TÜRKİYE</span> <b>GÜNDEMİ</b></h1>
   <span class="dot" id="dot"></span><span id="stateTxt" style="color:var(--mut);font-size:13px">hazır</span>
-  <div class="conn"><span id="cYt">YouTube</span><span id="cIg">Instagram</span><span id="lan"></span></div>
+  <div class="conn"><span id="cYt">YouTube</span><span id="cIg">Instagram</span><span id="cTt">TikTok</span><span id="lan"></span></div>
 </header>
 <nav><button class="on" data-tab="videos">Videolar</button><button data-tab="analytics">Analitik</button><button data-tab="reports">Raporlar</button><button data-tab="settings">Bağlantılar & Ayarlar</button></nav>
 <main>
@@ -93,6 +93,7 @@
       <label class="row" style="margin-top:12px"><span class="sw" id="sched"></span><span>Otomatik üretim, her</span><select id="hours"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>12</option></select><span>saatte bir</span></label>
       <label class="row"><span class="sw" id="apYt"></span><span>Üretince YouTube'a otomatik yükle</span></label>
       <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle</span></label>
+      <label class="row"><span class="sw" id="apTt"></span><span>Üretince TikTok'a otomatik gönder</span></label>
     </div>
     <div class="card"><h2>CANLI LOG</h2><div class="log" id="log"></div></div>
   </section>
@@ -112,6 +113,7 @@
     <div class="card tab" id="tab-settings">
       <h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button></div>
       <h2 style="margin-top:18px">INSTAGRAM</h2><div class="conninfo" id="igInfo"></div>
+      <h2 style="margin-top:18px">TIKTOK</h2><div class="conninfo" id="ttInfo"></div><div class="acts"><button class="ghost ok" id="ttConnect">TikTok'u bağla</button></div>
       <h2 style="margin-top:18px">KANAL</h2>
       <label class="row"><span style="min-width:130px">Kanal adı</span><input id="sName" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
       <label class="row"><span style="min-width:130px">Hashtag'ler</span><input id="sTags" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
@@ -125,7 +127,7 @@
 <div class="modal" id="modal"><div class="box">
   <div><video id="player" controls playsinline></video></div>
   <div><h3 id="mTitle" style="margin:0 0 6px"></h3><div id="mMeta" style="color:var(--mut);margin-bottom:8px"></div><div id="mStats" style="margin-bottom:8px"></div><div id="mHead"></div>
-    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
+    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
     <div class="qr" id="qr" style="display:none"></div></div>
 </div></div>
 
@@ -165,9 +167,9 @@ drawOrb();
 // ================= durum, log
 function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor (${s.duration} sn)`:s.busy?s.busy:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='📱 '+s.lanUrl;
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
-  $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';
+  $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';$('#cTt').className=s.connections?.tiktok?.connected?'ok':'';
   $('#sched').classList.toggle('on',!!s.schedule?.enabled);if(s.schedule?.hours)$('#hours').value=String(s.schedule.hours);
-  $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);
+  $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);$('#apTt').classList.toggle('on',!!s.settings?.autopublish?.tiktok);
   if(s.settings?.assistantName){wakeName=s.settings.assistantName;$('#aName').textContent=wakeName.toUpperCase();document.querySelectorAll('.wakeName').forEach(e=>e.textContent=wakeName);}
   if(s.settings?.wakeWords?.length)wakeRe=new RegExp('(^|\\s)('+s.settings.wakeWords.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')(\\s|$|,)','i');renderConn(s);}
 async function refreshStatus(){setState(await api('/api/status'));}
@@ -178,11 +180,11 @@ es.addEventListener('jarvis',e=>{const d=JSON.parse(e.data);addMsg('j',d.reply);
 // ================= videolar
 const tagHtml=h=>`<span class="tag ${h.breaking?'brk':''}">${h.breaking?'SON DAKİKA':(h.category||'').toUpperCase()}</span>`;
 async function loadVideos(){videos=await api('/api/videos');$('#count').textContent=videos.length?`(${videos.length})`:'';$('#empty').style.display=videos.length?'none':'block';
-  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
+  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
   document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));}
 function openVideo(name){current=videos.find(v=>v.name===name);if(!current)return;$('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}`;
-  const st=[];if(current.youtube)st.push(`<a href="${current.youtube.url}" target="_blank" class="tag yt">YouTube ▶ ${current.youtube.views??'?'} · ♥ ${current.youtube.likes??'?'}</a>`);if(current.instagram)st.push(`<a href="${current.instagram.url}" target="_blank" class="tag ig">Instagram ▶ ${current.instagram.views??'?'} · ♥ ${current.instagram.likes??'?'} · ↗ ${current.instagram.shares??'?'}</a>`);$('#mStats').innerHTML=st.join(' ');
-  $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';$('#aPubYt').disabled=!!current.youtube;$('#aPubIg').disabled=!!current.instagram;$('#modal').classList.add('open');$('#player').play().catch(()=>{});}
+  const st=[];if(current.youtube)st.push(`<a href="${current.youtube.url}" target="_blank" class="tag yt">YouTube ▶ ${current.youtube.views??'?'} · ♥ ${current.youtube.likes??'?'}</a>`);if(current.instagram)st.push(`<a href="${current.instagram.url}" target="_blank" class="tag ig">Instagram ▶ ${current.instagram.views??'?'} · ♥ ${current.instagram.likes??'?'} · ↗ ${current.instagram.shares??'?'}</a>`);if(current.tiktok)st.push(`<a href="${current.tiktok.url||'#'}" target="_blank" class="tag tt">TikTok ${current.tiktok.status==='SEND_TO_USER_INBOX'?'gelen kutusunda':'▶ '+(current.tiktok.views??'?')+' · ♥ '+(current.tiktok.likes??'?')}</a>`);$('#mStats').innerHTML=st.join(' ');
+  $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';$('#aPubYt').disabled=!!current.youtube;$('#aPubIg').disabled=!!current.instagram;$('#aPubTt').disabled=!!current.tiktok;$('#modal').classList.add('open');$('#player').play().catch(()=>{});}
 function closeModal(){$('#modal').classList.remove('open');$('#player').pause();$('#player').removeAttribute('src');}
 $('#aClose').onclick=closeModal;$('#modal').onclick=e=>{if(e.target.id==='modal')closeModal();};
 $('#aReveal').onclick=()=>post('/api/reveal',{name:current.name});
@@ -190,18 +192,20 @@ $('#aDel').onclick=async()=>{if(!confirm('Bu video silinsin mi?'))return;await f
 async function showShare(){const q=await api('/api/qr?name='+encodeURIComponent(current.name));$('#qr').innerHTML=q.svg+`<div style="margin-top:8px;color:var(--mut);font-size:12px">Telefon aynı Wi-Fi'de olmalı. Videoyu kaydedip paylaşım menüsünden gönderin.</div><div style="font-size:11px;margin-top:4px;word-break:break-all">${q.url}</div>`;$('#qr').style.display='block';}
 $('#aShare').onclick=showShare;
 async function publish(name,platforms){setMode('working');speak(`${platforms.join(' ve ')} üzerine yükleniyor.`);const r=await post('/api/publish',{name,platforms});setMode('idle');const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`${p}: yayınlandı${x.skipped?' (zaten vardı)':''}`:`${p}: hata, ${x.error}`);addMsg('j',msgs.join('\n'));speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
-$('#aPubYt').onclick=()=>confirm("YouTube'a yüklensin mi?")&&publish(current.name,['youtube']);$('#aPubIg').onclick=()=>confirm("Instagram'a yüklensin mi?")&&publish(current.name,['instagram']);
+$('#aPubYt').onclick=()=>confirm("YouTube'a yüklensin mi?")&&publish(current.name,['youtube']);$('#aPubIg').onclick=()=>confirm("Instagram'a yüklensin mi?")&&publish(current.name,['instagram']);$('#aPubTt').onclick=()=>confirm("TikTok'a gönderilsin mi?")&&publish(current.name,['tiktok']);
 
 // ================= üretim ve ayarlar
 $('#dur').oninput=e=>$('#durTxt').textContent=e.target.value;
 $('#gen').onclick=async()=>{const r=await post('/api/generate',{duration:+$('#dur').value});if(!r.ok)alert(r.error);refreshStatus();};
 $('#sched').onclick=async()=>{const on=!$('#sched').classList.contains('on');const r=await post('/api/schedule',{enabled:on,hours:+$('#hours').value});if(!r.ok)alert(r.error||'Ayarlanamadı');refreshStatus();};
 $('#hours').onchange=()=>{if($('#sched').classList.contains('on'))post('/api/schedule',{enabled:true,hours:+$('#hours').value}).then(refreshStatus);};
-for(const [id,key] of [['apYt','youtube'],['apIg','instagram']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');if(on&&!confirm(`Her üretimden sonra ${key} hesabına otomatik yüklensin mi? Hatalı bir özet de yayınlanır; ilk günlerde kapalı tutmanız önerilir.`))return;const ap={...status.settings.autopublish,[key]:on};await post('/api/settings',{autopublish:ap});refreshStatus();};
+for(const [id,key] of [['apYt','youtube'],['apIg','instagram'],['apTt','tiktok']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');if(on&&!confirm(`Her üretimden sonra ${key} hesabına otomatik yüklensin mi? Hatalı bir özet de yayınlanır; ilk günlerde kapalı tutmanız önerilir.`))return;const ap={...status.settings.autopublish,[key]:on};await post('/api/settings',{autopublish:ap});refreshStatus();};
 function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtube?.connected?'✅ Bağlı. Yükleme ve izlenme senkronu aktif.':`❌ Bağlı değil. Adımlar: Google Cloud Console → yeni proje → "YouTube Data API v3" etkinleştir → OAuth istemcisi (Masaüstü) oluştur → JSON'u indirip <code>secrets/youtube_client.json</code> olarak kaydet → "YouTube'u bağla" düğmesine bas (tarayıcıda Google girişi açılır). ${c.youtube?.clientFile?'İstemci dosyası bulundu ✔':'İstemci dosyası henüz yok.'}`;
   $('#igInfo').innerHTML=c.instagram?.connected?`✅ Bağlı. ${c.instagram.publicUrl?'Herkese açık URL ayarlı ✔':'⚠ PUBLIC_BASE_URL eksik: Instagram videoyu bu adresten çeker.'}`:'❌ Bağlı değil. Gerekenler: Instagram <b>İşletme/İçerik üretici</b> hesabı + bağlı Facebook sayfası → developers.facebook.com\'da uygulama → <code>instagram_content_publish</code> ve <code>instagram_manage_insights</code> izinli uzun ömürlü token → <code>secrets/.env</code> içine IG_USER_ID, IG_ACCESS_TOKEN ve PUBLIC_BASE_URL (ör. Cloudflare Tunnel adresi). Ayrıntı: <code>secrets/README.md</code>';
+  const tt=c.tiktok||{};$('#ttInfo').innerHTML=tt.connected?`✅ Bağlı. Mod: <b>${tt.mode==='direct'?'doğrudan yayın':'gelen kutusu (taslak)'}</b>. ${tt.mode==='direct'?'Uygulama TikTok denetiminden geçmediyse paylaşımlar yalnızca size görünür.':'Video TikTok uygulamanızın gelen kutusuna düşer; bildirime dokunup yayınlarsınız. Bu yol uygulama onayı gerektirmez.'}`:`❌ Bağlı değil. Adımlar: developers.tiktok.com → uygulama oluştur → Login Kit ve Content Posting API ekle → Redirect URI: <code>http://localhost:3137/tiktok/callback</code> → Client key ve secret'ı <code>secrets/.env</code> içine TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET olarak yaz → "TikTok'u bağla". ${tt.appKeys?'Anahtarlar bulundu ✔':'Anahtarlar henüz yok.'} Varsayılan mod gelen kutusu: onaysız uygulamada da çalışır, yayını telefondan tek dokunuşla yaparsınız.`;
   if(s.settings){$('#sName').value=s.settings.channelName||'';$('#sTags').value=s.settings.hashtags||'';if(!$('#sHour').options.length)for(let h=0;h<24;h++)$('#sHour').add(new Option(`${String(h).padStart(2,'0')}:00`,h));$('#sHour').value=String(s.settings.dailyReportHour??9);}}
 $('#ytConnect').onclick=async()=>{if(!status.connections?.youtube?.clientFile){const m='Önce Google Cloud\'dan OAuth istemci dosyasını indirip secrets/youtube_client.json olarak kaydedin. Adımlar yukarıda.';addMsg('j',m);speak('Önce Google istemci dosyası gerekiyor. Adımlar ekranda.');return;}addMsg('j','Tarayıcıda Google girişi açılıyor…');const r=await post('/api/connect/youtube');addMsg('j',r.ok?'YouTube bağlandı.':'Bağlanamadı: '+(r.error||'').split('\n').pop());speak(r.ok?'YouTube bağlandı.':'Bağlanamadı.');refreshStatus();};
+$('#ttConnect').onclick=async()=>{if(!status.connections?.tiktok?.appKeys){addMsg('j','Önce TikTok uygulama anahtarlarını secrets/.env dosyasına yazın. Adımlar yukarıda.');speak('Önce TikTok anahtarları gerekiyor.');return;}addMsg('j','Tarayıcıda TikTok girişi açılıyor…');const r=await post('/api/connect/tiktok');addMsg('j',r.ok?'TikTok bağlandı.':'Bağlanamadı: '+(r.error||''));speak(r.ok?'TikTok bağlandı.':'Bağlanamadı.');refreshStatus();};
 $('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});addMsg('j','Ayarlar kaydedildi.');refreshStatus();};
 
 // ================= analitik

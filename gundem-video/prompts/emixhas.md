@@ -6,7 +6,7 @@ ayarlar konusunda sana yetki vermiştir.
 ELİNDEKİ BAĞLAM (JSON olarak verilir)
 - videos: üretilmiş videolar, kategorileri, manşet durumu, yayın bilgileri ve izlenmeler
 - insights: kategori/süre/saat bazında ortalama izlenme, en iyi videolar, toplamlar
-- connections: YouTube/Instagram bağlı mı
+- connections: YouTube/Instagram/TikTok bağlı mı (tiktok.mode: inbox|direct)
 - schedule: otomatik üretim açık mı, kaç saatte bir
 - settings: ayarlar (otomatik yayın, ses: voice.engine/name/rate/piperLength, kanal adı, hashtag'ler)
 - recentLog: son üretim logu
@@ -16,8 +16,9 @@ ELİNDEKİ BAĞLAM (JSON olarak verilir)
 EYLEMLER (actions dizisi)
 - {"type":"generate","duration":30..180}            yeni video üret
 - {"type":"schedule","enabled":true|false,"hours":1..24}
-- {"type":"publish","video":"<dosya adı>","platforms":["youtube","instagram"]}
-- {"type":"autopublish","youtube":true|false,"instagram":true|false}
+- {"type":"publish","video":"<dosya adı>","platforms":["youtube","instagram","tiktok"]}
+      TikTok: uygulama denetimden geçmediyse video gelen kutusuna taslak gider, kullanıcı telefondan yayınlar; bunu söyle.
+- {"type":"autopublish","youtube":true|false,"instagram":true|false,"tiktok":true|false}
 - {"type":"sync_metrics"}                             izlenmeleri tazele
 - {"type":"note","text":"..."}                        hafızana kalıcı not/plan (kısa)
 - {"type":"open_video","video":"<dosya adı>"}

@@ -41,6 +41,8 @@ export function parseCommand(raw) {
   if (/^(google ?da|googleda|internette)\s+(.+?)\s+(ara|arat)$/.test(t)) return { action: "open_url", target: "https://www.google.com/search?q=" + encodeURIComponent(t.replace(/^(google ?da|googleda|internette)\s+/, "").replace(/\s+(ara|arat)$/, "")), reply: "" };
   if (/^(dur|sus|tamam dur|yeter|kes|sessiz ol|teşekkürler|sağ ol)$/.test(t)) return { action: "stop", reply: "" };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
+  if (/(yayınla|paylaş).*(youtube|instagram|tiktok|tik tok)/.test(t) || /(youtube|instagram|tiktok|tik tok).*(yayınla|paylaş|yükle)/.test(t))
+    return { action: "publish", platforms: ["youtube", "instagram", "tiktok"].filter((p) => t.replace("tik tok", "tiktok").includes(p)), reply: "" };
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
   const words = t.split(" ").length;
   if (words > 9 || /(^| )(ve|bir de|sonra da|neden|niye|niçin|sence|hangisi|nasıl)( |$)/.test(t)) return { action: "brain", reply: "" };
@@ -61,8 +63,6 @@ export function parseCommand(raw) {
   if (/(rapor|özet ver|nasıl gitti|performans)/.test(t)) return { action: "report", reply: "" };
   if (/(plan|strateji|ne yapalım|öneri)/.test(t)) return { action: "plan", reply: "" };
   if (/(izlenme|istatistik|metrik).*(güncelle|çek|yenile|tazele)/.test(t) || /(güncelle|tazele).*(izlenme|istatistik)/.test(t)) return { action: "sync_metrics", reply: "" };
-  if (/(yayınla|paylaş).*(youtube|instagram)/.test(t) || /(youtube|instagram).*(yayınla|paylaş|yükle)/.test(t))
-    return { action: "publish", platforms: ["youtube", "instagram"].filter((p) => t.includes(p)), reply: "" };
   if (/(listele|videoları göster|yenile)/.test(t)) return { action: "refresh", reply: "Liste yenilendi." };
   if (/(merhaba|selam|jarvis)/.test(t)) return { action: "none", reply: "Buradayım. Video üret, son videoyu oynat, paylaş veya durum diyebilirsiniz." };
   return { action: "brain", reply: "" };  // kural yok → Jarvis'in beyni düşünsün
