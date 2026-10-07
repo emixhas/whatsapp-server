@@ -14,7 +14,7 @@ npm install
 python3 -m venv .venv && source .venv/bin/activate
 pip install piper-tts certifi
 export SSL_CERT_FILE=$(python3 -c "import certifi; print(certifi.where())")
-python3 -m piper.download_voices tr_TR-fahrettin-medium --download-dir voices
+python3 -m piper.download_voices tr_TR-dfki-medium --download-dir voices
 ls -la voices   # .onnx dosyası ~60 MB olmalı
 
 # Seçenek B: hiçbir şey kurmadan macOS'un Yelda sesi
@@ -22,8 +22,8 @@ ls -la voices   # .onnx dosyası ~60 MB olmalı
 # Piper modeli yoksa tts.py otomatik olarak 'say' kullanır.
 ```
 
-Diğer Türkçe Piper sesleri: `tr_TR-dfki-medium` ve `tr_TR-fettah-medium` (aynı komutla indirilir). Değiştirmek için
-`PIPER_VOICE=voices/tr_TR-fettah-medium.onnx bash pipeline.sh`.
+Piper deposunda şu an tek Türkçe ses var: `tr_TR-dfki-medium`. Başka bir .onnx modeliniz varsa
+`PIPER_VOICE=voices/baska-model.onnx bash pipeline.sh` ile kullanın.
 
 ## İlk test
 

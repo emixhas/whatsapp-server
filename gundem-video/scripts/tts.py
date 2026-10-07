@@ -15,7 +15,7 @@ import wave
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VOICE = os.environ.get("PIPER_VOICE", str(ROOT / "voices" / "tr_TR-fahrettin-medium.onnx"))
+VOICE = os.environ.get("PIPER_VOICE", str(ROOT / "voices" / "tr_TR-dfki-medium.onnx"))
 PIPER_LENGTH = os.environ.get("PIPER_LENGTH_SCALE", "1.05")  # >1 daha yavaş, haber tonu için hafif yavaş
 PAUSE_SEC = 0.35  # her segment sonuna sessizlik
 
