@@ -26,7 +26,9 @@ $PY scripts/fetch_news.py work/news.json
 echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
-  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" prompts/senaryo.md; cat work/news.json; } \
+  # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
+  $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-20}"
+  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" prompts/senaryo.md; cat work/news_prompt.json; } \
     | claude -p --output-format text > work/claude_out.json
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json

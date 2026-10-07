@@ -13,17 +13,22 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
 
   async function context() {
     const insights = readJson(path.join(DATA, "insights.json"), null);
-    const videos = listVideos().slice(0, 40).map((v) => ({ ...v, headlines: v.headlines.slice(0, 6) }));
+    // Bağlam küçük tutulur (token): son 15 video, gerekli alanlar, boş metrikler atılır
     const metrics = readJson(path.join(DATA, "metrics.json"), { videos: {} });
-    for (const v of videos) v.metrics = metrics.videos[v.name] || null;
+    const videos = listVideos().slice(0, 15).map((v) => {
+      const m = metrics.videos[v.name] || {};
+      const o = { name: v.name, date: v.date, time: v.time, n: v.episodeOfDay, dur: v.duration, target: v.targetDuration, headlines: v.headlines.slice(0, 4).map((h) => (h.breaking ? "★" : "") + (h.category || "") + ": " + h.title) };
+      for (const p of ["youtube", "instagram", "tiktok"]) if (m[p]) o[p] = { views: m[p].views ?? null, likes: m[p].likes ?? null, url: m[p].url ?? null };
+      return o;
+    });
     return {
       now: new Date().toLocaleString("tr-TR"),
       videos,
-      insights: insights ? { ...insights, rows: undefined } : null,
+      insights: insights ? { ...insights, rows: undefined, top: (insights.top || []).slice(0, 5) } : null,
       connections: await connections(),
       schedule: await getSchedule(),
       settings: settings(),
-      recentLog: getState().log.slice(-25),
+      recentLog: getState().log.slice(-12),
       memory: memory(),
     };
   }

@@ -15,6 +15,9 @@ Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 `pipeline.sh` bu adımları sırayla çalıştırır; launchd 5 saatte bir tetikler. `DURATION=60 bash pipeline.sh`
 süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2-12 arası). Prompt'taki
 `__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
+Token: Claude'a `scripts/slim_news.py` ile küçültülmüş set gider (en yeni `NEWS_MAX`=20 haber, 200
+karakter özet, link yok). Ölçüm (60 sn): ~45k girdi (çoğu Claude Code'un kendi yükü, önbellekli),
+~2k çıktı, ≈0,11 $ API karşılığı. Haber setini büyütmek seçimi iyileştirmez, token artırır.
 
 ## EMIXHAS paneli (`npm run panel` → http://localhost:3131)
 `app/server.js` (Express) + `app/ui/index.html` + `app/brain.js` + `app/commands.js`.
