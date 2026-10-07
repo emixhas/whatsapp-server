@@ -34,7 +34,18 @@ değişmez. Eşleme `src/categories.ts` içindedir ve tek doğru kaynak odur:
 | teknoloji | TEKNOLOJİ | #8E7CFF     | ağ düğümleri + dolaşan paket        | sfx/blip.wav                   |
 | saglik    | SAĞLIK    | #FF5C8A     | EKG çizgisi + atan kalp             | sfx/kalp.wav                   |
 | dunya     | DÜNYA     | #36D1C4     | dönen küre + uydu                   | sfx/dunya.wav                  |
+| parti     | SİYASET   | #E30A17     | kürsüden kürsüye yürüyen silüet, konfeti | sfx/tokmak.wav            |
+| egitim    | EĞİTİM    | #FFB020     | okul, sallanan zil, uyarı üçgeni    | sfx/okul.wav                   |
 | genel     | GÜNDEM    | #FFFFFF     | gazete + zil                        | sfx/bildirim.wav               |
+
+`parti`: parti değişimi, istifa, transfer, atama haberleri. Parti renkleri veya logoları
+kullanılmaz; sol kürsü gri, sağ kürsü kanal kırmızısı. `siyaset`: diğer tüm siyaset haberleri.
+
+## SON DAKİKA manşeti
+Claude, günün açık ara en büyük haberine `"breaking": true` verir (en fazla bir habere,
+`assemble_script.py` fazlasını siler). Bu kart: kırmızı flaş, kısa sarsıntı, üstte nabız gibi
+atan "SON DAKİKA" şeridi, daha büyük başlık ve `sfx/sondakika.wav`. Sıradan günlerde hiçbir
+habere verilmez; her videoda manşet olması etkisini öldürür.
 
 Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her sahne geçişi →
 `sfx/whoosh.wav`. Ses efektleri seslendirmenin altında kalır (`sfxVolume`, 0.35-0.55).

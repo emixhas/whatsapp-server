@@ -8,8 +8,10 @@ import { Teknoloji } from "./illustrations/Teknoloji";
 import { Saglik } from "./illustrations/Saglik";
 import { Dunya } from "./illustrations/Dunya";
 import { Genel } from "./illustrations/Genel";
+import { Parti } from "./illustrations/Parti";
+import { Egitim } from "./illustrations/Egitim";
 
-export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "genel"] as const;
+export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type CategoryStyle = {
@@ -30,6 +32,8 @@ export const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
   teknoloji: { label: "TEKNOLOJİ", accent: "#8E7CFF", sfx: "sfx/blip.wav",     sfxVolume: 0.45, Illustration: Teknoloji },
   saglik:    { label: "SAĞLIK",    accent: "#FF5C8A", sfx: "sfx/kalp.wav",     sfxVolume: 0.5,  Illustration: Saglik },
   dunya:     { label: "DÜNYA",     accent: "#36D1C4", sfx: "sfx/dunya.wav",    sfxVolume: 0.45, Illustration: Dunya },
+  parti:     { label: "SİYASET",   accent: "#E30A17", sfx: "sfx/tokmak.wav",   sfxVolume: 0.5,  Illustration: Parti },
+  egitim:    { label: "EĞİTİM",    accent: "#FFB020", sfx: "sfx/okul.wav",     sfxVolume: 0.5,  Illustration: Egitim },
   genel:     { label: "GÜNDEM",    accent: "#FFFFFF", sfx: "sfx/bildirim.wav", sfxVolume: 0.45, Illustration: Genel },
 };
 

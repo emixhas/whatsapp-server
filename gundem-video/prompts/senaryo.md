@@ -10,8 +10,9 @@ KURALLAR
   seslendirme metni ("narration", 12-18 kelime). Yorum, sıfat yığını, tıklama tuzağı yok.
 - Kaynak haberde olmayan hiçbir bilgiyi ekleme. Rakam ve isimleri aynen koru.
 - "source" alanına haberin geldiği kaynak adını yaz.
-- "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, spor, hava, toplum,
-  teknoloji, saglik, dunya, genel. Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/
+- "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, parti, spor, hava,
+  toplum, egitim, teknoloji, saglik, dunya, genel. Parti değişimi/istifa/transfer/atama → parti;
+  okul/öğrenci/sınav/MEB → egitim; Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/
   yargı → siyaset; meteoroloji/deprem/afet → hava; yurt dışı olaylar → dunya; eğitim/ulaşım/
   kent/asayiş → toplum; emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
 - Intro metni: "Türkiye gündemi, {tarih}, günün özeti." benzeri, en fazla 10 kelime. Tarihi
@@ -19,6 +20,8 @@ KURALLAR
 - Outro metni: en fazla 10 kelime, yeni özetin 5 saat sonra geleceğini söyle.
 - Seslendirme için yazıyorsun: kısaltma kullanma (TCMB yerine Merkez Bankası), rakamları
   sözcükle değil rakamla yaz ama okunabilir tut, parantez ve tire kullanma.
+- Günün açık ara en büyük haberi varsa SADECE o habere "breaking": true ekle; o haber ilk sırada
+  olsun. Her videoda zorunlu değil; sıradan bir günde hiçbirine verme.
 - Resmi, sakin, profesyonel ton. Sansasyon yok.
 
 ÇIKTI
@@ -27,7 +30,7 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
 {
   "segments": [
     {"kind": "intro", "narration": "..."},
-    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
+    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "...", "breaking": true},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},

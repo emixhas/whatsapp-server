@@ -128,6 +128,16 @@ def main():
         (tone(330, 1.6, decay=1.2, amp=0.3, harmonics=(1, 0.5), attack=0.3), 0.05),
         (noise(0.6, amp=0.3, cutoff=0.3, attack=0.2, decay=0.3), 0),
     ))
+    # Eğitim: okul zili (hızlı tekrarlı çan)
+    ring = [(tone(2300, 0.12, decay=0.07, amp=0.6, harmonics=(1, 0.5, 0.2)), k * 0.06) for k in range(14)]
+    save("okul.wav", mix(*ring))
+    # Son dakika: derin darbe + yükselen gerilim tonu + üç vuruş
+    save("sondakika.wav", mix(
+        (tone(70, 0.9, decay=0.35, amp=1.0, harmonics=(1, 0.4)), 0),
+        (noise(0.3, amp=0.7, cutoff=0.2, decay=0.12), 0),
+        *[(tone(1760, 0.18, decay=0.08, amp=0.5, harmonics=(1, 0.3)), 0.35 + k * 0.16) for k in range(3)],
+        (tone(220, 1.2, decay=0.9, amp=0.35, harmonics=(1, 0.6, 0.3), attack=0.2), 0.3),
+    ))
     # Genel: iki tonlu bildirim
     save("bildirim.wav", mix(
         (tone(880, 0.35, decay=0.2, harmonics=(1, 0.3)), 0),

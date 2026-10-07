@@ -7,6 +7,8 @@ export type Segment = {
   narration: string;
   /** Haber kategorisi: src/categories.ts içindeki sabit listeden. */
   category?: string;
+  /** Günün en büyük haberi: "SON DAKİKA" manşet muamelesi görür. En fazla bir habere verilir. */
+  breaking?: boolean;
   /** Kaynak adı (ör. "AA", "TRT Haber"). */
   source?: string;
   /** Ses dosyası, public/ altına göre. */
