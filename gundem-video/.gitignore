@@ -6,3 +6,4 @@ work/
 voices/*.onnx
 voices/*.onnx.json
 .venv/
+__pycache__/
