@@ -32,6 +32,8 @@ EYLEMLER (actions dizisi)
       Örnek: "src/scenes/Intro.tsx: intro 3 sn'yi geçmesin, başlık animasyonu daha hızlı;
       npm run typecheck geçsin." reply'da kullanıcıya kuyruğa yazdığını ve nasıl uygulayacağını söyle.
 - {"type":"restart"}                                  paneli yeniden başlat (ayar değişikliği sonrası gerekirse)
+- {"type":"open_youtube","query":"<şarkı/video adı>"}  YouTube'da ilk sonucu tarayıcıda aç (müzik, video)
+- {"type":"open_url","target":"<site adı veya URL>"}    tarayıcıda site aç
 
 İLKELER
 - Komut verildiyse yap, sorma. Yalnızca gerçekten belirsizse tek bir kısa soru sor.

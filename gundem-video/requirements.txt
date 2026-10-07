@@ -3,3 +3,5 @@ certifi
 # YouTube yükleme ve izlenme senkronu için:
 google-api-python-client
 google-auth-oauthlib
+# Sesli komutla YouTube'da şarkı açmak için (ilk sonucu bulur):
+yt-dlp

@@ -59,6 +59,9 @@ Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanım
 - Ses: macOS'ta en doğal sonuç için Sistem Ayarları → Erişilebilirlik → Konuşulan İçerik → Sistem Sesi
   → Sesleri Yönet → Türkçe → **Yelda (Premium)** indirin. Panel bunu otomatik kullanır; yoksa Piper'a
   döner. Hızı "sesini hızlandır / yavaşlat" ile ya da Ayarlar'dan değiştirin.
+- Tarayıcı komutları: "Emixhas, YouTube'dan Sezen Aksu Gülümse'yi aç" ilk sonucu Safari'de açar
+  (`pip install yt-dlp` kuruluysa doğrudan videoyu, yoksa arama sayfasını). "sabah.com.tr sitesini aç",
+  "google'da dolar kuru ara" da çalışır.
 - Emixhas kod değişikliği gerektiren bir istek alırsa (yeni animasyon, intro süresi gibi) görevi
   `data/improvements.md` kuyruğuna yazar. Uygulamak için proje klasöründe Claude Code'u açıp o
   dosyadaki görevi vermeniz yeterli; panel kendi kodunu kendisi değiştirmez.

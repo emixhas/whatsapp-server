@@ -84,9 +84,22 @@ async function setSchedule(enabled, hours) {
   return r.ok ? { ok: true } : { ok: false, error: r.stderr || "launchctl load başarısız" };
 }
 
+// ---------- tarayıcıda açma (YouTube: yt-dlp ile ilk sonucu bul, yoksa arama sayfası)
+const openInBrowser = (url) => run(isMac ? "open" : "xdg-open", [url]);
+async function openYouTube(query) {
+  const search = "https://www.youtube.com/results?search_query=" + encodeURIComponent(query);
+  const r = await run("yt-dlp", ["--no-warnings", "--skip-download", "--print", "%(id)s\t%(title)s", `ytsearch1:${query}`], { timeout: 15000 });
+  const line = (r.stdout || "").trim().split("\n")[0] || "";
+  const [id, title] = line.split("\t");
+  const url = r.ok && id ? `https://www.youtube.com/watch?v=${id}` : search;
+  const o = await openInBrowser(url);
+  return { ok: o.ok, url, title: r.ok && id ? title : null, viaSearch: !(r.ok && id), error: o.ok ? null : "tarayıcı açılamadı" };
+}
+const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace(/\s/g, "")) ? "https://" + t.replace(/\s/g, "") : "https://www.google.com/search?q=" + encodeURIComponent(t) + "&btnI=1";
+
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
@@ -100,6 +113,8 @@ async function execAction(a) {
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
     case "publish": { const results = {}; for (const p of a.platforms || []) { const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; } await py("analyze.py"); return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
+    case "open_youtube": return openYouTube(String(a.query || ""));
+    case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
     default: return { ok: false, error: "bilinmeyen eylem" };
   }
 }
@@ -163,6 +178,8 @@ app.post("/api/command", async (req, res) => {
       else { const r = await execAction(act); reply = r.ok ? `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlandı.` : "Yayında sorun oldu: " + Object.values(r.results || {}).map((x) => x.error).filter(Boolean).join("; "); } break; }
     case "voice_speed": { const v = settings().voice; const rate = Math.max(140, Math.min(280, Number(v.rate) + cmd.delta)); patchSettings({ voice: { rate } }); reply = cmd.delta > 0 ? `Tamam, daha hızlı konuşuyorum. Hız ${rate}.` : `Tamam, daha yavaş konuşuyorum. Hız ${rate}.`; break; }
     case "stop": reply = ""; break;
+    case "open_youtube": { const r = await openYouTube(cmd.query); reply = r.ok ? (r.title ? `Açıyorum: ${r.title}.` : `YouTube'da "${cmd.query}" araması açıldı.`) : `Açamadım: ${r.error}`; payload = { url: r.url }; break; }
+    case "open_url": { const r = await execAction({ type: "open_url", target: cmd.target }); reply = r.ok ? "Açıyorum." : "Açamadım."; payload = { url: r.url }; break; }
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }

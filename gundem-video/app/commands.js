@@ -19,9 +19,26 @@ function extractHours(t) {
   return null;
 }
 
+// JS'de \b Türkçe harflerle çalışmaz; kelime sınırı için boşluk/satır başı-sonu kullanılır.
+const STRIP_WORDS = ["emixhas", "emiks has", "emiks", "youtube", "yutup", "yutub", "dan", "da", "tan", "ta", "git", "gidip", "şu", "bu", "şarkıyı", "şarkısını", "şarkı", "parçayı", "parçasını", "parça", "müziğini", "müziği", "müzik", "videosunu", "videoyu", "video", "klibini", "klibi", "klip", "aç", "açar mısın", "çal", "çalar mısın", "oynat", "başlat", "lütfen", "hemen", "bana", "bir", "tane", "isimli", "adlı"];
+const extractQuery = (t) => {
+  let q = " " + t.replace(/[:;]/g, " ") + " ";
+  for (const w of STRIP_WORDS.sort((a, b) => b.length - a.length)) q = q.split(" " + w + " ").join(" ");
+  return q.replace(/\s+/g, " ").trim();
+};
+
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
+  // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat"
+  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && /(aç|çal|oynat|başlat)/.test(t)) {
+    const q = extractQuery(t);
+    if (q.length > 1) return { action: "open_youtube", query: q, reply: "" };
+    return { action: "none", reply: "Hangi şarkıyı açayım?" };
+  }
+  const rawl = raw.toLocaleLowerCase("tr-TR").replace(/[’']/g, "'").trim();
+  if (/^(.+?)\s*(sitesini|sayfasını|adresini)\s*aç$/.test(rawl)) return { action: "open_url", target: rawl.replace(/\s*(sitesini|sayfasını|adresini)\s*aç$/, "").trim(), reply: "" };
+  if (/^(google ?da|googleda|internette)\s+(.+?)\s+(ara|arat)$/.test(t)) return { action: "open_url", target: "https://www.google.com/search?q=" + encodeURIComponent(t.replace(/^(google ?da|googleda|internette)\s+/, "").replace(/\s+(ara|arat)$/, "")), reply: "" };
   if (/^(dur|sus|tamam dur|yeter|kes|sessiz ol|teşekkürler|sağ ol)$/.test(t)) return { action: "stop", reply: "" };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
