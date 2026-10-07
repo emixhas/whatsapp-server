@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 MAX_WORDS_TOTAL = 95   # ~30 sn Türkçe haber temposu
 HABER_MIN, HABER_MAX = 3, 5
+CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "genel"}
 
 
 def extract_json(text: str):
@@ -40,6 +41,9 @@ def main(src: str, dst: str):
             sys.exit("Boş seslendirme metni")
         if s["kind"] == "haber" and not s.get("title", "").strip():
             sys.exit("Haber segmentinde başlık yok")
+        if s["kind"] == "haber" and s.get("category") not in CATEGORIES:
+            print(f"  ! bilinmeyen kategori {s.get('category')!r}, 'genel' kullanıldı", file=sys.stderr)
+            s["category"] = "genel"
     words = sum(len(s["narration"].split()) for s in segs)
     if words > MAX_WORDS_TOTAL:
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo 30 saniyeye sığmaz.")

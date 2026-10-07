@@ -5,6 +5,8 @@ export type Segment = {
   title?: string;
   /** Seslendirilen metin. */
   narration: string;
+  /** Haber kategorisi: src/categories.ts içindeki sabit listeden. */
+  category?: string;
   /** Kaynak adı (ör. "AA", "TRT Haber"). */
   source?: string;
   /** Ses dosyası, public/ altına göre. */

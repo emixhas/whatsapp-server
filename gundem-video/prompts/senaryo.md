@@ -10,6 +10,10 @@ KURALLAR
   seslendirme metni ("narration", 12-18 kelime). Yorum, sıfat yığını, tıklama tuzağı yok.
 - Kaynak haberde olmayan hiçbir bilgiyi ekleme. Rakam ve isimleri aynen koru.
 - "source" alanına haberin geldiği kaynak adını yaz.
+- "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, spor, hava, toplum,
+  teknoloji, saglik, dunya, genel. Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/
+  yargı → siyaset; meteoroloji/deprem/afet → hava; yurt dışı olaylar → dunya; eğitim/ulaşım/
+  kent/asayiş → toplum; emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
 - Intro metni: "Türkiye gündemi, {tarih}, günün özeti." benzeri, en fazla 10 kelime. Tarihi
   haber verisindeki tarihten değil, bugünden yaz; emin değilsen tarihi hiç söyleme.
 - Outro metni: en fazla 10 kelime, yeni özetin 5 saat sonra geleceğini söyle.
@@ -23,10 +27,10 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
 {
   "segments": [
     {"kind": "intro", "narration": "..."},
-    {"kind": "haber", "title": "...", "narration": "...", "source": "..."},
-    {"kind": "haber", "title": "...", "narration": "...", "source": "..."},
-    {"kind": "haber", "title": "...", "narration": "...", "source": "..."},
-    {"kind": "haber", "title": "...", "narration": "...", "source": "..."},
+    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
+    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
+    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
+    {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "outro", "narration": "..."}
   ]
 }

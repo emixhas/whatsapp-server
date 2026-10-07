@@ -38,6 +38,12 @@ npm run studio                                     # tarayıcıda canlı önizle
 
 Çıktı: `out/2026-10-07-1.mp4` ve yanında `out/2026-10-07-1.json` (senaryo kaydı).
 
+## Görsel ve ses kimliği
+Her haber, Claude'un atadığı kategoriye göre sabit bir animasyonlu illüstrasyon ve ses efektiyle
+gelir (ekonomi → grafik ve ₺ paralar + kasa sesi, spor → top ve kale + düdük, hava → yağmur…).
+Eşleme `src/categories.ts`, sesler `scripts/make_sfx.py` ile kodla üretilir; indirilen dosya yok.
+Tam tablo `CLAUDE.md` içinde.
+
 ## 5 saatte bir otomatik çalıştırma
 
 ```bash
