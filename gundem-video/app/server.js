@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   const host = (req.headers.host || "").split(":")[0];
   const viaTunnel = !!req.headers["cf-connecting-ip"] || /\.trycloudflare\.com$/.test(host) || (tunnel.hostname && host === tunnel.hostname);
   if (!viaTunnel) return next();
-  if (req.method === "GET" && (req.path.startsWith("/videos/") || req.path === "/tiktok/callback")) return next();
+  if (req.method === "GET" && (req.path.startsWith("/videos/") || req.path.startsWith("/w/") || req.path.startsWith("/v/") || req.path.startsWith("/api/thumb/") || req.path === "/tiktok/callback")) return next();
   res.status(403).send("Bu adres yalnızca video dosyalarını sunar.");
 });
 app.use(express.json({ limit: "1mb" }));
@@ -223,7 +223,7 @@ async function think(text, mode = "chat") {
 
 // ---------- WhatsApp köprüsü
 const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [] }; };
-const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); return { lan: `http://${lanIp()}:${PORT}/videos/${encodeURIComponent(name)}`, tunnel: tunnel.url ? `${tunnel.url}/videos/${encodeURIComponent(name)}` : null, platforms }; };
+const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const wa = await makeWhatsApp({ ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }) });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
 app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
@@ -240,6 +240,23 @@ try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; c
 // ---------- API: durum
 app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status() }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
+
+// ---------- Telefon için izleme sayfası (kısa link; WhatsApp'tan tıklanır)
+const esc = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+app.get("/v/:base", (req, res) => res.redirect("/videos/" + encodeURIComponent(path.basename(req.params.base)) + ".mp4"));
+app.get("/w/:base", (req, res) => {
+  const base = path.basename(req.params.base); const name = base + ".mp4";
+  if (!existsSync(path.join(OUT, name))) return res.status(404).send("Video yok");
+  const meta = readJson(path.join(OUT, base + ".json"), { segments: [] });
+  const haber = (meta.segments || []).filter((x) => x.kind === "haber");
+  const title = `${settings().channelName} · ${meta.dateLabel || base}${meta.episodeOfDay ? " · günün " + meta.episodeOfDay + ". özeti" : ""}`;
+  res.type("html").send(`<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<style>body{margin:0;background:#070A12;color:#E6EBFF;font:16px/1.5 -apple-system,Inter,Helvetica,Arial,sans-serif}main{max-width:520px;margin:0 auto;padding:16px}video{width:100%;border-radius:16px;background:#000;aspect-ratio:9/16}h1{font-size:17px;margin:14px 0 6px}.h{padding:8px 0;border-top:1px solid #1B2440;font-size:14px}.h b{display:block}.t{display:inline-block;font-size:10px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:#8C97BA;margin-right:6px}.t.b{background:#E30A17;color:#fff}a.d{display:block;text-align:center;margin:14px 0;padding:12px;border-radius:12px;background:#E30A17;color:#fff;text-decoration:none;font-weight:700}</style></head>
+<body><main><video src="/videos/${encodeURIComponent(name)}" controls autoplay playsinline></video><h1>${esc(title)}</h1>
+${haber.map((h, i) => `<div class="h"><span class="t ${h.breaking ? "b" : ""}">${h.breaking ? "SON DAKİKA" : esc((h.category || "genel").toUpperCase())}</span><b>${i + 1}. ${esc(h.title)}</b>${esc(h.narration)}</div>`).join("")}
+<a class="d" href="/videos/${encodeURIComponent(name)}" download>⬇ Videoyu indir / paylaş</a></main></body></html>`);
+});
+async function thumbBuffer(name) { const src = path.join(OUT, name); const dst = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (!existsSync(dst) && existsSync(src)) await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", "4", "-i", src, "-frames:v" , "1", "-vf", "scale=320:-1", dst]); try { return readFileSync(dst); } catch { return null; } }
 
 // ---------- API: videolar
 app.get("/api/videos", (_req, res) => res.json(listVideos()));

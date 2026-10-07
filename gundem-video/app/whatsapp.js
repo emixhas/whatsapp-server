@@ -73,6 +73,11 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
   }
 
   async function send(jid, text) { if (!sock || st.status !== "connected") throw new Error("WhatsApp bağlı değil"); await sock.sendMessage(jid, { text }); }
+  async function sendLink(jid, url, title, description, thumb) {
+    try {
+      await sock.sendMessage(jid, { text: `${title}\n${url}`, linkPreview: { "canonical-url": url, "matched-text": url, title, description, ...(thumb ? { jpegThumbnail: thumb } : {}) } });
+    } catch (e) { push(`💬 link gönderilemedi (${e.message}); düz metin deneniyor`); await send(jid, `${title}\n${url}`); }
+  }
   async function sendVideo(jid, file, caption) {
     const size = statSync(file).size;
     if (size > 60 * 1024 * 1024) { await send(jid, `${caption}\n(Video 60 MB'den büyük, dosya gönderilmedi; linkten izleyin.)`); return false; }
@@ -88,16 +93,19 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
     const L = await links(name);
     const head = `🎬 *Yeni video hazır* — ${v.label} (${v.duration ?? "?"} sn)`;
     const words = v.segments.map((s, i) => s.kind === "haber" ? `${i}. ${s.breaking ? "🔴 SON DAKİKA · " : ""}[${(s.category || "genel").toUpperCase()}] *${s.title}*\n${s.narration}` : `_${s.narration}_`).join("\n\n");
-    const linkLines = [`▶ Wi-Fi'de izle: ${L.lan}`, L.tunnel ? `🌐 Dışarıdan izle: ${L.tunnel}` : null].filter(Boolean).join("\n");
+    const linkLines = "";
     const platforms = L.platforms;
     const askLine = ask && w.requireApproval !== false
       ? (platforms.length ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*` : "\n\n(Yayın için bağlı platform yok; panelden YouTube/TikTok bağlayın.)")
       : "";
-    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}\n\n${linkLines}${askLine}`;
+    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${askLine}`;
     const jid = ownerJid();
     let fileSent = false;
     if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, head); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
     await send(jid, text);
+    // Linkler ayrı, önizlemeli mesaj olarak: WhatsApp IP'li yerel adresi düz metin bırakır, önizleme kartı tıklanır.
+    await sendLink(jid, L.lan, `▶ ${v.label}`, "Wi-Fi'de izle (Mac ile aynı ağ)", L.thumb);
+    if (L.tunnel) await sendLink(jid, L.tunnel, `🌐 ${v.label}`, "Dışarıdan izle (tünel)", L.thumb);
     if (ask && platforms.length && w.requireApproval !== false) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
     push(`💬 WhatsApp'a gönderildi: ${v.label}${fileSent ? " (+dosya)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
     return { ok: true, fileSent, awaitingApproval: !!st.pending };
