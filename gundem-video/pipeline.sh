@@ -31,6 +31,9 @@ echo "-- 4/4 render"
 DATE=$($PY -c "import json;print(json.load(open('public/episode.json'))['date'])")
 N=$($PY -c "import json;print(json.load(open('public/episode.json'))['episodeOfDay'])")
 OUT="out/${DATE}-${N}.mp4"
-npx remotion render src/index.ts GundemVideo "$OUT" --codec h264 --crf 18 --log error
+npx remotion render src/index.ts GundemVideo "work/render.mp4" --codec h264 --crf 18 --log error
+# Ses seviyesini YouTube standardına getir (-14 LUFS, tepe -1 dB); görüntüye dokunmaz
+ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
+rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
 echo "== bitti: $OUT ($(du -h "$OUT" | cut -f1))"

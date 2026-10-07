@@ -16,8 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VOICE = os.environ.get("PIPER_VOICE", str(ROOT / "voices" / "tr_TR-dfki-medium.onnx"))
-PIPER_LENGTH = os.environ.get("PIPER_LENGTH_SCALE", "1.05")  # >1 daha yavaş, haber tonu için hafif yavaş
-PAUSE_SEC = 0.35  # her segment sonuna sessizlik
+PIPER_LENGTH = os.environ.get("PIPER_LENGTH_SCALE", "0.82")  # <1 daha hızlı. 1.0 ≈ 120 kelime/dk, 0.82 ≈ 150 (haber temposu)
+PAUSE_SEC = 0.15  # her segment sonuna sessizlik (Piper zaten cümle sonu boşluğu ekler)
 
 
 def wav_duration(path: Path) -> float:
@@ -27,7 +27,7 @@ def wav_duration(path: Path) -> float:
 
 def tts_piper(text: str, out: Path) -> None:
     subprocess.run(
-        ["piper", "--model", VOICE, "--length_scale", PIPER_LENGTH, "--output_file", str(out)],
+        ["piper", "--model", VOICE, "--length_scale", PIPER_LENGTH, "--sentence_silence", "0.12", "--output_file", str(out)],
         input=text.encode("utf-8"), check=True, capture_output=True,
     )
 

@@ -57,6 +57,12 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
 - Ses efektleri harici dosya değildir: `python3 scripts/make_sfx.py` hepsini yeniden üretir.
   Bir sesi değiştirmek için o betikteki parametreleri değiştir, dışarıdan dosya ekleme.
 
+## Ses ayarları (ölçülerek belirlendi)
+- Piper `length_scale` 0.82 ≈ 150 kelime/dk. 1.0 fazla yavaştı (~120). Değiştirmek için
+  `PIPER_LENGTH_SCALE=0.78 bash pipeline.sh` gibi; 0.75'in altı anlaşılırlığı bozar.
+- Segment sonu sessizliği 0.15 sn + Piper cümle boşluğu 0.12 sn.
+- Son MP4 ffmpeg loudnorm ile -14 LUFS'a getirilir (YouTube hedefi). Remotion çıktısı ~-17.6 idi.
+
 ## Kurallar
 - Zamanlama sesten gelir: `episode.json` içindeki `duration` değerleri her segmentin gerçek ses
   süresidir. Sahne süresini elle sabitleme.
