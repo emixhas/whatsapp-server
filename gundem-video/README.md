@@ -86,6 +86,16 @@ Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanım
 
 Panel kapalıyken de launchd üretimi sürer; panel yalnızca kontrol ve izleme içindir.
 
+## WhatsApp'tan kontrol ve onay
+
+Ayarlar → WhatsApp → "WhatsApp'ı bağla": telefonda WhatsApp → Bağlı Cihazlar → Cihaz Bağla → QR'ı
+okutun. Sahip numarası ayarlarda (varsayılan 0532 130 88 27). Bundan sonra:
+- Her video bitince WhatsApp'a başlıklar, seslendirme metni, izleme linkleri ve video dosyası gelir.
+- "onay" yazınca bağlı platformlara (YouTube, Instagram, TikTok) yayınlanır; "iptal" yazınca yayınlanmaz.
+- "60 saniyelik video üret", "durum", "rapor", "son videoyu gönder" gibi komutlar WhatsApp'tan da çalışır.
+Wi-Fi linki aynı ağda açılır; dışarıdayken izlemek için tünel açık olmalı (link otomatik eklenir) ya da
+gönderilen video dosyasını doğrudan WhatsApp'ta oynatın.
+
 ## YouTube ve Instagram bağlantısı
 
 **YouTube (önerilen ilk adım)**

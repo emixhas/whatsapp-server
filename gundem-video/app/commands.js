@@ -49,6 +49,7 @@ export function parseCommand(raw) {
   if (/^(sesini|sesi|konuşmanı|biraz)?\s*(biraz\s*)?(daha\s*)?(hızlandır|hızlı konuş)\s*(lütfen)?$/.test(t) || /^(ses|konuşma)\s*(hızını)?\s*(biraz\s*)?(artır|yükselt|hızlandır)$/.test(t)) return { action: "voice_speed", delta: 25, reply: "" };
   if (/^(sesini|sesi|konuşmanı|biraz)?\s*(biraz\s*)?(daha\s*)?(yavaşlat|yavaş konuş)\s*(lütfen)?$/.test(t) || /^(ses|konuşma)\s*(hızını)?\s*(biraz\s*)?(azalt|düşür|yavaşlat)$/.test(t)) return { action: "voice_speed", delta: -25, reply: "" };
   if (/(doğal ses|gerçekçi ses|insan sesi|chatterbox)/.test(t)) return { action: /(kapat|durdur)/.test(t) ? "voice_natural_off" : "voice_natural_on", reply: "" };
+  if (/(whatsapp|vatsap|watsap)/.test(t)) return { action: /(gönder|yolla|at)/.test(t) ? "whatsapp_send" : "whatsapp_on", reply: "" };
   if (/(tünel|tunnel|cloudflare)/.test(t)) return { action: /(kapat|durdur)/.test(t) ? "tunnel_off" : "tunnel_on", reply: "" };
   if (/(zamanlay|otomatik|periyodik)/.test(t)) {
     if (/(kapat|durdur|iptal)/.test(t)) return { action: "schedule_off", reply: "" };

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import { parseCommand } from "./commands.js";
 import { makeBrain } from "./brain.js";
+import { makeWhatsApp } from "./whatsapp.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "out"), WORK = path.join(ROOT, "work"), DATA = path.join(ROOT, "data"), THUMBS = path.join(WORK, "thumbs");
@@ -43,7 +44,8 @@ const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
-  chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false } };
+  chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false },
+  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true } };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
 const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
@@ -186,7 +188,7 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
@@ -203,6 +205,7 @@ async function execAction(a) {
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
     case "natural_voice": return a.enabled === false ? stopTts() : startTts();
+    case "whatsapp_send": return wa.notifyVideo(a.video || listVideos()[0]?.name, { ask: true });
     case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
     default: return { ok: false, error: "bilinmeyen eylem" };
   }
@@ -218,8 +221,24 @@ async function think(text, mode = "chat") {
   return { ...r, done, pending, reportFile };
 }
 
+// ---------- WhatsApp köprüsü
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [] }; };
+const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); return { lan: `http://${lanIp()}:${PORT}/videos/${encodeURIComponent(name)}`, tunnel: tunnel.url ? `${tunnel.url}/videos/${encodeURIComponent(name)}` : null, platforms }; };
+const wa = await makeWhatsApp({ ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }) });
+app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
+app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
+app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));
+app.post("/api/whatsapp/logout", async (_req, res) => res.json(await wa.logout()));
+app.post("/api/whatsapp/test", async (_req, res) => { try { await wa.send("✅ Emixhas test mesajı. Bağlantı çalışıyor."); res.json({ ok: true }); } catch (e) { res.json({ ok: false, error: e.message }); } });
+app.post("/api/whatsapp/send-latest", async (req, res) => { const v = listVideos()[0]; if (!v) return res.json({ ok: false, error: "video yok" }); res.json(await wa.notifyVideo(req.body?.name || v.name, { ask: true })); });
+if (settings().whatsapp?.enabled && settings().whatsapp?.autoStart) setTimeout(() => wa.start().catch((e) => push(`✖ WhatsApp: ${e.message}`)), 2500);
+
+// Yeni video (panelden veya launchd'den) → WhatsApp bildirimi. out/ klasörü izlenir, bilinen dosyalar atlanır.
+const knownVideos = new Set(readdirSync(OUT).filter((f) => f.endsWith(".mp4")));
+try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) { const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
+
 // ---------- API: durum
-app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), resources: sampleResources(), usage: brain.usageToday() }));
+app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status() }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
 
 // ---------- API: videolar
@@ -255,8 +274,8 @@ app.post("/api/ask", async (req, res) => { state.busy = "düşünüyor"; try { r
 app.post("/api/actions", async (req, res) => { const out = []; for (const a of req.body?.actions || []) out.push({ ...a, result: await execAction(a) }); res.json(out); });
 
 // ---------- API: sesli komut → kural, kural yoksa beyin
-app.post("/api/command", async (req, res) => {
-  const text = String(req.body?.text || ""); const cmd = parseCommand(text); const videos = listVideos();
+async function handleCommand(text) {
+  text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   switch (cmd.action) {
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
@@ -273,6 +292,8 @@ app.post("/api/command", async (req, res) => {
     case "stop": reply = ""; break;
     case "tunnel_on": { const r = startTunnel(); reply = r.ok ? (r.url ? `Tünel açık: ${r.url.replace("https://", "")}.` : "Tünel başlatılıyor, adres gelince söylerim.") : `Tünel başlatılamadı: ${r.error}`; break; }
     case "tunnel_off": stopTunnel(); reply = "Tünel kapatıldı."; break;
+    case "whatsapp_on": { const r = await wa.start(); reply = r.status === "connected" ? `WhatsApp zaten bağlı: +${r.phone}.` : "WhatsApp bağlantısı başlatıldı; QR kodu Ayarlar sekmesinde okutun."; break; }
+    case "whatsapp_send": { const v = listVideos()[0]; if (!v) { reply = "Gönderilecek video yok."; break; } const r = await wa.notifyVideo(v.name, { ask: true }); reply = r.ok ? "WhatsApp'a gönderildi." : `Gönderilemedi: ${r.error}`; break; }
     case "voice_natural_on": startTts(); reply = tts.ready ? "Doğal ses zaten hazır." : "Doğal ses motoru başlatılıyor, hazır olunca söylerim."; break;
     case "voice_natural_off": stopTts(); patchSettings({ voice: { engine: "auto" } }); reply = "Doğal ses kapatıldı, sistem sesine döndüm."; break;
     case "open_youtube": { const r = await openYouTube(cmd.query); reply = r.ok ? (r.title ? `Açıyorum: ${r.title}.` : `YouTube'da "${cmd.query}" araması açıldı.`) : `Açamadım: ${r.error}`; payload = { url: r.url }; break; }
@@ -280,8 +301,9 @@ app.post("/api/command", async (req, res) => {
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }
-  res.json({ action, reply, payload, heard: text, ...extra });
-});
+  return { action, reply, payload, heard: text, ...extra };
+}
+app.post("/api/command", async (req, res) => res.json(await handleCommand(req.body?.text)));
 
 // ---------- Jarvis sesi
 app.post("/api/speak", (req, res) => { const text = String(req.body?.text || "").slice(0, 500); const child = spawn(PY, ["scripts/speak.py"], { cwd: ROOT, env: ENV }); const chunks = []; child.stdout.on("data", (c) => chunks.push(c)); child.on("close", (code) => { if (code !== 0 || !chunks.length) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.send(Buffer.concat(chunks)); }); child.stdin.end(text); });

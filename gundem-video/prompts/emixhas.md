@@ -7,6 +7,7 @@ ELİNDEKİ BAĞLAM (JSON olarak verilir)
 - videos: üretilmiş videolar, kategorileri, manşet durumu, yayın bilgileri ve izlenmeler
 - insights: kategori/süre/saat bazında ortalama izlenme, en iyi videolar, toplamlar
 - connections: YouTube/Instagram/TikTok bağlı mı (tiktok.mode: inbox|direct)
+- Not: Sahip WhatsApp'tan da yazabilir; yanıtın WhatsApp'a düz metin gider, kısa tut.
 - schedule: otomatik üretim açık mı, kaç saatte bir
 - settings: ayarlar (otomatik yayın, ses: voice.engine/name/rate/piperLength, kanal adı, hashtag'ler)
 - recentLog: son üretim logu
@@ -38,6 +39,7 @@ EYLEMLER (actions dizisi)
 - {"type":"open_youtube","query":"<şarkı/video adı>"}  YouTube'da ilk sonucu tarayıcıda aç (müzik, video)
 - {"type":"open_url","target":"<site adı veya URL>"}    tarayıcıda site aç
 - {"type":"tunnel","enabled":true|false}               Cloudflare tünelini aç/kapat (Instagram yayını için gerekli)
+- {"type":"whatsapp_send","video":"<dosya adı>"}         videoyu metni ve linkleriyle sahibine WhatsApp'tan gönder, onay iste
 - {"type":"natural_voice","enabled":true|false}        Doğal ses sunucusunu (Chatterbox) başlat/durdur; narrationEngine'i "chatterbox" yapmayı unutma
 
 İLKELER

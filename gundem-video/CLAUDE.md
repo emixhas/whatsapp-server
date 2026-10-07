@@ -69,6 +69,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Yeni sesli komut: `app/commands.js` içine kural, `server.js` içindeki switch'e eylem. Kural
   regex'lerinde kelime sınırı kullan ("niye" ↔ "saniyelik" tuzağı).
 
+## WhatsApp köprüsü (`app/whatsapp.js`, Baileys)
+- QR panelden okutulur; oturum `secrets/wa-auth/`. Yalnızca `settings.whatsapp.owner` numarasından
+  gelen mesajlar işlenir (0532… → 90532…), gruplar yok sayılır.
+- Yeni video (panelden ya da launchd'den; `out/` izlenir) → sahibine: başlıklar + seslendirme metni,
+  Wi-Fi linki, tünel açıksa dış link, ayar açıksa video dosyasının kendisi; bağlı platform varsa
+  "onay" ister. "onay/evet/yayınla" → bağlı platformlara yayın; "iptal" → yayınlanmaz.
+- Diğer mesajlar `handleCommand()` üzerinden aynı kural+beyin yoluna gider; yanıt düz metin döner.
+- Video dosyası 60 MB üstündeyse gönderilmez, link kalır. WhatsApp bağlı değilken bildirim loga düşer.
+
 ## Yayın ve analitik
 - `scripts/publish.py`: YouTube (Data API v3, OAuth; `secrets/youtube_client.json` → token) ve
   Instagram Reels (Graph API; videoyu `PUBLIC_BASE_URL/videos/<ad>` adresinden çeker, bu yüzden

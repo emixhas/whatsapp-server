@@ -16,7 +16,9 @@
   "dependencies": {
     "@remotion/cli": "^4.0.534",
     "@remotion/media-utils": "^4.0.534",
+    "@whiskeysockets/baileys": "^6.7.24",
     "express": "^5.2.1",
+    "pino": "^10.4.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",

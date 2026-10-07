@@ -1,0 +1,110 @@
+// WhatsApp köprüsü (Baileys, WhatsApp Web protokolü). Panelden QR okutulur; yalnızca sahip numarası komut verebilir.
+// Video bitince: metin + izleme linkleri + (isteğe bağlı) video dosyası gönderir; "onay" gelince yayınlar.
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import path from "node:path";
+import QRCode from "qrcode";
+
+export async function makeWhatsApp({ ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
+  const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
+  const st = { status: "disconnected", qr: null, qrSvg: null, phone: null, error: null, pending: null, lastMsgAt: null, retries: 0 };
+  let sock = null, stopping = false, baileys = null;
+
+  const digits = (s) => String(s || "").replace(/\D/g, "");
+  const ownerDigits = () => { let d = digits(settings().whatsapp?.owner); if (d.startsWith("0")) d = "90" + d.slice(1); return d; };
+  const ownerJid = () => `${ownerDigits()}@s.whatsapp.net`;
+  const isOwner = (jid) => { const d = digits(jid); const o = ownerDigits(); return !!o && (d === o || d.endsWith(o.slice(-10))); };
+
+  async function start() {
+    if (sock || stopping) return status();
+    try { baileys = baileys || await import("@whiskeysockets/baileys"); } catch (e) { st.error = "Baileys yüklü değil: npm install"; return status(); }
+    const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+    const pino = (await import("pino")).default;
+    mkdirSync(AUTH_DIR, { recursive: true });
+    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    let version; try { ({ version } = await fetchLatestBaileysVersion()); } catch { version = undefined; }
+    sock = makeWASocket({ auth: state, version, logger: pino({ level: "silent" }), browser: ["Emixhas", "Chrome", "4.0.0"], printQRInTerminal: false, markOnlineOnConnect: false });
+    st.status = "connecting"; st.error = null;
+    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("connection.update", async (u) => {
+      if (u.qr) { st.qr = u.qr; st.qrSvg = await QRCode.toString(u.qr, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }); st.status = "qr"; push("💬 WhatsApp: QR hazır, panelden telefonunuzla okutun"); }
+      if (u.connection === "open") { st.status = "connected"; st.qr = st.qrSvg = null; st.retries = 0; st.phone = digits(sock.user?.id?.split(":")[0]); push(`💬 WhatsApp bağlandı: +${st.phone}`); announce("WhatsApp bağlandı."); }
+      if (u.connection === "close") {
+        const code = u.lastDisconnect?.error?.output?.statusCode;
+        sock = null; st.status = "disconnected";
+        if (code === DisconnectReason.loggedOut) { st.error = "Oturum kapatıldı; yeniden QR gerekir"; rmSync(AUTH_DIR, { recursive: true, force: true }); push("💬 WhatsApp oturumu kapandı (telefondan çıkış yapılmış)"); return; }
+        if (!stopping && st.retries++ < 8) { push(`💬 WhatsApp bağlantısı koptu (kod ${code}), yeniden deneniyor`); setTimeout(start, 3000 * st.retries); }
+      }
+    });
+    sock.ev.on("messages.upsert", async ({ messages, type }) => {
+      if (type !== "notify") return;
+      for (const m of messages) {
+        if (!m.message || m.key.fromMe) continue;
+        const from = m.key.remoteJid || ""; const participant = m.key.participant || "";
+        if (from.endsWith("@g.us")) continue;                       // gruplar yok sayılır
+        if (!isOwner(from) && !isOwner(participant)) continue;      // yalnızca sahip
+        const text = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").trim();
+        if (!text) continue;
+        st.lastMsgAt = Date.now();
+        push(`💬 WhatsApp'tan: ${text.slice(0, 80)}`);
+        try { await onOwnerMessage(from, text); } catch (e) { push(`✖ WhatsApp komutu: ${e.message}`); await send(from, `Hata: ${e.message}`); }
+      }
+    });
+    return status();
+  }
+
+  async function onOwnerMessage(jid, text) {
+    const t = text.toLocaleLowerCase("tr-TR").trim();
+    if (st.pending && /^(onay|onayla|evet|yayınla|ok|tamam|paylaş)\b/.test(t)) {
+      const p = st.pending; st.pending = null;
+      await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${p.platforms.join(", ")}`);
+      const r = await publishVideo(p.video, p.platforms);
+      const lines = Object.entries(r.results || {}).map(([k, v]) => v.ok ? `✅ ${k}: ${v.skipped ? "zaten yayında" : (v.url || v.note || "tamam")}` : `❌ ${k}: ${v.error}`);
+      await send(jid, lines.join("\n") || "Yayınlanacak platform yok.");
+      return;
+    }
+    if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)\b/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label} yayınlanmadı.`); return; }
+    if (/^(yardım|help|\?)$/.test(t)) { await send(jid, "Komutlar: onay / iptal · 60 saniyelik video üret · durum · rapor · plan · son videoyu gönder · izlenmeleri güncelle · tiktok'a yayınla. Diğer her şey Emixhas'ın beynine gider."); return; }
+    if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
+    const r = await handleCommand(text);
+    let reply = r.reply || "Tamam.";
+    if (r.report) reply += "\n\n" + r.report.slice(0, 3500);
+    if (r.pending?.length) { reply += "\n\n(Bu eylem panelden onay bekliyor.)"; }
+    await send(jid, reply);
+  }
+
+  async function send(jid, text) { if (!sock || st.status !== "connected") throw new Error("WhatsApp bağlı değil"); await sock.sendMessage(jid, { text }); }
+  async function sendVideo(jid, file, caption) {
+    const size = statSync(file).size;
+    if (size > 60 * 1024 * 1024) { await send(jid, `${caption}\n(Video 60 MB'den büyük, dosya gönderilmedi; linkten izleyin.)`); return false; }
+    await sock.sendMessage(jid, { video: readFileSync(file), caption, mimetype: "video/mp4" });
+    return true;
+  }
+
+  /** Üretim bitince sahibine metin + linkler (+ dosya) gönderir ve onay bekler. */
+  async function notifyVideo(name, { ask = true } = {}) {
+    const w = settings().whatsapp || {};
+    if (!w.enabled || st.status !== "connected") return { ok: false, error: "WhatsApp bağlı değil" };
+    const v = videoInfo(name); if (!v) return { ok: false, error: "video bulunamadı" };
+    const L = await links(name);
+    const head = `🎬 *Yeni video hazır* — ${v.label} (${v.duration ?? "?"} sn)`;
+    const words = v.segments.map((s, i) => s.kind === "haber" ? `${i}. ${s.breaking ? "🔴 SON DAKİKA · " : ""}[${(s.category || "genel").toUpperCase()}] *${s.title}*\n${s.narration}` : `_${s.narration}_`).join("\n\n");
+    const linkLines = [`▶ Wi-Fi'de izle: ${L.lan}`, L.tunnel ? `🌐 Dışarıdan izle: ${L.tunnel}` : null].filter(Boolean).join("\n");
+    const platforms = L.platforms;
+    const askLine = ask && w.requireApproval !== false
+      ? (platforms.length ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*` : "\n\n(Yayın için bağlı platform yok; panelden YouTube/TikTok bağlayın.)")
+      : "";
+    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}\n\n${linkLines}${askLine}`;
+    const jid = ownerJid();
+    let fileSent = false;
+    if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, head); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
+    await send(jid, text);
+    if (ask && platforms.length && w.requireApproval !== false) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
+    push(`💬 WhatsApp'a gönderildi: ${v.label}${fileSent ? " (+dosya)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
+    return { ok: true, fileSent, awaitingApproval: !!st.pending };
+  }
+
+  async function stop() { stopping = true; try { sock?.end?.(); } catch { /* yok */ } sock = null; st.status = "disconnected"; stopping = false; return status(); }
+  async function logout() { try { await sock?.logout?.(); } catch { /* yok */ } await stop(); rmSync(AUTH_DIR, { recursive: true, force: true }); st.phone = null; return status(); }
+  const status = () => ({ status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
+  return { start, stop, logout, status, send: (t) => send(ownerJid(), t), notifyVideo };
+}
