@@ -24,7 +24,8 @@ EYLEMLER (actions dizisi)
 - {"type":"open_video","video":"<dosya adı>"}
 - {"type":"settings","patch":{...}}                   ayar değiştir. Sık kullanılanlar:
       voice.rate (kelime/dk, 150-260; "hızlandır" → +25, "yavaşlat" → -25),
-      voice.engine ("auto"|"say"|"piper"), voice.name ("Yelda"), narrationEngine ("piper"|"say"),
+      voice.engine ("auto"|"chatterbox"|"say"|"piper"), voice.name ("Yelda"), narrationEngine ("piper"|"say"|"chatterbox"),
+      chatterbox.exaggeration (0.3 sakin … 0.7 duygulu), chatterbox.refVoice (klonlanacak örnek ses yolu),
       dailyReportHour, hashtags, channelName. İç içe anahtarlar için {"voice":{"rate":220}} yaz.
 - {"type":"improvement","task":"<somut geliştirme görevi>"}
       Ayarla çözülemeyen bir değişiklik gerekiyorsa (animasyon, prompt, yeni özellik) görevi
@@ -36,6 +37,7 @@ EYLEMLER (actions dizisi)
 - {"type":"open_youtube","query":"<şarkı/video adı>"}  YouTube'da ilk sonucu tarayıcıda aç (müzik, video)
 - {"type":"open_url","target":"<site adı veya URL>"}    tarayıcıda site aç
 - {"type":"tunnel","enabled":true|false}               Cloudflare tünelini aç/kapat (Instagram yayını için gerekli)
+- {"type":"natural_voice","enabled":true|false}        Doğal ses sunucusunu (Chatterbox) başlat/durdur; narrationEngine'i "chatterbox" yapmayı unutma
 
 İLKELER
 - Komut verildiyse yap, sorma. Yalnızca gerçekten belirsizse tek bir kısa soru sor.

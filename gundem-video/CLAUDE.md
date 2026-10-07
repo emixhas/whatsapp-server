@@ -38,6 +38,16 @@ süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2
   rate'i ±25 değiştirir; beyin de `settings` eylemiyle değiştirebilir. Video anlatımı
   `settings.narrationEngine` (piper|say).
 - `scripts/panel.sh` paneli döngüde çalıştırır; çıkış kodu 75 = yeniden başlat (`restart` eylemi).
+- Canlı log (`push()` → SSE): üretim adımları, beyin (🧠 düşünüyor / ⚡ eylem / ⏸ onay), yayın (📤),
+  metrik (📊), tünel (☁), doğal ses (🎤), kod değişiklikleri (✎ fs.watch: src/app/scripts/prompts),
+  git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda yapışkan; satır öneki rengi belirler.
+  Yeni bir işlem eklerken `push()` ile logla, sessiz çalışan şey olmasın.
+- Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT, Türkçe, klonlama) modelini bir kez
+  yükler, :3139'da HTTP sunar. `scripts/natural_tts.py` istemci; `tts.py`/`speak.py` motor
+  "chatterbox" seçiliyse buraya gider, sunucu hazır değilse Yelda/Piper'a düşer (loga yazar).
+  Kurulum `scripts/install_voice.sh` (torch+chatterbox-tts, ~3 GB). Ayarlar `settings.chatterbox`
+  {refVoice, exaggeration, cfg, autoStart}. Çıktıya duyulmayan PerTh filigranı eklenir (model özelliği).
+  Klon sesi için yalnızca kullanıcının kendi sesi veya izinli bir kayıt kullanılır.
 - Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,

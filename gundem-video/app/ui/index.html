@@ -14,7 +14,7 @@
   @keyframes blink{50%{opacity:.3}}
   .conn{display:flex;gap:10px;margin-left:auto;font-size:12px;color:var(--mut)}.conn span{padding:4px 10px;border:1px solid var(--line);border-radius:999px}.conn span.ok{border-color:var(--green);color:var(--green)}
   nav{display:flex;gap:6px;padding:10px 24px 0}nav button{background:transparent;border:1px solid transparent;color:var(--mut);padding:8px 14px;border-radius:10px;cursor:pointer;font-weight:600}nav button.on{color:var(--txt);border-color:var(--line);background:var(--panel)}
-  main{display:grid;grid-template-columns:460px 1fr;gap:18px;padding:16px 24px 40px}
+  main{display:grid;grid-template-columns:440px 1fr;gap:18px;padding:16px 24px 40px;align-items:start}
   @media(max-width:980px){main{grid-template-columns:1fr}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;backdrop-filter:blur(10px)}
   .card h2{margin:0 0 10px;font-size:11px;letter-spacing:3px;color:var(--mut);font-weight:700}
@@ -37,7 +37,8 @@
   .ghost{border:1px solid var(--line);background:transparent;color:var(--txt);border-radius:10px;padding:7px 11px;cursor:pointer;font-size:13px}.ghost.danger{color:#ff7b86;border-color:#4a1d24}.ghost.ok{border-color:var(--green);color:var(--green)}
   .sw{position:relative;width:42px;height:22px;background:#1b2440;border-radius:11px;cursor:pointer;flex:none}.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}.sw.on{background:var(--green)}.sw.on::after{left:23px}
   select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px}
-  .log{background:#05070e;border:1px solid var(--line);border-radius:12px;padding:10px;height:150px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:#B8C2E6;white-space:pre-wrap}
+  .log{background:#05070e;border:1px solid var(--line);border-radius:12px;padding:10px;height:230px;overflow:auto;font:12px/1.55 ui-monospace,Menlo,monospace;color:#B8C2E6;white-space:pre-wrap;transition:height .2s}
+.log div{padding:1px 0;border-bottom:1px solid #0b1020}.log .l-ok{color:var(--green)}.log .l-err{color:#ff6b6b}.log .l-brain{color:var(--amber)}.log .l-code{color:var(--violet)}.log .l-pub{color:#ff8ad8}.log .l-tts{color:var(--cyan)}.log .l-step{color:#D7DDEE}.log .l-time{color:#4b577a;margin-right:8px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
   .vid{background:#0b1020;border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.15s;position:relative}.vid:hover{border-color:var(--c);transform:translateY(-2px)}
   .vid img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
@@ -95,10 +96,14 @@
       <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle</span></label>
       <label class="row"><span class="sw" id="apTt"></span><span>Üretince TikTok'a otomatik gönder</span></label>
     </div>
-    <div class="card"><h2>CANLI LOG</h2><div class="log" id="log"></div></div>
   </section>
 
   <section>
+    <div class="card" id="logCard" style="position:sticky;top:8px;z-index:2;margin-bottom:16px">
+      <h2 style="display:flex;align-items:center;gap:10px">CANLI LOG <span class="dot" id="logDot" style="margin-left:2px"></span><span id="logHint" style="color:var(--mut);letter-spacing:0;font-weight:400;text-transform:none">üretim, beyin, yayın, tünel, ses ve kod değişiklikleri burada akar</span>
+        <span style="margin-left:auto;display:flex;gap:6px"><button class="ghost" id="logPause" title="otomatik kaydırmayı durdur">⏸</button><button class="ghost" id="logClear">temizle</button><button class="ghost" id="logSize">▤</button></span></h2>
+      <div class="log" id="log" style="height:230px"></div>
+    </div>
     <div class="card tab on" id="tab-videos"><h2>VİDEOLAR <span id="count" style="color:var(--txt)"></span></h2><div class="grid" id="grid"></div><div class="empty" id="empty" style="display:none">Henüz video yok. "Şimdi üret" ile başlayın.</div></div>
     <div class="card tab" id="tab-analytics">
       <h2>ANALİTİK <button class="ghost" id="syncBtn" style="float:right">⟳ İzlenmeleri güncelle</button></h2>
@@ -116,6 +121,12 @@
       <h2 style="margin-top:18px">TIKTOK</h2><div class="conninfo" id="ttInfo"></div><div class="acts"><button class="ghost ok" id="ttConnect">TikTok'u bağla</button></div>
       <h2 style="margin-top:18px">CLOUDFLARE TÜNELİ</h2><div class="conninfo" id="tunInfo"></div>
       <div class="acts"><button class="ghost ok" id="tunStart">Tüneli başlat</button><button class="ghost" id="tunStop">Durdur</button><label class="row" style="margin:0 0 0 10px"><span class="sw" id="tunAuto"></span><span style="font-size:13px">Panel açılınca otomatik başlat</span></label></div>
+      <h2 style="margin-top:18px">DOĞAL SES (CHATTERBOX)</h2><div class="conninfo" id="ttsInfo"></div>
+      <div class="acts"><button class="ghost ok" id="ttsStart">Doğal sesi başlat</button><button class="ghost" id="ttsStop">Durdur</button>
+        <label class="row" style="margin:0 0 0 6px"><span class="sw" id="ttsAuto"></span><span style="font-size:13px">Panel açılınca başlat</span></label>
+        <label class="row" style="margin:0 0 0 6px"><span>Video anlatımı:</span><select id="narrEngine"><option value="piper">Piper</option><option value="say">Mac sesi (Yelda)</option><option value="chatterbox">Doğal ses</option></select></label>
+        <label class="row" style="margin:0 0 0 6px"><span>Emixhas sesi:</span><select id="voiceEngine"><option value="auto">Otomatik</option><option value="chatterbox">Doğal ses</option><option value="say">Mac sesi</option><option value="piper">Piper</option></select></label>
+        <label class="row" style="margin:0 0 0 6px"><span>Duygu</span><input type="range" id="exag" min="0.2" max="0.8" step="0.05" style="width:120px"><span id="exagTxt"></span></label></div>
       <h2 style="margin-top:18px">KANAL</h2>
       <label class="row"><span style="min-width:130px">Kanal adı</span><input id="sName" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
       <label class="row"><span style="min-width:130px">Hashtag'ler</span><input id="sTags" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
@@ -176,7 +187,13 @@ function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on')
   if(s.settings?.wakeWords?.length)wakeRe=new RegExp('(^|\\s)('+s.settings.wakeWords.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')(\\s|$|,)','i');renderConn(s);}
 async function refreshStatus(){setState(await api('/api/status'));}
 const es=new EventSource('/api/log');
-es.onmessage=e=>{const l=JSON.parse(e.data);if(l==='__done__'){refreshStatus();loadVideos();speak(status.exitCode===0?'Video hazır.':'Üretim hata verdi, loga bakın.');return;}const el=$('#log');el.textContent+=l+'\n';el.scrollTop=el.scrollHeight;if(l.startsWith('▶'))refreshStatus();};
+let logPaused=false;
+function logClass(l){if(/^(✔|== bitti)/.test(l))return 'l-ok';if(/^(✖|HATA|  !)/.test(l)||/hata/i.test(l)&&!/^🧠/.test(l))return 'l-err';if(/^(🧠|⚡|⏸|💬)/.test(l))return 'l-brain';if(/^(✎|⎇|🛠)/.test(l))return 'l-code';if(/^(📤|📊|☁)/.test(l))return 'l-pub';if(/^🎤/.test(l))return 'l-tts';if(/^(--|▶|==)/.test(l))return 'l-step';return '';}
+function logLine(l){const el=$('#log');const d=document.createElement('div');d.className=logClass(l);const t=document.createElement('span');t.className='l-time';t.textContent=new Date().toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});d.appendChild(t);d.appendChild(document.createTextNode(l));el.appendChild(d);while(el.children.length>600)el.removeChild(el.firstChild);if(!logPaused)el.scrollTop=el.scrollHeight;$('#logDot').className='dot busy';clearTimeout(logLine.t);logLine.t=setTimeout(()=>$('#logDot').className='dot on',1200);}
+es.onmessage=e=>{const l=JSON.parse(e.data);if(l==='__done__'){refreshStatus();loadVideos();speak(status.exitCode===0?'Video hazır.':'Üretim hata verdi, loga bakın.');return;}logLine(l);if(l.startsWith('▶'))refreshStatus();};
+$('#logPause').onclick=()=>{logPaused=!logPaused;$('#logPause').textContent=logPaused?'▶':'⏸';if(!logPaused)$('#log').scrollTop=1e9;};
+$('#logClear').onclick=()=>{$('#log').innerHTML='';};
+$('#logSize').onclick=()=>{const el=$('#log');el.style.height=el.style.height==='230px'?'460px':'230px';};
 es.addEventListener('jarvis',e=>{const d=JSON.parse(e.data);addMsg('j',d.reply);speak(d.reply);if(d.reportFile)loadReports(d.reportFile);});
 
 // ================= videolar
@@ -206,12 +223,20 @@ function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtub
   $('#igInfo').innerHTML=c.instagram?.connected?`✅ Bağlı. ${c.instagram.publicUrl?'Herkese açık URL ayarlı ✔':'⚠ PUBLIC_BASE_URL eksik: Instagram videoyu bu adresten çeker.'}`:'❌ Bağlı değil. Gerekenler: Instagram <b>İşletme/İçerik üretici</b> hesabı + bağlı Facebook sayfası → developers.facebook.com\'da uygulama → <code>instagram_content_publish</code> ve <code>instagram_manage_insights</code> izinli uzun ömürlü token → <code>secrets/.env</code> içine IG_USER_ID, IG_ACCESS_TOKEN ve PUBLIC_BASE_URL (ör. Cloudflare Tunnel adresi). Ayrıntı: <code>secrets/README.md</code>';
   const tt=c.tiktok||{};$('#ttInfo').innerHTML=tt.connected?`✅ Bağlı. Mod: <b>${tt.mode==='direct'?'doğrudan yayın':'gelen kutusu (taslak)'}</b>. ${tt.mode==='direct'?'Uygulama TikTok denetiminden geçmediyse paylaşımlar yalnızca size görünür.':'Video TikTok uygulamanızın gelen kutusuna düşer; bildirime dokunup yayınlarsınız. Bu yol uygulama onayı gerektirmez.'}`:`❌ Bağlı değil. Adımlar: developers.tiktok.com → uygulama oluştur → Login Kit ve Content Posting API ekle → Redirect URI: <code>http://localhost:3137/tiktok/callback</code> → Client key ve secret'ı <code>secrets/.env</code> içine TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET olarak yaz → "TikTok'u bağla". ${tt.appKeys?'Anahtarlar bulundu ✔':'Anahtarlar henüz yok.'} Varsayılan mod gelen kutusu: onaysız uygulamada da çalışır, yayını telefondan tek dokunuşla yaparsınız.`;
   const tn=s.tunnel||{};$('#tunInfo').innerHTML=tn.running?`✅ Çalışıyor (${tn.mode==='named'?'adlı tünel':'hızlı tünel'}): <b>${tn.url||'adres bekleniyor…'}</b><br>Instagram bu adresten videoyu çeker (PUBLIC_BASE_URL otomatik yazıldı). Dışarıdan yalnızca video dosyaları görünür, panel kapalıdır.${tn.mode==='quick'?'<br>⚠ Hızlı tünelin adresi her başlatmada değişir; kalıcı adres için secrets/.env içine TUNNEL_NAME ve TUNNEL_HOSTNAME yazın (README).':''}`:`${tn.error?'❌ '+tn.error+'<br>':''}Kapalı. ${tn.publicBaseUrl?'Son adres: <code>'+tn.publicBaseUrl+'</code>':'Gerekli: <code>brew install cloudflared</code>, sonra "Tüneli başlat".'}`;$('#tunAuto').classList.toggle('on',!!s.settings?.tunnelAutoStart);
+  const tv=s.tts||{};const cb=s.settings?.chatterbox||{};$('#ttsInfo').innerHTML=tv.ready?`✅ Hazır (${tv.device||'?'}). ${tv.refVoice?'Klon sesi: <code>'+tv.refVoice+'</code>':'Varsayılan ses. Kendi sesinizi klonlamak için 5-10 sn temiz bir kayıt <code>voices/ref.wav</code> olarak koyun.'}`:tv.running?'⏳ Başlatılıyor, model yükleniyor… (ilk seferde ~2 GB iner, loga bakın)':`${tv.error?'❌ '+tv.error+'<br>':''}Kapalı. Kurulum bir kez: <code>bash scripts/install_voice.sh</code> (torch + chatterbox-tts, ~3 GB). Sonra "Doğal sesi başlat". MIT lisanslı, tamamen yerel, Türkçe destekli; ElevenLabs'e en yakın açık model.`;
+  $('#ttsAuto').classList.toggle('on',!!cb.autoStart);$('#narrEngine').value=s.settings?.narrationEngine||'piper';$('#voiceEngine').value=s.settings?.voice?.engine||'auto';$('#exag').value=cb.exaggeration??0.45;$('#exagTxt').textContent=(cb.exaggeration??0.45).toFixed(2);
   if(s.settings){$('#sName').value=s.settings.channelName||'';$('#sTags').value=s.settings.hashtags||'';if(!$('#sHour').options.length)for(let h=0;h<24;h++)$('#sHour').add(new Option(`${String(h).padStart(2,'0')}:00`,h));$('#sHour').value=String(s.settings.dailyReportHour??9);}}
 $('#ytConnect').onclick=async()=>{if(!status.connections?.youtube?.clientFile){const m='Önce Google Cloud\'dan OAuth istemci dosyasını indirip secrets/youtube_client.json olarak kaydedin. Adımlar yukarıda.';addMsg('j',m);speak('Önce Google istemci dosyası gerekiyor. Adımlar ekranda.');return;}addMsg('j','Tarayıcıda Google girişi açılıyor…');const r=await post('/api/connect/youtube');addMsg('j',r.ok?'YouTube bağlandı.':'Bağlanamadı: '+(r.error||'').split('\n').pop());speak(r.ok?'YouTube bağlandı.':'Bağlanamadı.');refreshStatus();};
 $('#ttConnect').onclick=async()=>{if(!status.connections?.tiktok?.appKeys){addMsg('j','Önce TikTok uygulama anahtarlarını secrets/.env dosyasına yazın. Adımlar yukarıda.');speak('Önce TikTok anahtarları gerekiyor.');return;}addMsg('j','Tarayıcıda TikTok girişi açılıyor…');const r=await post('/api/connect/tiktok');addMsg('j',r.ok?'TikTok bağlandı.':'Bağlanamadı: '+(r.error||''));speak(r.ok?'TikTok bağlandı.':'Bağlanamadı.');refreshStatus();};
 $('#tunStart').onclick=async()=>{const r=await post('/api/tunnel/start');addMsg('j',r.ok?'Tünel başlatılıyor…':'Başlatılamadı: '+r.error);setTimeout(refreshStatus,3000);setTimeout(refreshStatus,8000);};
 $('#tunStop').onclick=async()=>{await post('/api/tunnel/stop');refreshStatus();};
 $('#tunAuto').onclick=async()=>{const on=!$('#tunAuto').classList.contains('on');await post('/api/settings',{tunnelAutoStart:on});refreshStatus();};
+$('#ttsStart').onclick=async()=>{await post('/api/tts/start');addMsg('j','Doğal ses motoru başlatılıyor; ilerlemeyi canlı logda görürsünüz.');setTimeout(refreshStatus,2500);};
+$('#ttsStop').onclick=async()=>{await post('/api/tts/stop');refreshStatus();};
+$('#ttsAuto').onclick=async()=>{const on=!$('#ttsAuto').classList.contains('on');await post('/api/settings',{chatterbox:{autoStart:on}});refreshStatus();};
+$('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:e.target.value});addMsg('j','Video anlatım motoru: '+e.target.options[e.target.selectedIndex].text);};
+$('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
+$('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});addMsg('j','Ayarlar kaydedildi.');refreshStatus();};
 
 // ================= analitik

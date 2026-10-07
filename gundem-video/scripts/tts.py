@@ -16,6 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import settings  # noqa: E402
+from natural_tts import chatterbox_ready, chatterbox_tts  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 _S = settings()
@@ -51,10 +52,23 @@ def tts_silent(text: str, out: Path) -> None:
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", f"{secs:.2f}", str(out)], check=True)
 
 
+def tts_chatterbox(text: str, out: Path) -> None:
+    if not chatterbox_tts(text, out):
+        raise RuntimeError("chatterbox sunucusu yanıt vermedi")
+    # Chatterbox 24 kHz mono üretir; videoya tutarlı girsin diye 44.1 kHz'e çevir
+    tmp = out.with_name(out.stem + ".cb.wav")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(out), "-ar", "44100", "-ac", "1", str(tmp)], check=True)
+    tmp.replace(out)
+
+
 def pick_engine():
     forced = os.environ.get("TTS_ENGINE") or (_S.get("narrationEngine") if _S.get("narrationEngine") != "piper" else None)
     if forced == "silent":
         return "silent", tts_silent
+    if forced == "chatterbox":
+        if chatterbox_ready():
+            return "chatterbox", tts_chatterbox
+        print("  ! chatterbox sunucusu hazır değil, yedek motora düşülüyor", file=sys.stderr)
     if forced == "say" and shutil.which("say"):
         return "say", tts_macos_say
     if shutil.which("piper") and Path(VOICE).exists():

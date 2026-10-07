@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, settings  # noqa: E402
+from natural_tts import chatterbox_ready, chatterbox_tts  # noqa: E402
 
 VOICE_ONNX = os.environ.get("PIPER_VOICE", str(ROOT / "voices" / "tr_TR-dfki-medium.onnx"))
 V = {**{"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5}, **settings().get("voice", {})}
@@ -48,10 +49,12 @@ def main():
         sys.exit(1)
     engine = V["engine"]
     if engine == "auto":
-        engine = "say" if say_has_voice(V["name"]) else "piper"
+        engine = "chatterbox" if chatterbox_ready() else ("say" if say_has_voice(V["name"]) else "piper")
     with tempfile.TemporaryDirectory() as td:
         wav = Path(td) / "r.wav"
-        if engine == "say" and shutil.which("say"):
+        if engine == "chatterbox" and chatterbox_tts(text, wav):
+            pass
+        elif engine == "say" and shutil.which("say"):
             tts_say(text, wav)
         elif shutil.which("piper") and Path(VOICE_ONNX).exists():
             tts_piper(text, wav)

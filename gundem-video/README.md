@@ -62,6 +62,14 @@ Tarayıcıda `http://localhost:3131` açın (Safari veya Chrome; konuşma tanım
 - Tarayıcı komutları: "Emixhas, YouTube'dan Sezen Aksu Gülümse'yi aç" ilk sonucu Safari'de açar
   (`pip install yt-dlp` kuruluysa doğrudan videoyu, yoksa arama sayfasını). "sabah.com.tr sitesini aç",
   "google'da dolar kuru ara" da çalışır.
+- **Doğal ses (ElevenLabs'e en yakın yerel seçenek):** Chatterbox Multilingual, MIT lisanslı, Türkçe
+  destekli, 5-10 sn örnekle ses klonlar, Apple Silicon'da çalışır. Kurulum bir kez:
+  `bash scripts/install_voice.sh` (~3 GB). Sonra panelde Ayarlar → "Doğal sesi başlat" (ilk açılışta
+  model iner, canlı logda görünür), "Video anlatımı: Doğal ses" seçin. Kendi sesinizi kullanmak için
+  temiz bir 5-10 saniyelik kaydı `voices/ref.wav` olarak koyun. Hız: 30 sn anlatım M5 Pro'da
+  yaklaşık yarım dakika ile bir dakika arası sürer; Emixhas'ın kısa yanıtları 2-4 sn.
+- Canlı log sağ üstte sabit durur: üretim adımları, beynin düşünmesi ve eylemleri, yayın, tünel, ses
+  motoru ve Claude Code ile yaptığınız kod değişiklikleri (dosya ve commit) anlık akar.
 - Emixhas kod değişikliği gerektiren bir istek alırsa (yeni animasyon, intro süresi gibi) görevi
   `data/improvements.md` kuyruğuna yazar. Uygulamak için proje klasöründe Claude Code'u açıp o
   dosyadaki görevi vermeniz yeterli; panel kendi kodunu kendisi değiştirmez.

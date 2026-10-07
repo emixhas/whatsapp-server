@@ -62,6 +62,7 @@ def settings():
         "fullAuthority": True,
         "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
         "narrationEngine": "piper",
+        "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.45, "cfg": 0.5, "autoStart": False},
     })
 
 

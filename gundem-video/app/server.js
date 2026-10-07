@@ -2,7 +2,7 @@
 // Başlat: npm run panel   → http://localhost:3131
 import express from "express";
 import { spawn, execFile } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,7 +42,8 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "piper", tunnelAutoStart: false };
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "piper", tunnelAutoStart: false,
+  chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false } };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
 const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
@@ -124,6 +125,38 @@ app.post("/api/tunnel/stop", (_req, res) => res.json(stopTunnel()));
 app.get("/tiktok/callback", async (req, res) => { try { const r = await fetch("http://127.0.0.1:3137/tiktok/callback?" + new URLSearchParams(req.query).toString()); res.status(r.status).type("html").send(await r.text()); } catch { res.status(503).send("TikTok bağlama işlemi şu an beklemiyor. Panelden 'TikTok'u bağla' deyip tekrar deneyin."); } });
 if (settings().tunnelAutoStart) setTimeout(() => startTunnel(), 1500);
 
+// ---------- Doğal ses sunucusu (Chatterbox) yönetimi
+const tts = { proc: null, ready: false, device: null, error: null, startedAt: null };
+async function ttsHealth() { try { const r = await fetch(`http://127.0.0.1:${settings().chatterbox.port}/health`, { signal: AbortSignal.timeout(1500) }); const j = await r.json(); tts.ready = !!j.ready; tts.device = j.device; if (j.error) tts.error = j.error; return j; } catch { tts.ready = false; return null; } }
+function startTts() {
+  if (tts.proc) return { ok: true, running: true };
+  const child = spawn(PY, ["scripts/tts_server.py"], { cwd: ROOT, env: { ...ENV, TTS_PORT: String(settings().chatterbox.port) } });
+  tts.proc = child; tts.error = null; tts.startedAt = Date.now();
+  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push("🎤 " + l.slice(0, 200)); if (l.includes("hazır (")) { tts.ready = true; announce("Doğal ses hazır."); } if (l.includes("HATA")) tts.error = l; });
+  child.stdout.on("data", onData); child.stderr.on("data", (b) => { const t = b.toString(); if (/error|Error|HATA/.test(t)) push("🎤 ! " + t.trim().slice(0, 200)); });
+  child.on("error", (e) => { tts.error = e.message; tts.proc = null; push(`✖ doğal ses: ${e.message}`); });
+  child.on("close", (code) => { tts.proc = null; tts.ready = false; push(`🎤 doğal ses sunucusu kapandı (kod ${code})`); if (code !== 0 && !tts.error) tts.error = "Sunucu kapandı. Kurulum: bash scripts/install_voice.sh"; });
+  push("🎤 doğal ses sunucusu başlatılıyor (ilk seferde model iner, birkaç dakika sürebilir)");
+  return { ok: true, running: true };
+}
+function stopTts() { if (tts.proc) tts.proc.kill(); tts.proc = null; tts.ready = false; return { ok: true }; }
+const ttsStatus = () => ({ running: !!tts.proc, ready: tts.ready, device: tts.device, error: tts.error, refVoice: existsSync(path.join(ROOT, settings().chatterbox.refVoice || "")) ? settings().chatterbox.refVoice : null });
+app.get("/api/tts", async (_req, res) => { await ttsHealth(); res.json(ttsStatus()); });
+app.post("/api/tts/start", (_req, res) => res.json(startTts()));
+app.post("/api/tts/stop", (_req, res) => res.json(stopTts()));
+if (settings().chatterbox.autoStart) setTimeout(startTts, 2000);
+setInterval(() => { if (tts.proc) ttsHealth(); }, 15000);
+
+// ---------- Dosya izleyici: kod/prompt/veri değişiklikleri ve git commit'leri canlı loga düşer
+const WATCH_DIRS = ["src", "app", "scripts", "prompts", "launchd"];
+const debounce = new Map();
+for (const d of WATCH_DIRS) {
+  const dir = path.join(ROOT, d); if (!existsSync(dir)) continue;
+  try { watch(dir, { recursive: true }, (ev, file) => { if (!file || /(^|\/)(\.|__pycache__|node_modules)/.test(file)) return; const key = `${d}/${file}`; clearTimeout(debounce.get(key)); debounce.set(key, setTimeout(() => { debounce.delete(key); push(`✎ ${ev === "rename" ? "dosya" : "değişti"}: ${key}`); }, 400)); }); } catch { /* izleme desteklenmiyor */ }
+}
+try { const gitHead = path.join(ROOT, "..", ".git", "logs", "HEAD"); const gitDir = existsSync(gitHead) ? gitHead : path.join(ROOT, ".git", "logs", "HEAD"); if (existsSync(gitDir)) watch(gitDir, () => { clearTimeout(debounce.get("git")); debounce.set("git", setTimeout(async () => { const r = await run("git", ["log", "-1", "--pretty=%h %s"]); if (r.ok) push(`⎇ commit: ${r.stdout.trim()}`); }, 600)); }); } catch { /* yok */ }
+try { watch(DATA, (ev, file) => { if (file === "improvements.md") { clearTimeout(debounce.get("imp")); debounce.set("imp", setTimeout(() => push("🛠 geliştirme kuyruğu güncellendi"), 400)); } }); } catch { /* yok */ }
+
 // ---------- tarayıcıda açma (YouTube: yt-dlp ile ilk sonucu bul, yoksa arama sayfası)
 const openInBrowser = (url) => run(isMac ? "open" : "xdg-open", [url]);
 async function openYouTube(query) {
@@ -139,36 +172,40 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
-    case "sync_metrics": { const r = await py("sync_metrics.py"); await py("analyze.py"); return { ok: r.ok, ...(r.json || {}) }; }
+    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
     case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram, tiktok: !!a.tiktok } }); return { ok: true };
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; } await py("analyze.py"); return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : "hata " + results[p].error}`); } await py("analyze.py"); return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
+    case "natural_voice": return a.enabled === false ? stopTts() : startTts();
     case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
     default: return { ok: false, error: "bilinmeyen eylem" };
   }
 }
 async function think(text, mode = "chat") {
+  push(`🧠 ${mode === "chat" ? "düşünüyor" : mode === "report" ? "rapor hazırlıyor" : "plan yapıyor"}: ${String(text).slice(0, 80)}`);
+  const t0 = Date.now();
   const r = await brain.ask(text, mode);
+  push(`🧠 yanıt ${Math.round((Date.now() - t0) / 1000)} sn${r.actions.length ? `, ${r.actions.length} eylem` : ""}${r.error ? " (hata)" : ""}`);
   const done = [], pending = [];
-  for (const a of r.actions) { if (needsConfirm(a)) pending.push(a); else done.push({ ...a, result: await execAction(a) }); }
+  for (const a of r.actions) { if (needsConfirm(a)) { pending.push(a); push(`⏸ onay bekliyor: ${a.type}`); } else { const res = await execAction(a); push(`⚡ ${a.type}${a.duration ? " " + a.duration + " sn" : ""}${a.platforms ? " → " + a.platforms.join(",") : ""}: ${res?.ok === false ? "hata " + (res.error || "") : "tamam"}`); done.push({ ...a, result: res }); } }
   const reportFile = brain.saveReport(mode === "chat" ? "not" : mode, r.report);
   return { ...r, done, pending, reportFile };
 }
 
 // ---------- API: durum
-app.get("/api/status", async (_req, res) => res.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus() }));
+app.get("/api/status", async (_req, res) => res.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus() }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
 
 // ---------- API: videolar
@@ -222,6 +259,8 @@ app.post("/api/command", async (req, res) => {
     case "stop": reply = ""; break;
     case "tunnel_on": { const r = startTunnel(); reply = r.ok ? (r.url ? `Tünel açık: ${r.url.replace("https://", "")}.` : "Tünel başlatılıyor, adres gelince söylerim.") : `Tünel başlatılamadı: ${r.error}`; break; }
     case "tunnel_off": stopTunnel(); reply = "Tünel kapatıldı."; break;
+    case "voice_natural_on": startTts(); reply = tts.ready ? "Doğal ses zaten hazır." : "Doğal ses motoru başlatılıyor, hazır olunca söylerim."; break;
+    case "voice_natural_off": stopTts(); patchSettings({ voice: { engine: "auto" } }); reply = "Doğal ses kapatıldı, sistem sesine döndüm."; break;
     case "open_youtube": { const r = await openYouTube(cmd.query); reply = r.ok ? (r.title ? `Açıyorum: ${r.title}.` : `YouTube'da "${cmd.query}" araması açıldı.`) : `Açamadım: ${r.error}`; payload = { url: r.url }; break; }
     case "open_url": { const r = await execAction({ type: "open_url", target: cmd.target }); reply = r.ok ? "Açıyorum." : "Açamadım."; payload = { url: r.url }; break; }
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
