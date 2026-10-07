@@ -13,18 +13,15 @@ npm install
 # Seslendirme — Seçenek A: Piper (önerilen, daha doğal)
 python3 -m venv .venv && source .venv/bin/activate
 pip install piper-tts
-mkdir -p voices && cd voices
-B=https://huggingface.co/rhasspy/piper-voices/resolve/main/tr/tr_TR/fahrettin/medium
-curl -L -o tr_TR-fahrettin-medium.onnx      $B/tr_TR-fahrettin-medium.onnx
-curl -L -o tr_TR-fahrettin-medium.onnx.json $B/tr_TR-fahrettin-medium.onnx.json
-cd ..
+python3 -m piper.download_voices tr_TR-fahrettin-medium --download-dir voices
+ls -la voices   # .onnx dosyası ~60 MB olmalı
 
 # Seçenek B: hiçbir şey kurmadan macOS'un Yelda sesi
 # Sistem Ayarları > Erişilebilirlik > Konuşulan İçerik > Türkçe (Yelda) sesini indir.
 # Piper modeli yoksa tts.py otomatik olarak 'say' kullanır.
 ```
 
-Diğer Türkçe Piper sesleri: `dfki` ve `fettah` (aynı adres yapısı). Değiştirmek için
+Diğer Türkçe Piper sesleri: `tr_TR-dfki-medium` ve `tr_TR-fettah-medium` (aynı komutla indirilir). Değiştirmek için
 `PIPER_VOICE=voices/tr_TR-fettah-medium.onnx bash pipeline.sh`.
 
 ## İlk test
