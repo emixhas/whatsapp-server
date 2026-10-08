@@ -125,14 +125,24 @@ gönderilen video dosyasını doğrudan WhatsApp'ta oynatın.
    Google girişi açılır, kanal hesabınızla onaylayın.
 5. Videoda "YouTube'a yükle" düğmesi aktif olur. Kota: günde en fazla 6 yükleme.
 
-**Instagram Reels**
-1. Instagram hesabı İşletme veya İçerik Üretici olmalı ve bir Facebook Sayfasına bağlı olmalı.
-2. developers.facebook.com → uygulama → Instagram Graph API; `instagram_content_publish`,
-   `instagram_manage_insights`, `pages_read_engagement` izinleriyle uzun ömürlü token alın.
-3. Instagram videoyu yerel diskten almaz, herkese açık bir URL'den çeker. Bunun için Cloudflare Tunnel
-   (aşağıda). Panel tüneli kendisi yönetir ve PUBLIC_BASE_URL'yi otomatik yazar.
-4. `secrets/.env` içine `IG_USER_ID`, `IG_ACCESS_TOKEN`, `PUBLIC_BASE_URL` yazın (örnek:
-   `secrets/README.md`).
+**Instagram Reels (panelden tek tıkla, Facebook sayfası gerekmez)**
+1. Instagram hesabı Profesyonel olmalı (İşletme ya da İçerik üretici): Instagram → Ayarlar → Hesap türü.
+2. developers.facebook.com → Uygulama oluştur → ürün olarak **Instagram** → "Instagram ile API kurulumu"
+   (Instagram Login). Instagram app ID ve app secret değerlerini `secrets/.env` içine `IG_APP_ID` ve
+   `IG_APP_SECRET` olarak yazın.
+3. Aynı sayfada "OAuth redirect URIs" alanına `https://<tünel-adresi>/instagram/callback` ekleyin. Panel
+   tüneli açınca adresi Ayarlar → Instagram bölümünde gösterir. Hızlı tünelin adresi her açılışta
+   değişir; kalıcı adres için aşağıdaki adlı tüneli kurun (önerilir).
+4. Uygulama Geliştirme modundayken yalnızca test kullanıcıları giriş yapabilir: Uygulama rolleri →
+   Instagram Testers → kendi hesabınızı ekleyin; Instagram → Ayarlar → Uygulamalar ve web siteleri →
+   Test davetleri'nden kabul edin. (Yayına almak için Meta'nın uygulama incelemesi gerekir; kendi
+   hesabınız için test modu yeterlidir.)
+5. Panelde "Instagram'ı bağla": tünel açılır, tarayıcıda Instagram girişi gelir, izinleri onaylayın.
+   Token 60 gün geçerlidir ve kendiliğinden yenilenir (`secrets/instagram_token.json`).
+6. Ayarlar → "Üretince Instagram'a otomatik yükle" anahtarını açın. Her üretimden sonra video Reels
+   olarak paylaşılır. Panel ya da tünel kapalıysa `publish.py` yayın anında geçici bir Cloudflare
+   tüneli açıp kapatır; `cloudflared` kurulu olması yeter. İzlenme, erişim, beğeni ve paylaşım verisi
+   analitiğe girer.
 
 **TikTok**
 1. developers.tiktok.com → Manage apps → uygulama oluştur → ürün olarak **Login Kit** ve

@@ -27,7 +27,7 @@ app.use((req, res, next) => {
   const host = (req.headers.host || "").split(":")[0];
   const viaTunnel = !!req.headers["cf-connecting-ip"] || /\.trycloudflare\.com$/.test(host) || (tunnel.hostname && host === tunnel.hostname);
   if (!viaTunnel) return next();
-  if (req.method === "GET" && (req.path.startsWith("/videos/") || req.path.startsWith("/w/") || req.path.startsWith("/v/") || req.path.startsWith("/api/thumb/") || req.path === "/tiktok/callback")) return next();
+  if (req.method === "GET" && (req.path.startsWith("/videos/") || req.path.startsWith("/w/") || req.path.startsWith("/v/") || req.path.startsWith("/api/thumb/") || req.path === "/tiktok/callback" || req.path === "/instagram/callback")) return next();
   res.status(403).send("Bu adres yalnızca video dosyalarını sunar.");
 });
 app.use(express.json({ limit: "1mb" }));
@@ -130,6 +130,9 @@ app.post("/api/tunnel/start", (_req, res) => res.json(startTunnel()));
 app.post("/api/tunnel/stop", (_req, res) => res.json(stopTunnel()));
 // TikTok geri dönüşü tünelden geldiğinde publish.py'nin yerel sunucusuna (3137) aktar
 app.get("/tiktok/callback", async (req, res) => { try { const r = await fetch("http://127.0.0.1:3137/tiktok/callback?" + new URLSearchParams(req.query).toString()); res.status(r.status).type("html").send(await r.text()); } catch { res.status(503).send("TikTok bağlama işlemi şu an beklemiyor. Panelden 'TikTok'u bağla' deyip tekrar deneyin."); } });
+// Instagram geri dönüşü (HTTPS zorunlu) tünelden gelir, publish.py'nin yerel sunucusuna (3138) aktarılır
+app.get("/instagram/callback", async (req, res) => { try { const r = await fetch("http://127.0.0.1:3138/instagram/callback?" + new URLSearchParams(req.query).toString()); res.status(r.status).type("html").send(await r.text()); } catch { res.status(503).send("Instagram bağlama işlemi şu an beklemiyor. Panelden 'Instagram'ı bağla' deyip tekrar deneyin."); } });
+const waitTunnelUrl = (ms = 25000) => new Promise((resolve) => { const t0 = Date.now(); const tick = () => { if (tunnel.url) return resolve(tunnel.url); if (Date.now() - t0 > ms || (!tunnel.proc && tunnel.error)) return resolve(null); setTimeout(tick, 500); }; tick(); });
 if (settings().tunnelAutoStart) setTimeout(() => startTunnel(), 1500);
 
 // ---------- Kaynak izleme: CPU ve RAM (üretim, ses sunucusu, geliştirme sırasında her 10 sn loga)
@@ -204,7 +207,7 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
@@ -221,6 +224,7 @@ async function execAction(a) {
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
     case "natural_voice": return a.enabled === false ? stopTts() : startTts();
+    case "connect": { const plat = ["instagram", "youtube", "tiktok"].includes(a.platform) ? a.platform : "instagram"; const r = await fetch(`http://127.0.0.1:${PORT}/api/connect/${plat}`, { method: "POST" }); return r.json(); }
     case "whatsapp_send": return wa.notifyVideo(a.video || listVideos()[0]?.name, { ask: true });
     case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
     default: return { ok: false, error: "bilinmeyen eylem" };
@@ -320,6 +324,16 @@ app.post("/api/restart", (_req, res) => { res.json({ ok: true }); setTimeout(() 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
 app.get("/api/connections", async (_req, res) => res.json(await brain.connections()));
 app.post("/api/connect/youtube", async (_req, res) => { const r = await py("publish.py", ["--connect", "youtube"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
+app.post("/api/connect/instagram", async (_req, res) => {
+  // Geri dönüş adresi HTTPS olmalı: tünel kapalıysa aç ve adresi bekle
+  if (!tunnel.url) { const st = startTunnel(); if (!st.ok) return res.json({ ok: false, error: st.error }); push("☁ Instagram bağlantısı için tünel açılıyor"); }
+  const url = await waitTunnelUrl();
+  if (!url) return res.json({ ok: false, error: tunnel.error || "tünel adresi alınamadı; cloudflared kurulu mu?" });
+  push(`◎ Instagram girişi: geri dönüş ${url}/instagram/callback (Meta uygulamasında bu adres kayıtlı olmalı)`);
+  const r = await py("publish.py", ["--connect", "instagram"]);
+  if (r.json?.ok) push(`◎ Instagram bağlandı: @${r.json.username || "?"}`);
+  res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) });
+});
 app.post("/api/connect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--connect", "tiktok"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [] })));
 app.post("/api/metrics/sync", async (_req, res) => res.json(await execAction({ type: "sync_metrics" })));

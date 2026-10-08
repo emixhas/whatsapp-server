@@ -124,8 +124,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 
 ## Yayın ve analitik
 - `scripts/publish.py`: YouTube (Data API v3, OAuth; `secrets/youtube_client.json` → token) ve
-  Instagram Reels (Graph API; videoyu `PUBLIC_BASE_URL/videos/<ad>` adresinden çeker, bu yüzden
-  herkese açık bir URL/tünel şart). Sonuç `data/metrics.json` → `videos.<ad>.<platform>`.
+  Instagram Reels. Instagram: "Instagram API with Instagram Login" (Facebook sayfası gerekmez):
+  `--connect instagram` tarayıcıda girişi açar, geri dönüş HTTPS zorunlu olduğu için tünel üzerinden
+  `/instagram/callback` → yerel :3138'e gelir (panel `POST /api/connect/instagram` tüneli açıp bekler);
+  kısa kod → 60 günlük token `secrets/instagram_token.json`, `ig_creds()` 15 günün altında kalınca
+  yeniler. Eski `.env` IG_USER_ID/IG_ACCESS_TOKEN yolu (graph.facebook.com) da çalışır. Video
+  `PUBLIC_BASE_URL/videos/<ad>` adresinden çekilir; adres yoksa/erişilemiyorsa `_PublicVideo` yayın
+  süresince `out/` için geçici HTTP sunucu + `cloudflared` hızlı tüneli açar ve kapatır (launchd ile
+  panel kapalıyken de otomatik yayın). Meta uygulaması Geliştirme modundayken hesap Instagram Testers
+  listesinde olmalı. Sonuç `data/metrics.json` → `videos.<ad>.<platform>`.
 - TikTok (`tt_*` fonksiyonları): Login Kit OAuth (yerel geri dönüş sunucusu :3137), Content Posting API
   FILE_UPLOAD. `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
   `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Token 24 saat,

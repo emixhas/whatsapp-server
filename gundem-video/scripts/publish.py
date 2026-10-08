@@ -2,6 +2,7 @@
 """Videoyu YouTube Shorts ve/veya Instagram Reels olarak yayınlar; sonucu data/metrics.json'a yazar.
 
   python3 scripts/publish.py --connect youtube                 # ilk bağlantı (tarayıcıda Google girişi)
+  python3 scripts/publish.py --connect instagram               # Instagram girişi (tünel açıkken; HTTPS geri dönüş)
   python3 scripts/publish.py --file out/2026-10-07-1.mp4 --platform youtube
   python3 scripts/publish.py --file out/2026-10-07-1.mp4 --platform instagram
   python3 scripts/publish.py --status                          # bağlantı durumu (JSON)
@@ -66,40 +67,222 @@ def yt_upload(path: Path):
     return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title, "titleVariant": meta.get("titleVariant")}
 
 
-# ---------------- Instagram (Graph API)
-def ig_call(method, path, params, env):
-    params = dict(params, access_token=env["IG_ACCESS_TOKEN"])
-    url = f"https://graph.facebook.com/v21.0/{path}"
-    data = urllib.parse.urlencode(params).encode()
-    req = urllib.request.Request(url, data=data if method == "POST" else None, method=method)
+# ---------------- Instagram (Instagram API with Instagram Login; eski Facebook Graph token'ı da desteklenir)
+IG_TOKEN_FILE = SECRETS / "instagram_token.json"
+IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights"
+IG_API = "https://graph.instagram.com/v21.0"
+FB_API = "https://graph.facebook.com/v21.0"
+IG_CALLBACK_PORT = 3138
+
+
+def ig_http(url, data=None, timeout=60):
+    req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode("utf-8", "replace")
+        try:
+            msg = json.loads(txt).get("error", {}).get("message") or txt
+        except Exception:
+            msg = txt
+        raise RuntimeError(f"Instagram HTTP {e.code}: {msg[:300]}")
+
+
+def ig_creds():
+    """(kullanıcı id, token, API kökü). Önce panelden bağlanan hesap (instagram_token.json, Instagram Login),
+    yoksa secrets/.env içindeki IG_USER_ID + IG_ACCESS_TOKEN (Facebook Graph). Token süresi 15 günün
+    altına indiyse sessizce yenilenir (60 güne uzar)."""
+    if IG_TOKEN_FILE.exists():
+        tok = json.loads(IG_TOKEN_FILE.read_text())
+        env = load_env()
+        age = time.time() - tok.get("obtained_at", 0)
+        left = tok.get("obtained_at", 0) + tok.get("expires_in", 0) - time.time()
+        if age > 86400 and left < 15 * 86400:
+            try:
+                q = urllib.parse.urlencode({"grant_type": "ig_refresh_token", "access_token": tok["access_token"]})
+                new = ig_http(f"https://graph.instagram.com/refresh_access_token?{q}")
+                tok.update({"access_token": new["access_token"], "expires_in": new.get("expires_in", 5184000), "obtained_at": time.time()})
+                IG_TOKEN_FILE.write_text(json.dumps(tok, indent=2))
+            except Exception as e:
+                print(f"  ! instagram token yenilenemedi: {e}", file=sys.stderr)
+        return tok.get("user_id") or "me", tok["access_token"], IG_API
+    env = load_env()
+    if env.get("IG_USER_ID") and env.get("IG_ACCESS_TOKEN"):
+        return env["IG_USER_ID"], env["IG_ACCESS_TOKEN"], FB_API
+    raise RuntimeError("Instagram bağlı değil. Panelde 'Instagram'ı bağla' deyin (IG_APP_ID ve IG_APP_SECRET gerekir, bkz. secrets/README.md)")
+
+
+def ig_call(method, path, params, creds):
+    uid, token, base = creds
+    params = dict(params, access_token=token)
+    url = f"{base}/{path}"
     if method == "GET":
-        req = urllib.request.Request(url + "?" + urllib.parse.urlencode(params))
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.loads(r.read())
+        return ig_http(url + "?" + urllib.parse.urlencode(params))
+    return ig_http(url, urllib.parse.urlencode(params).encode())
+
+
+def url_reachable(url, timeout=12):
+    try:
+        req = urllib.request.Request(url, method="HEAD")
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+class _PublicVideo:
+    """Yayın anında dış adres yoksa (panel kapalı, tünel kapalı) out/ klasörünü geçici bir sunucu +
+    Cloudflare hızlı tüneliyle açar; yayın bitince kapatır. Böylece launchd üretimi de Instagram'a gider."""
+
+    def __init__(self):
+        self.proc = None
+        self.srv = None
+        self.base = None
+
+    def ensure(self, name: str) -> str:
+        env = load_env()
+        base = (env.get("PUBLIC_BASE_URL") or "").rstrip("/")
+        if base and url_reachable(f"{base}/videos/{urllib.parse.quote(name)}"):
+            return base
+        import http.server
+        import shutil
+        import subprocess
+        import threading
+        if not shutil.which("cloudflared"):
+            raise RuntimeError("Dış adres yok ve cloudflared kurulu değil (brew install cloudflared); panelde tüneli açın")
+        out_dir = OUT
+
+        class H(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *a, **kw):
+                super().__init__(*a, directory=str(out_dir), **kw)
+
+            def translate_path(self, path):  # /videos/<ad> → out/<ad>; başka yol yok
+                p = urllib.parse.unquote(urllib.parse.urlparse(path).path)
+                if not p.startswith("/videos/") or "/" in p[len("/videos/"):] or not p.endswith(".mp4"):
+                    return str(out_dir / "__yok__")
+                return str(out_dir / p[len("/videos/"):])
+
+            def log_message(self, *a):
+                pass
+
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+        port = self.srv.server_address[1]
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.proc = subprocess.Popen(["cloudflared", "tunnel", "--url", f"http://localhost:{port}"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        import re
+        deadline = time.time() + 60
+        url = None
+        while time.time() < deadline and not url:
+            line = self.proc.stdout.readline()
+            m = re.search(r"https://[a-z0-9-]+\.trycloudflare\.com", line or "")
+            if m:
+                url = m.group(0)
+        if not url:
+            self.close()
+            raise RuntimeError("Geçici tünel açılamadı (cloudflared adres vermedi)")
+        threading.Thread(target=lambda: [None for _ in iter(self.proc.stdout.readline, "")], daemon=True).start()
+        for _ in range(20):  # DNS yayılması birkaç saniye sürer
+            if url_reachable(f"{url}/videos/{urllib.parse.quote(name)}"):
+                break
+            time.sleep(3)
+        self.base = url
+        print(f"  geçici dış adres: {url}", file=sys.stderr)
+        return url
+
+    def close(self):
+        if self.proc:
+            self.proc.terminate()
+            self.proc = None
+        if self.srv:
+            self.srv.shutdown()
+            self.srv = None
 
 
 def ig_upload(path: Path):
+    creds = ig_creds()
+    uid = creds[0]
+    _, caption = build_caption(path.name, max_len=2200)
+    pub_srv = _PublicVideo()
+    try:
+        base = pub_srv.ensure(path.name)
+        video_url = base + "/videos/" + urllib.parse.quote(path.name)
+        c = ig_call("POST", f"{uid}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}, creds)
+        cid = c["id"]
+        for _ in range(72):  # Instagram videoyu çekip işler; 6 dk'ya kadar bekle
+            st = ig_call("GET", cid, {"fields": "status_code,status"}, creds)
+            if st.get("status_code") == "FINISHED":
+                break
+            if st.get("status_code") == "ERROR":
+                raise RuntimeError(f"Instagram işleme hatası: {st}")
+            time.sleep(5)
+        else:
+            raise RuntimeError("Instagram işleme zaman aşımı")
+        pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds)
+    finally:
+        pub_srv.close()
+    mid = pub["id"]
+    info = ig_call("GET", mid, {"fields": "permalink"}, creds)
+    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso()}
+
+
+def ig_connect():
+    """Tarayıcıda Instagram girişi (Instagram API with Instagram Login). Geri dönüş HTTPS olmak zorunda;
+    panel tüneli /instagram/callback'i yerel :3138'e aktarır. Kısa ömürlü kod → 60 günlük token."""
+    import http.server
+    import secrets as _secrets
+    import threading
+    import webbrowser
     env = load_env()
-    for k in ("IG_USER_ID", "IG_ACCESS_TOKEN", "PUBLIC_BASE_URL"):
+    for k in ("IG_APP_ID", "IG_APP_SECRET"):
         if not env.get(k):
             raise RuntimeError(f"secrets/.env içinde {k} eksik (bkz. secrets/README.md)")
-    _, caption = build_caption(path.name, max_len=2200)
-    video_url = env["PUBLIC_BASE_URL"].rstrip("/") + "/videos/" + urllib.parse.quote(path.name)
-    c = ig_call("POST", f"{env['IG_USER_ID']}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}, env)
-    cid = c["id"]
-    for _ in range(60):  # Instagram videoyu çekip işler; 5 dk'ya kadar bekle
-        st = ig_call("GET", cid, {"fields": "status_code,status"}, env)
-        if st.get("status_code") == "FINISHED":
+    redirect = env.get("IG_REDIRECT_URI") or ((env.get("PUBLIC_BASE_URL") or "").rstrip("/") + "/instagram/callback")
+    if not redirect.startswith("https://"):
+        raise RuntimeError("Instagram geri dönüş adresi HTTPS olmalı: önce tüneli başlatın (PUBLIC_BASE_URL) ya da IG_REDIRECT_URI yazın")
+    state = _secrets.token_urlsafe(16)
+    got = {}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            got.update({k: v[0] for k, v in q.items()})
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers()
+            self.wfile.write("<h2>Instagram bağlandı. Bu pencereyi kapatıp panele dönebilirsiniz.</h2>".encode())
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = "https://www.instagram.com/oauth/authorize?" + urllib.parse.urlencode({
+        "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state, "force_reauth": "true"})
+    print(f"Tarayıcıda açılıyor: {url}", file=sys.stderr)
+    webbrowser.open(url)
+    for _ in range(600):  # 5 dk
+        if "code" in got or "error" in got:
             break
-        if st.get("status_code") == "ERROR":
-            raise RuntimeError(f"Instagram işleme hatası: {st}")
-        time.sleep(5)
-    else:
-        raise RuntimeError("Instagram işleme zaman aşımı")
-    pub = ig_call("POST", f"{env['IG_USER_ID']}/media_publish", {"creation_id": cid}, env)
-    mid = pub["id"]
-    info = ig_call("GET", mid, {"fields": "permalink"}, env)
-    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso()}
+        time.sleep(0.5)
+    srv.shutdown()
+    if got.get("error"):
+        raise RuntimeError(f"Instagram reddetti: {got.get('error_description') or got.get('error_reason') or got['error']}")
+    if got.get("state") != state or "code" not in got:
+        raise RuntimeError("Instagram geri dönüşü alınamadı (redirect URI uygulamada aynen kayıtlı mı?)")
+    code = got["code"].split("#")[0]
+    form = urllib.parse.urlencode({"client_id": env["IG_APP_ID"], "client_secret": env["IG_APP_SECRET"], "grant_type": "authorization_code",
+                                   "redirect_uri": redirect, "code": code}).encode()
+    short = ig_http("https://api.instagram.com/oauth/access_token", form)
+    if "access_token" not in short:
+        raise RuntimeError(f"Instagram token alınamadı: {short}")
+    q = urllib.parse.urlencode({"grant_type": "ig_exchange_token", "client_secret": env["IG_APP_SECRET"], "access_token": short["access_token"]})
+    long_tok = ig_http(f"https://graph.instagram.com/access_token?{q}")
+    token = long_tok.get("access_token", short["access_token"])
+    me = ig_http(f"{IG_API}/me?" + urllib.parse.urlencode({"fields": "user_id,username,account_type", "access_token": token}))
+    tok = {"access_token": token, "expires_in": long_tok.get("expires_in", 5184000), "obtained_at": time.time(),
+           "user_id": str(me.get("user_id") or short.get("user_id") or "me"), "username": me.get("username"), "account_type": me.get("account_type"),
+           "permissions": short.get("permissions")}
+    IG_TOKEN_FILE.write_text(json.dumps(tok, indent=2))
+    return tok
 
 
 # ---------------- TikTok (Content Posting API + Login Kit)
@@ -241,12 +424,28 @@ def tt_upload(path: Path):
 
 
 # ---------------- durum
+def ig_status(env):
+    import shutil
+    st = {"connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")),
+          "cloudflared": bool(shutil.which("cloudflared")), "username": None, "daysLeft": None, "via": None}
+    if IG_TOKEN_FILE.exists():
+        try:
+            tok = json.loads(IG_TOKEN_FILE.read_text())
+            st.update({"connected": True, "via": "instagram_login", "username": tok.get("username"),
+                       "daysLeft": max(0, int((tok.get("obtained_at", 0) + tok.get("expires_in", 0) - time.time()) / 86400))})
+        except Exception:
+            pass
+    elif env.get("IG_USER_ID") and env.get("IG_ACCESS_TOKEN"):
+        st.update({"connected": True, "via": "env"})
+    return st
+
+
 def status():
     env = load_env()
     yt_ok = (SECRETS / "youtube_token.json").exists()
     return {
         "youtube": {"connected": yt_ok, "clientFile": (SECRETS / "youtube_client.json").exists()},
-        "instagram": {"connected": bool(env.get("IG_USER_ID") and env.get("IG_ACCESS_TOKEN")), "publicUrl": bool(env.get("PUBLIC_BASE_URL"))},
+        "instagram": ig_status(env),
         "tiktok": {"connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
                    "mode": (env.get("TIKTOK_MODE") or "inbox").lower()},
     }
@@ -256,7 +455,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--file")
     ap.add_argument("--platform", choices=["youtube", "instagram", "tiktok"])
-    ap.add_argument("--connect", choices=["youtube", "tiktok"])
+    ap.add_argument("--connect", choices=["youtube", "tiktok", "instagram"])
     ap.add_argument("--status", action="store_true")
     a = ap.parse_args()
     if a.status:
@@ -267,6 +466,12 @@ def main():
         except Exception as e:  # paneli okunur bir mesajla bilgilendir
             print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)); sys.exit(1)
         print(json.dumps({"ok": True, "message": "YouTube bağlandı"}, ensure_ascii=False)); return
+    if a.connect == "instagram":
+        try:
+            tok = ig_connect()
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)); sys.exit(1)
+        print(json.dumps({"ok": True, "message": f"Instagram bağlandı: @{tok.get('username') or '?'}", "username": tok.get("username")}, ensure_ascii=False)); return
     if a.connect == "tiktok":
         try:
             tt_connect()

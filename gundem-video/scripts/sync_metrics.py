@@ -32,23 +32,28 @@ def sync_youtube(m):
 
 
 def sync_instagram(m):
-    env = load_env()
-    if not env.get("IG_ACCESS_TOKEN"):
+    from publish import ig_call, ig_creds
+    try:
+        creds = ig_creds()
+    except RuntimeError:
         return 0
     n = 0
     for name, v in m["videos"].items():
         mid = v.get("instagram", {}).get("id")
         if not mid:
             continue
-        q = urllib.parse.urlencode({"metric": "plays,reach,likes,comments,shares,saved", "access_token": env["IG_ACCESS_TOKEN"]})
-        try:
-            with urllib.request.urlopen(f"https://graph.facebook.com/v21.0/{mid}/insights?{q}", timeout=30) as r:
-                data = json.loads(r.read()).get("data", [])
-        except Exception as e:
-            print(f"  ! instagram {name}: {e}", file=sys.stderr)
+        data = None
+        for metrics_list in ("views,reach,likes,comments,shares,saved", "plays,reach,likes,comments,shares,saved"):
+            try:
+                data = ig_call("GET", f"{mid}/insights", {"metric": metrics_list}, creds).get("data", [])
+                break
+            except Exception as e:
+                err = e
+        if data is None:
+            print(f"  ! instagram {name}: {err}", file=sys.stderr)
             continue
         vals = {d["name"]: (d.get("values") or [{}])[0].get("value", 0) for d in data}
-        v["instagram"].update({"views": vals.get("plays", 0), "reach": vals.get("reach", 0), "likes": vals.get("likes", 0),
+        v["instagram"].update({"views": vals.get("views", vals.get("plays", 0)), "reach": vals.get("reach", 0), "likes": vals.get("likes", 0),
                                "comments": vals.get("comments", 0), "shares": vals.get("shares", 0), "saves": vals.get("saved", 0), "lastSync": now_iso()})
         n += 1
     return n

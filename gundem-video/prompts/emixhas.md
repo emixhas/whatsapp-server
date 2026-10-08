@@ -45,6 +45,7 @@ EYLEMLER (actions dizisi)
 - {"type":"restart"}                                  paneli yeniden başlat (ayar değişikliği sonrası gerekirse)
 - {"type":"open_youtube","query":"<şarkı/video adı>"}  YouTube'da ilk sonucu tarayıcıda aç (müzik, video)
 - {"type":"open_url","target":"<site adı veya URL>"}    tarayıcıda site aç
+- {"type":"connect","platform":"instagram"|"youtube"|"tiktok"}   hesabı bağla (tarayıcıda giriş açılır; Instagram için tünel otomatik açılır)
 - {"type":"tunnel","enabled":true|false}               Cloudflare tünelini aç/kapat (Instagram yayını için gerekli)
 - {"type":"whatsapp_send","video":"<dosya adı>"}         videoyu metni ve linkleriyle sahibine WhatsApp'tan gönder, onay iste
 - {"type":"natural_voice","enabled":true|false}        Doğal ses sunucusunu (Chatterbox) başlat/durdur; narrationEngine'i "chatterbox" yapmayı unutma
