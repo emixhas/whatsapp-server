@@ -131,6 +131,15 @@
       <label class="row"><span class="sw" id="waAuto"></span><span>Panel açılınca otomatik bağlan</span></label>
       <h2 style="margin-top:18px">CLOUDFLARE TÜNELİ</h2><div class="conninfo" id="tunInfo"></div>
       <div class="acts"><button class="ghost ok" id="tunStart">Tüneli başlat</button><button class="ghost" id="tunStop">Durdur</button><label class="row" style="margin:0 0 0 10px"><span class="sw" id="tunAuto"></span><span style="font-size:13px">Panel açılınca otomatik başlat</span></label></div>
+      <h2 style="margin-top:18px">SESLER · DİNLE VE SEÇ</h2>
+      <div class="conninfo">Video üretilmeden önce sesleri dinleyin. ▶ ilk basışta örnek cümleyi üretir (Trendyol/VoxCPM 20-60 sn sürebilir), sonra anında çalar. Kendi klon sesiniz için 5-10 sn temiz bir kaydı <code>voices/klon/ad.wav</code> olarak koyun; listede "Klon · ad" görünür.</div>
+      <div id="voiceList" class="conninfo" style="display:grid;gap:6px"></div>
+      <div class="acts" style="flex-wrap:wrap;gap:10px">
+        <label class="row" style="margin:0"><input type="radio" name="nMode" value="single" id="nModeSingle"><span>Tek ses:</span><select id="nVoice"></select></label>
+        <label class="row" style="margin:0"><input type="radio" name="nMode" value="alternate" id="nModeAlt"><span>Kadın + erkek dönüşümlü:</span><select id="nVoiceA"></select><span>→</span><select id="nVoiceB"></select></label>
+        <button class="ghost" id="voiceRefresh">Listeyi yenile</button>
+      </div>
+      <div class="conninfo" id="nModeInfo"></div>
       <h2 style="margin-top:18px">TÜRKÇE SES (TRENDYOL + EMA)</h2><div class="conninfo" id="trInfo"></div>
       <h2 style="margin-top:18px">DOĞAL SES (CHATTERBOX)</h2><div class="conninfo" id="ttsInfo"></div>
       <div class="acts"><button class="ghost ok" id="ttsStart">Doğal sesi başlat</button><button class="ghost" id="ttsStop">Durdur</button>
@@ -273,6 +282,22 @@ for(const [id,key] of [['waNotify','notifyOnVideo'],['waFile','sendVideoFile'],[
 $('#tunStart').onclick=async()=>{const r=await post('/api/tunnel/start');addMsg('j',r.ok?'Tünel başlatılıyor…':'Başlatılamadı: '+r.error);setTimeout(refreshStatus,3000);setTimeout(refreshStatus,8000);};
 $('#tunStop').onclick=async()=>{await post('/api/tunnel/stop');refreshStatus();};
 $('#tunAuto').onclick=async()=>{const on=!$('#tunAuto').classList.contains('on');await post('/api/settings',{tunnelAutoStart:on});refreshStatus();};
+// ---- Ses kataloğu: dinle ve seç
+let voiceRows=[];const vAudio=new Audio();
+async function loadVoices(fresh){const r=await api('/api/voices'+(fresh?'?fresh=1':''));voiceRows=r.voices||[];const n=r.narration||{};
+  $('#voiceList').innerHTML=voiceRows.map(v=>`<div class="row" style="justify-content:space-between;gap:10px;margin:0"><span><b>${v.label}</b> ${v.gender==='kadin'?'<span style="color:#ff9ac4">♀ kadın</span>':v.gender==='erkek'?'<span style="color:#7fb4ff">♂ erkek</span>':''} <span style="color:var(--mut);font-size:12px">${v.ready?(v.note||''):'— '+v.why}</span></span><button class="ghost ${v.ready?'ok':''}" data-v="${v.id}" ${v.ready?'':'disabled'} title="Örnek cümleyi dinle">▶ Dinle</button></div>`).join('');
+  for(const b of document.querySelectorAll('#voiceList button[data-v]'))b.onclick=()=>playVoice(b.dataset.v,b);
+  const opts=(sel,val,filter)=>{sel.innerHTML='';for(const v of voiceRows.filter(filter||(()=>true)))sel.add(new Option(v.label+(v.ready?'':' (hazır değil)'),v.id));if(sel.id==='nVoice')sel.add(new Option('Otomatik (kurulu ilk ses)','auto'),0);sel.value=val||sel.options[0]?.value;};
+  opts($('#nVoice'),n.voice||'auto');opts($('#nVoiceA'),n.voiceA||'vox-kadin');opts($('#nVoiceB'),n.voiceB||'vox-erkek');
+  ($('#nMode'+((n.mode||'single')==='alternate'?'Alt':'Single'))).checked=true;modeInfo();}
+function modeInfo(){const alt=$('#nModeAlt').checked;$('#nModeInfo').textContent=alt?'Dönüşümlü: kanca ve 1., 3., 5. haber ilk sesle; intro ve 2., 4. haber ikinci sesle okunur. Seçtiğiniz ses hazır değilse o segment otomatik sıradaki sesle üretilir.':'Tüm video seçtiğiniz tek sesle okunur.';}
+async function saveNarration(){const alt=$('#nModeAlt').checked;await post('/api/settings',{narration:{mode:alt?'alternate':'single',voice:$('#nVoice').value,voiceA:$('#nVoiceA').value,voiceB:$('#nVoiceB').value}});modeInfo();addMsg('j',alt?`Anlatım: dönüşümlü (${$('#nVoiceA').selectedOptions[0].text} / ${$('#nVoiceB').selectedOptions[0].text})`:`Anlatım sesi: ${$('#nVoice').selectedOptions[0].text}`);}
+async function playVoice(id,btn){vAudio.pause();const row=voiceRows.find(v=>v.id===id);if(row&&row.preview){vAudio.src=row.preview;vAudio.play();return;}
+  btn.disabled=true;btn.textContent='⏳ üretiliyor…';const r=await post('/api/voices/preview',{voice:id});btn.disabled=false;btn.textContent='▶ Dinle';
+  if(!r.ok){addMsg('j','Ön dinleme üretilemedi: '+(r.error||''));return;}if(row)row.preview=r.url;vAudio.src=r.url;vAudio.play();}
+for(const id of ['nModeSingle','nModeAlt','nVoice','nVoiceA','nVoiceB'])$('#'+id).onchange=saveNarration;
+$('#voiceRefresh').onclick=()=>loadVoices(true);
+document.addEventListener('DOMContentLoaded',()=>loadVoices(false));setTimeout(()=>loadVoices(false),800);
 $('#ttsStart').onclick=async()=>{await post('/api/tts/start');addMsg('j','Doğal ses motoru başlatılıyor; ilerlemeyi canlı logda görürsünüz.');setTimeout(refreshStatus,2500);};
 $('#ttsStop').onclick=async()=>{await post('/api/tts/stop');refreshStatus();};
 $('#ttsAuto').onclick=async()=>{const on=!$('#ttsAuto').classList.contains('on');await post('/api/settings',{chatterbox:{autoStart:on}});refreshStatus();};

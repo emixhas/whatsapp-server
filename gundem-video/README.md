@@ -36,7 +36,9 @@ afplay work/trendyol-test.wav           # deneme sesini dinle
   yüzde 0.9. Emixhas'ın anlık konuşması ve Trendyol çalışmazsa video için yedek.
 - Rakamlar seslendirmeden önce otomatik yazıya çevrilir (`scripts/tr_numbers.py`): "3 kişi" → "üç kişi",
   "yüzde 46", "iki bin yirmi altıda", "on dörtte".
-- Motor sırası `settings.narrationEngine=auto`: Trendyol → EMA → Chatterbox → Yelda → Piper. Panelden seçilir.
+- Panel → Ayarlar → **SESLER**: her sesi ▶ ile dinleyin, tek ses ya da "kadın + erkek dönüşümlü" seçin
+  (1. haber kadın, 2. haber erkek…). Kadın/erkek spiker sesleri VoxCPM2 tabanından ses tasarımıyla gelir;
+  kendi klonunuz için `voices/klon/ad.wav` koyun. Otomatik sıra: Trendyol → EMA → Chatterbox → Yelda → Piper.
 
 Piper deposunda şu an tek Türkçe ses var: `tr_TR-dfki-medium`. Başka bir .onnx modeliniz varsa
 `PIPER_VOICE=voices/baska-model.onnx bash pipeline.sh` ile kullanın.

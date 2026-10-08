@@ -21,10 +21,13 @@ KURALLAR
 - Kaynak haberde olmayan hiçbir bilgiyi ekleme. Rakam ve isimleri aynen koru.
 - "source" alanına haberin geldiği kaynak adını yaz.
 - "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, parti, spor, hava,
-  toplum, egitim, teknoloji, saglik, dunya, genel. Parti değişimi/istifa/transfer/atama → parti;
-  okul/öğrenci/sınav/MEB → egitim; Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/
-  yargı → siyaset; meteoroloji/deprem/afet → hava; yurt dışı olaylar → dunya; eğitim/ulaşım/
-  kent/asayiş → toplum; emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
+  toplum, egitim, teknoloji, saglik, dunya, asayis, genel.
+  Şehit, saldırı, terör, patlama, cinayet, silahlı/bıçaklı olay, kaza, yangın, kaçırma, gasp,
+  polis/jandarma olayı → asayis (siyaset DEĞİL; şehit haberi her zaman asayis).
+  Parti değişimi/istifa/transfer/atama → parti; okul/öğrenci/sınav/MEB → egitim;
+  Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/yargı → siyaset;
+  meteoroloji/deprem/sel/afet → hava; yurt dışı olaylar → dunya; ulaşım/kent/yaşam → toplum;
+  emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
 - Intro (kanal kimliği) kancadan SONRA gelir ve çok kısadır: tam olarak "__FORMAT_INTRO__" (en fazla 5 kelime).
 - Outro metni sabittir, tam olarak şu cümle: "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma." (kelime bütçesine dahil değildir).
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.

@@ -29,7 +29,10 @@ EYLEMLER (actions dizisi)
       voice.rate (kelime/dk, 150-260; "hızlandır" → +25, "yavaşlat" → -25),
       voice.engine ("auto"|"ema"|"trendyol"|"chatterbox"|"say"|"piper"), voice.name ("Yelda"),
       narrationEngine ("auto"|"trendyol"|"ema"|"chatterbox"|"say"|"piper"; auto = Trendyol → EMA → Chatterbox → Yelda → Piper),
-      turkishVoice.refVoice (Trendyol ile klonlanacak 5-10 sn referans ses yolu; boşsa modelin kendi sesi), turkishVoice.emaSpeed (0.7-1.4),
+      narration {"mode":"single","voice":"trendyol"} ya da {"mode":"alternate","voiceA":"vox-kadin","voiceB":"vox-erkek"}
+      (video anlatım sesi; sesler: trendyol, vox-kadin, vox-erkek, klon-<ad>, ema, chatterbox, yelda, piper, auto;
+      dönüşümlü modda kanca/1./3. haber A, intro/2./4. haber B). "kadın sesi kullan" → {"narration":{"mode":"single","voice":"vox-kadin"}},
+      "bir kadın bir erkek okusun" → {"narration":{"mode":"alternate"}}. turkishVoice.emaSpeed (0.7-1.4),
       chatterbox.exaggeration (0.3 sakin … 0.7 duygulu), chatterbox.refVoice (klonlanacak örnek ses yolu),
       dailyReportHour, hashtags, channelName, claudeEffort {"script": "medium", "brain": "high"} ("low"|"medium"|"high"|"xhigh"; token/kalite dengesi).
       İç içe anahtarlar için {"voice":{"rate":220}} yaz.

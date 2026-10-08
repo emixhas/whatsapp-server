@@ -81,14 +81,20 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   metrik (📊), tünel (☁), doğal ses (🎤), kod değişiklikleri (✎ fs.watch: src/app/scripts/prompts),
   git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda yapışkan; satır öneki rengi belirler.
   Yeni bir işlem eklerken `push()` ile logla, sessiz çalışan şey olmasın.
-- Türkçe doğal ses (varsayılan): `scripts/tts.py` motor sırası auto = Trendyol-TTS (MLX CLI `.venv-tr/bin/trendyol-tts`,
-  artifact `models/Trendyol-TTS-mlx`; klon istenirse PyTorch/MPS yolu `scripts/voxcpm_tts.py`) → EMA Lightning
-  (`scripts/ema_tts.py`, toplu) → Chatterbox → Yelda → Piper. Kurulum `scripts/install_turkish_voice.sh`
-  (Python 3.11 `.venv-tr`, vendor/trendyol-tts-mlx, ~5 GB). Ayarlar `settings.turkishVoice`
-  {backend auto|mlx|torch, cfg, steps, seed, refVoice, emaSpeed}. Bir motor çökerse `fallback()` onu bu
-  çalıştırma için kapatıp sıradakine geçer ve loga "! … başarısız" yazar. Seslendirme öncesi `prep_text`:
-  rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler normal yazıma. Emixhas'ın konuşması
-  (`speak.py`) auto'da EMA kullanır (hızlı); `voice.rate` EMA hızına (0.7-1.4) çevrilir.
+- Ses kataloğu `scripts/voices.py` (tek doğru kaynak): trendyol (MLX CLI `.venv-tr/bin/trendyol-tts`, artifact
+  `models/Trendyol-TTS-mlx`), vox-kadin / vox-erkek (VoxCPM2 tabanı `models/VoxCPM2`, ses tasarımı
+  "instruct" ön eki, PyTorch/MPS `scripts/voxcpm_tts.py`), klon-<ad> (`voices/klon/*.wav` referansı,
+  VoxCPM2), ema (`scripts/ema_tts.py`), chatterbox, yelda, piper, auto (= trendyol → ema → chatterbox →
+  yelda → piper). `available()` kurulu mu söyler; `synthesize(jobs)` aynı motordakileri toplu üretir.
+  Seçim `settings.narration` {mode single|alternate, voice, voiceA, voiceB}; `assign()` dönüşümlü modda
+  segment sırasıyla A/B (kanca A, intro B, 1. haber A…). `tts.py` bir ses çökerse onu `_disabled`e
+  alıp o segmentleri auto ile yeniden üretir (loga "! ses … başarısız"). Panel Ayarlar → SESLER:
+  `GET /api/voices` (liste+hazırlık), `POST /api/voices/preview {voice}` → `data/previews/<id>.wav`
+  (`/previews/` statik). Kurulum `scripts/install_turkish_voice.sh` (Python 3.11 `.venv-tr`,
+  vendor/trendyol-tts-mlx, Trendyol MLX ~4.8 GB + VoxCPM2 tabanı ~4.6 GB + EMA 34 MB).
+  Seslendirme öncesi `prep_text`: rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler
+  normal yazıma. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
+  (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
 - Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT, Türkçe, klonlama) modelini bir kez
   yükler, :3139'da HTTP sunar. `scripts/natural_tts.py` istemci; `tts.py`/`speak.py` motor
   "chatterbox" seçiliyse buraya gider, sunucu hazır değilse Yelda/Piper'a düşer (loga yazar).
@@ -151,6 +157,7 @@ değişmez. Eşleme `src/categories.ts` içindedir ve tek doğru kaynak odur:
 |-----------|-----------|-------------|-------------------------------------|--------------------------------|
 | finans    | EKONOMİ   | #F2B705     | yükselen grafik + ₺ paralar         | sfx/kasa.wav (ka-ching)        |
 | siyaset   | SİYASET   | #E30A17     | kürsü + vuran tokmak                | sfx/tokmak.wav                 |
+| asayis    | ASAYİŞ    | #3D7BFF     | dönen polis tepe lambası + şerit    | sfx/siren.wav                  |
 | spor      | SPOR      | #2ECC71     | kaleye giden top                    | sfx/duduk.wav                  |
 | hava      | HAVA      | #4FC3F7     | güneş, bulut, yağmur                | sfx/yagmur.wav                 |
 | toplum    | TOPLUM    | #FF8A3D     | yanan pencereli şehir + araba       | sfx/sehir.wav                  |
@@ -177,6 +184,8 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
   `scripts/make_sfx.py` içinde sesi sentezle ve çalıştır, `prompts/senaryo.md` listesini ve
   `scripts/assemble_script.py` içindeki `CATEGORIES` kümesini güncelle. Beşi birlikte değişir.
 - Bilinmeyen kategori `genel`e düşer; bu durum logda uyarı olarak görünür.
+- `assemble_script.py: ASAYIS` kalıbı (şehit, saldırı, terör, kaza, yangın, cinayet…) geçen yurt içi haber
+  Claude'un seçimine bakılmaksızın `asayis` olur (dunya/hava hariç). Şehit haberi asla siyaset değildir.
 - Ses efektleri harici dosya değildir: `python3 scripts/make_sfx.py` hepsini yeniden üretir.
   Bir sesi değiştirmek için o betikteki parametreleri değiştir, dışarıdan dosya ekleme.
 

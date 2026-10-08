@@ -11,7 +11,7 @@ echo "== 1/4 Python 3.11 ve MLX ortamı"
 brew list python@3.11 >/dev/null 2>&1 || brew install python@3.11
 [ -d .venv-tr ] || /opt/homebrew/bin/python3.11 -m venv .venv-tr
 .venv-tr/bin/pip install -U pip wheel >/dev/null
-.venv-tr/bin/pip install "huggingface_hub[cli]" soundfile
+.venv-tr/bin/pip install "huggingface_hub[cli]" soundfile "voxcpm==2.0.3"
 
 echo "== 2/4 Trendyol-TTS MLX çalışma zamanı"
 mkdir -p vendor models
@@ -19,6 +19,11 @@ mkdir -p vendor models
 .venv-tr/bin/pip install -e vendor/trendyol-tts-mlx
 if [ ! -f models/Trendyol-TTS-mlx/config.json ] && [ -z "$(ls models/Trendyol-TTS-mlx 2>/dev/null)" ]; then
   .venv-tr/bin/hf download emrekoc/trendyol-tts-mlx --local-dir models/Trendyol-TTS-mlx
+fi
+
+echo "== 2b/4 VoxCPM2 tabanı (kadın/erkek spiker ses tasarımı ve klon için, ~4.6 GB)"
+if [ -z "$(ls models/VoxCPM2 2>/dev/null)" ]; then
+  .venv-tr/bin/hf download openbmb/VoxCPM2 --local-dir models/VoxCPM2 || echo "! VoxCPM2 tabanı inmedi; kadın/erkek sesleri panelde 'hazır değil' görünür"
 fi
 
 echo "== 3/4 EMA Lightning (ana ortama; yedek ve Emixhas sesi)"
@@ -44,4 +49,4 @@ p = pathlib.Path("data/settings.json"); d = json.loads(p.read_text()) if p.exist
 d["narrationEngine"] = "auto"; d.setdefault("voice", {})["engine"] = "auto"
 p.parent.mkdir(exist_ok=True); p.write_text(json.dumps(d, ensure_ascii=False, indent=2))
 PYEOF
-echo "Kurulum tamam. Video anlatımı ve Emixhas sesi 'Otomatik' yapıldı (Trendyol → EMA → ...). Paneli yeniden başlatın."
+echo "Kurulum tamam. Video anlatımı ve Emixhas sesi 'Otomatik' yapıldı. Panel → Ayarlar → SESLER bölümünden dinleyip seçin."

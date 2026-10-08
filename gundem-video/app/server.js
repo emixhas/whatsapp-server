@@ -33,6 +33,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(ROOT, "app", "ui")));
 app.use("/videos", express.static(OUT, { acceptRanges: true }));
+app.use("/previews", express.static(path.join(ROOT, "data", "previews")));
 
 // ---------- yardımcılar
 const lanIp = () => { for (const l of Object.values(networkInterfaces())) for (const i of l || []) if (i.family === "IPv4" && !i.internal) return i.address; return "127.0.0.1"; };
@@ -43,9 +44,9 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek" }, tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false },
-  turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
+  turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true } };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
@@ -285,6 +286,32 @@ app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}`
 app.post("/api/generate", (req, res) => res.json(startPipeline(req.body?.duration)));
 app.get("/api/schedule", async (_req, res) => res.json(await getSchedule()));
 app.post("/api/schedule", async (req, res) => res.json(await setSchedule(!!req.body.enabled, Number(req.body.hours) || 5)));
+// Ses kataloğu: kurulu sesler ve ön dinleme (scripts/voices.py). Liste 30 sn önbellekli.
+let voiceCache = { t: 0, rows: [] };
+const runPy = (args, timeoutMs) => new Promise((resolve) => execFile(PY, args, { cwd: ROOT, env: ENV, timeout: timeoutMs, maxBuffer: 4e6 }, (err, stdout, stderr) => resolve({ err, stdout: String(stdout || ""), stderr: String(stderr || "") })));
+app.get("/api/voices", async (req, res) => {
+  if (req.query.fresh || Date.now() - voiceCache.t > 30000) {
+    const r = await runPy(["scripts/voices.py", "--list"], 60000);
+    try { voiceCache = { t: Date.now(), rows: JSON.parse(r.stdout.trim().split("\n").pop()) }; } catch { /* eski liste kalır */ }
+  }
+  const rows = voiceCache.rows.map((v) => ({ ...v, preview: existsSync(path.join(ROOT, "data", "previews", v.id + ".wav")) ? `/previews/${v.id}.wav` : null }));
+  res.json({ voices: rows, narration: settings().narration });
+});
+app.post("/api/voices/preview", async (req, res) => {
+  const id = String(req.body.voice || "").replace(/[^a-z0-9çğıöşü_-]/g, "");
+  if (!id) return res.status(400).json({ ok: false, error: "ses yok" });
+  const out = path.join(ROOT, "data", "previews", id + ".wav");
+  if (!req.body.fresh && existsSync(out)) return res.json({ ok: true, url: `/previews/${id}.wav`, cached: true });
+  push(`🎤 ön dinleme üretiliyor: ${id}`);
+  const args = ["scripts/voices.py", "--preview", id, "--out", out];
+  if (req.body.text) args.push("--text", String(req.body.text).slice(0, 300));
+  const r = await runPy(args, 600000);
+  let j = {};
+  try { j = JSON.parse(r.stdout.trim().split("\n").pop()); } catch { j = { ok: false, error: (r.stderr || r.err?.message || "çıktı yok").slice(-300) }; }
+  if (!j.ok) { push(`🎤 ön dinleme başarısız (${id}): ${j.error}`); return res.json(j); }
+  push(`🎤 ön dinleme hazır: ${id}`);
+  res.json({ ok: true, url: `/previews/${id}.wav?t=${Date.now()}` });
+});
 app.get("/api/settings", (_req, res) => res.json(settings()));
 app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));

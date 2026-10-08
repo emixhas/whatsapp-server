@@ -138,6 +138,14 @@ def main():
         *[(tone(1760, 0.18, decay=0.08, amp=0.5, harmonics=(1, 0.3)), 0.35 + k * 0.16) for k in range(3)],
         (tone(220, 1.2, decay=0.9, amp=0.35, harmonics=(1, 0.6, 0.3), attack=0.2), 0.3),
     ))
+    # Asayiş: iki tonlu siren (0.8 sn periyot, iki tur) + hafif uğultu
+    save("siren.wav", mix(
+        (tone(660, 0.4, decay=0.2, amp=0.45, harmonics=(1, 0.4, 0.2), attack=0.05), 0.0),
+        (tone(880, 0.4, decay=0.2, amp=0.45, harmonics=(1, 0.4, 0.2), attack=0.05), 0.4),
+        (tone(660, 0.4, decay=0.2, amp=0.4, harmonics=(1, 0.4, 0.2), attack=0.05), 0.8),
+        (tone(880, 0.5, decay=0.35, amp=0.4, harmonics=(1, 0.4, 0.2), attack=0.05), 1.2),
+        (noise(1.6, amp=0.2, cutoff=0.05, attack=0.2, decay=1.2), 0),
+    ))
     # Genel: iki tonlu bildirim
     save("bildirim.wav", mix(
         (tone(880, 0.35, decay=0.2, harmonics=(1, 0.3)), 0),

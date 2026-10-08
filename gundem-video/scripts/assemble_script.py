@@ -19,7 +19,9 @@ DURATION = int(os.environ.get("DURATION", "30"))
 MAX_WORDS_TOTAL = int(os.environ.get("WORDS", str(DURATION * 24 // 10))) + 6   # küçük tolerans
 _H = int(os.environ.get("HABER", str(max(2, DURATION // 8))))
 HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
-CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
+CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "genel"}
+# Asayiş zorlaması: Claude ne derse desin bu kalıplar geçen yurt içi haber "asayis" olur (şehit haberi siyasete düşmesin)
+ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
 # Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
 OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."
 
@@ -188,6 +190,9 @@ def main(src: str, dst: str):
         if s["kind"] in ("haber", "hook") and s.get("category") not in CATEGORIES:
             print(f"  ! bilinmeyen kategori {s.get('category')!r}, 'genel' kullanıldı", file=sys.stderr)
             s["category"] = "genel"
+        if s["kind"] in ("haber", "hook") and s.get("category") not in ("asayis", "dunya", "hava") and ASAYIS.search(f"{s.get('title', '')} {s['narration']}"):
+            print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
+            s["category"] = "asayis"
     breaking = [s for s in haber if s.get("breaking")]
     for s in breaking[1:]:
         s["breaking"] = False  # en fazla bir manşet
