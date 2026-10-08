@@ -62,7 +62,7 @@ export const Headline = ({ index, total, title, narration, source, category, bre
         {source ? <div style={{ opacity: textIn, marginTop: 18, fontSize: 32, color: theme.muted }}>Kaynak: {source}</div> : null}
       </div>
       {/* yanan altyazı: anlatım metni kelime kelime */}
-      <Captions words={words} accent={st.accent} bottom={250} size={58} />
+      <Captions words={words} accent={st.accent} bottom={470} size={62} />
 
       <div style={{ position: "absolute", bottom: 130, left: 80, right: 80, height: 10, background: theme.card, borderRadius: 5 }}>
         <div style={{ width: `${progress * 100}%`, height: "100%", background: st.accent, borderRadius: 5 }} />

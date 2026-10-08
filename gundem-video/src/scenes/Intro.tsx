@@ -23,7 +23,7 @@ export const Intro = ({ dateLabel, episodeOfDay, timeLabel, formatLabel, words }
         <div style={{ fontSize: 48, fontWeight: 700 }}>{dateLabel} · {timeLabel}</div>
         <div style={{ fontSize: 40, color: theme.muted, marginTop: 12 }}>{formatLabel ? formatLabel.toUpperCase() + " · " : ""}Günün {episodeOfDay}. özeti</div>
       </div>
-      <Captions words={words} accent={theme.red} bottom={260} size={52} />
+      <Captions words={words} accent={theme.red} bottom={520} size={54} />
     </AbsoluteFill>
   );
 };
