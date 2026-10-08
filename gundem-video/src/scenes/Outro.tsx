@@ -12,7 +12,7 @@ export const Outro = ({ words }: { words?: { w: string; s: number; e: number }[]
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center", fontFamily: theme.font, color: theme.white, textAlign: "center" }}>
       <div style={{ transform: `scale(${pop})`, fontSize: 96, fontWeight: 900, lineHeight: 1.1 }}>5 saat sonra<br />yeni özet</div>
       <div style={{ opacity: sub, marginTop: 40, fontSize: 48, color: theme.muted }}>Abone ol · Takipte kal</div>
-      <Captions words={words} accent={theme.red} bottom={520} size={54} />
+      <Captions words={words} accent={theme.red} bottom={600} size={54} />
     </AbsoluteFill>
   );
 };

@@ -37,7 +37,7 @@ export const Hook = ({ title, narration, category, breaking, image, words, durat
         <div lang="tr" style={{ fontSize: title.length > 14 ? 150 : 190, fontWeight: 900, lineHeight: 0.95, textTransform: "uppercase", textShadow: "0 10px 40px rgba(0,0,0,.8)", textWrap: "balance" as never }}>{title}</div>
         <div style={{ marginTop: 30, width: 240 * pop, height: 14, background: accent, borderRadius: 7 }} />
       </div>
-      <Captions words={words} accent={accent} bottom={420} size={64} />
+      <Captions words={words} accent={accent} bottom={500} size={64} />
     </AbsoluteFill>
   );
 };
