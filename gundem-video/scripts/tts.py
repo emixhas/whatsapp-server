@@ -25,6 +25,31 @@ PIPER_LENGTH = os.environ.get("PIPER_LENGTH_SCALE", "0.82")  # <1 daha hızlı. 
 PAUSE_SEC = 0.15  # her segment sonuna sessizlik (Piper zaten cümle sonu boşluğu ekler)
 
 
+def word_timings(text: str, duration: float, pad: float):
+    """Segment süresini kelimelere karakter ağırlığıyla dağıtır. TTS temposu sabit olduğu için
+    yanan altyazı için yeterince isabetli; noktalama sonrası kısa duraklama payı bırakır."""
+    words = text.split()
+    if not words:
+        return []
+    speech = max(0.05, duration - pad)
+    weights = []
+    for w in words:
+        core = sum(1 for ch in w if ch.isalnum())
+        wt = 0.6 + core  # her kelimenin sabit bir eşik süresi + harf başına
+        if w.endswith((".", "!", "?")):
+            wt += 2.2
+        elif w.endswith((",", ";", ":")):
+            wt += 1.0
+        weights.append(wt)
+    total = sum(weights)
+    out, t = [], 0.0
+    for w, wt in zip(words, weights):
+        d = speech * wt / total
+        out.append({"w": w, "s": round(t, 3), "e": round(t + d, 3)})
+        t += d
+    return out
+
+
 def wav_duration(path: Path) -> float:
     with wave.open(str(path), "rb") as w:
         return w.getnframes() / float(w.getframerate())
@@ -122,6 +147,7 @@ def main(script_path: str, episode_path: str):
         seg = dict(seg)
         seg["audio"] = f"audio/{out.name}"
         seg["duration"] = round(wav_duration(out), 3)
+        seg["words"] = word_timings(seg["narration"], seg["duration"], PAUSE_SEC)
         segments.append(seg)
 
     episode = {k: v for k, v in script.items() if k != "segments"}

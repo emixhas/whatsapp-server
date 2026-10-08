@@ -138,6 +138,9 @@ def main(src: str, dst: str):
         "episodeOfDay": episode_of_day(date),
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,
+        "format": os.environ.get("FORMAT", "ozel"),
+        "formatLabel": os.environ.get("FORMAT_LABEL", "Gündem"),
+        "music": f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
         "segments": segs,
     }
     Path(dst).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

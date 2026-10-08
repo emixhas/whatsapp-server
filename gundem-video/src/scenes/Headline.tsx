@@ -1,10 +1,11 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
+import { Captions } from "./Captions";
 import { theme } from "../theme";
 
-type Props = { index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number };
+type Props = { index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string };
 
-export const Headline = ({ index, total, title, narration, source, category, breaking, durationInFrames }: Props) => {
+export const Headline = ({ index, total, title, narration, source, category, breaking, durationInFrames, words, image }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
@@ -47,11 +48,10 @@ export const Headline = ({ index, total, title, narration, source, category, bre
           <div style={{ fontSize: 150, fontWeight: 900, color: st.accent, lineHeight: 0.85 }}>{String(index + 1).padStart(2, "0")}</div>
           <div style={{ fontSize: breaking ? 84 : 76, fontWeight: 900, lineHeight: 1.06, paddingBottom: 6 }}>{title}</div>
         </div>
-        <div style={{ opacity: textIn, marginTop: 36, fontSize: 46, lineHeight: 1.35, color: "#D7DDEE", background: theme.card, padding: "30px 36px", borderRadius: 24, borderLeft: `10px solid ${st.accent}` }}>
-          {narration}
-        </div>
-        {source ? <div style={{ opacity: textIn, marginTop: 22, fontSize: 34, color: theme.muted }}>Kaynak: {source}</div> : null}
+        {source ? <div style={{ opacity: textIn, marginTop: 18, fontSize: 32, color: theme.muted }}>Kaynak: {source}</div> : null}
       </div>
+      {/* yanan altyazı: anlatım metni kelime kelime */}
+      <Captions words={words} accent={st.accent} bottom={250} size={58} />
 
       <div style={{ position: "absolute", bottom: 130, left: 80, right: 80, height: 10, background: theme.card, borderRadius: 5 }}>
         <div style={{ width: `${progress * 100}%`, height: "100%", background: st.accent, borderRadius: 5 }} />

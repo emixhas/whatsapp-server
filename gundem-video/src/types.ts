@@ -15,6 +15,10 @@ export type Segment = {
   audio: string;
   /** Saniye cinsinden ses süresi (tts.py doldurur). */
   duration: number;
+  /** Kelime zamanları, segment başına göre saniye (tts.py doldurur). */
+  words?: { w: string; s: number; e: number }[];
+  /** Haber görseli (public/ altına göre), varsa. */
+  image?: string;
 };
 
 export type Episode = {
@@ -22,6 +26,12 @@ export type Episode = {
   dateLabel: string;     // "7 Ekim 2026"
   episodeOfDay: number;  // günün kaçıncı videosu
   timeLabel: string;     // "14:00"
+  /** Format: sabah | ogle | aksam | ozel */
+  format?: string;
+  formatLabel?: string;  // "Güne Başlarken"
+  music?: string;        // public/ altına göre müzik yatağı
+  musicVolume?: number;
+  titleVariant?: "A" | "B";
   segments: Segment[];
 };
 

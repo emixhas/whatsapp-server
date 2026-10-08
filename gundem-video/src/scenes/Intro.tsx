@@ -1,9 +1,11 @@
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { theme } from "../theme";
 
-type Props = { dateLabel: string; episodeOfDay: number; timeLabel: string };
+import { Captions } from "./Captions";
 
-export const Intro = ({ dateLabel, episodeOfDay, timeLabel }: Props) => {
+type Props = { dateLabel: string; episodeOfDay: number; timeLabel: string; formatLabel?: string; words?: { w: string; s: number; e: number }[] };
+
+export const Intro = ({ dateLabel, episodeOfDay, timeLabel, formatLabel, words }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const pop = spring({ frame, fps, config: { damping: 12, stiffness: 120 } });
@@ -19,8 +21,9 @@ export const Intro = ({ dateLabel, episodeOfDay, timeLabel }: Props) => {
       <div style={{ width: 520 * line, height: 8, background: theme.red, marginTop: 40, borderRadius: 4 }} />
       <div style={{ opacity: sub, marginTop: 40, textAlign: "center" }}>
         <div style={{ fontSize: 48, fontWeight: 700 }}>{dateLabel} · {timeLabel}</div>
-        <div style={{ fontSize: 40, color: theme.muted, marginTop: 12 }}>Günün {episodeOfDay}. özeti</div>
+        <div style={{ fontSize: 40, color: theme.muted, marginTop: 12 }}>{formatLabel ? formatLabel.toUpperCase() + " · " : ""}Günün {episodeOfDay}. özeti</div>
       </div>
+      <Captions words={words} accent={theme.red} bottom={260} size={52} />
     </AbsoluteFill>
   );
 };

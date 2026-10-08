@@ -50,8 +50,18 @@ def save_metrics(m):
     save_json(DATA / "metrics.json", m)
 
 
+def _deep_merge(a, b):
+    out = dict(a)
+    for k, v in (b or {}).items():
+        out[k] = _deep_merge(a.get(k, {}), v) if isinstance(v, dict) and isinstance(a.get(k), dict) else v
+    return out
+
+
 def settings():
-    return load_json(DATA / "settings.json", {
+    return _deep_merge(_DEFAULTS, load_json(DATA / "settings.json", {}))
+
+
+_DEFAULTS = ({
         "autopublish": {"youtube": False, "instagram": False, "tiktok": False},
         "dailyReportHour": 9,
         "metricsSyncMinutes": 60,
@@ -63,8 +73,25 @@ def settings():
         "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
         "narrationEngine": "auto",
         "claudeEffort": {"script": "medium", "brain": "high"},
+        "formats": {
+            "sabah": {"hours": [5, 11], "duration": 45, "label": "Güne Başlarken", "intro": "Güne başlarken Türkiye gündemi.", "tone": "sakin, bilgilendirici, günün ajandasını kuran"},
+            "ogle": {"hours": [11, 17], "duration": 30, "label": "Son Dakika", "intro": "Son dakika, Türkiye gündemi.", "tone": "hızlı, net, en yeni gelişmeler öncelikli"},
+            "aksam": {"hours": [17, 29], "duration": 90, "label": "Günün Özeti", "intro": "Günün özeti, Türkiye gündemi.", "tone": "toparlayıcı, günün en önemli olaylarını sıralayan"},
+        },
+        "musicVolume": 0.07,
         "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
     })
+
+
+def pick_format(hour: int | None = None):
+    """Saate göre format: sabah 05-11, öğle 11-17, akşam 17-05."""
+    from datetime import datetime
+    h = datetime.now().hour if hour is None else hour
+    for key, f in settings()["formats"].items():
+        lo, hi = f["hours"]
+        if lo <= h < hi or lo <= h + 24 < hi:
+            return key, f
+    return "aksam", settings()["formats"]["aksam"]
 
 
 def episode_meta(video_name: str):

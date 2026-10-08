@@ -11,7 +11,14 @@ export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$P
 PY="python3"; [ -x ".venv/bin/python3" ] && PY=".venv/bin/python3"
 command -v claude >/dev/null || { echo "HATA: 'claude' komutu bulunamadı. Claude Code kurulu ve PATH'te olmalı."; exit 1; }
 command -v ffmpeg >/dev/null || { echo "HATA: ffmpeg bulunamadı (brew install ffmpeg)."; exit 1; }
-DURATION="${DURATION:-30}"
+# Format: FORMAT=sabah|ogle|aksam|ozel. Verilmezse saate göre seçilir; DURATION verilmezse formatın süresi.
+FMT_JSON=$($PY -c "import json,sys;sys.path.insert(0,'scripts');from common import pick_format,settings;k,f=pick_format();import os;k=os.environ.get('FORMAT') or k;f=settings()['formats'].get(k) or {'duration':30,'label':'Gündem','intro':'Türkiye gündemi, günün özeti.','tone':'tarafsız'};print(json.dumps({'key':k,**f},ensure_ascii=False))")
+FORMAT="${FORMAT:-$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.load(sys.stdin)['key'])")}"
+FORMAT_LABEL=$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.load(sys.stdin)['label'])")
+FORMAT_INTRO=$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.load(sys.stdin)['intro'])")
+FORMAT_TONE=$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.load(sys.stdin)['tone'])")
+DURATION="${DURATION:-$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.load(sys.stdin)['duration'])")}"
+export FORMAT FORMAT_LABEL
 WORDS=$(( DURATION * 24 / 10 ))          # ~150 kelime/dk temposunda sığan kelime
 HABER=$(( DURATION / 8 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 12 ] && HABER=12
 export DURATION WORDS HABER
@@ -21,7 +28,7 @@ export CLAUDE_EFFORT
 mkdir -p work out public/audio
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
-echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime, effort ${CLAUDE_EFFORT})"
+echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (format ${FORMAT} · ${FORMAT_LABEL}, hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
 
 echo "-- 1/4 haberler"
 $PY scripts/fetch_news.py work/news.json
@@ -31,7 +38,7 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
   $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-20}"
-  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" prompts/senaryo.md; cat work/news_prompt.json; } \
+  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" prompts/senaryo.md; cat work/news_prompt.json; } \
     | claude -p --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json
   $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
 fi

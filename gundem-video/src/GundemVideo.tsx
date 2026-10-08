@@ -14,6 +14,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
   return (
     <AbsoluteFill>
       <Background />
+      {/* müzik yatağı: formatın yatağı, düşük seviyede, döngülü */}
+      {episode.music ? <Audio src={staticFile(episode.music)} volume={episode.musicVolume ?? 0.07} loop /> : null}
       {episode.segments.map((seg, i) => {
         const from = Math.round(cursor * FPS);
         const dur = Math.max(1, Math.round(seg.duration * FPS));
@@ -33,11 +35,11 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             {/* geçiş: sahneler arası whoosh (ilk sahne hariç) */}
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH_FRAMES}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.35} /></Sequence> : null}
             {seg.kind === "intro" ? (
-              <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} />
+              <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} words={seg.words} />
             ) : seg.kind === "outro" ? (
-              <Outro />
+              <Outro words={seg.words} />
             ) : (
-              <Headline index={haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} breaking={seg.breaking} durationInFrames={dur} />
+              <Headline index={haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image} />
             )}
           </Sequence>
         );
