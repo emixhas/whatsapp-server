@@ -90,8 +90,12 @@ def fb_finish(env, redirect, code):
     pages = ig_http(f"{FB_API}/me/accounts?" + urllib.parse.urlencode({"fields": "id,name,access_token,instagram_business_account{id,username}", "limit": "50", "access_token": user_token})).get("data", [])
     page = next((p for p in pages if p.get("instagram_business_account")), None)
     if not page:
-        names = ", ".join(p.get("name", "?") for p in pages) or "hiç sayfa yok"
-        raise RuntimeError(f"Bağlı Instagram hesabı olan Facebook Sayfası bulunamadı (sayfalar: {names}). Instagram → Ayarlar → İşletme araçları → Facebook Sayfasına bağla, sonra tekrar deneyin.")
+        names = ", ".join(p.get("name", "?") for p in pages)
+        if not pages:
+            raise RuntimeError("Facebook uygulamaya hiçbir Sayfa için izin vermedi. Tekrar bağlanırken giriş ekranında 'Türkiye Gündemi' sayfasını "
+                               "işaretleyin (Hesapları düzenle → sayfayı seç). Sayfa bir İş portföyündeyse: Meta uygulamasında business_management iznini "
+                               "ekleyip .env'e IG_EXTRA_SCOPES=business_management yazın ve yeniden bağlanın.")
+        raise RuntimeError(f"Sayfalar bulundu ({names}) ama hiçbirine Instagram hesabı bağlı değil. Facebook → Sayfa → Ayarlar → Bağlı hesaplar → Instagram → Hesabı bağla; sonra tekrar deneyin.")
     ig = page["instagram_business_account"]
     tok = {"access_token": page["access_token"], "expires_in": 0, "obtained_at": time.time(), "via": "facebook",
            "user_id": str(ig["id"]), "username": ig.get("username"), "page_id": page["id"], "page_name": page.get("name")}
@@ -287,7 +291,8 @@ def ig_connect():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     via = (env.get("IG_LOGIN") or "instagram").lower()  # instagram: Instagram Login (sayfa gerekmez) | facebook: Facebook Login (Facebook Sayfası + bağlı Instagram)
     if via == "facebook":
-        params = {"client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "state": state}
+        # auth_type=rerequest: daha önce atlanan sayfa/izin seçimini yeniden sorar
+        params = {"client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "state": state, "auth_type": "rerequest"}
         if env.get("IG_CONFIG_ID"):  # Facebook Login for Business "Configuration" kimliği: izinler yapılandırmadan gelir
             params["config_id"] = env["IG_CONFIG_ID"]
         else:
