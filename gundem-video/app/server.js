@@ -345,6 +345,8 @@ app.post("/api/connect/instagram", async (_req, res) => {
   const url = await waitTunnelUrl();
   if (!url) return res.json({ ok: false, error: tunnel.error || "tünel adresi alınamadı; cloudflared kurulu mu?" });
   if (igConnect) { try { igConnect.kill(); } catch { /* yok */ } igConnect = null; }
+  // Eski bir deneme (panel yeniden başlamadan önce) :3138'i tutuyorsa kapat
+  try { const pids = String(spawnSync("lsof", ["-ti", ":3138"]).stdout || "").split(/\s+/).filter(Boolean); for (const pid of pids) { try { process.kill(Number(pid)); } catch { /* yok */ } } if (pids.length) { push(`◎ eski bağlanma denemesi kapatıldı (${pids.length})`); await new Promise((r) => setTimeout(r, 800)); } } catch { /* lsof yok */ }
   push(`◎ Instagram girişi başlatılıyor; geri dönüş ${url}/instagram/callback (Meta'da kayıtlı olmalı)`);
   const child = spawn(PY, ["scripts/publish.py", "--connect", "instagram"], { cwd: ROOT, env: ENV });
   igConnect = child;
