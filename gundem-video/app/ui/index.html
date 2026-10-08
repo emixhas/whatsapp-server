@@ -302,7 +302,7 @@ async function playVoice(id,btn){vAudio.pause();const row=voiceRows.find(v=>v.id
 for(const id of ['nModeSingle','nModeAlt','nVoice','nVoiceA','nVoiceB'])$('#'+id).onchange=saveNarration;
 $('#voiceRefresh').onclick=()=>loadVoices(true);
 document.addEventListener('DOMContentLoaded',()=>loadVoices(false));setTimeout(()=>loadVoices(false),800);
-$('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel.');return;}addMsg('j','Güncelleme alındı, panel yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
+$('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
 $('#restartBtn').onclick=async()=>{await post('/api/restart');addMsg('j','Panel yeniden başlıyor; sayfa 5 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),5000);};
 $('#ttsStart').onclick=async()=>{await post('/api/tts/start');addMsg('j','Doğal ses motoru başlatılıyor; ilerlemeyi canlı logda görürsünüz.');setTimeout(refreshStatus,2500);};
 $('#ttsStop').onclick=async()=>{await post('/api/tts/stop');refreshStatus();};

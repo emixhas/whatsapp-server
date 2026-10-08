@@ -322,6 +322,8 @@ app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
 app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 500); });
 // Panelden güncelleme: git pull, bağımlılık değiştiyse npm install, sonra yeniden başlat (terminal gerekmez)
+const headCommit = () => spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout?.trim() || "";
+const BOOT_COMMIT = headCommit(); // çalışan kodun sürümü; terminalden git pull yapıldıysa HEAD bundan ileride olur
 app.post("/api/update", async (_req, res) => {
   push("⬇ güncelleme: git pull");
   const r = await run("git", ["pull", "--ff-only"]);
@@ -330,9 +332,10 @@ app.post("/api/update", async (_req, res) => {
   if (!r.ok) return res.json({ ok: false, error: out.slice(-300) });
   const changed = /package(-lock)?\.json/.test(out);
   if (changed) { push("⬇ bağımlılıklar güncelleniyor (npm install)"); await run("npm", ["install", "--no-audit", "--no-fund"]); }
-  const upToDate = /Already up to date|Zaten güncel/i.test(out);
-  res.json({ ok: true, upToDate, summary: out.split("\n").pop() });
-  if (!upToDate) { push("↻ güncelleme alındı, panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 800); }
+  const stale = headCommit() !== BOOT_COMMIT; // yeni kod var ama panel eski sürümü çalıştırıyor
+  const pulled = !/Already up to date|Zaten güncel/i.test(out);
+  res.json({ ok: true, upToDate: !pulled && !stale, restarting: pulled || stale, summary: out.split("\n").pop() });
+  if (pulled || stale) { push(pulled ? "↻ güncelleme alındı, panel yeniden başlatılıyor" : "↻ yeni kod zaten çekilmiş, panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 800); }
 });
 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
