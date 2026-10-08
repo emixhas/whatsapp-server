@@ -72,15 +72,23 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   UI "Sürekli dinle" açıkken yalnızca uyandırma sözcüğü geçen cümleyi işler; sözcük tek başına
   söylenirse 8 sn dinleme penceresi açar ("Buyur."). Konuşurken mikrofon kapatılır (kendini duymaz).
   "dur/sus/yeter" konuşmayı keser.
-- Ses: `settings.voice` {engine auto|say|piper, name Yelda, rate kelime/dk, piperLength, piperNoise}.
-  auto: macOS'ta Yelda varsa `say` (daha doğal), yoksa Piper. "sesini hızlandır/yavaşlat" kuralı
+- Ses: `settings.voice` {engine auto|ema|trendyol|chatterbox|say|piper, name Yelda, rate kelime/dk, piperLength, piperNoise}.
+  auto: EMA Lightning kuruluysa o, yoksa Chatterbox/Yelda/Piper. "sesini hızlandır/yavaşlat" kuralı
   rate'i ±25 değiştirir; beyin de `settings` eylemiyle değiştirebilir. Video anlatımı
-  `settings.narrationEngine` (piper|say).
+  `settings.narrationEngine` (auto|trendyol|ema|chatterbox|say|piper).
 - `scripts/panel.sh` paneli döngüde çalıştırır; çıkış kodu 75 = yeniden başlat (`restart` eylemi).
 - Canlı log (`push()` → SSE): üretim adımları, beyin (🧠 düşünüyor / ⚡ eylem / ⏸ onay), yayın (📤),
   metrik (📊), tünel (☁), doğal ses (🎤), kod değişiklikleri (✎ fs.watch: src/app/scripts/prompts),
   git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda yapışkan; satır öneki rengi belirler.
   Yeni bir işlem eklerken `push()` ile logla, sessiz çalışan şey olmasın.
+- Türkçe doğal ses (varsayılan): `scripts/tts.py` motor sırası auto = Trendyol-TTS (MLX CLI `.venv-tr/bin/trendyol-tts`,
+  artifact `models/Trendyol-TTS-mlx`; klon istenirse PyTorch/MPS yolu `scripts/voxcpm_tts.py`) → EMA Lightning
+  (`scripts/ema_tts.py`, toplu) → Chatterbox → Yelda → Piper. Kurulum `scripts/install_turkish_voice.sh`
+  (Python 3.11 `.venv-tr`, vendor/trendyol-tts-mlx, ~5 GB). Ayarlar `settings.turkishVoice`
+  {backend auto|mlx|torch, cfg, steps, seed, refVoice, emaSpeed}. Bir motor çökerse `fallback()` onu bu
+  çalıştırma için kapatıp sıradakine geçer ve loga "! … başarısız" yazar. Seslendirme öncesi `prep_text`:
+  rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler normal yazıma. Emixhas'ın konuşması
+  (`speak.py`) auto'da EMA kullanır (hızlı); `voice.rate` EMA hızına (0.7-1.4) çevrilir.
 - Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT, Türkçe, klonlama) modelini bir kez
   yükler, :3139'da HTTP sunar. `scripts/natural_tts.py` istemci; `tts.py`/`speak.py` motor
   "chatterbox" seçiliyse buraya gider, sunucu hazır değilse Yelda/Piper'a düşer (loga yazar).

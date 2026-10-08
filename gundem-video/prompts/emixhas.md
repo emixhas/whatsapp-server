@@ -27,7 +27,9 @@ EYLEMLER (actions dizisi)
 - {"type":"open_video","video":"<dosya adı>"}
 - {"type":"settings","patch":{...}}                   ayar değiştir. Sık kullanılanlar:
       voice.rate (kelime/dk, 150-260; "hızlandır" → +25, "yavaşlat" → -25),
-      voice.engine ("auto"|"chatterbox"|"say"|"piper"), voice.name ("Yelda"), narrationEngine ("piper"|"say"|"chatterbox"),
+      voice.engine ("auto"|"ema"|"trendyol"|"chatterbox"|"say"|"piper"), voice.name ("Yelda"),
+      narrationEngine ("auto"|"trendyol"|"ema"|"chatterbox"|"say"|"piper"; auto = Trendyol → EMA → Chatterbox → Yelda → Piper),
+      turkishVoice.refVoice (Trendyol ile klonlanacak 5-10 sn referans ses yolu; boşsa modelin kendi sesi), turkishVoice.emaSpeed (0.7-1.4),
       chatterbox.exaggeration (0.3 sakin … 0.7 duygulu), chatterbox.refVoice (klonlanacak örnek ses yolu),
       dailyReportHour, hashtags, channelName, claudeEffort {"script": "medium", "brain": "high"} ("low"|"medium"|"high"|"xhigh"; token/kalite dengesi).
       İç içe anahtarlar için {"voice":{"rate":220}} yaz.

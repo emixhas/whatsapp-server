@@ -80,6 +80,9 @@ _DEFAULTS = ({
         },
         "musicVolume": 0.07,
         "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
+        # Türkçe doğal ses: Trendyol-TTS (VoxCPM2 tabanlı, MIT) + EMA Lightning (Apache-2.0). Kurulum: scripts/install_turkish_voice.sh
+        "turkishVoice": {"python": ".venv-tr/bin/python", "trendyolBin": ".venv-tr/bin/trendyol-tts", "mlxModel": "models/Trendyol-TTS-mlx",
+                         "torchModel": "Trendyol/Trendyol-TTS", "backend": "auto", "cfg": 2.0, "steps": 16, "seed": 42, "refVoice": "", "emaSpeed": 1.0},
     })
 
 

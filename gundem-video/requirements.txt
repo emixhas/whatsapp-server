@@ -9,3 +9,5 @@ yt-dlp
 # torch
 # torchaudio
 # chatterbox-tts
+# Türkçe doğal ses: Trendyol-TTS (ayrı .venv-tr, Python 3.11) + EMA Lightning. Kurulum: bash scripts/install_turkish_voice.sh
+# ema-lightning

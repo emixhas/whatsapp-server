@@ -12,3 +12,6 @@ data/reports/
 secrets/
 public/music/*.wav
 public/images/
+models/
+.venv-tr/
+vendor/

@@ -1,7 +1,7 @@
 // Türkiye Gündemi — JARVIS paneli. Tamamen yerel (localhost + aynı Wi-Fi); beyin için claude -p.
 // Başlat: npm run panel   → http://localhost:3131
 import express from "express";
-import { spawn, execFile } from "node:child_process";
+import { spawn, execFile, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
@@ -45,6 +45,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false },
+  turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true } };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
@@ -159,6 +160,17 @@ function startTts() {
   return { ok: true, running: true };
 }
 function stopTts() { if (tts.proc) tts.proc.kill(); tts.proc = null; tts.ready = false; return { ok: true }; }
+// Türkçe ses motorları durumu (Trendyol MLX kurulu mu, EMA içe aktarılabiliyor mu); EMA kontrolü bir kez yapılır
+let emaCache = null;
+const turkishVoiceStatus = () => {
+  const tv = settings().turkishVoice || {};
+  const mlxDir = path.join(ROOT, tv.mlxModel || "models/Trendyol-TTS-mlx");
+  const trendyol = existsSync(path.join(ROOT, tv.trendyolBin || ".venv-tr/bin/trendyol-tts")) && existsSync(mlxDir) && readdirSync(mlxDir).length > 0;
+  if (emaCache === null) {
+    emaCache = [PY, path.join(ROOT, tv.python || ".venv-tr/bin/python")].some((py) => existsSync(py) && spawnSync(py, ["-c", "import ema_lightning"], { timeout: 20000 }).status === 0);
+  }
+  return { trendyol, ema: emaCache, venv: existsSync(path.join(ROOT, ".venv-tr")) };
+};
 const ttsStatus = () => ({ running: !!tts.proc, ready: tts.ready, device: tts.device, error: tts.error, refVoice: existsSync(path.join(ROOT, settings().chatterbox.refVoice || "")) ? settings().chatterbox.refVoice : null });
 app.get("/api/tts", async (_req, res) => { await ttsHealth(); res.json(ttsStatus()); });
 app.post("/api/tts/start", (_req, res) => res.json(startTts()));
@@ -242,7 +254,7 @@ const knownVideos = new Set(readdirSync(OUT).filter((f) => f.endsWith(".mp4")));
 try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) { const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
 
 // ---------- API: durum
-app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status() }));
+app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status() }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
 
 // ---------- Telefon için izleme sayfası (kısa link; WhatsApp'tan tıklanır)

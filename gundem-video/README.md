@@ -22,6 +22,22 @@ ls -la voices   # .onnx dosyası ~60 MB olmalı
 # Piper modeli yoksa tts.py otomatik olarak 'say' kullanır.
 ```
 
+### Seçenek C (önerilen): Türkçe doğal ses — Trendyol-TTS + EMA Lightning
+
+```bash
+bash scripts/install_turkish_voice.sh   # bir kez, ~5 GB; Python 3.11 ortamı (.venv-tr) kurar
+afplay work/trendyol-test.wav           # deneme sesini dinle
+```
+
+- **Trendyol-TTS**: VoxCPM2 tabanlı Türkçe model (MIT). 2026 Türkçe ölçümlerinde (Freya-TR-Eval) kelime hata
+  oranı yüzde 1'in altında, doğallık puanı ElevenLabs v4'ün üstünde. Apple Silicon'da MLX ile yerel çalışır;
+  60 saniyelik video için birkaç dakika üretim. Klon sesi için `settings.turkishVoice.refVoice` (PyTorch yolu).
+- **EMA Lightning**: 8.6 milyon parametre, 34 MB, Apache-2.0; CPU'da gerçek zamanın 6 katı hızlı, hata oranı
+  yüzde 0.9. Emixhas'ın anlık konuşması ve Trendyol çalışmazsa video için yedek.
+- Rakamlar seslendirmeden önce otomatik yazıya çevrilir (`scripts/tr_numbers.py`): "3 kişi" → "üç kişi",
+  "yüzde 46", "iki bin yirmi altıda", "on dörtte".
+- Motor sırası `settings.narrationEngine=auto`: Trendyol → EMA → Chatterbox → Yelda → Piper. Panelden seçilir.
+
 Piper deposunda şu an tek Türkçe ses var: `tr_TR-dfki-medium`. Başka bir .onnx modeliniz varsa
 `PIPER_VOICE=voices/baska-model.onnx bash pipeline.sh` ile kullanın.
 
