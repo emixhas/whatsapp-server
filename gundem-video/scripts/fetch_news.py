@@ -47,6 +47,27 @@ def parse_date(s: str):
         return None
 
 
+MEDIA_NS = "{http://search.yahoo.com/mrss/}"
+
+
+def item_image(it) -> str | None:
+    """Kaynağın kendi RSS'inde verdiği görsel; dış kaynak aranmaz (telif)."""
+    enc = it.find("enclosure")
+    if enc is not None and (enc.get("type") or "").startswith("image") and enc.get("url"):
+        return enc.get("url")
+    for tag in (MEDIA_NS + "content", MEDIA_NS + "thumbnail"):
+        for m in it.iter(tag):
+            u = m.get("url")
+            if u and (not m.get("type") or m.get("type").startswith("image")):
+                return u
+    img = it.findtext("image")
+    if img and img.strip().startswith("http"):
+        return img.strip()
+    desc = it.findtext("description") or ""
+    m = re.search(r'<img[^>]+src="([^"]+)"', desc)
+    return m.group(1) if m else None
+
+
 def fetch(source: str, url: str):
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=20, context=CTX) as r:
@@ -61,6 +82,7 @@ def fetch(source: str, url: str):
             "title": title,
             "summary": strip_html(it.findtext("description", ""))[:400],
             "link": (it.findtext("link") or "").strip(),
+            "image": item_image(it),
             "published": parse_date(it.findtext("pubDate", "")),
         })
         if len(items) >= MAX_PER_FEED:

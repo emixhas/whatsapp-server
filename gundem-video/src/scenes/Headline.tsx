@@ -1,4 +1,4 @@
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
 import { Captions } from "./Captions";
 import { theme } from "../theme";
@@ -37,9 +37,20 @@ export const Headline = ({ index, total, title, narration, source, category, bre
         <div style={{ fontSize: 40, fontWeight: 700, color: theme.muted }}>{index + 1} / {total}</div>
       </div>
 
-      {/* animasyonlu illüstrasyon alanı */}
+      {/* görsel alanı: kaynak fotoğrafı varsa yavaş yakınlaşan fotoğraf + köşede illüstrasyon rozeti; yoksa illüstrasyon */}
       <div style={{ position: "absolute", top: 220, left: 80, width: 920, height: 560, borderRadius: 32, background: theme.card, overflow: "hidden", transform: `scale(${0.9 + 0.1 * illuIn})`, opacity: illuIn }}>
-        <st.Illustration />
+        {image ? (
+          <>
+            <Img src={staticFile(image)} style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${1.04 + interpolate(frame, [0, durationInFrames], [0, 0.08])})` }} />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,.85) 100%)" }} />
+            <div style={{ position: "absolute", right: 18, bottom: 14, width: 920, height: 560, transform: "scale(0.3)", transformOrigin: "bottom right", filter: "drop-shadow(0 6px 16px rgba(0,0,0,.6))" }}>
+              <st.Illustration />
+            </div>
+            <div style={{ position: "absolute", left: 22, bottom: 16, fontSize: 24, color: "rgba(255,255,255,.75)", letterSpacing: 2 }}>FOTOĞRAF: {(source || "KAYNAK").toUpperCase()}</div>
+          </>
+        ) : (
+          <st.Illustration />
+        )}
       </div>
 
       {/* metin bloğu */}

@@ -17,13 +17,34 @@ süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2
 `__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
 Token: Claude'a `scripts/slim_news.py` ile küçültülmüş set gider (en yeni `NEWS_MAX`=20 haber, 200
 karakter özet, link yok). Ölçüm (60 sn): ~45k girdi (çoğu Claude Code'un kendi yükü, önbellekli),
-~2k çıktı, ≈0,11 $ API karşılığı. Haber setini büyütmek seçimi iyileştirmez, token artırır.
+~2k çıktı. Haber setini büyütmek seçimi iyileştirmez, token artırır. Kullanıcı isteğiyle token/maliyet
+bilgisi logda ve panelde GÖSTERİLMEZ; `data/usage.json` sessizce tutulur (effort seçimi panelde kalır).
 Effort: `settings.claudeEffort` {script: "medium", brain: "high"} → `claude -p --effort`. Ölçüm: medium
 2,3k çıktı, high ~4k, xhigh 2-3k (değişken); haber/kategori seçimi üçünde aynı. Her çağrı
 `--output-format json` ile çalışır; `scripts/claude_result.py` (pipeline) ve `brain.js` kullanımı
 loga (🧮) ve `data/usage.json`a (gün/toplam/tür) yazar. Panel Ayarlar'da gösterir.
 Kaynak: `server.js` her 10 sn CPU/RAM örnekler; üretim, ses modeli yükleme veya geliştirme
 sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
+
+## Video özellikleri
+- Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
+  (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
+- Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
+  aksam 17-05 90 sn "Günün Özeti"}; `FORMAT`/`DURATION` env verilmezse saat seçer. Prompt'a
+  `__FORMAT_ADI__`, `__FORMAT_INTRO__`, `__FORMAT_TON__` gider; intro'da format etiketi görünür.
+- Müzik: `scripts/make_music.py` üç yatağı sentezler (`public/music/*.mp3`), `settings.musicVolume`
+  (0.07) ile döngülü çalar. Telifli dosya kullanma; yatakları betikten yeniden üret.
+- Haber görselleri: `fetch_news.py` yalnızca RSS'in verdiği görseli alır (enclosure, media:content,
+  <image>, description img). `assemble_script.attach_images()` başlık benzerliğiyle (Jaccard ≥ 0.08)
+  eşler; `fetch_images.py` indirip 1840x1120 kırpar (`public/images/`, git dışı). Kartta görsel varsa
+  Ken Burns + alt gradyan + köşede küçük illüstrasyon + "FOTOĞRAF: kaynak" yazısı.
+- A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm
+  numarasına göre dönüşümlü varyant seçer (`titleVariant`, `publishTitle`); `render_thumbs.py`
+  `Thumb` still'ini A ve B olarak render eder (`out/<ad>-kapakA/B.jpg`, seçilen `-kapak.jpg`);
+  `publish.py` YouTube'a kapak yükler ve varyantı metriklere yazar; `analyze.py` varyant ve format
+  ortalamalarını çıkarır, ipucuna ekler.
+- Sohbet hafızası: `brain.addExchange()` her komut/yanıtı `data/memory.json` `exchanges` içine yazar;
+  bağlama son 36 saatin konuşmaları `recentConversation` olarak girer.
 
 ## EMIXHAS paneli (`npm run panel` → http://localhost:3131)
 `app/server.js` (Express) + `app/ui/index.html` + `app/brain.js` + `app/commands.js`.

@@ -103,7 +103,7 @@ def build_caption(video_name: str, max_len: int = 2000):
     meta = episode_meta(video_name) or {}
     s = settings()
     haber = [x for x in meta.get("segments", []) if x.get("kind") == "haber"]
-    first = haber[0]["title"] if haber else "Günün özeti"
+    first = meta.get("publishTitle") or (haber[0]["title"] if haber else "Günün özeti")
     title = f"{first} | {s['channelName']} {meta.get('dateLabel', '')} #Shorts".strip()
     lines = [f"{s['channelName']} · {meta.get('dateLabel', '')} · günün {meta.get('episodeOfDay', '')}. özeti", ""]
     for i, h in enumerate(haber, 1):

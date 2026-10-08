@@ -11,3 +11,4 @@ data/*.json
 data/reports/
 secrets/
 public/music/*.wav
+public/images/\n

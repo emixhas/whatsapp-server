@@ -34,10 +34,17 @@ KURALLAR
 PERFORMANS İPUCU (kanalın kendi verisinden; kurallarla çelişirse kurallar önce gelir)
 __IPUCU__
 
+BAŞLIK VARYANTLARI (A/B testi için, en üst düzeyde "titles" alanı)
+- "A": haberci başlık: somut, net, olayın kendisi (ör. "Merkez Bankası faizi sabit tuttu").
+- "B": merak uyandıran ama dürüst başlık: soru ya da sonuç vurgusu, tık tuzağı değil
+  (ör. "Faiz kararı ne anlama geliyor?"). İkisi de en fazla 7 kelime, kısaltma yok.
+- "cover": kapak görselinde büyük yazılacak 2-4 kelimelik vuruş (ör. "FAİZ SABİT").
+
 ÇIKTI
 Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, ek metin yazma.
 
 {
+  "titles": {"A": "...", "B": "...", "cover": "..."},
   "segments": [
     {"kind": "intro", "narration": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "...", "breaking": true},

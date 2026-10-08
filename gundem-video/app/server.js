@@ -214,10 +214,11 @@ async function think(text, mode = "chat") {
   push(`🧠 ${mode === "chat" ? "düşünüyor" : mode === "report" ? "rapor hazırlıyor" : "plan yapıyor"}: ${String(text).slice(0, 80)}`);
   const t0 = Date.now();
   const r = await brain.ask(text, mode);
-  push(`🧠 yanıt ${Math.round((Date.now() - t0) / 1000)} sn${r.actions.length ? `, ${r.actions.length} eylem` : ""}${r.error ? " (hata)" : ""}${r.usage ? ` · 🧮 ${(r.usage.input / 1000).toFixed(1)}k girdi · ${(r.usage.output / 1000).toFixed(1)}k çıktı · ≈${r.usage.cost.toFixed(3)} $ (${r.usage.effort})` : ""}`);
+  push(`🧠 yanıt ${Math.round((Date.now() - t0) / 1000)} sn${r.actions.length ? `, ${r.actions.length} eylem` : ""}${r.error ? " (hata)" : ""}`);
   const done = [], pending = [];
   for (const a of r.actions) { if (needsConfirm(a)) { pending.push(a); push(`⏸ onay bekliyor: ${a.type}`); } else { const res = await execAction(a); push(`⚡ ${a.type}${a.duration ? " " + a.duration + " sn" : ""}${a.platforms ? " → " + a.platforms.join(",") : ""}: ${res?.ok === false ? "hata " + (res.error || "") : "tamam"}`); done.push({ ...a, result: res }); } }
   const reportFile = brain.saveReport(mode === "chat" ? "not" : mode, r.report);
+  if (!r.error) brain.addExchange(text, r.reply, [...done, ...pending]);
   return { ...r, done, pending, reportFile };
 }
 
@@ -318,6 +319,7 @@ async function handleCommand(text) {
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }
+  if (!["report", "plan", "brain", "none", "stop"].includes(cmd.action) && reply) brain.addExchange(text, reply, [{ type: cmd.action }]);
   return { action, reply, payload, heard: text, ...extra };
 }
 app.post("/api/command", async (req, res) => res.json(await handleCommand(req.body?.text)));

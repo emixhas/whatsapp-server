@@ -15,7 +15,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from common import OUT, SECRETS, build_caption, load_env, metrics, now_iso, save_metrics
+from common import OUT, SECRETS, build_caption, episode_meta, load_env, metrics, now_iso, save_metrics
 
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
 
@@ -56,7 +56,14 @@ def yt_upload(path: Path):
     while resp is None:
         _, resp = req.next_chunk()
     vid = resp["id"]
-    return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title}
+    thumb = path.with_name(path.stem + "-kapak.jpg")
+    if thumb.exists():
+        try:
+            yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()
+        except Exception as e:  # kanal doğrulanmamışsa özel kapak reddedilir; yayın yine de tamam
+            print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
+    meta = episode_meta(path.name) or {}
+    return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title, "titleVariant": meta.get("titleVariant")}
 
 
 # ---------------- Instagram (Graph API)

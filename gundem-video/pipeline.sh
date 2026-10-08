@@ -47,6 +47,9 @@ $PY scripts/assemble_script.py work/claude_out.json work/script.json
 echo "-- 3/4 seslendirme"
 $PY scripts/tts.py work/script.json public/episode.json
 
+echo "-- görseller"
+$PY scripts/fetch_images.py public/episode.json || echo "  ! görsel adımı atlandı"
+
 echo "-- 4/4 render"
 DATE=$($PY -c "import json;print(json.load(open('public/episode.json'))['date'])")
 N=$($PY -c "import json;print(json.load(open('public/episode.json'))['episodeOfDay'])")
@@ -56,6 +59,8 @@ npx remotion render src/index.ts GundemVideo "work/render.mp4" --codec h264 --cr
 ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
+echo "-- kapaklar"
+$PY scripts/render_thumbs.py public/episode.json "out/${DATE}-${N}" || echo "  ! kapak adımı atlandı"
 echo "== bitti: $OUT ($(du -h "$OUT" | cut -f1))"
 echo "-- yayın ve analiz"
 $PY scripts/post_pipeline.py "$OUT" || echo "  ! yayın/analiz adımı hata verdi (video hazır)"

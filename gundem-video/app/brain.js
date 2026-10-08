@@ -7,6 +7,8 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
   const MEM = path.join(DATA, "memory.json");
   const readJson = (p, d) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return d; } };
   const memory = () => readJson(MEM, { notes: [] });
+  const addExchange = (user, reply, actions) => { const m = memory(); (m.exchanges ||= []).push({ at: new Date().toISOString(), user: String(user).slice(0, 200), reply: String(reply).slice(0, 240), actions: (actions || []).map((a) => a.type) }); m.exchanges = m.exchanges.slice(-40); mkdirSync(DATA, { recursive: true }); writeFileSync(MEM, JSON.stringify(m, null, 2)); };
+  const recentExchanges = () => { const m = memory(); const now = Date.now(); return (m.exchanges || []).filter((e) => now - Date.parse(e.at) < 36 * 3600e3).slice(-12).map((e) => ({ ne_zaman: new Date(e.at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }), siz: e.user, ben: e.reply, eylem: e.actions })); };
   const addNote = (text) => { const m = memory(); m.notes.push({ at: new Date().toISOString(), text: String(text).slice(0, 400) }); m.notes = m.notes.slice(-40); mkdirSync(DATA, { recursive: true }); writeFileSync(MEM, JSON.stringify(m, null, 2)); };
   const settings = () => readJson(path.join(DATA, "settings.json"), { autopublish: { youtube: false, instagram: false }, dailyReportHour: 9 });
   const connections = () => new Promise((res) => execFile(pythonBin, ["scripts/publish.py", "--status"], { cwd: ROOT }, (e, out) => { try { res(JSON.parse(out)); } catch { res({ youtube: { connected: false }, instagram: { connected: false } }); } }));
@@ -29,7 +31,8 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
       schedule: await getSchedule(),
       settings: settings(),
       recentLog: getState().log.slice(-12),
-      memory: memory(),
+      memory: { notes: memory().notes || [] },
+      recentConversation: recentExchanges(),
     };
   }
 
@@ -88,5 +91,5 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
     return name;
   }
 
-  return { ask, addNote, memory, settings, connections, context, saveReport, usageToday };
+  return { ask, addNote, addExchange, memory, settings, connections, context, saveReport, usageToday };
 }

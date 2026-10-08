@@ -1,5 +1,7 @@
 import { CalculateMetadataFunction, Composition, staticFile } from "remotion";
 import { GundemVideo } from "./GundemVideo";
+import { Thumb } from "./Thumb";
+import { Still } from "remotion";
 import { Episode, FPS, HEIGHT, WIDTH } from "./types";
 import { sampleEpisode } from "./sampleEpisode";
 
@@ -21,6 +23,8 @@ const calculateMetadata: CalculateMetadataFunction<Props> = async ({ props }) =>
 };
 
 export const Root = () => (
+  <>
+  <Still id="Thumb" component={Thumb} width={WIDTH} height={HEIGHT} defaultProps={{ text: "Merkez Bankası faizi sabit tuttu", category: "finans", breaking: false, variant: "A" }} />
   <Composition
     id="GundemVideo"
     component={GundemVideo}
@@ -31,4 +35,6 @@ export const Root = () => (
     defaultProps={{ episode: sampleEpisode }}
     calculateMetadata={calculateMetadata}
   />
+
+  </>
 );

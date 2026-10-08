@@ -25,4 +25,4 @@ for bucket in (day, usage["total"]):
 k = day["byKind"].setdefault(kind, {"calls": 0, "input": 0, "output": 0, "cost": 0.0})
 k["calls"] += 1; k["input"] += inp; k["output"] += outp; k["cost"] = round(k["cost"] + cost, 4)
 save_json(DATA / "usage.json", usage)
-print(f"🧮 {kind}: {inp/1000:.1f}k girdi · {outp/1000:.1f}k çıktı (düşünme {think/1000:.1f}k) · ≈{cost:.3f} $ · bugün toplam {day['cost']:.2f} $")
+print("senaryo hazır")

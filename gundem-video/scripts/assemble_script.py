@@ -9,6 +9,9 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import load_json  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 import os
@@ -99,6 +102,37 @@ def extract_json(text: str):
     return json.loads(m.group(0))
 
 
+def _norm_words(t: str):
+    return set(w for w in re.sub(r"[^\w\s]", " ", t.lower()).split() if len(w) > 3)
+
+
+def attach_images(segs):
+    """Her haberi work/news.json'daki en benzer başlıkla eşleştirir; görsel URL'sini segmente koyar."""
+    news = load_json(ROOT / "work" / "news.json", {}).get("items", []) if (ROOT / "work" / "news.json").exists() else []
+    if not news:
+        return 0
+    n = 0
+    for s in segs:
+        if s.get("kind") != "haber":
+            continue
+        words = _norm_words(s.get("title", "") + " " + s.get("narration", ""))
+        best, score = None, 0.0
+        for it in news:
+            if not it.get("image"):
+                continue
+            iw = _norm_words(it.get("title", "") + " " + (it.get("summary") or ""))
+            if not iw:
+                continue
+            j = len(words & iw) / len(words | iw)
+            if j > score:
+                best, score = it, j
+        if best and score >= 0.08:
+            s["imageUrl"] = best["image"]
+            s["imageSource"] = best.get("source")
+            n += 1
+    return n
+
+
 def episode_of_day(date: str) -> int:
     return len(list((ROOT / "out").glob(f"{date}-*.mp4"))) + 1
 
@@ -130,12 +164,25 @@ def main(src: str, dst: str):
     if words > MAX_WORDS_TOTAL:
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 
+    matched = attach_images(segs)
+    if matched:
+        print(f"  {matched} habere kaynak görseli eşleşti")
     now = datetime.now()
     date = now.strftime("%Y-%m-%d")
+    titles = data.get("titles") or {}
+    first = next((x for x in haber), {})
+    title_a = expand_abbr(titles.get("A") or first.get("title", "Günün özeti"))
+    title_b = expand_abbr(titles.get("B") or title_a)
+    cover = expand_abbr(titles.get("cover") or first.get("title", "")[:28])
+    ep_n = episode_of_day(date_str := now.strftime("%Y-%m-%d"))
+    variant = "A" if ep_n % 2 == 1 else "B"  # dönüşümlü A/B: tek bölümler A, çift bölümler B
     out = {
+        "titles": {"A": title_a, "B": title_b, "cover": cover},
+        "titleVariant": variant,
+        "publishTitle": title_a if variant == "A" else title_b,
         "date": date,
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
-        "episodeOfDay": episode_of_day(date),
+        "episodeOfDay": ep_n,
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,
         "format": os.environ.get("FORMAT", "ozel"),

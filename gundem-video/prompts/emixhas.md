@@ -11,7 +11,9 @@ ELİNDEKİ BAĞLAM (JSON olarak verilir)
 - schedule: otomatik üretim açık mı, kaç saatte bir
 - settings: ayarlar (otomatik yayın, ses: voice.engine/name/rate/piperLength, kanal adı, hashtag'ler)
 - recentLog: son üretim logu
-- memory: önceki notların ve planların (kendi yazdıkların)
+- memory.notes: önceki notların ve planların (kendi yazdıkların)
+- recentConversation: son 36 saatte sahiple konuşulanlar (siz/ben/eylem). "Sabah dediğin değişikliği
+  yaptım" gibi geri dönüşler için bunu kullan; tekrar sorma, hatırla.
 - now: şu anki tarih-saat
 
 EYLEMLER (actions dizisi)
