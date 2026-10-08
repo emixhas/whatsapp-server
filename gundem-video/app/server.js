@@ -340,14 +340,19 @@ app.get("/api/connections", async (_req, res) => res.json(await brain.connection
 app.post("/api/connect/youtube", async (_req, res) => { const r = await py("publish.py", ["--connect", "youtube"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 let igConnect = null; // süren bağlanma denemesi (publish.py --connect instagram)
 app.post("/api/connect/instagram", async (_req, res) => {
-  // Geri dönüş adresi HTTPS olmalı: tünel kapalıysa aç ve adresi bekle
-  if (!tunnel.url) { const st = startTunnel(); if (!st.ok) return res.json({ ok: false, error: st.error }); push("☁ Instagram bağlantısı için tünel açılıyor"); }
-  const url = await waitTunnelUrl();
-  if (!url) return res.json({ ok: false, error: tunnel.error || "tünel adresi alınamadı; cloudflared kurulu mu?" });
+  // Geri dönüş adresi HTTPS olmalı: Hostinger köprüsü varsa sabit adres kullanılır, yoksa tünel açılır
+  const conn = await brain.connections();
+  let url;
+  if (conn.instagram?.hostinger) { url = conn.instagram.hostingerUrl; }
+  else {
+    if (!tunnel.url) { const st = startTunnel(); if (!st.ok) return res.json({ ok: false, error: st.error }); push("☁ Instagram bağlantısı için tünel açılıyor"); }
+    url = await waitTunnelUrl();
+    if (!url) return res.json({ ok: false, error: tunnel.error || "tünel adresi alınamadı; cloudflared kurulu mu?" });
+  }
   if (igConnect) { try { igConnect.kill(); } catch { /* yok */ } igConnect = null; }
   // Eski bir deneme (panel yeniden başlamadan önce) :3138'i tutuyorsa kapat
   try { const pids = String(spawnSync("lsof", ["-ti", ":3138"]).stdout || "").split(/\s+/).filter(Boolean); for (const pid of pids) { try { process.kill(Number(pid)); } catch { /* yok */ } } if (pids.length) { push(`◎ eski bağlanma denemesi kapatıldı (${pids.length})`); await new Promise((r) => setTimeout(r, 800)); } } catch { /* lsof yok */ }
-  push(`◎ Instagram girişi başlatılıyor; geri dönüş ${url}/instagram/callback (Meta'da kayıtlı olmalı)`);
+  push(`◎ Instagram girişi başlatılıyor; geri dönüş ${url}/instagram/callback${conn.instagram?.hostinger ? "/" : ""} (Meta'da kayıtlı olmalı)`);
   const child = spawn(PY, ["scripts/publish.py", "--connect", "instagram"], { cwd: ROOT, env: ENV });
   igConnect = child;
   let authUrl = null, out = "", err = "";
@@ -362,6 +367,7 @@ app.post("/api/connect/instagram", async (_req, res) => {
   let j = {}; try { j = JSON.parse(out.trim().split("\n").pop()); } catch { j = { ok: false, error: (err || out).trim().slice(-300) }; }
   if (j.ok) { push(`◎ Instagram bağlandı: @${j.username || "?"}`); announce(`Instagram bağlandı.`); } else push(`◎ Instagram bağlanamadı: ${j.error}`);
 });
+app.post("/api/hostinger/setup", async (_req, res) => { push("🌐 Hostinger köprüsü kuruluyor"); const r = await runPy(["scripts/hostinger.py", "--setup"], 120000); const lines = (r.stdout + r.stderr).trim().split("\n"); for (const l of lines.slice(-8)) push("  " + l); let j = {}; try { j = JSON.parse(lines.filter((l) => l.startsWith("{")).pop() || "{}"); } catch { /* yok */ } res.json({ ok: !!j.ok, ...j, log: lines.slice(-8).join("\n") }); });
 app.post("/api/connect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--connect", "tiktok"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [] })));
 app.post("/api/metrics/sync", async (_req, res) => res.json(await execAction({ type: "sync_metrics" })));

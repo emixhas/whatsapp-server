@@ -173,7 +173,28 @@ Facebook girişi açar; alınan Sayfa token'ı süresizdir, yenileme gerekmez.
    onaydan sonra `direct`'e geçin.
 5. İzlenme/beğeni/paylaşım verisi `video.list` ile çekilir ve analitiğe girer.
 
-**Cloudflare Tunnel**
+**Kalıcı köprü: Hostinger ya da FTP'li herhangi bir web alanı (önerilen, tünel gerekmez)**
+
+Alan adınız bir web paketinde barınıyorsa (Hostinger hPanel gibi) videolar yayın anında oraya yüklenir, Instagram
+`https://alanadi.com/videos/<ad>` adresinden çeker, yayın bitince dosya silinir. Hesap bağlama geri dönüşü de
+`https://alanadi.com/instagram/callback/` sabit adresine gelir; küçük bir PHP dosyası kodu Mac'e aktarır.
+
+1. hPanel → Dosyalar → FTP Hesapları: sunucu, kullanıcı adı, şifre. `secrets/.env` içine:
+   ```
+   HOSTINGER_FTP_HOST=ftp.alanadi.com
+   HOSTINGER_FTP_USER=u123456789.alanadi
+   HOSTINGER_FTP_PASS=...
+   HOSTINGER_SITE_URL=https://alanadi.com
+   ```
+   Alt alan adı kullanacaksanız (ör. video.alanadi.com) hPanel'de alt alan adını oluşturup
+   `HOSTINGER_ROOT=domains/video.alanadi.com/public_html` ve `HOSTINGER_SITE_URL=https://video.alanadi.com` yazın.
+2. Panel → Ayarlar → "Köprüyü kur / sına" (ya da `python3 scripts/hostinger.py --setup`). PHP dosyaları yüklenir,
+   erişim sınanır.
+3. Meta → Facebook Login for Business → Ayarlar → Valid OAuth Redirect URIs: `https://alanadi.com/instagram/callback/`
+   (bir kez). TikTok için `https://alanadi.com/tiktok/callback/`.
+4. "Instagram'ı bağla". Bundan sonra tünel hiç gerekmez; yayınlar panel kapalıyken de çalışır.
+
+**Cloudflare Tunnel** (web alanı yoksa)
 
 ```bash
 brew install cloudflared

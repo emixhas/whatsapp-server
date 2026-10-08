@@ -17,6 +17,7 @@ import urllib.request
 from pathlib import Path
 
 from common import OUT, SECRETS, build_caption, episode_meta, load_env, metrics, now_iso, save_metrics
+import hostinger
 
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
 
@@ -169,9 +170,21 @@ class _PublicVideo:
         self.proc = None
         self.srv = None
         self.base = None
+        self.remote = None
 
     def ensure(self, name: str) -> str:
         env = load_env()
+        if hostinger.configured():  # kalıcı köprü: dosyayı web alanına yükle, Instagram oradan çeksin
+            url = hostinger.upload(OUT / name, f"videos/{name}")
+            self.remote = f"videos/{name}"
+            for _ in range(10):
+                if url_reachable(url):
+                    break
+                time.sleep(2)
+            else:
+                raise RuntimeError(f"Yüklenen video dış adresten okunamadı: {url} (HOSTINGER_SITE_URL / HOSTINGER_ROOT ayarlarını kontrol edin)")
+            print(f"  video web alanına yüklendi: {url}", file=sys.stderr)
+            return hostinger.site_url()
         base = (env.get("PUBLIC_BASE_URL") or "").rstrip("/")
         if base and url_reachable(f"{base}/videos/{urllib.parse.quote(name)}"):
             return base
@@ -221,6 +234,9 @@ class _PublicVideo:
         return url
 
     def close(self):
+        if self.remote and (load_env().get("HOSTINGER_KEEP") or "0") != "1":
+            hostinger.delete(self.remote)  # yayın bitti, web alanında yer kaplamasın
+            self.remote = None
         if self.proc:
             self.proc.terminate()
             self.proc = None
@@ -267,9 +283,13 @@ def ig_connect():
     for k in ("IG_APP_ID", "IG_APP_SECRET"):
         if not env.get(k):
             raise RuntimeError(f"secrets/.env içinde {k} eksik (bkz. secrets/README.md)")
-    redirect = env.get("IG_REDIRECT_URI") or ((env.get("PUBLIC_BASE_URL") or "").rstrip("/") + "/instagram/callback")
+    use_host = hostinger.configured() and not env.get("IG_REDIRECT_URI")
+    if use_host:
+        redirect = hostinger.site_url() + "/instagram/callback/"  # sabit adres, Meta'ya bir kez yazılır
+    else:
+        redirect = env.get("IG_REDIRECT_URI") or ((env.get("PUBLIC_BASE_URL") or "").rstrip("/") + "/instagram/callback")
     if not redirect.startswith("https://"):
-        raise RuntimeError("Instagram geri dönüş adresi HTTPS olmalı: önce tüneli başlatın (PUBLIC_BASE_URL) ya da IG_REDIRECT_URI yazın")
+        raise RuntimeError("Instagram geri dönüş adresi HTTPS olmalı: Hostinger köprüsünü kurun (scripts/hostinger.py --setup) ya da tüneli başlatın")
     state = _secrets.token_urlsafe(16)
     got = {}
 
@@ -283,12 +303,14 @@ def ig_connect():
         def log_message(self, *a):
             pass
 
-    http.server.HTTPServer.allow_reuse_address = True
-    try:
-        srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
-    except OSError as e:
-        raise RuntimeError(f"Geri dönüş portu {IG_CALLBACK_PORT} açılamadı ({e}); önceki bağlanma denemesi hâlâ sürüyor olabilir, 1 dk bekleyip tekrar deneyin")
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    srv = None
+    if not use_host:
+        http.server.HTTPServer.allow_reuse_address = True
+        try:
+            srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
+        except OSError as e:
+            raise RuntimeError(f"Geri dönüş portu {IG_CALLBACK_PORT} açılamadı ({e}); önceki bağlanma denemesi hâlâ sürüyor olabilir, 1 dk bekleyip tekrar deneyin")
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
     via = (env.get("IG_LOGIN") or "instagram").lower()  # instagram: Instagram Login (sayfa gerekmez) | facebook: Facebook Login (Facebook Sayfası + bağlı Instagram)
     if via == "facebook":
         # auth_type=rerequest: daha önce atlanan sayfa/izin seçimini yeniden sorar
@@ -306,11 +328,14 @@ def ig_connect():
         webbrowser.open(url)
     except Exception:
         pass
-    for _ in range(600):  # 5 dk
-        if "code" in got or "error" in got:
-            break
-        time.sleep(0.5)
-    srv.shutdown()
+    if use_host:
+        got.update(hostinger.poll_code(redirect, state, 300))
+    else:
+        for _ in range(600):  # 5 dk
+            if "code" in got or "error" in got:
+                break
+            time.sleep(0.5)
+        srv.shutdown()
     if got.get("error"):
         raise RuntimeError(f"Instagram reddetti: {got.get('error_description') or got.get('error_reason') or got['error']}")
     if got.get("state") != state or "code" not in got:
@@ -476,6 +501,7 @@ def tt_upload(path: Path):
 def ig_status(env):
     import shutil
     st = {"connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")), "login": (env.get("IG_LOGIN") or "instagram").lower(),
+          "hostinger": hostinger.configured(), "hostingerUrl": hostinger.site_url() if hostinger.configured() else None,
           "cloudflared": bool(shutil.which("cloudflared")), "username": None, "daysLeft": None, "via": None}
     if IG_TOKEN_FILE.exists():
         try:
