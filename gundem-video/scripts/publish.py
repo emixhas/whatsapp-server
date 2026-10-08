@@ -73,6 +73,27 @@ IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagr
 IG_API = "https://graph.instagram.com/v21.0"
 FB_API = "https://graph.facebook.com/v21.0"
 IG_CALLBACK_PORT = 3138
+FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,pages_read_engagement,business_management"
+
+
+def fb_finish(env, redirect, code):
+    """Facebook Login yolu: kod → kısa kullanıcı token'ı → uzun ömürlü → Sayfa token'ı (süresi dolmaz) +
+    sayfaya bağlı Instagram profesyonel hesabının kimliği."""
+    q = urllib.parse.urlencode({"client_id": env["IG_APP_ID"], "client_secret": env["IG_APP_SECRET"], "redirect_uri": redirect, "code": code})
+    short = ig_http(f"{FB_API}/oauth/access_token?{q}")
+    q = urllib.parse.urlencode({"grant_type": "fb_exchange_token", "client_id": env["IG_APP_ID"], "client_secret": env["IG_APP_SECRET"], "fb_exchange_token": short["access_token"]})
+    long_tok = ig_http(f"{FB_API}/oauth/access_token?{q}")
+    user_token = long_tok.get("access_token", short["access_token"])
+    pages = ig_http(f"{FB_API}/me/accounts?" + urllib.parse.urlencode({"fields": "id,name,access_token,instagram_business_account{id,username}", "limit": "50", "access_token": user_token})).get("data", [])
+    page = next((p for p in pages if p.get("instagram_business_account")), None)
+    if not page:
+        names = ", ".join(p.get("name", "?") for p in pages) or "hiç sayfa yok"
+        raise RuntimeError(f"Bağlı Instagram hesabı olan Facebook Sayfası bulunamadı (sayfalar: {names}). Instagram → Ayarlar → İşletme araçları → Facebook Sayfasına bağla, sonra tekrar deneyin.")
+    ig = page["instagram_business_account"]
+    tok = {"access_token": page["access_token"], "expires_in": 0, "obtained_at": time.time(), "via": "facebook",
+           "user_id": str(ig["id"]), "username": ig.get("username"), "page_id": page["id"], "page_name": page.get("name")}
+    IG_TOKEN_FILE.write_text(json.dumps(tok, indent=2))
+    return tok
 
 
 def ig_http(url, data=None, timeout=60):
@@ -95,6 +116,8 @@ def ig_creds():
     altına indiyse sessizce yenilenir (60 güne uzar)."""
     if IG_TOKEN_FILE.exists():
         tok = json.loads(IG_TOKEN_FILE.read_text())
+        if tok.get("via") == "facebook":  # Sayfa token'ı: süresi dolmaz, graph.facebook.com
+            return tok.get("user_id") or "me", tok["access_token"], FB_API
         env = load_env()
         age = time.time() - tok.get("obtained_at", 0)
         left = tok.get("obtained_at", 0) + tok.get("expires_in", 0) - time.time()
@@ -255,8 +278,13 @@ def ig_connect():
 
     srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    url = "https://www.instagram.com/oauth/authorize?" + urllib.parse.urlencode({
-        "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state, "force_reauth": "true"})
+    via = (env.get("IG_LOGIN") or "instagram").lower()  # instagram: Instagram Login (sayfa gerekmez) | facebook: Facebook Login (Facebook Sayfası + bağlı Instagram)
+    if via == "facebook":
+        url = "https://www.facebook.com/v21.0/dialog/oauth?" + urllib.parse.urlencode({
+            "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "state": state, "scope": FB_SCOPES})
+    else:
+        url = "https://www.instagram.com/oauth/authorize?" + urllib.parse.urlencode({
+            "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state, "force_reauth": "true"})
     print(f"Tarayıcıda açılıyor: {url}", file=sys.stderr)
     webbrowser.open(url)
     for _ in range(600):  # 5 dk
@@ -269,6 +297,8 @@ def ig_connect():
     if got.get("state") != state or "code" not in got:
         raise RuntimeError("Instagram geri dönüşü alınamadı (redirect URI uygulamada aynen kayıtlı mı?)")
     code = got["code"].split("#")[0]
+    if via == "facebook":
+        return fb_finish(env, redirect, code)
     form = urllib.parse.urlencode({"client_id": env["IG_APP_ID"], "client_secret": env["IG_APP_SECRET"], "grant_type": "authorization_code",
                                    "redirect_uri": redirect, "code": code}).encode()
     short = ig_http("https://api.instagram.com/oauth/access_token", form)
@@ -426,13 +456,13 @@ def tt_upload(path: Path):
 # ---------------- durum
 def ig_status(env):
     import shutil
-    st = {"connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")),
+    st = {"connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")), "login": (env.get("IG_LOGIN") or "instagram").lower(),
           "cloudflared": bool(shutil.which("cloudflared")), "username": None, "daysLeft": None, "via": None}
     if IG_TOKEN_FILE.exists():
         try:
             tok = json.loads(IG_TOKEN_FILE.read_text())
-            st.update({"connected": True, "via": "instagram_login", "username": tok.get("username"),
-                       "daysLeft": max(0, int((tok.get("obtained_at", 0) + tok.get("expires_in", 0) - time.time()) / 86400))})
+            st.update({"connected": True, "via": tok.get("via") or "instagram_login", "username": tok.get("username"), "pageName": tok.get("page_name"),
+                       "daysLeft": None if tok.get("via") == "facebook" else max(0, int((tok.get("obtained_at", 0) + tok.get("expires_in", 0) - time.time()) / 86400))})
         except Exception:
             pass
     elif env.get("IG_USER_ID") and env.get("IG_ACCESS_TOKEN"):

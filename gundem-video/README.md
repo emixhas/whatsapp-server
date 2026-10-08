@@ -144,6 +144,13 @@ gönderilen video dosyasını doğrudan WhatsApp'ta oynatın.
    tüneli açıp kapatır; `cloudflared` kurulu olması yeter. İzlenme, erişim, beğeni ve paylaşım verisi
    analitiğe girer.
 
+*Facebook girişi yolu (uygulamanızda yalnızca "API setup with Facebook login" varsa):* `secrets/.env` içine
+`IG_LOGIN=facebook` yazın. Bir Facebook Sayfası oluşturup Instagram profesyonel hesabınızı ona bağlayın
+(Instagram → Ayarlar → İşletme araçları → Facebook'a bağlan). Uygulama ayarları → Temel'deki Uygulama
+kimliği ve gizli anahtarı `IG_APP_ID` / `IG_APP_SECRET` olarak yazın; Facebook Login ayarlarında
+"Valid OAuth Redirect URIs" alanına `https://<tünel>/instagram/callback` ekleyin. "Instagram'ı bağla"
+Facebook girişi açar; alınan Sayfa token'ı süresizdir, yenileme gerekmez.
+
 **TikTok**
 1. developers.tiktok.com → Manage apps → uygulama oluştur → ürün olarak **Login Kit** ve
    **Content Posting API** ekleyin; scope'lar: user.info.basic, video.list, video.upload, video.publish.
