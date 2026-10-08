@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import DATA, OUT, episode_meta, metrics, now_iso, save_json  # noqa: E402
+from common import load_json, DATA, OUT, episode_meta, metrics, now_iso, save_json  # noqa: E402
 
 
 def video_rows():
@@ -82,7 +82,9 @@ def main():
             hints.append("En çok tutan açılış başlıkları: " + "; ".join(f"“{r['firstTitle']}”" for r in top[:3]) + ". Benzer netlikte, somut ve kısa açılış başlıkları yaz.")
     hint_text = " ".join(hints) if hints else "Henüz yeterli performans verisi yok; kuralları uygula."
 
+    sugg = load_json(DATA / "category_suggestions.json", {}) if "load_json" in globals() else {}
     insights = {
+        "categorySuggestions": sugg,
         "generatedAt": now_iso(), "videoCount": len(rows), "publishedCount": sum(1 for r in rows if any(r["published"].values())),
         "withDataCount": len(with_data), "totalViews": sum(r["views"] for r in rows),
         "byCategory": cat_avg, "byDuration": dur_avg, "byHour": hour_avg, "byTitleVariant": var_avg, "byFormat": fmt_avg,

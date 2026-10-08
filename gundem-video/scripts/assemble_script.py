@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import load_json  # noqa: E402
+from common import DATA, save_json, load_json  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 AYLAR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
@@ -137,6 +137,52 @@ def attach_images(segs):
     return n
 
 
+GUNLER = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+
+def _words(t: str):
+    return sorted({w for w in re.sub(r"[^\w\s]", " ", (t or "").lower()).split() if len(w) > 3})
+
+
+def record_used_news(segs, video: str):
+    """Videoya giren haberleri data/used_news.json'a yazar (48 saat tutulur); slim_news bunları eler."""
+    from datetime import timedelta, timezone
+    path = DATA / "used_news.json"
+    now = datetime.now(timezone.utc)
+    rows = [u for u in load_json(path, []) if u.get("at", "") >= (now - timedelta(hours=48)).isoformat()]
+    for s in segs:
+        if s.get("kind") in ("haber", "hook"):
+            rows.append({"t": s.get("title", ""), "w": _words(s.get("title", "")), "wn": _words(s.get("narration", "")), "at": now.isoformat(), "video": video})
+    save_json(path, rows)
+
+
+def record_category_suggestions(segs):
+    """Claude'un önerdiği yeni kategorileri sayar; 3 kez görülen öneri geliştirme kuyruğuna yazılır."""
+    path = DATA / "category_suggestions.json"
+    sug = load_json(path, {})
+    changed = False
+    for s in segs:
+        name = re.sub(r"[^a-zçğıöşü_]", "", (s.get("categorySuggestion") or "").lower())
+        if not name or name in CATEGORIES:
+            continue
+        row = sug.setdefault(name, {"count": 0, "examples": [], "queued": False})
+        row["count"] += 1
+        row["last"] = datetime.now().isoformat(timespec="minutes")
+        if s.get("title") and s["title"] not in row["examples"]:
+            row["examples"] = (row["examples"] + [s["title"]])[-5:]
+        print(f"  🧩 kategori önerisi: {name} ({row['count']}. kez) — {s.get('title', '')[:50]}", file=sys.stderr)
+        if row["count"] >= 3 and not row["queued"]:
+            row["queued"] = True
+            imp = DATA / "improvements.md"
+            head = "# Emixhas geliştirme kuyruğu\n\nBir görevi uygulamak için proje klasöründe Claude Code'u açıp bu dosyadaki ilk açık görevi vermeniz yeterli; uygulanınca [x] işaretleyin.\n\n"
+            line = f"- [ ] {datetime.now().isoformat(timespec='minutes')} Yeni kategori ekle: '{name}' (Claude {row['count']} kez önerdi; örnekler: {'; '.join(row['examples'][:3])}). src/categories.ts, src/illustrations/, scripts/make_sfx.py, prompts/senaryo.md ve assemble_script.CATEGORIES birlikte güncellensin; npm run typecheck geçsin.\n"
+            imp.write_text((imp.read_text(encoding="utf-8") if imp.exists() else head) + line, encoding="utf-8")
+            print(f"  🛠 '{name}' kategorisi 3 kez önerildi → geliştirme kuyruğuna yazıldı", file=sys.stderr)
+        changed = True
+    if changed:
+        save_json(path, sug)
+
+
 def episode_of_day(date: str) -> int:
     """O günün bölüm sayısı: bitmiş videolar + sürmekte olan üretimlerin rezervasyonları."""
     used = set()
@@ -212,13 +258,21 @@ def main(src: str, dst: str):
     cover = expand_abbr(titles.get("cover") or first.get("title", "")[:28])
     ep_n = episode_of_day(date_str := now.strftime("%Y-%m-%d"))
     variant = "A" if ep_n % 2 == 1 else "B"  # dönüşümlü A/B: tek bölümler A, çift bölümler B
+    hours = int(load_json(DATA / "settings.json", {}).get("scheduleHours") or 5)
+    from datetime import timedelta
+    start = now - timedelta(hours=hours)
+    record_category_suggestions(segs)
     out = {
         "titles": {"A": title_a, "B": title_b, "cover": cover},
         "titleVariant": variant,
         "publishTitle": title_a if variant == "A" else title_b,
         "date": date,
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
+        "dayLabel": f"{now.day} {AYLAR[now.month - 1]} {GUNLER[now.weekday()]}",
         "episodeOfDay": ep_n,
+        "slotLabel": f"{ep_n}. {hours} SAAT",
+        "timeRange": f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
+        "scheduleHours": hours,
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,
         "format": os.environ.get("FORMAT", "ozel"),
@@ -227,7 +281,8 @@ def main(src: str, dst: str):
         "segments": segs,
     }
     Path(dst).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"{len(haber)} haber, {words} kelime, günün {out['episodeOfDay']}. videosu -> {dst}")
+    record_used_news(segs, f"{date}-{ep_n}")
+    print(f"{len(haber)} haber, {words} kelime, günün {out['episodeOfDay']}. videosu ({out['slotLabel']}, {out['timeRange']}) -> {dst}")
 
 
 if __name__ == "__main__":

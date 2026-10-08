@@ -30,16 +30,41 @@ def main():
     cfg = float(os.environ.get("VOX_CFG", "2.0"))
     steps = int(os.environ.get("VOX_STEPS", "16"))
     seed = int(os.environ.get("VOX_SEED", "42"))
+    import inspect
+    try:
+        params = set(inspect.signature(model.generate).parameters)
+    except (TypeError, ValueError):
+        params = set()
+    accepts = lambda k: (not params) or (k in params) or ("kwargs" in params)
+    print(f"[voxcpm] generate parametreleri: {sorted(params) or 'bilinmiyor'}", file=sys.stderr, flush=True)
     for j in jobs:
         text = (j.get("instruct", "") + j["text"]) if j.get("instruct") else j["text"]
-        kw = dict(text=text, cfg_value=cfg, inference_timesteps=steps, seed=seed, max_len=4096)
+        kw = {"text": text}
+        for key, val in (("cfg_value", cfg), ("inference_timesteps", steps), ("seed", seed), ("max_len", 4096)):
+            if accepts(key):
+                kw[key] = val
         ref = j.get("ref") or os.environ.get("VOX_REF") or ""
         if ref and Path(ref).exists():
-            kw["reference_wav_path"] = ref
-        wav = model.generate(**kw)
-        sf.write(j["out"], wav, model.tts_model.sample_rate)
+            for key in ("reference_wav_path", "prompt_wav_path"):
+                if accepts(key):
+                    kw[key] = ref
+                    break
+        try:
+            wav = model.generate(**kw)
+        except TypeError as e:
+            # Eski/yeni API farkı: yalnızca metinle dene
+            print(f"[voxcpm] parametre uyuşmazlığı ({e}); yalnızca metinle deneniyor", file=sys.stderr, flush=True)
+            wav = model.generate(text=text)
+        sr = getattr(getattr(model, "tts_model", None), "sample_rate", None) or getattr(model, "sample_rate", None) or 48000
+        sf.write(j["out"], wav, int(sr))
         print(f"[voxcpm] {Path(j['out']).name} hazır", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        import traceback
+        tb = traceback.format_exc().strip().splitlines()
+        print("[voxcpm] HATA: " + " | ".join(tb[-3:]), file=sys.stderr, flush=True)
+        sys.exit(1)

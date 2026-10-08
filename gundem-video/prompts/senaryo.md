@@ -14,6 +14,10 @@ KURALLAR
 - Seçim önceliği: 1) p=3 sert haberler (can kaybı, saldırı, savaş, afet, büyük kaza) MUTLAKA alınır
   ve ilk sıralara konur; 2) p=2 önemli kararlar (ekonomi, siyaset, yargı); 3) diğerleri çeşitlilik
   için (spor, hava, teknoloji). Aynı olayın iki haberini seçme; en yeni sürümünü al.
+- "c" alanı aynı olayı kaç kaynağın verdiğini gösterir: yüksek c = herkesin konuştuğu, en çok merak
+  edilen haber. Eşit önemde c yüksek olanı seç; kanca için p ve c birlikte en yüksek haber idealdir.
+- "e":1 işaretli haberler önceki videoda kullanıldı. Yalnızca yeterli yeni haber yoksa, en sonda ve
+  yeni bir gelişme varsa seç; bir önceki videonun aynısını tekrar etme.
 - Tam olarak __HABER__ haber seç. Kanca haberi aynı zamanda 1. haber olarak kalır (tam metniyle).
   Haber sayısı kadar "haber" segmenti yaz; şemadaki örnek 4 haber içindir, sayıyı __HABER__ yap.
 - Her haber için: kısa ekran başlığı ("title", en fazla 8 kelime) ve 1-2 cümlelik tarafsız
@@ -28,6 +32,9 @@ KURALLAR
   Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/yargı → siyaset;
   meteoroloji/deprem/sel/afet → hava; yurt dışı olaylar → dunya; ulaşım/kent/yaşam → toplum;
   emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
+  Listede gerçekten uyan kategori yoksa en yakınını "category" olarak yaz ve ayrıca
+  "categorySuggestion" alanına önerdiğin yeni kategori adını küçük harfle yaz (ör. "kultur", "otomotiv").
+  Bu alan isteğe bağlıdır; çoğu haberde yazılmaz.
 - Intro (kanal kimliği) kancadan SONRA gelir ve çok kısadır: tam olarak "__FORMAT_INTRO__" (en fazla 5 kelime).
 - Outro metni sabittir, tam olarak şu cümle: "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma." (kelime bütçesine dahil değildir).
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.

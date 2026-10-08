@@ -116,14 +116,25 @@ def episode_meta(video_name: str):
 
 
 def build_caption(video_name: str, max_len: int = 2000):
-    """Yayın başlığı ve açıklaması senaryo meta'sından üretilir."""
+    """Yayın başlığı ve açıklaması senaryo meta'sından üretilir: gün, kaçıncı 5 saat, saat aralığı ve
+    her haberin başlığı + seslendirme metni + kaynağı (açıklamada tam haber ayrıntısı)."""
     meta = episode_meta(video_name) or {}
     s = settings()
     haber = [x for x in meta.get("segments", []) if x.get("kind") == "haber"]
     first = meta.get("publishTitle") or (haber[0]["title"] if haber else "Günün özeti")
-    title = f"{first} | {s['channelName']} {meta.get('dateLabel', '')} #Shorts".strip()
-    lines = [f"{s['channelName']} · {meta.get('dateLabel', '')} · günün {meta.get('episodeOfDay', '')}. özeti", ""]
+    day = meta.get("dayLabel") or meta.get("dateLabel", "")
+    slot = meta.get("slotLabel") or (f"{meta.get('episodeOfDay', '')}. 5 saat" if meta.get("episodeOfDay") else "")
+    rng = meta.get("timeRange") or ""
+    stamp = " · ".join(x for x in (day, slot.title() if slot else "", rng) if x)
+    title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
+    lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
     for i, h in enumerate(haber, 1):
-        lines.append(f"{i}. {h['title']}" + (f" ({h.get('source')})" if h.get("source") else ""))
-    lines += ["", s["hashtags"]]
+        head = f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
+        lines.append(head)
+        if h.get("narration"):
+            lines.append(h["narration"].strip())
+        if h.get("source"):
+            lines.append(f"Kaynak: {h['source']}")
+        lines.append("")
+    lines += ["Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", "", s["hashtags"]]
     return title[:100], "\n".join(lines)[:max_len]

@@ -188,7 +188,8 @@ def _run_voxcpm_batch(model: str, jobs: list) -> None:
     env = {**os.environ, "VOX_MODEL": model, "VOX_CFG": str(TR.get("cfg", 2.0)), "VOX_STEPS": str(TR.get("steps", 16)), "VOX_SEED": str(TR.get("seed", 42))}
     r = subprocess.run([str(TR_PY), str(ROOT / "scripts" / "voxcpm_tts.py")], input=json.dumps(jobs), text=True, cwd=ROOT, env=env, capture_output=True)
     if r.returncode != 0:
-        raise RuntimeError("voxcpm: " + r.stderr.strip()[-400:])
+        err = next((l for l in reversed(r.stderr.strip().splitlines()) if "HATA" in l or "Error" in l), r.stderr.strip()[-400:])
+        raise RuntimeError("voxcpm: " + err[-500:])
 
 
 def _run_ema_batch(jobs: list, speed: float) -> None:
