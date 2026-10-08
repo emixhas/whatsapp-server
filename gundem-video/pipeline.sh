@@ -49,7 +49,7 @@ echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
-  $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-20}"
+  $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
   { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" prompts/senaryo.md; cat work/news_prompt.json; } \
     | claude -p --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi:"; tail -n 5 work/claude_stderr.log; exit 1; }
   $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo

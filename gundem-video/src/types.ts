@@ -1,6 +1,6 @@
 export type Segment = {
   /** "intro" | "haber" | "outro" */
-  kind: "intro" | "haber" | "outro";
+  kind: "hook" | "intro" | "haber" | "outro";
   /** Ekranda görünen kısa başlık (haber için). */
   title?: string;
   /** Seslendirilen metin. */

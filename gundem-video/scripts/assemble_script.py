@@ -113,7 +113,7 @@ def attach_images(segs):
         return 0
     n = 0
     for s in segs:
-        if s.get("kind") != "haber":
+        if s.get("kind") not in ("haber", "hook"):
             continue
         words = _norm_words(s.get("title", "") + " " + s.get("narration", ""))
         best, score = None, 0.0
@@ -153,8 +153,26 @@ def main(src: str, dst: str):
     haber = [s for s in segs if s.get("kind") == "haber"]
     if not (HABER_MIN <= len(haber) <= HABER_MAX):
         sys.exit(f"Haber sayısı {len(haber)}, beklenen {HABER_MIN}-{HABER_MAX}")
-    if segs[0].get("kind") != "intro" or segs[-1].get("kind") != "outro":
-        sys.exit("İlk segment intro, son segment outro olmalı")
+    if segs[0].get("kind") == "intro" and len(segs) > 1 and segs[1].get("kind") != "hook":
+        # Kanca yoksa ilk haberden üret: ilk cümle, en fazla 9 kelime
+        first = next((x for x in segs if x.get("kind") == "haber"), None)
+        if first:
+            sent = re.split(r"(?<=[.!?])\s", first["narration"].strip())[0]
+            words = sent.split()
+            hook = {"kind": "hook", "title": " ".join(first["title"].split()[:3]).upper(), "narration": " ".join(words[:9]).rstrip(",;:") + ("." if not sent.endswith((".", "!", "?")) else ""),
+                    "source": first.get("source"), "category": first.get("category"), "breaking": first.get("breaking", False)}
+            segs.insert(0, hook)
+            print("  kanca otomatik üretildi (Claude vermedi)", file=sys.stderr)
+    if segs[0].get("kind") != "hook" or segs[-1].get("kind") != "outro":
+        sys.exit("İlk segment hook (kanca), son segment outro olmalı")
+    if len(segs) > 1 and segs[1].get("kind") != "intro":
+        sys.exit("İkinci segment intro olmalı")
+    hk = segs[0]
+    if len(hk.get("narration", "").split()) > 10:
+        hk["narration"] = " ".join(hk["narration"].split()[:10]).rstrip(",;:") + "."
+    hk["title"] = (hk.get("title") or " ".join(hk["narration"].split()[:3])).upper()[:28]
+    if hk.get("category") not in CATEGORIES:
+        hk["category"] = next((x.get("category") for x in segs if x.get("kind") == "haber" and x.get("category") in CATEGORIES), "genel")
     for s in segs:
         if not s.get("narration", "").strip():
             sys.exit("Boş seslendirme metni")
@@ -163,7 +181,7 @@ def main(src: str, dst: str):
             s["title"] = expand_abbr(s["title"])
         if s["kind"] == "haber" and not s.get("title", "").strip():
             sys.exit("Haber segmentinde başlık yok")
-        if s["kind"] == "haber" and s.get("category") not in CATEGORIES:
+        if s["kind"] in ("haber", "hook") and s.get("category") not in CATEGORIES:
             print(f"  ! bilinmeyen kategori {s.get('category')!r}, 'genel' kullanıldı", file=sys.stderr)
             s["category"] = "genel"
     breaking = [s for s in haber if s.get("breaking")]

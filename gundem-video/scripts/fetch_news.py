@@ -19,7 +19,7 @@ FEEDS = [
     ("NTV", "https://www.ntv.com.tr/gundem.rss"),
     ("BBC Türkçe", "https://feeds.bbci.co.uk/turkce/rss.xml"),
 ]
-MAX_PER_FEED = 12
+MAX_PER_FEED = 25
 UA = "Mozilla/5.0 (gundem-video; +local)"
 
 

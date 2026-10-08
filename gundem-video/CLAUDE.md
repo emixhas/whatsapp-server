@@ -27,6 +27,15 @@ Kaynak: `server.js` her 10 sn CPU/RAM örnekler; üretim, ses modeli yükleme ve
 sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 
 ## Video özellikleri
+- KANCA (ilk 3 sn): her video `hook` segmentiyle açılır: günün en çarpıcı haberinin tek cümlesi
+  (≤ 8-10 kelime), 2-4 kelimelik dev ekran başlığı, kırmızı/kategori flaşı, varsa tam ekran fotoğraf,
+  `sfx/sondakika.wav`. Sonra kısa intro (kanal kimliği, ≤ 5 kelime), sonra haberler. Claude kanca
+  vermezse `assemble_script` ilk haberin ilk cümlesinden üretir. `Hook.tsx`.
+- Haber seçimi: `fetch_news` kaynak başına 25 (≈100), `slim_news` önem puanlar (3 sert haber: can
+  kaybı/saldırı/savaş/afet/büyük kaza; 2 önemli karar; 1 diğer), önem → yenilik sırasıyla en iyi
+  `NEWS_MAX`=50 haberi `p` alanıyla Claude'a verir. Prompt p=3 haberleri zorunlu kılar ve kancayı
+  oradan seçtirir. Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
+  konut") önlemek için fiil/bağlam içeren kalıplar kullan.
 - Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
   (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
@@ -119,7 +128,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 ## Kanal kimliği (değiştirirken tutarlı kal)
 - Renkler `src/theme.ts`: koyu lacivert zemin, kırmızı vurgu (#E30A17), beyaz başlık, gri alt metin.
 - Ton: resmi, sakin, tarafsız haber dili. Yorum ve sansasyon yok.
-- Yapı: intro (kanal adı + tarih + "Günün N. özeti") → N haber kartı (30 sn'de 4) → outro.
+- Yapı: kanca (≤3 sn) → intro (kanal kimliği, ≤2 sn) → N haber kartı (30 sn'de 4) → outro.
 - Toplam seslendirme ≤ süre × 2.4 kelime. Bu sınır `assemble_script.py` ile zorlanır.
 - Her haber kartında kaynak adı görünür.
 

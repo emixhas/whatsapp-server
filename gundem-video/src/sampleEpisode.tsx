@@ -7,7 +7,8 @@ export const sampleEpisode: Episode = {
   episodeOfDay: 1,
   timeLabel: "09:00",
   segments: [
-    { kind: "intro", narration: "Türkiye gündemi, 7 Ekim, günün birinci özeti.", audio: "audio/seg-00.wav", duration: 3.5 },
+    { kind: "hook", title: "FAİZ SABİT", narration: "Merkez Bankası faizi değiştirmedi.", category: "finans", audio: "audio/seg-00.wav", duration: 2.6 },
+    { kind: "intro", narration: "Günün özeti, Türkiye gündemi.", audio: "audio/seg-00.wav", duration: 2 },
     { kind: "haber", title: "Merkez Bankası faiz kararını açıkladı", category: "finans", narration: "Merkez Bankası politika faizini beklentiler doğrultusunda sabit tuttu.", source: "AA", audio: "audio/seg-01.wav", duration: 6 },
     { kind: "haber", title: "İstanbul'da ulaşıma yeni düzenleme", category: "toplum", narration: "İstanbul'da toplu taşımada yeni tarife uygulaması başladı.", source: "TRT Haber", audio: "audio/seg-02.wav", duration: 6 },
     { kind: "haber", title: "Meteoroloji'den sağanak uyarısı", category: "hava", narration: "Meteoroloji, Marmara ve Ege için kuvvetli sağanak uyarısı yaptı.", source: "NTV", audio: "audio/seg-03.wav", duration: 6 },

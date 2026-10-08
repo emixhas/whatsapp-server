@@ -4,8 +4,17 @@ gündem özeti senaryosu yazmak. Bu videonun formatı: "__FORMAT_ADI__" (ton: __
 
 KURALLAR
 - Toplam seslendirme metni EN FAZLA __KELIME__ kelime. Bu sınır kesindir; __SURE__ saniyeye sığmalı.
-- Tam olarak __HABER__ haber seç. Seçim ölçütü: en yeni, en geniş kitleyi ilgilendiren, birbirinden
-  farklı konular (ekonomi, siyaset, toplum, spor/hava gibi). Aynı olayın iki haberini seçme.
+- İLK 3 SANİYE HAYATİ: video bir KANCA ile açılır ("hook" segmenti). Kanca, günün en çarpıcı
+  haberinin TEK cümlesidir: en fazla 8 kelime, somut, doğrudan, rakam veya yer adı içerir.
+  Örnekler: "İzmir'de zincirleme kaza: 3 kişi hayatını kaybetti." / "Merkez Bankası faizi değiştirmedi."
+  / "Ankara'da bakanlık binasına saldırı." Soru biçimi de olabilir ama dürüst olmalı.
+  Kanca haberi, listedeki önem puanı en yüksek (p=3) haberden seçilir; p=3 yoksa p=2'den.
+  Kanca için ayrıca 2-4 kelimelik ekran başlığı ("title") yaz: "3 ÖLÜ", "FAİZ SABİT" gibi.
+  Can kaybı içeren kancada saygılı ve kuru ol; kan, ceset gibi grafik ifade kullanma.
+- Seçim önceliği: 1) p=3 sert haberler (can kaybı, saldırı, savaş, afet, büyük kaza) MUTLAKA alınır
+  ve ilk sıralara konur; 2) p=2 önemli kararlar (ekonomi, siyaset, yargı); 3) diğerleri çeşitlilik
+  için (spor, hava, teknoloji). Aynı olayın iki haberini seçme; en yeni sürümünü al.
+- Tam olarak __HABER__ haber seç. Kanca haberi aynı zamanda 1. haber olarak kalır (tam metniyle).
   Haber sayısı kadar "haber" segmenti yaz; şemadaki örnek 4 haber içindir, sayıyı __HABER__ yap.
 - Her haber için: kısa ekran başlığı ("title", en fazla 8 kelime) ve 1-2 cümlelik tarafsız
   seslendirme metni ("narration", 12-18 kelime). Yorum, sıfat yığını, tıklama tuzağı yok.
@@ -16,7 +25,7 @@ KURALLAR
   okul/öğrenci/sınav/MEB → egitim; Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/
   yargı → siyaset; meteoroloji/deprem/afet → hava; yurt dışı olaylar → dunya; eğitim/ulaşım/
   kent/asayiş → toplum; emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
-- Intro metni tam olarak şu olsun: "__FORMAT_INTRO__" (gerekirse en fazla 3 kelime ekle).
+- Intro (kanal kimliği) kancadan SONRA gelir ve çok kısadır: tam olarak "__FORMAT_INTRO__" (en fazla 5 kelime).
 - Outro metni: en fazla 10 kelime, yeni özetin 5 saat sonra geleceğini söyle.
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.
   Zorunlu açılımlar: AKP → AK Parti; CHP → Cumhuriyet Halk Partisi; MHP → Milliyetçi Hareket Partisi;
@@ -46,7 +55,8 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
 {
   "titles": {"A": "...", "B": "...", "cover": "..."},
   "segments": [
-    {"kind": "intro", "narration": "..."},
+    {"kind": "hook", "title": "3 ÖLÜ", "narration": "İzmir'de zincirleme kaza: 3 kişi hayatını kaybetti.", "source": "...", "category": "..."},
+    {"kind": "intro", "narration": "__FORMAT_INTRO__"},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "...", "breaking": true},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},

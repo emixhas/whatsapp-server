@@ -2,6 +2,7 @@ import { AbsoluteFill, Audio, Sequence, staticFile } from "remotion";
 import { styleFor } from "./categories";
 import { Background } from "./scenes/Background";
 import { Headline } from "./scenes/Headline";
+import { Hook } from "./scenes/Hook";
 import { Intro } from "./scenes/Intro";
 import { Outro } from "./scenes/Outro";
 import { Episode, FPS } from "./types";
@@ -22,9 +23,9 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
         cursor += seg.duration;
         const haberIndex = haberler.indexOf(seg);
         const st = styleFor(seg.category);
-        const sceneSfx = seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
+        const sceneSfx = seg.kind === "hook" ? "sfx/sondakika.wav" : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
         const breakingSfx = seg.kind === "haber" && seg.breaking ? "sfx/sondakika.wav" : null;
-        const sceneVol = seg.kind === "haber" ? st.sfxVolume : 0.5;
+        const sceneVol = seg.kind === "haber" ? st.sfxVolume : seg.kind === "hook" ? 0.75 : 0.5;
         return (
           <Sequence key={i} from={from} durationInFrames={dur}>
             {/* seslendirme */}
@@ -34,7 +35,9 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             {breakingSfx ? <Audio src={staticFile(breakingSfx)} volume={0.7} /> : null}
             {/* geçiş: sahneler arası whoosh (ilk sahne hariç) */}
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH_FRAMES}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.35} /></Sequence> : null}
-            {seg.kind === "intro" ? (
+            {seg.kind === "hook" ? (
+              <Hook title={seg.title ?? ""} narration={seg.narration} category={seg.category} breaking={seg.breaking} image={seg.image} words={seg.words} durationInFrames={dur} />
+            ) : seg.kind === "intro" ? (
               <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} words={seg.words} />
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} />
