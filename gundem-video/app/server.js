@@ -186,8 +186,11 @@ setInterval(() => { sampleResources(); const busy = state.running || state.impro
 // ---------- Doğal ses sunucusu (Chatterbox) yönetimi
 const tts = { proc: null, ready: false, device: null, error: null, startedAt: null };
 async function ttsHealth() { try { const r = await fetch(`http://127.0.0.1:${settings().chatterbox.port}/health`, { signal: AbortSignal.timeout(1500) }); const j = await r.json(); tts.ready = !!j.ready; tts.device = j.device; if (j.error) tts.error = j.error; return j; } catch { tts.ready = false; return null; } }
-function startTts() {
+async function startTts() {
   if (tts.proc) return { ok: true, running: true };
+  // Panel yeniden başladıysa eski sunucu hâlâ çalışıyor olabilir: sağlık cevabı veriyorsa onu sahiplen
+  const alive = await ttsHealth();
+  if (alive) { tts.adopted = true; tts.error = null; push(`🎤 doğal ses sunucusu zaten çalışıyor (${alive.ready ? "hazır" : "yükleniyor"}, ${alive.device || "?"}); bağlanıldı`); return { ok: true, running: true, adopted: true }; }
   const child = spawn(PY, ["scripts/tts_server.py"], { cwd: ROOT, env: { ...ENV, TTS_PORT: String(settings().chatterbox.port) } });
   tts.proc = child; tts.error = null; tts.startedAt = Date.now();
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push("🎤 " + l.slice(0, 200)); if (l.includes("hazır (")) { tts.ready = true; announce("Doğal ses hazır."); } if (l.includes("HATA")) tts.error = l; });
@@ -197,7 +200,11 @@ function startTts() {
   push("🎤 doğal ses sunucusu başlatılıyor (ilk seferde model iner, birkaç dakika sürebilir)");
   return { ok: true, running: true };
 }
-function stopTts() { if (tts.proc) tts.proc.kill(); tts.proc = null; tts.ready = false; return { ok: true }; }
+function stopTts() {
+  if (tts.proc) tts.proc.kill();
+  else if (tts.adopted) { try { const pids = String(spawnSync("lsof", ["-ti", `:${settings().chatterbox.port}`]).stdout || "").split(/\s+/).filter(Boolean); for (const pid of pids) { try { process.kill(Number(pid)); } catch { /* yok */ } } } catch { /* lsof yok */ } }
+  tts.proc = null; tts.adopted = false; tts.ready = false; return { ok: true };
+}
 // Türkçe ses motorları durumu (Trendyol MLX kurulu mu, EMA içe aktarılabiliyor mu); EMA kontrolü bir kez yapılır
 let emaCache = null;
 const turkishVoiceStatus = () => {
@@ -209,11 +216,11 @@ const turkishVoiceStatus = () => {
   }
   return { trendyol, ema: emaCache, venv: existsSync(path.join(ROOT, ".venv-tr")) };
 };
-const ttsStatus = () => ({ running: !!tts.proc, ready: tts.ready, device: tts.device, error: tts.error, refVoice: existsSync(path.join(ROOT, settings().chatterbox.refVoice || "")) ? settings().chatterbox.refVoice : null });
+const ttsStatus = () => ({ running: !!tts.proc || !!tts.adopted, ready: tts.ready, device: tts.device, error: tts.error, refVoice: existsSync(path.join(ROOT, settings().chatterbox.refVoice || "")) ? settings().chatterbox.refVoice : null });
 app.get("/api/tts", async (_req, res) => { await ttsHealth(); res.json(ttsStatus()); });
-app.post("/api/tts/start", (_req, res) => res.json(startTts()));
+app.post("/api/tts/start", async (_req, res) => res.json(await startTts()));
 app.post("/api/tts/stop", (_req, res) => res.json(stopTts()));
-if (settings().chatterbox.autoStart) setTimeout(startTts, 2000);
+if (settings().chatterbox.autoStart) setTimeout(() => startTts(), 2000);
 setInterval(() => { if (tts.proc) ttsHealth(); }, 15000);
 
 // ---------- Dosya izleyici: kod/prompt/veri değişiklikleri ve git commit'leri canlı loga düşer
