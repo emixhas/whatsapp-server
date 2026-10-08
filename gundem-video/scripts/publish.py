@@ -73,7 +73,10 @@ IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagr
 IG_API = "https://graph.instagram.com/v21.0"
 FB_API = "https://graph.facebook.com/v21.0"
 IG_CALLBACK_PORT = 3138
-FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,pages_read_engagement,business_management"
+# Facebook Login yolu izinleri. Her biri Meta uygulamasında Kullanım senaryosu → "Permissions and features" listesinde
+# "Add" ile eklenmiş olmalı; eklenmemiş izin "Invalid Scopes" hatası verir. İş portföyüne bağlı sayfalar için
+# .env'de IG_EXTRA_SCOPES=business_management eklenebilir.
+FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,pages_read_engagement"
 
 
 def fb_finish(env, redirect, code):
@@ -280,8 +283,12 @@ def ig_connect():
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     via = (env.get("IG_LOGIN") or "instagram").lower()  # instagram: Instagram Login (sayfa gerekmez) | facebook: Facebook Login (Facebook Sayfası + bağlı Instagram)
     if via == "facebook":
-        url = "https://www.facebook.com/v21.0/dialog/oauth?" + urllib.parse.urlencode({
-            "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "state": state, "scope": FB_SCOPES})
+        params = {"client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "state": state}
+        if env.get("IG_CONFIG_ID"):  # Facebook Login for Business "Configuration" kimliği: izinler yapılandırmadan gelir
+            params["config_id"] = env["IG_CONFIG_ID"]
+        else:
+            params["scope"] = ",".join(x for x in (FB_SCOPES + "," + (env.get("IG_EXTRA_SCOPES") or "")).split(",") if x)
+        url = "https://www.facebook.com/v21.0/dialog/oauth?" + urllib.parse.urlencode(params)
     else:
         url = "https://www.instagram.com/oauth/authorize?" + urllib.parse.urlencode({
             "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state, "force_reauth": "true"})
