@@ -13,6 +13,6 @@ export const sampleEpisode: Episode = {
     { kind: "haber", title: "İstanbul'da ulaşıma yeni düzenleme", category: "toplum", narration: "İstanbul'da toplu taşımada yeni tarife uygulaması başladı.", source: "TRT Haber", audio: "audio/seg-02.wav", duration: 6 },
     { kind: "haber", title: "Meteoroloji'den sağanak uyarısı", category: "hava", narration: "Meteoroloji, Marmara ve Ege için kuvvetli sağanak uyarısı yaptı.", source: "NTV", audio: "audio/seg-03.wav", duration: 6 },
     { kind: "haber", title: "Milli takım hazırlıklara başladı", category: "spor", narration: "A Milli Futbol Takımı, Dünya Kupası elemeleri için kampa girdi.", source: "AA", audio: "audio/seg-04.wav", duration: 6 },
-    { kind: "outro", narration: "Beş saat sonra yeni özetle buradayız. Takipte kalın.", audio: "audio/seg-05.wav", duration: 3 },
+    { kind: "outro", narration: "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma.", audio: "audio/seg-05.wav", duration: 7 },
   ],
 };

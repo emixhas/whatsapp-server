@@ -26,7 +26,7 @@ KURALLAR
   yargı → siyaset; meteoroloji/deprem/afet → hava; yurt dışı olaylar → dunya; eğitim/ulaşım/
   kent/asayiş → toplum; emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
 - Intro (kanal kimliği) kancadan SONRA gelir ve çok kısadır: tam olarak "__FORMAT_INTRO__" (en fazla 5 kelime).
-- Outro metni: en fazla 10 kelime, yeni özetin 5 saat sonra geleceğini söyle.
+- Outro metni sabittir, tam olarak şu cümle: "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma." (kelime bütçesine dahil değildir).
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.
   Zorunlu açılımlar: AKP → AK Parti; CHP → Cumhuriyet Halk Partisi; MHP → Milliyetçi Hareket Partisi;
   İYİ Parti olduğu gibi; DEM Parti olduğu gibi; TCMB → Merkez Bankası; TBMM → Meclis;
@@ -61,7 +61,7 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "haber", "title": "...", "narration": "...", "source": "...", "category": "..."},
-    {"kind": "outro", "narration": "..."}
+    {"kind": "outro", "narration": "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."}
   ]
 }
 

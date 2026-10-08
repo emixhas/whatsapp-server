@@ -20,6 +20,8 @@ MAX_WORDS_TOTAL = int(os.environ.get("WORDS", str(DURATION * 24 // 10))) + 6   #
 _H = int(os.environ.get("HABER", str(max(2, DURATION // 8))))
 HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
 CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
+# Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
+OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."
 
 
 # Seslendirme motorları kısaltmaları yanlış okur; bilinen kısaltmalar açılır (kelime sınırı ile).
@@ -167,6 +169,8 @@ def main(src: str, dst: str):
         sys.exit("İlk segment hook (kanca), son segment outro olmalı")
     if len(segs) > 1 and segs[1].get("kind") != "intro":
         sys.exit("İkinci segment intro olmalı")
+    # Outro her videoda aynı kancalı kapanış: marka tutarlılığı için Claude'un yazdığı metin ezilir
+    segs[-1]["narration"] = OUTRO_TEXT
     hk = segs[0]
     if len(hk.get("narration", "").split()) > 10:
         hk["narration"] = " ".join(hk["narration"].split()[:10]).rstrip(",;:") + "."
@@ -187,7 +191,7 @@ def main(src: str, dst: str):
     breaking = [s for s in haber if s.get("breaking")]
     for s in breaking[1:]:
         s["breaking"] = False  # en fazla bir manşet
-    words = sum(len(s["narration"].split()) for s in segs)
+    words = sum(len(s["narration"].split()) for s in segs if s["kind"] != "outro")
     if words > MAX_WORDS_TOTAL:
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 
