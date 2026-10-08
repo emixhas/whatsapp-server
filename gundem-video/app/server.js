@@ -115,9 +115,10 @@ function startTunnel() {
   let child;
   try { child = spawn("cloudflared", args, { env: ENV }); } catch (e) { return { ok: false, error: e.message }; }
   tunnel.proc = child; tunnel.mode = named ? "named" : "quick"; tunnel.error = null; tunnel.log = [];
-  if (named) { tunnel.hostname = env.TUNNEL_HOSTNAME; tunnel.url = `https://${env.TUNNEL_HOSTNAME}`; writeEnvKey("PUBLIC_BASE_URL", tunnel.url); push(`☁ adlı tünel: ${tunnel.url}`); }
+  const announceCallbacks = () => { push(`◎ Instagram geri dönüş adresi: ${tunnel.url}/instagram/callback`); push(`♪ TikTok geri dönüş adresi: ${tunnel.url}/tiktok/callback`); };
+  if (named) { tunnel.hostname = env.TUNNEL_HOSTNAME; tunnel.url = `https://${env.TUNNEL_HOSTNAME}`; writeEnvKey("PUBLIC_BASE_URL", tunnel.url); push(`☁ adlı tünel (kalıcı): ${tunnel.url}`); announceCallbacks(); }
   const onData = (b) => { const t = b.toString(); tunnel.log.push(t.slice(0, 300)); if (tunnel.log.length > 50) tunnel.log.shift();
-    const m = t.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/); if (m && !named && tunnel.url !== m[0]) { tunnel.url = m[0]; tunnel.hostname = m[0].replace("https://", ""); writeEnvKey("PUBLIC_BASE_URL", tunnel.url); push(`☁ tünel hazır: ${tunnel.url}`); announce(`Tünel hazır. Dış adres ayarlara yazıldı.`); } };
+    const m = t.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/); if (m && !named && tunnel.url !== m[0]) { tunnel.url = m[0]; tunnel.hostname = m[0].replace("https://", ""); writeEnvKey("PUBLIC_BASE_URL", tunnel.url); push(`☁ tünel hazır (geçici adres, her açılışta değişir; kalıcı için: bash scripts/setup_tunnel.sh video.ALANADINIZ.com): ${tunnel.url}`); announceCallbacks(); announce(`Tünel hazır. Dış adres ayarlara yazıldı.`); } };
   child.stdout.on("data", onData); child.stderr.on("data", onData);
   child.on("error", (e) => { tunnel.error = e.code === "ENOENT" ? "cloudflared kurulu değil (brew install cloudflared)" : e.message; tunnel.proc = null; push(`✖ tünel: ${tunnel.error}`); });
   child.on("close", (code) => { tunnel.proc = null; if (code !== 0 && !tunnel.error) tunnel.error = `cloudflared kapandı (kod ${code})`; push(`☁ tünel durdu`); });
@@ -319,7 +320,20 @@ app.post("/api/voices/preview", async (req, res) => {
 app.get("/api/settings", (_req, res) => res.json(settings()));
 app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
-app.post("/api/restart", (_req, res) => { res.json({ ok: true }); setTimeout(() => process.exit(75), 500); });
+app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 500); });
+// Panelden güncelleme: git pull, bağımlılık değiştiyse npm install, sonra yeniden başlat (terminal gerekmez)
+app.post("/api/update", async (_req, res) => {
+  push("⬇ güncelleme: git pull");
+  const r = await run("git", ["pull", "--ff-only"]);
+  const out = (r.stdout || r.stderr || "").trim();
+  for (const line of out.split("\n").slice(-8)) push("  " + line);
+  if (!r.ok) return res.json({ ok: false, error: out.slice(-300) });
+  const changed = /package(-lock)?\.json/.test(out);
+  if (changed) { push("⬇ bağımlılıklar güncelleniyor (npm install)"); await run("npm", ["install", "--no-audit", "--no-fund"]); }
+  const upToDate = /Already up to date|Zaten güncel/i.test(out);
+  res.json({ ok: true, upToDate, summary: out.split("\n").pop() });
+  if (!upToDate) { push("↻ güncelleme alındı, panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 800); }
+});
 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
 app.get("/api/connections", async (_req, res) => res.json(await brain.connections()));

@@ -63,6 +63,16 @@ Tam tablo `CLAUDE.md` içinde.
 
 ## EMIXHAS paneli
 
+Terminal açık tutmadan, Mac açılınca kendiliğinden çalışması için (önerilir):
+
+```bash
+bash scripts/install_panel_service.sh      # kaldırmak için: bash scripts/install_panel_service.sh remove
+```
+
+Sonra http://localhost:3131 her zaman açıktır. Kod güncellemesi ve yeniden başlatma panelin kendi
+"⬇ Güncelle" ve "↻ Yeniden başlat" düğmeleriyle yapılır; `git pull` için terminal gerekmez.
+
+
 ```bash
 pip install -r requirements.txt     # .venv aktifken
 npm run panel
@@ -174,7 +184,16 @@ Panel `https://....trycloudflare.com` adresini yakalar, `secrets/.env` içine PU
 yazar. Adres her başlatmada değişir; "Panel açılınca otomatik başlat" açıksa her seferinde güncellenir.
 Instagram yayını için bu yeterlidir, çünkü adres yayın anında okunur.
 
-*Adlı tünel (kalıcı adres; Cloudflare hesabı ve Cloudflare'de yönetilen bir alan adı gerekir):*
+*Adlı tünel (kalıcı adres; Cloudflare hesabı ve Cloudflare'de yönetilen bir alan adı gerekir), tek komut:*
+
+```bash
+bash scripts/setup_tunnel.sh video.ALANADINIZ.com
+```
+
+Tarayıcıda Cloudflare girişi açılır, tünel oluşturulur, DNS kaydı yazılır, `.env` güncellenir. Bundan sonra
+adres hiç değişmez; Meta ve TikTok'a geri dönüş adresini bir kez yazarsınız. Alan adınızın DNS'i Cloudflare'de
+değilse dash.cloudflare.com → "Add a domain" ile ekleyip verilen ad sunucularını alan adı sağlayıcınızda
+tanımlayın (ücretsiz plan yeter). Elle kurulum:
 
 ```bash
 cloudflared tunnel login                      # tarayıcıda Cloudflare girişi, alan adını seçin

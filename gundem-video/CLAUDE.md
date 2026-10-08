@@ -77,6 +77,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   rate'i ±25 değiştirir; beyin de `settings` eylemiyle değiştirebilir. Video anlatımı
   `settings.narrationEngine` (auto|trendyol|ema|chatterbox|say|piper).
 - `scripts/panel.sh` paneli döngüde çalıştırır; çıkış kodu 75 = yeniden başlat (`restart` eylemi).
+  `scripts/install_panel_service.sh` paneli launchd servisi yapar (KeepAlive, log work/panel.log).
+  `POST /api/update`: `git pull --ff-only` (+ npm install gerekirse) ve yeniden başlat; UI "⬇ Güncelle".
+  `scripts/setup_tunnel.sh HOST` kalıcı Cloudflare adlı tüneli kurar (login, create, route dns, .env).
+  Tünel hazır olunca log Instagram/TikTok geri dönüş adreslerini tam haliyle yazar.
 - Canlı log (`push()` → SSE): üretim adımları, beyin (🧠 düşünüyor / ⚡ eylem / ⏸ onay), yayın (📤),
   metrik (📊), tünel (☁), doğal ses (🎤), kod değişiklikleri (✎ fs.watch: src/app/scripts/prompts),
   git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda yapışkan; satır öneki rengi belirler.
