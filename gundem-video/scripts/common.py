@@ -1,12 +1,24 @@
 """Ortak yardımcılar: veri dosyaları, .env, zaman."""
 import json
 import os
+import ssl
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 SECRETS = ROOT / "secrets"
+
+# python.org Python'u macOS sertifika deposunu görmez; certifi varsa tüm urllib çağrıları onu kullansın
+# (Instagram/TikTok/YouTube API'leri ve RSS). Bu modülü içe aktaran her betik için geçerli.
+try:
+    import certifi
+    _ctx = ssl.create_default_context(cafile=certifi.where())
+    urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ctx)))
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+except Exception:
+    pass
 OUT = ROOT / "out"
 DATA.mkdir(exist_ok=True)
 
