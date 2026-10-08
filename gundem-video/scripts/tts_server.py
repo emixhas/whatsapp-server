@@ -28,22 +28,58 @@ def log(msg):
     print(msg, flush=True)
 
 
+def _patch_watermarker():
+    """resemble-perth paketi bazı kurulumlarda filigran sınıfını yükleyemez ve None bırakır;
+    Chatterbox onu çağırınca 'NoneType is not callable' verir. Sessiz bir sahte sınıfla değiştirilir."""
+    try:
+        import perth
+        if getattr(perth, "PerthImplicitWatermarker", None) is None:
+            dummy = getattr(perth, "DummyWatermarker", None)
+            if dummy is None:
+                class dummy:  # noqa: N801
+                    def apply_watermark(self, wav, sample_rate=None, **kw):
+                        return wav
+                    def get_watermark(self, *a, **kw):
+                        return 0.0
+            perth.PerthImplicitWatermarker = dummy
+            log("[tts] not: filigran modülü yüklenemedi, filigransız devam ediliyor")
+    except Exception as e:
+        log(f"[tts] not: perth yaması uygulanamadı ({e})")
+
+
+def _load_on(device):
+    import torch
+    from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+    if device in ("mps", "cpu"):
+        _orig = torch.load
+        torch.load = lambda *a, **k: _orig(*a, **{**k, "map_location": k.get("map_location", "cpu")})
+    log(f"[tts] model yükleniyor (cihaz: {device})…")
+    t0 = time.time()
+    MODEL["m"] = ChatterboxMultilingualTTS.from_pretrained(device=device)
+    STATE.update({"ready": True, "device": device, "error": None})
+    log(f"[tts] hazır ({time.time() - t0:.0f} sn, {device})")
+
+
 def load_model():
     STATE["loading"] = True
     try:
         import torch
         import torchaudio  # noqa: F401
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-        device = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
-        if device == "mps":
-            # Chatterbox bazı tensörleri cuda/cpu varsayar; MPS'te yükleme için map_location düzeltmesi
-            _orig = torch.load
-            torch.load = lambda *a, **k: _orig(*a, **{**k, "map_location": k.get("map_location", "cpu")})
-        log(f"[tts] model yükleniyor (cihaz: {device})…")
-        t0 = time.time()
-        MODEL["m"] = ChatterboxMultilingualTTS.from_pretrained(device=device)
-        STATE.update({"ready": True, "device": device})
-        log(f"[tts] hazır ({time.time() - t0:.0f} sn)")
+        _patch_watermarker()
+        devices = ["mps", "cpu"] if torch.backends.mps.is_available() else (["cuda"] if torch.cuda.is_available() else ["cpu"])
+        last = None
+        for dev in devices:
+            try:
+                _load_on(dev)
+                last = None
+                break
+            except Exception as e:
+                last = f"{type(e).__name__}: {e}"
+                log(f"[tts] {dev} üzerinde yükleme başarısız: {last}")
+                MODEL["m"] = None
+        if last:
+            STATE["error"] = last
+            log(f"[tts] HATA: {last}")
     except Exception as e:
         STATE["error"] = f"{type(e).__name__}: {e}"
         log(f"[tts] HATA: {STATE['error']}")
