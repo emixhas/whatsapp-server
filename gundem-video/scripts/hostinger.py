@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from ftplib import FTP, FTP_TLS, error_perm
@@ -75,11 +76,22 @@ def connect():
     else:
         f = FTP(); f.connect(host, port, timeout=30); f.login(user, pw)
     f.set_pasv(True)
-    root = e.get("HOSTINGER_ROOT") or "public_html"
+    host = urllib.parse.urlparse(e.get("HOSTINGER_SITE_URL", "")).hostname or ""
+    bare = host[4:] if host.startswith("www.") else host
+    candidates = [e.get("HOSTINGER_ROOT")] if e.get("HOSTINGER_ROOT") else []
+    candidates += ["public_html", f"domains/{bare}/public_html", f"domains/{host}/public_html", f"{bare}/public_html"]
+    for root in candidates:
+        try:
+            f.cwd("/"); f.cwd(root)
+            f.web_root = root
+            return f
+        except error_perm:
+            continue
+    f.cwd("/")
     try:
-        f.cwd(root)
-    except error_perm:
-        f.cwd("/")  # bazı hesaplarda FTP kökü zaten public_html'dir
+        f.web_root = "/ (kök; listede: " + ", ".join(f.nlst()[:12]) + ")"
+    except Exception:
+        f.web_root = "/"
     return f
 
 
@@ -118,11 +130,28 @@ def delete(remote_rel: str):
 
 
 def reachable(url, timeout=15):
+    """HEAD, olmazsa GET (bazı sunucular HEAD'i reddeder)."""
+    for method in ("HEAD", "GET"):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=timeout) as r:
+                return r.status == 200
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404, 405) and method == "HEAD":
+                continue
+            return False
+        except Exception:
+            return False
+    return False
+
+
+def http_status(url, timeout=15):
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD"), timeout=timeout) as r:
-            return r.status == 200
-    except Exception:
-        return False
+        with urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=timeout) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception as e:
+        return str(e)[:60]
 
 
 def poll_code(callback_url: str, state: str, timeout_sec=300) -> dict:
@@ -144,7 +173,9 @@ def setup():
     if not configured():
         sys.exit("secrets/.env içinde HOSTINGER_FTP_HOST, HOSTINGER_FTP_USER, HOSTINGER_FTP_PASS, HOSTINGER_SITE_URL gerekli")
     f = connect()
-    print(f"FTP bağlandı: {f.pwd()}")
+    print(f"FTP bağlandı, web kökü: {f.web_root}")
+    if f.web_root.startswith("/ ("):
+        print("  ! public_html bulunamadı. hPanel → Dosya Yöneticisi'nde sitenin klasör yolunu bulup .env'e HOSTINGER_ROOT=... yazın.")
     for plat in ("instagram", "tiktok"):
         mkdirs(f, f"{plat}/callback/codes")
         put_bytes(f, f"{plat}/callback/index.php", CALLBACK_PHP.encode())
@@ -157,7 +188,7 @@ def setup():
     ok_v = reachable(base + "/videos/test.txt")
     ok_cb = reachable(base + "/instagram/callback/")
     delete("videos/test.txt")
-    v_msg = "erişilebilir ✔" if ok_v else "ERİŞİLEMEDİ (alan adı bu hostinge bağlı mı? HOSTINGER_ROOT doğru mu?)"
+    v_msg = "erişilebilir ✔" if ok_v else f"ERİŞİLEMEDİ (HTTP {http_status(base + '/videos/.htaccess')} / {http_status(base + '/instagram/callback/')}; HOSTINGER_ROOT doğru mu?)"
     print(f"Video adresi: {base}/videos/  → {v_msg}")
     print(f"Instagram geri dönüş: {base}/instagram/callback/  → {'çalışıyor ✔' if ok_cb else 'ERİŞİLEMEDİ'}")
     print(f"TikTok geri dönüş:    {base}/tiktok/callback/")
