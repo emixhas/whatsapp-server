@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
 
-export async function makeWhatsApp({ ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
+export async function makeWhatsApp({ automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
   const st = { status: "disconnected", qr: null, qrSvg: null, phone: null, error: null, pending: null, lastMsgAt: null, retries: 0 };
   let sock = null, stopping = false, baileys = null;
@@ -54,6 +54,8 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
 
   async function onOwnerMessage(jid, text) {
     const t = text.toLocaleLowerCase("tr-TR").trim();
+    if (st.pending && Date.now() - st.pending.at > 6 * 3600 * 1000) { st.pending = null; }  // eski onay isteği düşer
+    if (/^(otomatik|tam otomatik)( mod)?u? (aç|başlat|kapat|durdur)/.test(t)) { const on = /(aç|başlat)/.test(t); const r = await automode(on); await send(jid, r.ok ? (on ? `⚡ Tam otomatik mod açık: her ${r.hours} saatte üretim, otomatik yayın → ${r.connected.join(", ") || "bağlı hesap yok"}.` : "⏹ Otomatik üretim ve yayın durduruldu.") : `Olmadı: ${r.error}`); return; }
     if (st.pending && /^(onay|onayla|evet|yayınla|ok|tamam|paylaş)\b/.test(t)) {
       const p = st.pending; st.pending = null;
       await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${p.platforms.join(", ")}`);
@@ -63,7 +65,8 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
       return;
     }
     if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)\b/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label} yayınlanmadı.`); return; }
-    if (/^(yardım|help|\?)$/.test(t)) { await send(jid, "Komutlar: onay / iptal · 60 saniyelik video üret · durum · rapor · plan · son videoyu gönder · izlenmeleri güncelle · tiktok'a yayınla. Diğer her şey Emixhas'ın beynine gider."); return; }
+    if (/^(yardım|help|\?)$/.test(t)) { await send(jid, "Komutlar:\n• onay / iptal — bekleyen yayın\n• 60 saniyelik video üret\n• durum — sıradaki üretim, bağlı hesaplar\n• otomatik aç / otomatik kapat — tam otomatik mod\n• rapor / plan\n• son videoyu gönder\n• izlenmeleri güncelle\n• instagram'a yayınla / tiktok'a yayınla\nDiğer her şey Emixhas'ın beynine gider."); return; }
+    if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
     if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
     const r = await handleCommand(text);
     let reply = r.reply || "Tamam.";
@@ -94,7 +97,8 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
     const head = `🎬 *Yeni video hazır* — ${v.label} (${v.duration ?? "?"} sn)`;
     const words = v.segments.map((s, i) => s.kind === "haber" ? `${i}. ${s.breaking ? "🔴 SON DAKİKA · " : ""}[${(s.category || "genel").toUpperCase()}] *${s.title}*\n${s.narration}` : `_${s.narration}_`).join("\n\n");
     const linkLines = "";
-    const platforms = L.platforms;
+    const already = v.published || {};
+    const platforms = L.platforms.filter((pl) => !already[pl]);  // zaten yayındaki platform için onay isteme
     const askLine = ask && w.requireApproval !== false
       ? (platforms.length ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*` : "\n\n(Yayın için bağlı platform yok; panelden YouTube/TikTok bağlayın.)")
       : "";
@@ -114,5 +118,6 @@ export async function makeWhatsApp({ ROOT, settings, push, announce, handleComma
   async function stop() { stopping = true; try { sock?.end?.(); } catch { /* yok */ } sock = null; st.status = "disconnected"; stopping = false; return status(); }
   async function logout() { try { await sock?.logout?.(); } catch { /* yok */ } await stop(); rmSync(AUTH_DIR, { recursive: true, force: true }); st.phone = null; return status(); }
   const status = () => ({ status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
-  return { start, stop, logout, status, send: (t) => send(ownerJid(), t), notifyVideo };
+  const clearPending = (video) => { if (st.pending && (!video || st.pending.video === video)) st.pending = null; };
+  return { start, stop, logout, status, send: (t) => send(ownerJid(), t), notifyVideo, clearPending };
 }

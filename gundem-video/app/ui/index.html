@@ -37,6 +37,9 @@
   .ghost{border:1px solid var(--line);background:transparent;color:var(--txt);border-radius:10px;padding:7px 11px;cursor:pointer;font-size:13px}.ghost.danger{color:#ff7b86;border-color:#4a1d24}.ghost.ok{border-color:var(--green);color:var(--green)}
   .sw{position:relative;width:42px;height:22px;background:#1b2440;border-radius:11px;cursor:pointer;flex:none}.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}.sw.on{background:var(--green)}.sw.on::after{left:23px}
   select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px}
+  details.grp{border:1px solid var(--line);border-radius:14px;padding:0 14px;margin:10px 0;background:rgba(5,8,17,.35)}details.grp>summary{cursor:pointer;list-style:none;padding:12px 0;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:10px}details.grp>summary::-webkit-details-marker{display:none}details.grp>summary::after{content:"›";margin-left:auto;color:var(--mut);transition:.2s}details.grp[open]>summary::after{transform:rotate(90deg)}details.grp>summary .sum{font-weight:500;color:var(--mut);font-size:12px;letter-spacing:0}details.grp>*:not(summary){margin-left:2px}details.grp h2{margin-top:14px}
+  #toast{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;flex-direction:column;gap:8px}#toast div{background:#0b1a12;border:1px solid var(--green);color:#dfffe9;padding:10px 14px;border-radius:12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:tin .2s}#toast div.err{background:#2a1010;border-color:#ff5c5c;color:#ffd6d6}@keyframes tin{from{transform:translateY(10px);opacity:0}}
+  .next{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#070b16;font-size:13px}.next b{font-size:22px;font-variant-numeric:tabular-nums;color:var(--c)}
   .log{background:#05070e;border:1px solid var(--line);border-radius:12px;padding:10px;height:230px;overflow:auto;font:12px/1.55 ui-monospace,Menlo,monospace;color:#B8C2E6;white-space:pre-wrap;transition:height .2s}
 .log div{padding:1px 0;border-bottom:1px solid #0b1020}.log .l-ok{color:var(--green)}.log .l-err{color:#ff6b6b}.log .l-brain{color:var(--amber)}.log .l-code{color:var(--violet)}.log .l-pub{color:#ff8ad8}.log .l-tts{color:var(--cyan)}.log .l-step{color:#D7DDEE}.log .l-time{color:#4b577a;margin-right:8px}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
@@ -92,6 +95,7 @@
       <h2>ÜRETİM</h2>
       <label class="row"><span>Süre</span><input type="range" id="dur" min="15" max="120" step="15" value="30"><span class="big"><span id="durTxt">30</span> sn</span></label>
       <button class="primary" id="gen">Şimdi üret</button>
+      <div class="next" id="nextBox">Otomatik üretim kapalı.</div>
       <label class="row" style="margin-top:12px"><span class="sw" id="sched"></span><span>Otomatik üretim, her</span><select id="hours"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>12</option></select><span>saatte bir</span></label>
       <label class="row"><span class="sw" id="apYt"></span><span>Üretince YouTube'a otomatik yükle</span></label>
       <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle</span></label>
@@ -100,7 +104,7 @@
   </section>
 
   <section>
-    <div class="card" id="logCard" style="position:sticky;top:8px;z-index:2;margin-bottom:16px">
+    <div class="card" id="logCard" style="margin-bottom:16px">
       <h2 style="display:flex;align-items:center;gap:10px">CANLI LOG <span class="dot" id="logDot" style="margin-left:2px"></span><span id="logHint" style="color:var(--mut);letter-spacing:0;font-weight:400;text-transform:none">üretim, beyin, yayın, tünel, ses ve kod değişiklikleri burada akar</span>
         <span style="margin-left:auto;display:flex;gap:6px"><button class="ghost" id="logPause" title="otomatik kaydırmayı durdur">⏸</button><button class="ghost" id="logClear">temizle</button><button class="ghost" id="logSize">▤</button></span></h2>
       <div class="log" id="log" style="height:230px"></div>
@@ -117,22 +121,32 @@
     </div>
     <div class="card tab" id="tab-reports"><h2>RAPORLAR & PLANLAR <button class="ghost" id="repBtn" style="float:right">Şimdi rapor üret</button> <button class="ghost" id="planBtn" style="float:right;margin-right:6px">Plan yap</button></h2><div style="display:grid;grid-template-columns:220px 1fr;gap:14px"><div id="repList"></div><div class="md" id="repBody"><span class="empty">Soldan bir rapor seçin</span></div></div><h2 style="margin-top:16px">HAFIZA</h2><div id="memory" class="conninfo"></div><h2 style="margin-top:16px">GELİŞTİRME KUYRUĞU</h2><div id="improv" class="md conninfo">boş</div></div>
     <div class="card tab" id="tab-settings">
-      <h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button></div>
-      <h2 style="margin-top:18px">KALICI KÖPRÜ (HOSTINGER / WEB ALANI)</h2><div class="conninfo" id="hostInfo"></div><div class="acts"><button class="ghost ok" id="hostSetup">Köprüyü kur / sına</button></div>
-      <h2 style="margin-top:18px">INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button></div>
-      <h2 style="margin-top:18px">TIKTOK</h2><div class="conninfo" id="ttInfo"></div><div class="acts"><button class="ghost ok" id="ttConnect">TikTok'u bağla</button></div>
-      <h2 style="margin-top:18px">WHATSAPP</h2>
+      <h2>AYARLAR</h2>
+      <div class="conninfo" id="setupSummary"></div>
+      <details class="grp" open><summary>⚡ Otomasyon <span class="sum" id="autoSum"></span></summary>
+        <div class="conninfo">Tam otomatik mod: her 5 saatte bir üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı, her aşamada WhatsApp bildirimi. Tek düğmeyle açılır; istediğiniz anahtarı sonradan soldaki Üretim kartından değiştirebilirsiniz.</div>
+        <div class="acts"><button class="ghost ok" id="autoOn">⚡ Tam otomatik modu aç</button><button class="ghost" id="autoOff">Durdur (üretim ve yayın kapalı)</button></div>
+        <label class="row"><span class="sw" id="waStages"></span><span>Her aşamayı WhatsApp'a bildir (üretim, ses, render, yükleme, yayın)</span></label>
+      </details>
+      <details class="grp"><summary>📣 Yayın hesapları <span class="sum" id="accSum"></span></summary>
+<h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button></div>
+      <h2>INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button></div>
+      <h2>TIKTOK</h2><div class="conninfo" id="ttInfo"></div><div class="acts"><button class="ghost ok" id="ttConnect">TikTok'u bağla</button></div>
+      <h2>KALICI KÖPRÜ (HOSTINGER / WEB ALANI)</h2><div class="conninfo" id="hostInfo"></div><div class="acts"><button class="ghost ok" id="hostSetup">Köprüyü kur / sına</button></div>
+            </details>
+      <details class="grp"><summary>💬 WhatsApp <span class="sum" id="waSum"></span></summary>
+<h2>WHATSAPP</h2>
       <div class="conninfo" id="waInfo"></div>
       <div id="waQr" class="qr" style="display:none;margin-top:10px"></div>
       <label class="row"><span style="min-width:160px">Sahip numarası</span><input id="waOwner" placeholder="05321308827" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"><button class="ghost ok" id="waOwnerSave">Kaydet</button></label>
-      <div class="acts"><button class="ghost ok" id="waStart">WhatsApp'ı bağla (QR)</button><button class="ghost" id="waTest">Test mesajı</button><button class="ghost" id="waSend">Son videoyu gönder</button><button class="ghost danger" id="waLogout">Çıkış</button></div>
+      <div class="acts"><button class="ghost ok" id="waStart">WhatsApp'ı bağla (QR)</button><button class="ghost" id="waTest">Test mesajı</button><button class="ghost" id="waSend">Son videoyu gönder</button><button class="ghost danger" id="waLogout">Bağlantıyı kes</button><button class="ghost" id="waSwitch">Başka numara bağla (yeni QR)</button></div>
       <label class="row"><span class="sw" id="waNotify"></span><span>Video bitince metni ve linkleri WhatsApp'a gönder</span></label>
       <label class="row"><span class="sw" id="waFile"></span><span>Video dosyasını da gönder (WhatsApp'tan doğrudan izlenir)</span></label>
       <label class="row"><span class="sw" id="waApprove"></span><span>Yayın için WhatsApp'tan "onay" bekle</span></label>
       <label class="row"><span class="sw" id="waAuto"></span><span>Panel açılınca otomatik bağlan</span></label>
-      <h2 style="margin-top:18px">CLOUDFLARE TÜNELİ</h2><div class="conninfo" id="tunInfo"></div>
-      <div class="acts"><button class="ghost ok" id="tunStart">Tüneli başlat</button><button class="ghost" id="tunStop">Durdur</button><label class="row" style="margin:0 0 0 10px"><span class="sw" id="tunAuto"></span><span style="font-size:13px">Panel açılınca otomatik başlat</span></label></div>
-      <h2 style="margin-top:18px">SESLER · DİNLE VE SEÇ</h2>
+            </details>
+      <details class="grp"><summary>🎙 Sesler <span class="sum" id="voiceSum"></span></summary>
+<h2>SESLER · DİNLE VE SEÇ</h2>
       <div class="conninfo">Video üretilmeden önce sesleri dinleyin. ▶ ilk basışta örnek cümleyi üretir (Trendyol/VoxCPM 20-60 sn sürebilir), sonra anında çalar. Kendi klon sesiniz için 5-10 sn temiz bir kaydı <code>voices/klon/ad.wav</code> olarak koyun; listede "Klon · ad" görünür.</div>
       <div id="voiceList" class="conninfo" style="display:grid;gap:6px"></div>
       <div class="acts" style="flex-wrap:wrap;gap:10px">
@@ -141,28 +155,37 @@
         <button class="ghost" id="voiceRefresh">Listeyi yenile</button>
       </div>
       <div class="conninfo" id="nModeInfo"></div>
-      <h2 style="margin-top:18px">TÜRKÇE SES (TRENDYOL + EMA)</h2><div class="conninfo" id="trInfo"></div>
-      <h2 style="margin-top:18px">DOĞAL SES (CHATTERBOX)</h2><div class="conninfo" id="ttsInfo"></div>
+      <h2>TÜRKÇE SES (TRENDYOL + EMA)</h2><div class="conninfo" id="trInfo"></div>
+      <h2>DOĞAL SES (CHATTERBOX)</h2><div class="conninfo" id="ttsInfo"></div>
       <div class="acts"><button class="ghost ok" id="ttsStart">Doğal sesi başlat</button><button class="ghost" id="ttsStop">Durdur</button>
         <label class="row" style="margin:0 0 0 6px"><span class="sw" id="ttsAuto"></span><span style="font-size:13px">Panel açılınca başlat</span></label>
         <label class="row" style="margin:0 0 0 6px"><span>Video anlatımı:</span><select id="narrEngine"><option value="auto">Otomatik (Trendyol → EMA → Chatterbox → Yelda → Piper)</option><option value="trendyol">Trendyol-TTS (en doğal)</option><option value="ema">EMA Lightning (hızlı)</option><option value="chatterbox">Chatterbox</option><option value="say">Mac sesi (Yelda)</option><option value="piper">Piper</option></select></label>
         <label class="row" style="margin:0 0 0 6px"><span>Emixhas sesi:</span><select id="voiceEngine"><option value="auto">Otomatik (EMA → Chatterbox → Yelda)</option><option value="ema">EMA Lightning</option><option value="trendyol">Trendyol-TTS (yavaş)</option><option value="chatterbox">Chatterbox</option><option value="say">Mac sesi</option><option value="piper">Piper</option></select></label>
         <label class="row" style="margin:0 0 0 6px"><span>Duygu</span><input type="range" id="exag" min="0.2" max="0.8" step="0.05" style="width:120px"><span id="exagTxt"></span></label></div>
-      <h2 style="margin-top:18px">DÜŞÜNME DERİNLİĞİ</h2>
+            </details>
+      <details class="grp"><summary>🧠 Emixhas ve kanal</summary>
+<h2>DÜŞÜNME DERİNLİĞİ</h2>
       <div class="conninfo">Senaryo için "medium" yeterli; beyin (rapor, plan, analiz) için "high". Daha yüksek seviye daha yavaş yanıt verir.</div>
       <label class="row"><span style="min-width:160px">Senaryo (video)</span><select id="effScript"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></label>
       <label class="row"><span style="min-width:160px">Emixhas beyni</span><select id="effBrain"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></label>
       <div id="usageKpi" style="display:none"></div>
-      <h2 style="margin-top:18px">KANAL</h2>
+      <h2>KANAL</h2>
       <label class="row"><span style="min-width:130px">Kanal adı</span><input id="sName" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
       <label class="row"><span style="min-width:130px">Hashtag'ler</span><input id="sTags" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
       <label class="row"><span style="min-width:130px">Günlük rapor saati</span><select id="sHour"></select></label>
       <div class="acts"><button class="ghost ok" id="saveSettings">Kaydet</button></div>
-    </div>
+      </details>
+      <details class="grp"><summary>🔧 Gelişmiş</summary>
+<h2>CLOUDFLARE TÜNELİ</h2><div class="conninfo" id="tunInfo"></div>
+      <div class="acts"><button class="ghost ok" id="tunStart">Tüneli başlat</button><button class="ghost" id="tunStop">Durdur</button><label class="row" style="margin:0 0 0 10px"><span class="sw" id="tunAuto"></span><span style="font-size:13px">Panel açılınca otomatik başlat</span></label></div>
+              <h2 style="margin-top:14px">SİSTEM</h2>
+        <div class="conninfo">Panel arka plan servisi olarak çalışıyorsa terminal gerekmez; güncelleme ve yeniden başlatma başlıktaki düğmelerle yapılır. Servis kurulumu bir kez: <code>bash scripts/install_panel_service.sh</code>.</div>
+      </details>
   </section>
 </main>
 </div>
 
+<div id="toast"></div>
 <div class="modal" id="modal"><div class="box">
   <div><video id="player" controls playsinline></video></div>
   <div><h3 id="mTitle" style="margin:0 0 6px"></h3><div id="mMeta" style="color:var(--mut);margin-bottom:8px"></div><div id="mStats" style="margin-bottom:8px"></div><div id="mHead"></div>
@@ -171,7 +194,7 @@
 </div></div>
 
 <script>
-const $=s=>document.querySelector(s);const api=(u,o)=>fetch(u,o).then(r=>r.json());const post=(u,b)=>api(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})});
+const $=s=>document.querySelector(s);const api=(u,o)=>fetch(u,o).then(r=>r.json());const post=(u,b)=>api(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})}).then(r=>{if(u==='/api/settings'&&typeof toast==='function')toast('Kaydedildi ✓');if(u==='/api/schedule'&&typeof toast==='function')toast(r.ok?'Zamanlayıcı güncellendi ✓':'Zamanlayıcı ayarlanamadı',!r.ok);return r;});
 let videos=[],current=null,status={},mode='idle';
 const COLORS={idle:'#36D1C4',listening:'#2ECC71',thinking:'#F2B705',speaking:'#FF4D8D',working:'#E30A17',error:'#ff5c5c'};
 const LABELS={idle:'HAZIR',listening:'DİNLİYORUM',thinking:'DÜŞÜNÜYOR',speaking:'KONUŞUYOR',working:'ÜRETİYOR',error:'HATA'};
@@ -218,6 +241,8 @@ function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on')
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
   $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';$('#cTt').className=s.connections?.tiktok?.connected?'ok':'';
   $('#sched').classList.toggle('on',!!s.schedule?.enabled);if(s.schedule?.hours)$('#hours').value=String(s.schedule.hours);
+  if(s.schedule?.enabled&&s.schedule.nextRunAt){nextRunAt=s.schedule.nextRunAt;nextEp=s.schedule.nextEpisode;tickNext();}else{nextRunAt=null;$('#nextBox').innerHTML=s.running?'<b>Üretim sürüyor…</b>':'Otomatik üretim kapalı. Açmak için yukarıdaki anahtarı ya da Ayarlar → Otomasyon → "Tam otomatik modu aç".';}
+  if(s.schedule?.lastRunAt){$('#nextBox').innerHTML+=`<div style="color:var(--mut);margin-top:4px">Son video: ${new Date(s.schedule.lastRunAt).toLocaleString('tr-TR',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</div>`;}
   $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);$('#apTt').classList.toggle('on',!!s.settings?.autopublish?.tiktok);
   if(s.settings?.assistantName){wakeName=s.settings.assistantName;$('#aName').textContent=wakeName.toUpperCase();document.querySelectorAll('.wakeName').forEach(e=>e.textContent=wakeName);}
   if(s.settings?.wakeWords?.length)wakeRe=new RegExp('(^|\\s)('+s.settings.wakeWords.map(w=>w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')+')(\\s|$|,)','i');renderConn(s);}
@@ -263,10 +288,15 @@ function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtub
   $('#waInfo').innerHTML=w.status==='connected'?`✅ Bağlı: +${w.phone}. Sahip: +${w.owner||'?'}. ${w.pending?'⏳ Onay bekleyen: '+w.pending.video+' → '+w.pending.platforms.join(', '):''}<br>WhatsApp'tan yazabilirsiniz: "onay", "iptal", "60 saniyelik video üret", "durum", "rapor", "son videoyu gönder".`:w.status==='qr'?'📱 Telefonda WhatsApp → Bağlı Cihazlar → Cihaz Bağla → bu QR\'ı okutun.':w.status==='connecting'?'⏳ Bağlanıyor…':`${w.error?'❌ '+w.error+'<br>':''}Bağlı değil. "WhatsApp\'ı bağla" deyip QR okutun. Oturum <code>secrets/wa-auth</code> içinde saklanır, bir kez okutmak yeter.`;
   if(w.qrSvg&&w.status==='qr'){$('#waQr').innerHTML=w.qrSvg;$('#waQr').style.display='block';}else $('#waQr').style.display='none';
   if(document.activeElement!==$('#waOwner'))$('#waOwner').value=ws.owner||'';
+  $('#waStages').classList.toggle('on',ws.notifyStages!==false);
+  const cn=s.connections||{};const accs=['youtube','instagram','tiktok'].filter(k=>cn[k]?.connected);const ap=s.settings?.autopublish||{};const auto=!!s.schedule?.enabled;
+  $('#autoSum').textContent=auto?`açık · her ${s.schedule.hours} saat · yayın: ${Object.keys(ap).filter(k=>ap[k]).join(', ')||'kapalı'} · onay ${ws.requireApproval===false?'kapalı':'açık'}`:'kapalı';
+  $('#accSum').textContent=accs.length?`bağlı: ${accs.join(', ')}`:'hesap bağlı değil';$('#waSum').textContent=w.status==='connected'?'bağlı':'bağlı değil';
+  $('#setupSummary').innerHTML=`${auto?'⚡':'⏸'} Otomatik üretim ${auto?'açık':'kapalı'} · ${accs.length?'📣 '+accs.join(', ')+' bağlı':'📣 yayın hesabı yok'} · ${w.status==='connected'?'💬 WhatsApp bağlı':'💬 WhatsApp kapalı'} · ${cn.instagram?.hostinger?'🌐 köprü hazır':'🌐 köprü yok'}`;
   $('#waNotify').classList.toggle('on',ws.notifyOnVideo!==false);$('#waFile').classList.toggle('on',ws.sendVideoFile!==false);$('#waApprove').classList.toggle('on',ws.requireApproval!==false);$('#waAuto').classList.toggle('on',!!ws.autoStart);
   const tn=s.tunnel||{};$('#tunInfo').innerHTML=tn.running?`✅ Çalışıyor (${tn.mode==='named'?'<b>kalıcı adres</b>':'geçici adres'}): <b>${tn.url||'adres bekleniyor…'}</b>${tn.url?`<br>Instagram geri dönüş: <code>${tn.url}/instagram/callback</code> · TikTok: <code>${tn.url}/tiktok/callback</code>`:''}<br>Instagram videoyu bu adresten çeker (PUBLIC_BASE_URL otomatik yazıldı). Dışarıdan yalnızca video dosyaları ve giriş geri dönüşleri görünür, panel kapalıdır.${tn.mode==='quick'?'<br>⚠ Geçici adres her açılışta değişir. Kalıcı adres için bir kez: <code>bash scripts/setup_tunnel.sh video.ALANADINIZ.com</code> (alan adınız Cloudflare\'de olmalı, ücretsiz).':''}`:`${tn.error?'❌ '+tn.error+'<br>':''}Kapalı. ${tn.named?'Kalıcı adres ayarlı: <code>'+tn.publicBaseUrl+'</code>':tn.publicBaseUrl?'Son adres: <code>'+tn.publicBaseUrl+'</code>':'Gerekli: <code>brew install cloudflared</code>, sonra "Tüneli başlat".'}`;$('#tunAuto').classList.toggle('on',!!s.settings?.tunnelAutoStart);
   const tv=s.tts||{};const cb=s.settings?.chatterbox||{};$('#ttsInfo').innerHTML=tv.ready?`✅ Hazır (${tv.device||'?'}). ${tv.refVoice?'Klon sesi: <code>'+tv.refVoice+'</code>':'Varsayılan ses. Kendi sesinizi klonlamak için 5-10 sn temiz bir kayıt <code>voices/ref.wav</code> olarak koyun.'}`:tv.running?'⏳ Başlatılıyor, model yükleniyor… (ilk seferde ~2 GB iner, loga bakın)':`${tv.error?'❌ '+tv.error+'<br>':''}Kapalı. Kurulum bir kez: <code>bash scripts/install_voice.sh</code> (torch + chatterbox-tts, ~3 GB). Sonra "Doğal sesi başlat". MIT lisanslı, tamamen yerel, Türkçe destekli; ElevenLabs'e en yakın açık model.`;
-  const tr=s.turkishVoice||{};$('#trInfo').innerHTML=(tr.trendyol?'✅ Trendyol-TTS hazır (MLX, Apple Silicon). ':'❌ Trendyol-TTS kurulu değil. ')+(tr.ema?'✅ EMA Lightning hazır.':'❌ EMA Lightning kurulu değil.')+(tr.trendyol&&tr.ema?'<br>Video anlatımı Trendyol ile, Emixhas\'ın konuşması EMA ile yapılır; rakamlar otomatik yazıya çevrilir.':'<br>Kurulum bir kez (~5 GB): <code>bash scripts/install_turkish_voice.sh</code>. Trendyol-TTS: 2026 Türkçe ölçümlerinde en doğal açık model (MIT). EMA Lightning: 34 MB, anında, ElevenLabs düzeyi doğallık ölçümü (Apache-2.0).');
+  const tr=s.turkishVoice||{};$('#voiceSum').textContent=(tr.trendyol?'Trendyol ✓ ':'')+(tr.ema?'EMA ✓ ':'')+(s.tts?.ready?'Chatterbox ✓':'')||'kurulu motor yok';$('#trInfo').innerHTML=(tr.trendyol?'✅ Trendyol-TTS hazır (MLX, Apple Silicon). ':'❌ Trendyol-TTS kurulu değil. ')+(tr.ema?'✅ EMA Lightning hazır.':'❌ EMA Lightning kurulu değil.')+(tr.trendyol&&tr.ema?'<br>Video anlatımı Trendyol ile, Emixhas\'ın konuşması EMA ile yapılır; rakamlar otomatik yazıya çevrilir.':'<br>Kurulum bir kez (~5 GB): <code>bash scripts/install_turkish_voice.sh</code>. Trendyol-TTS: 2026 Türkçe ölçümlerinde en doğal açık model (MIT). EMA Lightning: 34 MB, anında, ElevenLabs düzeyi doğallık ölçümü (Apache-2.0).');
   $('#ttsAuto').classList.toggle('on',!!cb.autoStart);$('#narrEngine').value=s.settings?.narrationEngine||'auto';$('#voiceEngine').value=s.settings?.voice?.engine||'auto';$('#exag').value=cb.exaggeration??0.45;$('#exagTxt').textContent=(cb.exaggeration??0.45).toFixed(2);
   const eff=s.settings?.claudeEffort||{};$('#effScript').value=(typeof eff==='object'?eff.script:eff)||'medium';$('#effBrain').value=(typeof eff==='object'?eff.brain:eff)||'high';
   const ut=s.usage?.today,uT=s.usage?.total;const fmt=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n||0);
@@ -280,7 +310,8 @@ $('#ttConnect').onclick=async()=>{if(!status.connections?.tiktok?.appKeys){addMs
 $('#waStart').onclick=async()=>{await post('/api/whatsapp/start');addMsg('j','WhatsApp bağlantısı başlatıldı; QR birkaç saniye içinde burada görünür.');let n=0;const iv=setInterval(async()=>{await refreshStatus();if(++n>20||status.whatsapp?.status==='connected')clearInterval(iv);},1500);};
 $('#waTest').onclick=async()=>{const r=await post('/api/whatsapp/test');addMsg('j',r.ok?'Test mesajı gönderildi.':'Gönderilemedi: '+r.error);};
 $('#waSend').onclick=async()=>{const r=await post('/api/whatsapp/send-latest');addMsg('j',r.ok?'Son video WhatsApp\'a gönderildi'+(r.awaitingApproval?', onay bekleniyor.':'.'):'Gönderilemedi: '+r.error);};
-$('#waLogout').onclick=async()=>{if(!confirm('WhatsApp oturumu kapatılsın mı? Yeniden QR gerekir.'))return;await post('/api/whatsapp/logout');refreshStatus();};
+$('#waLogout').onclick=async()=>{if(!confirm('WhatsApp bağlantısı kesilsin mi? Oturum silinir; tekrar bağlamak için QR okutulur.'))return;await post('/api/whatsapp/logout');toast('WhatsApp bağlantısı kesildi');refreshStatus();};
+$('#waSwitch').onclick=async()=>{if(!confirm('Mevcut WhatsApp oturumu kapatılıp yeni QR üretilsin mi? Yeni numarayı okutunca sahip numarasını da güncelleyin.'))return;await post('/api/whatsapp/logout');await post('/api/whatsapp/start');toast('Yeni QR hazırlanıyor…');let n=0;const iv=setInterval(async()=>{await refreshStatus();if(++n>20||status.whatsapp?.status==='connected')clearInterval(iv);},1500);};
 $('#waOwnerSave').onclick=async()=>{await post('/api/settings',{whatsapp:{owner:$('#waOwner').value.trim()}});addMsg('j','Sahip numarası kaydedildi.');refreshStatus();};
 for(const [id,key] of [['waNotify','notifyOnVideo'],['waFile','sendVideoFile'],['waApprove','requireApproval'],['waAuto','autoStart']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');await post('/api/settings',{whatsapp:{[key]:on}});refreshStatus();};
 $('#tunStart').onclick=async()=>{const r=await post('/api/tunnel/start');addMsg('j',r.ok?'Tünel başlatılıyor…':'Başlatılamadı: '+r.error);setTimeout(refreshStatus,3000);setTimeout(refreshStatus,8000);};
@@ -295,13 +326,16 @@ async function loadVoices(fresh){const r=await api('/api/voices'+(fresh?'?fresh=
   opts($('#nVoice'),n.voice||'auto');opts($('#nVoiceA'),n.voiceA||'vox-kadin');opts($('#nVoiceB'),n.voiceB||'vox-erkek');
   ($('#nMode'+((n.mode||'single')==='alternate'?'Alt':'Single'))).checked=true;modeInfo();}
 function modeInfo(){const alt=$('#nModeAlt').checked;$('#nModeInfo').textContent=alt?'Dönüşümlü: kanca ve 1., 3., 5. haber ilk sesle; intro ve 2., 4. haber ikinci sesle okunur. Seçtiğiniz ses hazır değilse o segment otomatik sıradaki sesle üretilir.':'Tüm video seçtiğiniz tek sesle okunur.';}
-async function saveNarration(){const alt=$('#nModeAlt').checked;await post('/api/settings',{narration:{mode:alt?'alternate':'single',voice:$('#nVoice').value,voiceA:$('#nVoiceA').value,voiceB:$('#nVoiceB').value}});modeInfo();addMsg('j',alt?`Anlatım: dönüşümlü (${$('#nVoiceA').selectedOptions[0].text} / ${$('#nVoiceB').selectedOptions[0].text})`:`Anlatım sesi: ${$('#nVoice').selectedOptions[0].text}`);}
+async function saveNarration(){const alt=$('#nModeAlt').checked;await post('/api/settings',{narration:{mode:alt?'alternate':'single',voice:$('#nVoice').value,voiceA:$('#nVoiceA').value,voiceB:$('#nVoiceB').value}});toast('Anlatım sesi kaydedildi ✓');modeInfo();addMsg('j',alt?`Anlatım: dönüşümlü (${$('#nVoiceA').selectedOptions[0].text} / ${$('#nVoiceB').selectedOptions[0].text})`:`Anlatım sesi: ${$('#nVoice').selectedOptions[0].text}`);}
 async function playVoice(id,btn){vAudio.pause();const row=voiceRows.find(v=>v.id===id);if(row&&row.preview){vAudio.src=row.preview;vAudio.play();return;}
   btn.disabled=true;btn.textContent='⏳ üretiliyor…';const r=await post('/api/voices/preview',{voice:id});btn.disabled=false;btn.textContent='▶ Dinle';
   if(!r.ok){addMsg('j','Ön dinleme üretilemedi: '+(r.error||''));return;}if(row)row.preview=r.url;vAudio.src=r.url;vAudio.play();}
 for(const id of ['nModeSingle','nModeAlt','nVoice','nVoiceA','nVoiceB'])$('#'+id).onchange=saveNarration;
 $('#voiceRefresh').onclick=()=>loadVoices(true);
 document.addEventListener('DOMContentLoaded',()=>loadVoices(false));setTimeout(()=>loadVoices(false),800);
+$('#autoOn').onclick=async()=>{if(!confirm('Tam otomatik mod: her 5 saatte üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı. Açılsın mı?'))return;const r=await post('/api/automode',{enabled:true});addMsg('j',r.ok?`Tam otomatik mod açık: her ${r.hours} saatte üretim; otomatik yayın: ${r.connected.length?r.connected.join(', '):'bağlı hesap yok, önce hesap bağlayın'}.`:'Açılamadı: '+(r.error||''));speak(r.ok?'Tam otomatik mod açık.':'Açılamadı.');refreshStatus();};
+$('#autoOff').onclick=async()=>{const r=await post('/api/automode',{enabled:false});addMsg('j','Otomatik üretim ve yayın durduruldu.');refreshStatus();};
+$('#waStages').onclick=async()=>{const on=!$('#waStages').classList.contains('on');await post('/api/settings',{whatsapp:{notifyStages:on}});refreshStatus();};
 $('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
 $('#restartBtn').onclick=async()=>{await post('/api/restart');addMsg('j','Panel yeniden başlıyor; sayfa 5 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),5000);};
 $('#ttsStart').onclick=async()=>{await post('/api/tts/start');addMsg('j','Doğal ses motoru başlatılıyor; ilerlemeyi canlı logda görürsünüz.');setTimeout(refreshStatus,2500);};
@@ -312,7 +346,7 @@ $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#effScript').onchange=e=>post('/api/settings',{claudeEffort:{script:e.target.value}}).then(()=>addMsg('j','Senaryo effort: '+e.target.value));
 $('#effBrain').onchange=e=>post('/api/settings',{claudeEffort:{brain:e.target.value}}).then(()=>addMsg('j','Beyin effort: '+e.target.value));
-$('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});addMsg('j','Ayarlar kaydedildi.');refreshStatus();};
+$('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});toast('Kanal ayarları kaydedildi ✓');refreshStatus();};
 
 // ================= analitik
 const bars=(el,obj)=>{const ents=Object.entries(obj||{}).filter(([,v])=>v!=null).sort((a,b)=>b[1]-a[1]);const max=Math.max(1,...ents.map(e=>e[1]));$(el).innerHTML=ents.length?ents.map(([k,v])=>`<div><span>${k}</span><i style="width:${v/max*100}%"></i><span>${v.toLocaleString('tr-TR')}</span></div>`).join(''):'<span class="empty">veri yok</span>';};
@@ -337,6 +371,11 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.query
 let actx=null,audioUnlocked=false;
 function ensureCtx(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume().then(()=>{audioUnlocked=actx.state==='running';diag();});else audioUnlocked=true;}catch{}return actx;}
 document.addEventListener('pointerdown',()=>{ensureCtx();},{passive:true});
+function toast(text,err){const t=$('#toast');const d=document.createElement('div');if(err)d.className='err';d.textContent=text;t.appendChild(d);setTimeout(()=>d.remove(),3500);}
+const _post=post;window.postSaved=async(u,b,msg)=>{const r=await _post(u,b);if(u==='/api/settings')toast(msg||'Kaydedildi ✓');return r;};
+let nextRunAt=null,nextEp=null;
+function tickNext(){const el=$('#nextBox');if(!el)return;if(!nextRunAt){return;}const ms=nextRunAt-Date.now();if(ms<=0){el.innerHTML='<b>Üretim zamanı geldi</b> · zamanlayıcı başlatıyor…';return;}const h=Math.floor(ms/3.6e6),m=Math.floor(ms%3.6e6/6e4),sec=Math.floor(ms%6e4/1e3);const d=new Date(nextRunAt);const day=d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',weekday:'long'});el.innerHTML=`Sıradaki: <b>günün ${nextEp}. videosu</b> · ${day} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}<br>Kalan süre: <b>${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}</b>`;}
+setInterval(tickNext,1000);
 function addMsg(who,text){if(!text)return;const d=document.createElement('div');d.className='msg '+who;d.textContent=text;$('#convo').appendChild(d);$('#convo').scrollTop=1e9;}
 function diag(){$('#dAudio').textContent='ses: '+(audioUnlocked?'açık':'tıklayınca açılır');$('#dRec').textContent='tanıma: '+(SR?(listening?'dinliyor':always?'bekliyor':'hazır'):'desteklenmiyor');}
 

@@ -47,7 +47,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek" }, tunnelAutoStart: false, claudeEffort: { script: "medium", brain: "high" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
-  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true } };
+  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
 const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
@@ -73,7 +73,19 @@ function listVideos() {
 const state = { running: false, startedAt: null, duration: null, log: [], exitCode: null, lastVideo: null, busy: null };
 const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
-const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); };
+const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); };
+// Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
+const STAGE = /^(== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
+let stageQueue = [], stageTimer = null;
+function notifyStage(line) {
+  try {
+    const w = settings().whatsapp || {};
+    if (!w.notifyStages || !STAGE.test(line)) return;
+    stageQueue.push(line.replace(/^== |^-- /, "").trim());
+    clearTimeout(stageTimer);
+    stageTimer = setTimeout(async () => { const batch = stageQueue.splice(0); if (!batch.length) return; try { await wa.send("🛠 " + batch.join("\n")); } catch { /* bağlı değil */ } }, 2500);
+  } catch { /* ayar okunamadı */ }
+}
 const announce = (reply, extra = {}) => { for (const r of clients) r.write(`event: jarvis\ndata: ${JSON.stringify({ reply, ...extra })}\n\n`); };
 
 function startPipeline(duration) {
@@ -92,13 +104,34 @@ function startPipeline(duration) {
 
 // ---------- zamanlayıcı (launchd)
 const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem.video.plist");
-async function getSchedule() { let hours = null; if (existsSync(PLIST)) { const m = readFileSync(PLIST, "utf8").match(/<integer>(\d+)<\/integer>/); hours = m ? Number(m[1]) / 3600 : 5; } return { enabled: existsSync(PLIST), hours, isMac }; }
+const SCHED_FILE = path.join(DATA, "schedule.json");
+const readSched = () => { try { return JSON.parse(readFileSync(SCHED_FILE, "utf8")); } catch { return {}; } };
+async function getSchedule() {
+  let hours = null; if (existsSync(PLIST)) { const m = readFileSync(PLIST, "utf8").match(/<integer>(\d+)<\/integer>/); hours = m ? Number(m[1]) / 3600 : 5; }
+  const enabled = existsSync(PLIST);
+  // Sıradaki üretim: launchd yüklendiği andan itibaren her N saatte bir. Son üretim zamanı out/ dosyalarından.
+  const vids = listVideos();
+  const lastRunAt = vids[0] ? statSync(path.join(OUT, vids[0].name)).mtimeMs : null;
+  let nextRunAt = null, nextEpisode = null;
+  if (enabled && hours) {
+    const sch = readSched();
+    const base = sch.loadedAt || Date.now();
+    const step = hours * 3600 * 1000;
+    nextRunAt = base + Math.max(1, Math.ceil((Date.now() - base) / step)) * step;
+    if (state.running) nextRunAt = base + (Math.ceil((Date.now() - base) / step) + 1) * step;
+    const d = new Date(nextRunAt); const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    nextEpisode = vids.filter((v) => v.name.startsWith(key)).length + 1;
+  }
+  return { enabled, hours, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running };
+}
 async function setSchedule(enabled, hours) {
   if (!isMac) return { ok: false, error: "launchd sadece macOS'ta" };
   if (existsSync(PLIST)) await run("launchctl", ["unload", PLIST]);
   if (!enabled) { if (existsSync(PLIST)) unlinkSync(PLIST); return { ok: true }; }
-  writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace("<integer>18000</integer>", `<integer>${Math.round(hours * 3600)}</integer>`));
+  writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace(/__HOME__/g, process.env.HOME || "").replace("<integer>18000</integer>", `<integer>${Math.round(hours * 3600)}</integer>`));
+  patchSettings({ scheduleHours: hours });
   const r = await run("launchctl", ["load", PLIST]);
+  if (r.ok) writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours }));
   return r.ok ? { ok: true } : { ok: false, error: r.stderr || "launchctl load başarısız" };
 }
 
@@ -208,7 +241,7 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
@@ -220,11 +253,12 @@ async function execAction(a) {
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : "hata " + results[p].error}`); } await py("analyze.py"); return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : "hata " + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
     case "natural_voice": return a.enabled === false ? stopTts() : startTts();
+    case "automode": return setAutoMode(a.enabled !== false);
     case "connect": { const plat = ["instagram", "youtube", "tiktok"].includes(a.platform) ? a.platform : "instagram"; const r = await fetch(`http://127.0.0.1:${PORT}/api/connect/${plat}`, { method: "POST" }); return r.json(); }
     case "whatsapp_send": return wa.notifyVideo(a.video || listVideos()[0]?.name, { ask: true });
     case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
@@ -244,9 +278,18 @@ async function think(text, mode = "chat") {
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [] }; };
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
 const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
-const wa = await makeWhatsApp({ ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }) });
+const statusText = async () => {
+  const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
+  const vids = listVideos(); const ap = settings().autopublish || {};
+  const lines = [state.running ? `🎬 Üretim sürüyor (${Math.round((Date.now() - state.startedAt) / 1000)} sn)` : `Şu an üretim yok. Toplam ${vids.length} video.`];
+  if (sch.enabled && sch.nextRunAt) { const ms = sch.nextRunAt - Date.now(); const d = new Date(sch.nextRunAt); lines.push(`⏭ Sıradaki: günün ${sch.nextEpisode}. videosu · ${d.toLocaleString("tr-TR", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })} · ${Math.max(0, Math.floor(ms / 3.6e6))} sa ${Math.max(0, Math.floor((ms % 3.6e6) / 6e4))} dk kaldı`); } else lines.push("⏸ Otomatik üretim kapalı.");
+  lines.push(`📣 Bağlı: ${accs.join(", ") || "hesap yok"} · otomatik yayın: ${Object.keys(ap).filter((k) => ap[k]).join(", ") || "kapalı"} · onay ${settings().whatsapp?.requireApproval === false ? "kapalı" : "açık"}`);
+  if (vids[0]) lines.push(`🎞 Son video: ${label(vids[0])}${vids[0].views ? " · ▶ " + vids[0].views : ""}`);
+  return lines.join("\n");
+};
+const wa = await makeWhatsApp({ ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
 app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
 app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));
@@ -289,6 +332,24 @@ app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}`
 
 // ---------- API: üretim, zamanlayıcı, ayarlar
 app.post("/api/generate", (req, res) => res.json(startPipeline(req.body?.duration)));
+// Tam otomatik mod: 5 saatte bir üretim + bağlı hesaplara otomatik yayın + onay kapalı + aşama bildirimleri
+async function setAutoMode(on) {
+  const conn = await brain.connections();
+  const connected = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
+  if (on) {
+    const hours = Number(settings().scheduleHours) || 5;
+    const sch = await setSchedule(true, hours);
+    if (!sch.ok) return { ok: false, error: sch.error };
+    patchSettings({ autopublish: { youtube: connected.includes("youtube"), instagram: connected.includes("instagram"), tiktok: connected.includes("tiktok") }, whatsapp: { requireApproval: false, notifyStages: true, notifyOnVideo: true }, scheduleHours: hours });
+    push(`⚡ tam otomatik mod: her ${hours} saatte üretim, otomatik yayın → ${connected.join(", ") || "bağlı hesap yok"}, onay kapalı`);
+    return { ok: true, connected, hours };
+  }
+  await setSchedule(false, 5);
+  patchSettings({ autopublish: { youtube: false, instagram: false, tiktok: false }, whatsapp: { requireApproval: true } });
+  push("⏹ otomatik mod kapatıldı: üretim ve otomatik yayın durdu");
+  return { ok: true, connected };
+}
+app.post("/api/automode", async (req, res) => res.json(await setAutoMode(req.body?.enabled !== false)));
 app.get("/api/schedule", async (_req, res) => res.json(await getSchedule()));
 app.post("/api/schedule", async (req, res) => res.json(await setSchedule(!!req.body.enabled, Number(req.body.hours) || 5)));
 // Ses kataloğu: kurulu sesler ve ön dinleme (scripts/voices.py). Liste 30 sn önbellekli.
@@ -391,7 +452,7 @@ async function handleCommand(text) {
   switch (cmd.action) {
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
     case "play_latest": if (!videos.length) { reply = "Henüz üretilmiş video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = `Son video açılıyor: ${label(videos[0])}.`; } break;
-    case "status": reply = state.running ? `Üretim sürüyor, ${Math.round((Date.now() - state.startedAt) / 1000)} saniyedir çalışıyor.` : `Şu an üretim yok. Toplam ${videos.length} video var.${videos[0] ? " En yenisi: " + label(videos[0]) + "." : ""}`; break;
+    case "status": reply = await statusText(); break;
     case "share": if (!videos.length) { reply = "Paylaşacak video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = "Paylaşım paneli açıldı. Telefonunuzla QR kodu okutun."; } break;
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }

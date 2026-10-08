@@ -32,9 +32,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `sfx/sondakika.wav`. Sonra kısa intro (kanal kimliği, ≤ 5 kelime), sonra haberler. Claude kanca
   vermezse `assemble_script` ilk haberin ilk cümlesinden üretir. `Hook.tsx`.
 - Haber seçimi: `fetch_news` kaynak başına 25 (≈100), `slim_news` önem puanlar (3 sert haber: can
-  kaybı/saldırı/savaş/afet/büyük kaza; 2 önemli karar; 1 diğer), önem → yenilik sırasıyla en iyi
-  `NEWS_MAX`=50 haberi `p` alanıyla Claude'a verir. Prompt p=3 haberleri zorunlu kılar ve kancayı
-  oradan seçtirir. Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
+  kaybı/saldırı/savaş/afet/büyük kaza; 2 önemli karar; 1 diğer), aynı olayı veren kaynakları kümeler
+  (`c` = kaynak sayısı, "en çok konuşulan" ölçüsü), `data/used_news.json` içindeki son 48 saatte videoya
+  girmiş haberleri eler (yeterli yeni haber yoksa `e:1` ile geri ekler), p → c → yenilik sırasıyla en iyi
+  `NEWS_MAX`=50 haberi Claude'a verir. `assemble_script.record_used_news()` kullanılanları yazar.
+  Prompt p=3 haberleri zorunlu kılar ve kancayı oradan seçtirir. Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
   konut") önlemek için fiil/bağlam içeren kalıplar kullan.
 - Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
   (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
@@ -47,6 +49,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   <image>, description img). `assemble_script.attach_images()` başlık benzerliğiyle (Jaccard ≥ 0.08)
   eşler; `fetch_images.py` indirip 1840x1120 kırpar (`public/images/`, git dışı). Kartta görsel varsa
   Ken Burns + alt gradyan + köşede küçük illüstrasyon + "FOTOĞRAF: kaynak" yazısı.
+- Bölüm meta: `dayLabel` ("9 Ekim Cuma"), `slotLabel` ("2. 5 SAAT"), `timeRange` ("09:00–14:00"),
+  `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,
+  illüstrasyon `Sequence from={-40}` ile oturmuş haliyle) ve açıklama (`build_caption`: her haberin başlığı + metni + kaynağı) bunları gösterir.
+- Kategori öğrenme: prompt uygun kategori yoksa `categorySuggestion` yazdırır; `assemble` sayar
+  (`data/category_suggestions.json`), 3 tekrarda geliştirme kuyruğuna görev yazar; `analyze` insights'a koyar.
 - A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm
   numarasına göre dönüşümlü varyant seçer (`titleVariant`, `publishTitle`); `render_thumbs.py`
   `Thumb` still'ini A ve B olarak render eder (`out/<ad>-kapakA/B.jpg`, seçilen `-kapak.jpg`);
@@ -83,7 +90,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Tünel hazır olunca log Instagram/TikTok geri dönüş adreslerini tam haliyle yazar.
 - Canlı log (`push()` → SSE): üretim adımları, beyin (🧠 düşünüyor / ⚡ eylem / ⏸ onay), yayın (📤),
   metrik (📊), tünel (☁), doğal ses (🎤), kod değişiklikleri (✎ fs.watch: src/app/scripts/prompts),
-  git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda yapışkan; satır öneki rengi belirler.
+  git commit (⎇), geliştirme kuyruğu (🛠). UI sağ sütunda sayfayla birlikte kayar; satır öneki rengi belirler.
   Yeni bir işlem eklerken `push()` ile logla, sessiz çalışan şey olmasın.
 - Ses kataloğu `scripts/voices.py` (tek doğru kaynak): trendyol (MLX CLI `.venv-tr/bin/trendyol-tts`, artifact
   `models/Trendyol-TTS-mlx`), vox-kadin / vox-erkek (VoxCPM2 tabanı `models/VoxCPM2`, ses tasarımı
@@ -105,6 +112,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Kurulum `scripts/install_voice.sh` (torch+chatterbox-tts, ~3 GB). Ayarlar `settings.chatterbox`
   {refVoice, exaggeration, cfg, autoStart}. Çıktıya duyulmayan PerTh filigranı eklenir (model özelliği).
   Klon sesi için yalnızca kullanıcının kendi sesi veya izinli bir kayıt kullanılır.
+- Tam otomatik mod `setAutoMode()` (`POST /api/automode`, eylem `automode`, WhatsApp "otomatik aç/kapat"):
+  zamanlayıcı (scheduleHours) + bağlı platformlara autopublish + onay kapalı + notifyStages. Zamanlayıcı
+  `data/schedule.json` {loadedAt, hours} yazar; `getSchedule()` sıradaki üretim zamanını ve günün kaçıncı
+  videosu olacağını hesaplar, UI "Üretim" kartında saniyelik geri sayım gösterir.
+- Aşama bildirimleri: `push()` içindeki `notifyStage()` STAGE kalıbına uyan log satırlarını 2,5 sn'de
+  toplayıp WhatsApp'a gönderir (`settings.whatsapp.notifyStages`). Hostinger yükleme/silme satırları
+  `publish.py` stderr'inden gelir (🌐). Panelde ayar kaydeden her istek sağ altta "Kaydedildi ✓" gösterir.
+- Ayarlar sekmesi `<details class="grp">` gruplarıdır: Otomasyon, Yayın hesapları, WhatsApp, Sesler,
+  Emixhas ve kanal, Gelişmiş. Eleman kimlikleri değişmedi; yeni bir ayar eklerken uygun gruba koy.
 - Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,

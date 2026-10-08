@@ -1,4 +1,4 @@
-import { AbsoluteFill, Img, staticFile } from "remotion";
+import { AbsoluteFill, Img, Sequence, staticFile } from "remotion";
 import { styleFor } from "./categories";
 import { theme } from "./theme";
 
@@ -17,7 +17,7 @@ export const Thumb = ({ text, category, breaking, image, variant = "A", channel 
   return (
     <AbsoluteFill style={{ background: `linear-gradient(160deg, ${theme.bg} 0%, ${theme.bgAccent} 60%, #050811 100%)`, fontFamily: theme.font, color: theme.white, overflow: "hidden" }}>
       {image ? <Img src={staticFile(image)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: 0.6, filter: "saturate(1.15) contrast(1.1)" }} /> : null}
-      {!image ? <div style={{ position: "absolute", top: 420, left: 80, width: 920, height: 560, borderRadius: 40, overflow: "hidden", background: theme.card, opacity: 0.9 }}><st.Illustration /></div> : null}
+      {!image ? <div style={{ position: "absolute", top: 420, left: 80, width: 920, height: 560, borderRadius: 40, overflow: "hidden", background: theme.card, opacity: 0.9 }}>{/* Still tek karedir; illüstrasyonu giriş animasyonu bitmiş haliyle (40. kare) göster */}<Sequence from={-40} layout="none"><st.Illustration /></Sequence></div> : null}
       {/* alt koyu geçiş: başlık her zaman okunur */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(5,8,17,.55) 0%, rgba(5,8,17,.15) 30%, rgba(5,8,17,.35) 50%, rgba(5,8,17,.97) 72%)" }} />
       {/* çapraz vurgu şeridi */}

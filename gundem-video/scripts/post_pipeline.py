@@ -14,6 +14,14 @@ for plat, on in s.get("autopublish", {}).items():
     if not on:
         continue
     r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True)
-    print(f"-- yayın {plat}: {r.stdout.strip() or r.stderr.strip()}")
+    for line in r.stderr.strip().splitlines():
+        if line.startswith(("🌐", "  video", "  geçici", "  !")):
+            print(line)
+    last = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-300:]
+    try:
+        j = json.loads(last)
+        print(f"📤 {plat}: " + ("tamam " + (j.get("url") or j.get("note") or "") if j.get("ok") else "hata " + str(j.get("error"))))
+    except Exception:
+        print(f"-- yayın {plat}: {last}")
 subprocess.run([sys.executable, str(ROOT / "scripts/analyze.py")], capture_output=True)
 print(json.dumps({"autopublish": s.get("autopublish", {})}, ensure_ascii=False))

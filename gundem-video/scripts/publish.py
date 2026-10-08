@@ -175,6 +175,7 @@ class _PublicVideo:
     def ensure(self, name: str) -> str:
         env = load_env()
         if hostinger.configured():  # kalıcı köprü: dosyayı web alanına yükle, Instagram oradan çeksin
+            print(f"🌐 Hostinger: yükleniyor {name}", file=sys.stderr, flush=True)
             url = hostinger.upload(OUT / name, f"videos/{name}")
             self.remote = f"videos/{name}"
             for _ in range(10):
@@ -183,7 +184,7 @@ class _PublicVideo:
                 time.sleep(2)
             else:
                 raise RuntimeError(f"Yüklenen video dış adresten okunamadı: {url} (HOSTINGER_SITE_URL / HOSTINGER_ROOT ayarlarını kontrol edin)")
-            print(f"  video web alanına yüklendi: {url}", file=sys.stderr)
+            print(f"🌐 Hostinger: yüklendi {url}", file=sys.stderr, flush=True)
             return hostinger.site_url()
         base = (env.get("PUBLIC_BASE_URL") or "").rstrip("/")
         if base and url_reachable(f"{base}/videos/{urllib.parse.quote(name)}"):
@@ -236,6 +237,7 @@ class _PublicVideo:
     def close(self):
         if self.remote and (load_env().get("HOSTINGER_KEEP") or "0") != "1":
             hostinger.delete(self.remote)  # yayın bitti, web alanında yer kaplamasın
+            print(f"🌐 Hostinger: silindi {self.remote}", file=sys.stderr, flush=True)
             self.remote = None
         if self.proc:
             self.proc.terminate()
