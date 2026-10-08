@@ -279,7 +279,11 @@ def ig_connect():
         def log_message(self, *a):
             pass
 
-    srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
+    http.server.HTTPServer.allow_reuse_address = True
+    try:
+        srv = http.server.HTTPServer(("127.0.0.1", IG_CALLBACK_PORT), H)
+    except OSError as e:
+        raise RuntimeError(f"Geri dönüş portu {IG_CALLBACK_PORT} açılamadı ({e}); önceki bağlanma denemesi hâlâ sürüyor olabilir, 1 dk bekleyip tekrar deneyin")
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     via = (env.get("IG_LOGIN") or "instagram").lower()  # instagram: Instagram Login (sayfa gerekmez) | facebook: Facebook Login (Facebook Sayfası + bağlı Instagram)
     if via == "facebook":
@@ -292,8 +296,11 @@ def ig_connect():
     else:
         url = "https://www.instagram.com/oauth/authorize?" + urllib.parse.urlencode({
             "client_id": env["IG_APP_ID"], "redirect_uri": redirect, "response_type": "code", "scope": IG_SCOPES, "state": state, "force_reauth": "true"})
-    print(f"Tarayıcıda açılıyor: {url}", file=sys.stderr)
-    webbrowser.open(url)
+    print(f"AUTH_URL {url}", file=sys.stderr, flush=True)
+    try:
+        webbrowser.open(url)
+    except Exception:
+        pass
     for _ in range(600):  # 5 dk
         if "code" in got or "error" in got:
             break
