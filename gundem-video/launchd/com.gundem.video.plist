@@ -11,11 +11,12 @@
   </array>
   <key>WorkingDirectory</key>
   <string>__PROJE_YOLU__</string>
-  <!-- 5 saat = 18000 saniye. Mac uykudaysa uyanınca kaçan çalışmayı bir kez yapar. -->
+  <!-- 5 saat = 18000 saniye. Mac uykudaysa uyanınca kaçan çalışmayı bir kez yapar.
+       RunAtLoad kapalı: yüklenir yüklenmez üretmesin, panelden başlatılan üretimle çakışmasın. -->
   <key>StartInterval</key>
   <integer>18000</integer>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>StandardOutPath</key>
   <string>__PROJE_YOLU__/work/launchd.out.log</string>
   <key>StandardErrorPath</key>

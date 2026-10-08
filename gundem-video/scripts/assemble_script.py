@@ -134,7 +134,16 @@ def attach_images(segs):
 
 
 def episode_of_day(date: str) -> int:
-    return len(list((ROOT / "out").glob(f"{date}-*.mp4"))) + 1
+    """O günün bölüm sayısı: bitmiş videolar + sürmekte olan üretimlerin rezervasyonları."""
+    used = set()
+    for f in (ROOT / "out").glob(f"{date}-*"):
+        m = re.match(rf"{re.escape(date)}-(\d+)(\.mp4|\.reserved)$", f.name)
+        if m:
+            used.add(int(m.group(1)))
+    n = 1
+    while n in used:
+        n += 1
+    return n
 
 
 def main(src: str, dst: str):

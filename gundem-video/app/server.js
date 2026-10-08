@@ -76,6 +76,8 @@ const announce = (reply, extra = {}) => { for (const r of clients) r.write(`even
 
 function startPipeline(duration) {
   if (state.running) return { ok: false, error: "Zaten bir üretim sürüyor." };
+  const lock = path.join(WORK, "pipeline.lock", "pid");
+  if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
   duration = Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
   push(`▶ ${duration} saniyelik üretim başlatıldı`);
