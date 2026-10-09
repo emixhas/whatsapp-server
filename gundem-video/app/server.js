@@ -122,16 +122,16 @@ async function getSchedule() {
     const d = new Date(nextRunAt); const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     nextEpisode = vids.filter((v) => v.name.startsWith(key)).length + 1;
   }
-  return { enabled, hours, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running };
+  return { enabled, hours, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running, awake: !!caffeine };
 }
 async function setSchedule(enabled, hours) {
   if (!isMac) return { ok: false, error: "launchd sadece macOS'ta" };
   if (existsSync(PLIST)) await run("launchctl", ["unload", PLIST]);
-  if (!enabled) { if (existsSync(PLIST)) unlinkSync(PLIST); return { ok: true }; }
+  if (!enabled) { if (existsSync(PLIST)) unlinkSync(PLIST); keepAwake(false); return { ok: true }; }
   writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace(/__HOME__/g, process.env.HOME || "").replace("<integer>18000</integer>", `<integer>${Math.round(hours * 3600)}</integer>`));
   patchSettings({ scheduleHours: hours });
   const r = await run("launchctl", ["load", PLIST]);
-  if (r.ok) writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours }));
+  if (r.ok) { writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours })); keepAwake(true); }
   return r.ok ? { ok: true } : { ok: false, error: r.stderr || "launchctl load başarısız" };
 }
 
@@ -339,6 +339,14 @@ app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}`
 
 // ---------- API: üretim, zamanlayıcı, ayarlar
 app.post("/api/generate", (req, res) => res.json(startPipeline(req.body?.duration)));
+// Uyanık tut: zamanlayıcı açıkken macOS 'caffeinate -i -s' ile sistem uykusu engellenir (ekran kapanabilir).
+let caffeine = null;
+function keepAwake(on) {
+  if (!isMac) return;
+  if (on && !caffeine) { try { caffeine = spawn("caffeinate", ["-i", "-s"], { stdio: "ignore" }); caffeine.on("close", () => { caffeine = null; }); push("☕ uyanık tutma açık: Mac üretim saatlerini kaçırmasın diye uyumaz (ekran kapanabilir)"); } catch { /* yok */ } }
+  if (!on && caffeine) { try { caffeine.kill(); } catch { /* yok */ } caffeine = null; push("☕ uyanık tutma kapandı"); }
+}
+setTimeout(async () => { try { if ((await getSchedule()).enabled) keepAwake(true); } catch { /* yok */ } }, 3000);
 // Tam otomatik mod: 5 saatte bir üretim + bağlı hesaplara otomatik yayın + onay kapalı + aşama bildirimleri
 async function setAutoMode(on) {
   const conn = await brain.connections();

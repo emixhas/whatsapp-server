@@ -242,6 +242,7 @@ function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on')
   $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';$('#cTt').className=s.connections?.tiktok?.connected?'ok':'';
   $('#sched').classList.toggle('on',!!s.schedule?.enabled);if(s.schedule?.hours)$('#hours').value=String(s.schedule.hours);
   if(s.schedule?.enabled&&s.schedule.nextRunAt){nextRunAt=s.schedule.nextRunAt;nextEp=s.schedule.nextEpisode;tickNext();}else{nextRunAt=null;$('#nextBox').innerHTML=s.running?'<b>Üretim sürüyor…</b>':'Otomatik üretim kapalı. Açmak için yukarıdaki anahtarı ya da Ayarlar → Otomasyon → "Tam otomatik modu aç".';}
+  if(s.schedule?.enabled)$('#nextBox').innerHTML+=`<div style="color:var(--mut);margin-top:4px">${s.schedule.awake?'☕ Mac uyanık tutuluyor':'⚠ Uyanık tutma kapalı; Mac uyursa üretim kaçar'}</div>`;
   if(s.schedule?.lastRunAt){$('#nextBox').innerHTML+=`<div style="color:var(--mut);margin-top:4px">Son video: ${new Date(s.schedule.lastRunAt).toLocaleString('tr-TR',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</div>`;}
   $('#apYt').classList.toggle('on',!!s.settings?.autopublish?.youtube);$('#apIg').classList.toggle('on',!!s.settings?.autopublish?.instagram);$('#apTt').classList.toggle('on',!!s.settings?.autopublish?.tiktok);
   if(s.settings?.assistantName){wakeName=s.settings.assistantName;$('#aName').textContent=wakeName.toUpperCase();document.querySelectorAll('.wakeName').forEach(e=>e.textContent=wakeName);}
