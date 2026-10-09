@@ -23,7 +23,7 @@ from pathlib import Path
 
 from datetime import datetime, timedelta, timezone
 
-from common import DATA, OUT, SECRETS, build_caption, episode_meta, load_env, load_json, metrics, now_iso, save_json, save_metrics
+from common import DATA, OUT, SECRETS, build_caption, caption_tags, episode_meta, load_env, load_json, metrics, now_iso, save_json, save_metrics
 import hostinger
 
 HOLD_FILE = DATA / "publish_hold.json"    # {"youtube": {"until": iso, "reason": "..."}}
@@ -74,7 +74,16 @@ def enqueue(video, plat):
 def local_hhmm(dt):
     return dt.astimezone().strftime("%H:%M")
 
-YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
+# "youtube" kapsamı oynatma listesi yönetimi için; eski bağlantılar (yalnız upload+readonly) yeniden bağlanana kadar
+# listesiz yükler. Token dosyadaki kendi kapsamlarıyla okunur (yeni kapsamla yenilemek invalid_scope verir).
+YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly",
+             "https://www.googleapis.com/auth/youtube"]
+YT_MANAGE = {"https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl"}
+PLAYLIST_FILE = DATA / "youtube_playlists.json"  # {liste adı: playlistId}
+# kategori → liste adı (kanal adı önek olarak eklenir); format listeleri: anlık → Son Dakika, düzenli → 5 saatlik özet
+PLAYLIST_BY_CATEGORY = {"finans": "Ekonomi", "siyaset": "Siyaset", "parti": "Siyaset", "asayis": "Asayiş ve Kaza",
+                        "hava": "Hava ve Afet", "egitim": "Eğitim", "saglik": "Sağlık", "dunya": "Dünya",
+                        "spor": "Spor", "teknoloji": "Teknoloji", "toplum": "Toplum"}
 
 
 # ---------------- YouTube
@@ -87,7 +96,7 @@ def yt_service(interactive=False):
         sys.exit("Eksik paket: pip install google-api-python-client google-auth-oauthlib")
     client = SECRETS / "youtube_client.json"
     token = SECRETS / "youtube_token.json"
-    creds = Credentials.from_authorized_user_file(str(token), YT_SCOPES) if token.exists() else None
+    creds = Credentials.from_authorized_user_file(str(token)) if token.exists() else None
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
         token.write_text(creds.to_json())
@@ -106,7 +115,9 @@ def yt_upload(path: Path):
     from googleapiclient.http import MediaFileUpload
     yt = yt_service()
     title, desc = build_caption(path.name, max_len=4900)
-    body = {"snippet": {"title": title, "description": desc, "categoryId": "25", "defaultLanguage": "tr"},
+    from hashtags import youtube_tags
+    body = {"snippet": {"title": title, "description": desc, "categoryId": "25", "defaultLanguage": "tr",
+                        "tags": youtube_tags(caption_tags(path.name))},
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}}
     req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(str(path), chunksize=-1, resumable=True))
     resp = None
@@ -128,7 +139,55 @@ def yt_upload(path: Path):
         except Exception as e:  # kanal doğrulanmamışsa özel kapak reddedilir; yayın yine de tamam
             print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
     meta = episode_meta(path.name) or {}
-    return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title, "titleVariant": meta.get("titleVariant")}
+    lists = yt_add_to_playlists(yt, vid, meta)
+    return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title,
+            "titleVariant": meta.get("titleVariant"), "playlists": lists}
+
+
+def playlist_names(meta: dict) -> list:
+    """Videonun gireceği listeler: format (Son Dakika / Her 5 Saatte Gündem / Günlük Özet) + ilk haberin kategorisi."""
+    from common import settings
+    ch = settings().get("channelName", "Türkiye Gündemi")
+    fmt = meta.get("format")
+    names = [f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
+             else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"
+             else f"{ch} · Her 5 Saatte Gündem"]
+    first = next((x for x in meta.get("segments", []) if x.get("kind") in ("haber", "hook") and x.get("category")), {})
+    cat = PLAYLIST_BY_CATEGORY.get(first.get("category"))
+    if cat:
+        names.append(f"{ch} · {cat}")
+    return names
+
+
+def yt_add_to_playlists(yt, vid: str, meta: dict) -> list:
+    """Yükleneni listelere ekler (yoksa herkese açık liste oluşturur). Hata yayını bozmaz."""
+    creds = getattr(yt._http, "credentials", None)
+    if creds is not None and not (set(creds.scopes or []) & YT_MANAGE):
+        print("  ! oynatma listesi: YouTube bağlantısında liste izni yok; Ayarlar → Yayın hesapları → YouTube'u yeniden bağlayın", file=sys.stderr)
+        return []
+    ids = load_json(PLAYLIST_FILE, {}) or {}
+    added = []
+    for name in playlist_names(meta):
+        try:
+            pid = ids.get(name)
+            if not pid:  # önce kanalda aynı adla var mı bak, yoksa oluştur
+                page = yt.playlists().list(part="snippet", mine=True, maxResults=50).execute()
+                pid = next((x["id"] for x in page.get("items", []) if x["snippet"]["title"] == name), None)
+                if not pid:
+                    pid = yt.playlists().insert(part="snippet,status", body={
+                        "snippet": {"title": name, "description": f"{name} — otomatik güncellenen haber listesi.", "defaultLanguage": "tr"},
+                        "status": {"privacyStatus": "public"}}).execute()["id"]
+                ids[name] = pid
+                save_json(PLAYLIST_FILE, ids)
+            yt.playlistItems().insert(part="snippet", body={"snippet": {"playlistId": pid, "resourceId": {"kind": "youtube#video", "videoId": vid}}}).execute()
+            added.append(name)
+            print(f"  ▶ oynatma listesi: {name}", file=sys.stderr)
+        except Exception as e:
+            if "playlistNotFound" in str(e):
+                ids.pop(name, None)
+                save_json(PLAYLIST_FILE, ids)
+            print(f"  ! oynatma listesi eklenemedi ({name}): {str(e)[:160]}", file=sys.stderr)
+    return added
 
 
 # ---------------- Instagram (Instagram API with Instagram Login; eski Facebook Graph token'ı da desteklenir)
@@ -539,6 +598,11 @@ def tt_upload(path: Path):
     total = -(-size // chunk)
     source = {"source": "FILE_UPLOAD", "video_size": size, "chunk_size": chunk, "total_chunk_count": total}
     title, _ = build_caption(path.name, max_len=150)
+    title = title.replace(" #Shorts", "")
+    for t in caption_tags(path.name):  # TikTok'ta hashtag başlığın içinde olur
+        if len(title) + len(t) + 1 > 150:
+            break
+        title += " " + t
     if mode == "direct":
         info = tt_http("POST", f"{TT_API}/post/publish/creator_info/query/", {}, H).get("data", {})
         opts = info.get("privacy_level_options") or ["SELF_ONLY"]
@@ -601,6 +665,7 @@ def status():
     return {
         "youtube": {"connected": yt_ok, "clientFile": (SECRETS / "youtube_client.json").exists(),
                     "holdUntil": (hold_until("youtube") or None) and hold_until("youtube").isoformat(),
+                    "playlists": bool(set(load_json(SECRETS / "youtube_token.json", {}).get("scopes") or []) & YT_MANAGE),
                     "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
         "instagram": ig_status(env),
         "tiktok": {"connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),

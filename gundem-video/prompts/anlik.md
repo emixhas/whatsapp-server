@@ -48,11 +48,17 @@ BAŞLIK VARYANTLARI ("titles")
 - "A": haberci başlık (olayın kendisi), "B": merak uyandıran ama dürüst başlık. İkisi de en fazla 7 kelime.
 - "cover": kapakta büyük yazılacak 2-4 kelime.
 
+HASHTAG ("hashtags", en üst düzeyde)
+- Videonun konusuna özel 3-5 hashtag: Türkçe, boşluksuz, küçük harf, Türkçe karakterli (ör. "#asgariücret",
+  "#emeklizammı", "#istanbuldeprem", "#akaryakıt"). İnsanların gerçekten arayacağı kelimeler; genel etiket
+  (#haber, #gündem, #türkiye) YAZMA, onları sistem ekler. Kısaltma yok.
+
 ÇIKTI
 Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, ek metin yazma.
 
 {
   "titles": {"A": "...", "B": "...", "cover": "..."},
+  "hashtags": ["#...", "#...", "#..."],
   "importance": 3,
   "importanceReason": "...",
   "segments": [

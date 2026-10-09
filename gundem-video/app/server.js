@@ -400,7 +400,7 @@ async function execAction(a) {
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
@@ -530,7 +530,7 @@ async function selfTest({ quiet = false } = {}) {
   add(nCount >= 20 ? true : nCount > 0 ? "warn" : false, "Haber kaynakları", nCount ? `${nCount} haber çekildi` : (nf.stderr || "haber çekilemedi").slice(-160));
   // 4) hesaplar ve köprü
   const conn = await brain.connections();
-  add(conn.youtube?.connected ? true : "warn", "YouTube", conn.youtube?.connected ? "bağlı" : "bağlı değil (Ayarlar → Yayın hesapları)");
+  add(conn.youtube?.connected ? (conn.youtube.playlists === false ? "warn" : true) : "warn", "YouTube", conn.youtube?.connected ? (conn.youtube.playlists === false ? "bağlı; oynatma listeleri için YouTube'u bir kez yeniden bağlayın (Ayarlar → Yayın hesapları)" : "bağlı") : "bağlı değil (Ayarlar → Yayın hesapları)");
   add(conn.instagram?.connected ? true : "warn", "Instagram", conn.instagram?.connected ? `bağlı${conn.instagram.username ? " @" + conn.instagram.username : ""}` : "bağlı değil");
   add(conn.tiktok?.connected ? true : "warn", "TikTok", conn.tiktok?.connected ? `bağlı (${conn.tiktok.mode})` : "bağlı değil");
   const hc = await runPy(["scripts/hostinger.py", "--check"], 30000); let hj = {}; try { hj = JSON.parse(hc.stdout.trim().split("\n").pop()); } catch { /* yok */ }

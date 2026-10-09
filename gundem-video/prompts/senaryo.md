@@ -61,11 +61,17 @@ BAŞLIK VARYANTLARI (A/B testi için, en üst düzeyde "titles" alanı)
   (ör. "Faiz kararı ne anlama geliyor?"). İkisi de en fazla 7 kelime, kısaltma yok.
 - "cover": kapak görselinde büyük yazılacak 2-4 kelimelik vuruş (ör. "FAİZ SABİT").
 
+HASHTAG ("hashtags", en üst düzeyde)
+- Videonun konusuna özel 3-5 hashtag: Türkçe, boşluksuz, küçük harf, Türkçe karakterli (ör. "#asgariücret",
+  "#emeklizammı", "#istanbuldeprem", "#akaryakıt"). İnsanların gerçekten arayacağı kelimeler; genel etiket
+  (#haber, #gündem, #türkiye) YAZMA, onları sistem ekler. Kısaltma yok.
+
 ÇIKTI
 Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, ek metin yazma.
 
 {
   "titles": {"A": "...", "B": "...", "cover": "..."},
+  "hashtags": ["#...", "#...", "#..."],
   "segments": [
     {"kind": "hook", "title": "3 ÖLÜ", "narration": "İzmir'de zincirleme kaza: 3 kişi hayatını kaybetti.", "source": "...", "category": "..."},
     {"kind": "intro", "narration": "__FORMAT_INTRO__"},

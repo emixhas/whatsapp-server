@@ -154,5 +154,17 @@ def build_caption(video_name: str, max_len: int = 2000):
         lines.append("")
     if meta.get("sourceUrl"):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
-    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", "", ("#sondakika " if anlik and "#sondakika" not in s["hashtags"] else "") + s["hashtags"]]
-    return title[:100], "\n".join(lines)[:max_len]
+    from hashtags import for_meta
+    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
+    tail = "\n" + " ".join(tags)
+    return title[:100], "\n".join(lines)[:max(0, max_len - len(tail))] + tail
+
+
+def caption_tags(video_name: str) -> list:
+    """build_caption'ın kullandığı hashtag listesi (YouTube tags, TikTok başlığı için)."""
+    from hashtags import for_meta
+    meta = episode_meta(video_name) or {}
+    s = settings()
+    anlik = meta.get("anlik") or meta.get("format") == "anlik"
+    return for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])

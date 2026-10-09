@@ -204,6 +204,17 @@ def episode_of_day(date: str) -> int:
     return n
 
 
+def topic_hashtags(data: dict) -> list:
+    """Modelin yazdığı konuya özel hashtag'ler (scripts/hashtags.py temizler; genel etiketler sonra eklenir)."""
+    from hashtags import clean
+    out = []
+    for t in data.get("hashtags") or []:
+        c = clean(expand_abbr(str(t).lstrip("#")))
+        if c and c not in out and c not in ("#haber", "#gündem", "#türkiye", "#sondakika", "#shorts"):
+            out.append(c)
+    return out[:5]
+
+
 def news_value(data: dict, segs: list) -> dict:
     """Anlık videonun YouTube değeri (scripts/news_value.py): anahtar kelime + modelin verdiği önem."""
     from news_value import score
@@ -350,6 +361,7 @@ def main(src: str, dst: str):
         "timeRange": now.strftime("%H:%M") if ANLIK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
         "value": news_value(data, segs) if ANLIK else None,
+        "hashtags": topic_hashtags(data),
         "sourceName": src_name or None,
         "sourceUrl": src_url or None,
         "scheduleHours": hours,

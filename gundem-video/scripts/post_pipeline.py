@@ -108,7 +108,7 @@ if not plats:
 def publish(plat: str) -> bool:
     r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True)
     for line in r.stderr.strip().splitlines():
-        if line.startswith(("🌐", "  video", "  geçici", "  !")):
+        if line.startswith(("🌐", "  video", "  geçici", "  !", "  ▶")):
             print(line, flush=True)
     last = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else r.stderr.strip()[-300:]
     try:
