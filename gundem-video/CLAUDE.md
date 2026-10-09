@@ -89,10 +89,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Kendini geliştirme: Emixhas kodu kendisi DEĞİŞTİRMEZ. `improvement` eylemi görevi
   `data/improvements.md` kuyruğuna yazar; kullanıcı Claude Code ile uygular. Bu bilinçli bir sınır:
   panelden tetiklenen izinsiz kod düzenleme ajanı kurulmaz. Ayarla çözülebilen şey `settings` ile.
-- Uyandırma: `settings.assistantName` ("Emixhas") ve `settings.wakeWords` (tanıma varyantları).
-  UI "Sürekli dinle" açıkken yalnızca uyandırma sözcüğü geçen cümleyi işler; sözcük tek başına
-  söylenirse 8 sn dinleme penceresi açar ("Buyur."). Konuşurken mikrofon kapatılır (kendini duymaz).
-  "dur/sus/yeter" konuşmayı keser.
+- Dinleme yalnızca tek tıktır: küreye tıklayınca 10 sn bir komut dinlenir, sonra mikrofon akışı tamamen
+  kapatılır. "Sürekli dinle" kullanıcı isteğiyle KALDIRILDI (boşuna yük); geri ekleme. `settings.wakeWords`
+  yalnızca söylenen cümleden "Emixhas" kelimesini ayıklamak için kalır. "dur/sus/yeter" konuşmayı keser.
 - Ses: `settings.voice` {engine auto|ema|trendyol|chatterbox|say|piper, name Yelda, rate kelime/dk, piperLength, piperNoise}.
   auto: EMA Lightning kuruluysa o, yoksa Chatterbox/Yelda/Piper. "sesini hızlandır/yavaşlat" kuralı
   rate'i ±25 değiştirir; beyin de `settings` eylemiyle değiştirebilir. Video anlatımı
@@ -120,11 +119,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Seslendirme öncesi `prep_text`: rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler
   normal yazıma. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
   (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
-- Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT, Türkçe, klonlama) modelini bir kez
-  yükler, :3139'da HTTP sunar. `scripts/natural_tts.py` istemci; `tts.py`/`speak.py` motor
-  "chatterbox" seçiliyse buraya gider, sunucu hazır değilse Yelda/Piper'a düşer (loga yazar).
-  Kurulum `scripts/install_voice.sh` (torch+chatterbox-tts, ~3 GB). Ayarlar `settings.chatterbox`
-  {refVoice, exaggeration, cfg, autoStart}. Çıktıya duyulmayan PerTh filigranı eklenir (model özelliği).
+- Modeller sürekli açık TUTULMAZ (kullanıcı isteği): her ses modeli yalnızca üretimde ya da ön dinlemede
+  yüklenir, iş bitince süreç kapanır. Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT,
+  Türkçe, klonlama) modelini :3139'da sunar ama panel onu başlatmaz; `natural_tts.on_demand()` sunucuyu
+  yalnızca o iş için açar, hazır olmasını bekler (en çok 15 dk), iş bitince kapatır. Panel açılışında
+  önceki oturumdan kalan sunucu (üretim kullanmıyorsa) kapatılır. `speak.py` (Emixhas'ın kısa yanıtları)
+  Chatterbox'ı yalnızca zaten açıksa kullanır, ağır model açmaz. Kurulum `scripts/install_voice.sh`
+  (torch+chatterbox-tts, ~3 GB). Ayarlar `settings.chatterbox` {refVoice, exaggeration, cfg}. Çıktıya duyulmayan PerTh filigranı eklenir (model özelliği).
   Klon sesi için yalnızca kullanıcının kendi sesi veya izinli bir kayıt kullanılır.
 - Tam otomatik mod `setAutoMode()` (`POST /api/automode`, eylem `automode`, WhatsApp "otomatik aç/kapat"):
   zamanlayıcı (scheduleHours) + bağlı platformlara autopublish + onay kapalı + notifyStages. Zamanlayıcı
@@ -138,7 +139,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,
-  dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı).
+  dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı). Boştayken saniyede ~12 kare,
+  sekme gizliyken çizilmez (CPU tasarrufu).
 - Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
 - Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg).

@@ -25,7 +25,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, settings  # noqa: E402
-from natural_tts import chatterbox_ready, chatterbox_tts  # noqa: E402
+from natural_tts import chatterbox_installed, chatterbox_ready, chatterbox_tts, on_demand  # noqa: E402
 from tr_numbers import normalize_tr  # noqa: E402
 
 _S = settings()
@@ -129,7 +129,8 @@ def available(v: dict):
     if e == "ema":
         return (True, "") if python_with("ema_lightning") else (False, "pip install ema-lightning")
     if e == "chatterbox":
-        return (True, "") if chatterbox_ready() else (False, "sunucu kapalı")
+        # Sunucu sürekli açık tutulmaz; kuruluysa üretim/ön dinleme sırasında açılıp kapanır
+        return (True, "") if chatterbox_ready() else (True, "gerektiğinde açılır, iş bitince kapanır") if chatterbox_installed() else (False, "kurulu değil (bash scripts/install_voice.sh)")
     if e == "say":
         return (True, "") if say_has_voice(v.get("name", "Yelda")) else (False, "macOS Türkçe sesi inmemiş")
     if e == "piper":
@@ -252,8 +253,11 @@ def synthesize(jobs: list, speed: float | None = None) -> None:
                 for j, t in zip(js, tmps):
                     resample(t, Path(j["out"]))
             elif e == "chatterbox":
-                for j in js:
-                    _run_chatterbox(prep_text(j["text"]), Path(j["out"]))
+                with on_demand() as ok:
+                    if not ok:
+                        raise RuntimeError("Chatterbox sunucusu açılamadı")
+                    for j in js:
+                        _run_chatterbox(prep_text(j["text"]), Path(j["out"]))
             elif e == "say":
                 for j in js:
                     _run_say(v.get("name", "Yelda"), j["text"], Path(j["out"]))

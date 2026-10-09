@@ -14,18 +14,25 @@ import voices  # noqa: E402
 from common import settings  # noqa: E402
 
 V = {**{"engine": "auto", "name": "Yelda", "rate": 195}, **settings().get("voice", {})}
+# Emixhas'ın kısa yanıtları için ağır model açılmaz: Chatterbox yalnızca zaten açıksa kullanılır
 QUICK = ["ema", "chatterbox", "yelda", "piper"]
+
+
+def usable(v) -> bool:
+    if v["engine"] == "chatterbox":
+        return voices.chatterbox_ready()
+    return voices.available(v)[0]
 
 
 def pick():
     eng = {"say": "yelda"}.get(V["engine"], V["engine"])
     if eng != "auto":
         v = voices.voice(eng)
-        if v and voices.available(v)[0]:
+        if v and usable(v):
             return v
     for cand in QUICK:
         v = voices.voice(cand)
-        if v and voices.available(v)[0]:
+        if v and usable(v):
             return v
     return None
 
@@ -45,7 +52,7 @@ def main():
         except RuntimeError as e:
             print(f"[speak] {e}", file=sys.stderr)
             voices._disabled.add(v["id"])
-            alt = next((voices.voice(c) for c in QUICK if voices.voice(c) and voices.available(voices.voice(c))[0]), None)
+            alt = next((voices.voice(c) for c in QUICK if voices.voice(c) and usable(voices.voice(c))), None)
             if not alt:
                 sys.exit(2)
             voices.synthesize([{"voice": alt, "text": text, "out": wav}], speed=speed)

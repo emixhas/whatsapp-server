@@ -45,7 +45,7 @@ const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek" }, tunnelAutoStart: false, claudeModel: "opus", claudeEffort: { script: "medium", brain: "high" },
-  chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5, autoStart: false },
+  chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
@@ -227,23 +227,9 @@ function sampleResources() {
 sampleResources();
 setInterval(() => { sampleResources(); const busy = state.running || state.improving || (tts.proc && !tts.ready); if (busy) push(`⚙ CPU %${res.cpu} · RAM ${res.memUsedGb}/${res.memTotalGb} GB · yük ${res.load}${state.running ? " · üretim" : ""}${tts.proc && !tts.ready ? " · ses modeli yükleniyor" : ""}`); }, 10000);
 
-// ---------- Doğal ses sunucusu (Chatterbox) yönetimi
+// ---------- Doğal ses sunucusu (Chatterbox): sürekli açık tutulmaz; burada yalnızca durum ve kapatma var
 const tts = { proc: null, ready: false, device: null, error: null, startedAt: null };
 async function ttsHealth() { try { const r = await fetch(`http://127.0.0.1:${settings().chatterbox.port}/health`, { signal: AbortSignal.timeout(1500) }); const j = await r.json(); tts.ready = !!j.ready; tts.device = j.device; if (j.error) tts.error = j.error; return j; } catch { tts.ready = false; return null; } }
-async function startTts() {
-  if (tts.proc) return { ok: true, running: true };
-  // Panel yeniden başladıysa eski sunucu hâlâ çalışıyor olabilir: sağlık cevabı veriyorsa onu sahiplen
-  const alive = await ttsHealth();
-  if (alive) { tts.adopted = true; tts.error = null; push(`🎤 doğal ses sunucusu zaten çalışıyor (${alive.ready ? "hazır" : "yükleniyor"}, ${alive.device || "?"}); bağlanıldı`); return { ok: true, running: true, adopted: true }; }
-  const child = spawn(PY, ["scripts/tts_server.py"], { cwd: ROOT, env: { ...ENV, TTS_PORT: String(settings().chatterbox.port) } });
-  tts.proc = child; tts.error = null; tts.startedAt = Date.now();
-  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push("🎤 " + l.slice(0, 200)); if (l.includes("hazır (")) { tts.ready = true; announce("Doğal ses hazır."); } if (l.includes("HATA")) tts.error = l; });
-  child.stdout.on("data", onData); child.stderr.on("data", (b) => { const t = b.toString(); if (/error|Error|HATA/.test(t)) push("🎤 ! " + t.trim().slice(0, 200)); });
-  child.on("error", (e) => { tts.error = e.message; tts.proc = null; push(`✖ doğal ses: ${e.message}`); });
-  child.on("close", (code) => { tts.proc = null; tts.ready = false; push(`🎤 doğal ses sunucusu kapandı (kod ${code})`); if (code !== 0 && !tts.error) tts.error = "Sunucu kapandı. Kurulum: bash scripts/install_voice.sh"; });
-  push("🎤 doğal ses sunucusu başlatılıyor (ilk seferde model iner, birkaç dakika sürebilir)");
-  return { ok: true, running: true };
-}
 function stopTts() {
   if (tts.proc) tts.proc.kill();
   else if (tts.adopted) { try { const pids = String(spawnSync("lsof", ["-ti", `:${settings().chatterbox.port}`]).stdout || "").split(/\s+/).filter(Boolean); for (const pid of pids) { try { process.kill(Number(pid)); } catch { /* yok */ } } } catch { /* lsof yok */ } }
@@ -262,9 +248,11 @@ const turkishVoiceStatus = () => {
 };
 const ttsStatus = () => ({ running: !!tts.proc || !!tts.adopted, ready: tts.ready, device: tts.device, error: tts.error, refVoice: existsSync(path.join(ROOT, settings().chatterbox.refVoice || "")) ? settings().chatterbox.refVoice : null });
 app.get("/api/tts", async (_req, res) => { await ttsHealth(); res.json(ttsStatus()); });
-app.post("/api/tts/start", async (_req, res) => res.json(await startTts()));
+app.post("/api/tts/start", (_req, res) => res.json({ ok: false, error: "Doğal ses (Chatterbox) artık sürekli açık tutulmuyor; yalnızca bu ses seçiliyse üretimde ya da ön dinlemede açılıyor ve iş bitince kapanıyor." }));
 app.post("/api/tts/stop", (_req, res) => res.json(stopTts()));
-if (settings().chatterbox.autoStart) setTimeout(() => startTts(), 2000);
+// Model sürekli açık tutulmaz (bilgisayara yük). Panel açılınca önceki oturumdan kalan Chatterbox sunucusu
+// varsa ve şu an üretim onu kullanmıyorsa kapatılır; gerektiğinde voices.py iş için açıp kapatır.
+setTimeout(async () => { if (pipelineBusy()) return; const alive = await ttsHealth(); if (alive) { tts.adopted = true; stopTts(); push("🎤 açık kalmış doğal ses sunucusu kapatıldı (model artık yalnızca gerektiğinde yükleniyor)"); } }, 3000);
 setInterval(() => { if (tts.proc) ttsHealth(); }, 15000);
 
 // ---------- Dosya izleyici: kod/prompt/veri değişiklikleri ve git commit'leri canlı loga düşer
@@ -309,7 +297,7 @@ async function execAction(a) {
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
-    case "natural_voice": return a.enabled === false ? stopTts() : startTts();
+    case "natural_voice": if (a.enabled === false) stopTts(); return { ok: true, note: "Doğal ses (Chatterbox) artık sürekli açık tutulmuyor; yalnızca bu ses seçiliyse üretimde ya da ön dinlemede açılıyor ve iş bitince kapanıyor." };
     case "automode": return setAutoMode(a.enabled !== false);
     case "selftest": return selfTest();
     case "connect": { const plat = ["instagram", "youtube", "tiktok"].includes(a.platform) ? a.platform : "instagram"; const r = await fetch(`http://127.0.0.1:${PORT}/api/connect/${plat}`, { method: "POST" }); return r.json(); }
@@ -586,7 +574,7 @@ async function handleCommand(text) {
     case "tunnel_off": stopTunnel(); reply = "Tünel kapatıldı."; break;
     case "whatsapp_on": { const r = await wa.start(); reply = r.status === "connected" ? `WhatsApp zaten bağlı: +${r.phone}.` : "WhatsApp bağlantısı başlatıldı; QR kodu Ayarlar sekmesinde okutun."; break; }
     case "whatsapp_send": { const v = listVideos()[0]; if (!v) { reply = "Gönderilecek video yok."; break; } const r = await wa.notifyVideo(v.name, { ask: true }); reply = r.ok ? "WhatsApp'a gönderildi." : `Gönderilemedi: ${r.error}`; break; }
-    case "voice_natural_on": startTts(); reply = tts.ready ? "Doğal ses zaten hazır." : "Doğal ses motoru başlatılıyor, hazır olunca söylerim."; break;
+    case "voice_natural_on": reply = "Doğal ses (Chatterbox) artık sürekli açık tutulmuyor; yalnızca bu ses seçiliyse üretimde ya da ön dinlemede açılıyor ve iş bitince kapanıyor."; break;
     case "voice_natural_off": stopTts(); patchSettings({ voice: { engine: "auto" } }); reply = "Doğal ses kapatıldı, sistem sesine döndüm."; break;
     case "open_youtube": { const r = await openYouTube(cmd.query); reply = r.ok ? (r.title ? `Açıyorum: ${r.title}.` : `YouTube'da "${cmd.query}" araması açıldı.`) : `Açamadım: ${r.error}`; payload = { url: r.url }; break; }
     case "open_url": { const r = await execAction({ type: "open_url", target: cmd.target }); reply = r.ok ? "Açıyorum." : "Açamadım."; payload = { url: r.url }; break; }
