@@ -97,6 +97,13 @@ def main():
             out["errors"].append(f"{plat}: {e}")
     m["lastSync"] = now_iso()
     save_metrics(m)
+    try:  # abone/takipçi anlık sayıları (data/followers.json)
+        from followers import sync as followers_sync
+        f = followers_sync()
+        out["followers"] = {p: v["current"] for p, v in f["platforms"].items()}
+        out["errors"] += [f"{p} abone: {e}" for p, e in f.get("errors", {}).items()]
+    except Exception as e:
+        out["errors"].append(f"abone: {e}")
     print(json.dumps(out, ensure_ascii=False))
 
 

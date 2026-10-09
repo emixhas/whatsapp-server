@@ -501,7 +501,8 @@ def ig_connect():
 # ---------------- TikTok (Content Posting API + Login Kit)
 TT_AUTH = "https://www.tiktok.com/v2/auth/authorize/"
 TT_API = "https://open.tiktokapis.com/v2"
-TT_SCOPES = "user.info.basic,video.list,video.upload,video.publish"
+# user.info.stats: takipçi sayısı (scripts/followers.py); TikTok geliştirici portalında uygulamaya eklenmiş olmalı
+TT_SCOPES = "user.info.basic,user.info.stats,video.list,video.upload,video.publish"
 TT_TOKEN_FILE = SECRETS / "tiktok_token.json"
 
 

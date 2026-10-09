@@ -18,6 +18,21 @@
   @media(max-width:980px){main{grid-template-columns:1fr}}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;backdrop-filter:blur(10px)}
   .card h2{margin:0 0 10px;font-size:11px;letter-spacing:3px;color:var(--mut);font-weight:700}
+  .fol{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+  .fol .ft{text-align:left;background:#070b16;border:1px solid var(--line);border-radius:14px;padding:12px 14px;border-top:3px solid var(--pc,var(--line))}
+  .fol .ft h3{margin:0;font-size:12px;letter-spacing:2px;color:var(--mut);font-weight:700;display:flex;gap:6px;align-items:center}
+  .fol .ft h3 i{width:8px;height:8px;border-radius:50%;background:var(--pc)}
+  .fol .big{font-size:30px;font-weight:800;margin:4px 0 6px;color:var(--txt)}
+  .fol .gl{display:flex;gap:12px;font-size:13px;color:var(--mut)}.fol .gl b{color:var(--txt);font-weight:700}
+  .fol .note{font-size:11px;color:var(--mut);margin-top:6px}
+  .gch{display:flex;align-items:stretch;gap:2px;height:120px;padding:0 2px;position:relative;border-bottom:1px solid var(--line)}
+  .gch .c{flex:1;display:flex;flex-direction:column;justify-content:flex-end;position:relative;cursor:default}
+  .gch .c:hover{background:rgba(255,255,255,.04)}
+  .gch .c i{display:block;background:var(--cyan);border-radius:4px 4px 0 0;min-height:0}
+  .gch .c i.neg{background:var(--mut);border-radius:0 0 4px 4px}
+  .gch .c em{position:absolute;left:50%;transform:translateX(-50%);font-style:normal;font-size:11px;color:var(--txt);white-space:nowrap}
+  .gax{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);margin-top:4px}
+  .gtip{position:fixed;pointer-events:none;background:#0b1020;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;color:var(--txt);z-index:50;display:none}
   /* JARVIS küre */
   .orbwrap{display:flex;flex-direction:column;align-items:center;gap:8px;padding:6px 0}
   #orb{width:300px;height:300px;cursor:pointer;border-radius:50%}
@@ -153,6 +168,9 @@
     <div class="card tab on" id="tab-videos"><h2>VİDEOLAR <span id="count" style="color:var(--txt)"></span></h2><div class="grid" id="grid"></div><div class="empty" id="empty" style="display:none">Henüz video yok. "Şimdi üret" ile başlayın.</div></div>
     <div class="card tab" id="tab-analytics">
       <h2>ANALİTİK <button class="ghost" id="syncBtn" style="float:right">⟳ İzlenmeleri güncelle</button></h2>
+      <h2>ABONE VE TAKİPÇİ</h2><div class="fol" id="fol"></div>
+      <h2 style="margin-top:6px">GÜNLÜK KAZANILAN (TÜM PLATFORMLAR, SON 14 GÜN)</h2><div class="gch" id="folChart" role="img" aria-label="Son 14 günde günlük kazanılan abone ve takipçi"></div><div class="gax" id="folAxis"></div><div class="gtip" id="gtip"></div>
+      <h2 style="margin-top:14px">İZLENME</h2>
       <div class="kpi" id="kpi"></div>
       <h2>PLATFORMA GÖRE İZLENME</h2><div class="bars" id="byPlat"></div>
       <div class="platgrid" id="platTop"></div>
@@ -457,7 +475,30 @@ const PLAT={youtube:{n:'YouTube',c:'#FF4D4D'},instagram:{n:'Instagram',c:'#F0629
 const ptag=p=>p&&PLAT[p]?`<span class="ptag" style="background:${PLAT[p].c}">${PLAT[p].n}</span>`:'';
 const esc=s=>String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]);
 const bars=(el,obj)=>{const ents=Object.entries(obj||{}).filter(([,v])=>v!=null).sort((a,b)=>b[1]-a[1]);const max=Math.max(1,...ents.map(e=>e[1]));$(el).innerHTML=ents.length?ents.map(([k,v])=>`<div><span>${k}</span><i style="width:${v/max*100}%"></i><span>${v.toLocaleString('tr-TR')}</span></div>`).join(''):'<span class="empty">veri yok</span>';};
-async function loadInsights(){const i=await api('/api/insights');if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
+// abone/takipçi (scripts/followers.py → insights.followers): platform kartları + son 14 günün günlük kazanımı
+const UNIT={youtube:'abone',instagram:'takipçi',tiktok:'takipçi'};
+const sgn=n=>n==null?'–':(n>0?'+':n<0?'−':'±')+Math.abs(n).toLocaleString('tr-TR');
+function renderFollowers(f){
+  const ps=f?.platforms||{};const keys=Object.keys(ps);
+  if(!keys.length){$('#fol').innerHTML=`<div class="conninfo">Henüz abone verisi yok. Yayın hesapları bağlıysa "⟳ İzlenmeleri güncelle"ye basın; sayılar saatte bir kaydedilir, kazanımlar ertesi günden itibaren dolar.${f?.errors&&Object.keys(f.errors).length?'<br>'+Object.entries(f.errors).map(([k,e])=>`${PLAT[k]?.n||k}: ${esc(e)}`).join('<br>'):''}</div>`;$('#folChart').innerHTML='';$('#folAxis').innerHTML='';return;}
+  const tile=(k,v,name,color)=>{const since=v.since?new Date(v.since).toLocaleDateString('tr-TR',{day:'numeric',month:'long'}):'';const pt=v.partial||{};
+    return `<div class="ft" style="--pc:${color}"><h3><i></i>${name}</h3><div class="big">${v.current.toLocaleString('tr-TR')} <span style="font-size:13px;color:var(--mut);font-weight:600">${k==='total'?'kişi':UNIT[k]}</span></div>
+      <div class="gl"><span>bugün <b>${sgn(v.today)}</b></span><span>7 gün <b>${sgn(v.week)}${pt.week?'*':''}</b></span><span>30 gün <b>${sgn(v.month)}${pt.month?'*':''}</b></span></div>
+      ${pt.week||pt.month?`<div class="note">* kayıt ${since} tarihinden beri</div>`:''}${f.errors?.[k]?`<div class="note" style="color:#ff9aa2">⚠ ${esc(f.errors[k])}</div>`:''}</div>`;};
+  $('#fol').innerHTML=(keys.length>1&&f.total?tile('total',{...f.total,partial:{week:keys.some(k=>ps[k].partial?.week),month:keys.some(k=>ps[k].partial?.month)},since:keys.map(k=>ps[k].since).sort()[0]},'TOPLAM','var(--txt)'):'')+keys.map(k=>tile(k,ps[k],PLAT[k].n,PLAT[k].c)).join('')
+    +Object.entries(f.errors||{}).filter(([k])=>!ps[k]).map(([k,e])=>`<div class="ft" style="--pc:${PLAT[k]?.c||'var(--line)'}"><h3><i></i>${PLAT[k]?.n||k}</h3><div class="note" style="color:#ff9aa2">⚠ ${esc(e)}</div></div>`).join('');
+  // günlük seri: platformların toplamı (veri olmayan gün boş kalır)
+  const days=(ps[keys[0]].daily||[]).map((d,n)=>{const g=keys.map(k=>ps[k].daily?.[n]?.gain).filter(x=>x!=null);return {date:d.date,gain:g.length?g.reduce((a,b)=>a+b,0):null,per:keys.map(k=>[k,ps[k].daily?.[n]?.gain])};});
+  const max=Math.max(1,...days.map(d=>Math.abs(d.gain||0)));const hasNeg=days.some(d=>(d.gain||0)<0);const top=hasNeg?60:100;
+  const best=days.reduce((b,d,n)=>d.gain!=null&&(b<0||d.gain>days[b].gain)?n:b,-1);
+  $('#folChart').innerHTML=days.map((d,n)=>{const h=d.gain==null?0:Math.abs(d.gain)/max*top;const lbl=new Date(d.date).toLocaleDateString('tr-TR',{day:'numeric',month:'short'});
+    const tip=`${lbl}: ${d.gain==null?'veri yok':sgn(d.gain)}`+d.per.filter(([,g])=>g!=null).map(([k,g])=>`<br>${PLAT[k].n} ${sgn(g)}`).join('');
+    return `<div class="c" data-tip="${tip.replace(/"/g,'&quot;')}" style="justify-content:${hasNeg?'center':'flex-end'}">${hasNeg?`<div style="height:50%;display:flex;flex-direction:column;justify-content:flex-end">${(d.gain||0)>0?`<i style="height:${h}%"></i>`:''}</div><div style="height:50%">${(d.gain||0)<0?`<i class="neg" style="height:${h}%"></i>`:''}</div>`:`<i style="height:${h}%"></i>`}${n===best&&d.gain>0?`<em style="bottom:${hasNeg?50+h/2:h}%;margin-bottom:2px">${sgn(d.gain)}</em>`:''}</div>`;}).join('');
+  const fmtD=d=>new Date(d).toLocaleDateString('tr-TR',{day:'numeric',month:'short'});
+  $('#folAxis').innerHTML=`<span>${fmtD(days[0].date)}</span><span>${fmtD(days[days.length-1].date)} (bugün)</span>`;
+  document.querySelectorAll('#folChart .c').forEach(c=>{c.onmousemove=e=>{const t=$('#gtip');t.innerHTML=c.dataset.tip;t.style.display='block';t.style.left=Math.min(e.clientX+12,innerWidth-180)+'px';t.style.top=(e.clientY+12)+'px';};c.onmouseleave=()=>{$('#gtip').style.display='none';};});
+}
+async function loadInsights(){const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
   $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
   const bp=i.byPlatform||{};
   bars('#byPlat',Object.fromEntries(Object.entries(bp).filter(([,v])=>v.total).map(([k,v])=>[`${PLAT[k].n} (${v.videos} video, ort. ${v.avg.toLocaleString('tr-TR')})`,v.total])));

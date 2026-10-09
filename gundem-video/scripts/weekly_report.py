@@ -50,6 +50,17 @@ def main():
         plats[p] = views
         if vids:
             lines.append(f"• {name}: {len(vids)} video, {fmt(views)} izlenme, ortalama {fmt(views / len(vids))}")
+    try:  # abone/takipçi kazanımı (scripts/followers.py)
+        from followers import summary as fsum
+        fs = fsum()
+        if fs.get("platforms"):
+            unit = {"youtube": "abone", "instagram": "takipçi", "tiktok": "takipçi"}
+            sg = lambda n: f"+{fmt(n)}" if n >= 0 else f"-{fmt(-n)}"  # noqa: E731
+            lines.append("👥 " + " · ".join(f"{PLAT[p][0]} {fmt(v['current'])} {unit[p]} ({sg(v['week'])} bu hafta)" for p, v in fs["platforms"].items()))
+            if fs.get("total"):
+                lines.append(f"👥 Toplam {fmt(fs['total']['current'])} kişi, bu hafta {sg(fs['total']['week'])}")
+    except Exception:
+        pass
     lead = max(plats.items(), key=lambda x: x[1]) if any(plats.values()) else None
     if lead:
         lines.append(f"🏆 En çok izlenen platform: *{PLAT[lead[0]][0]}*")

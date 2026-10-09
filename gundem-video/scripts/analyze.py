@@ -106,6 +106,11 @@ def main():
         "byPlatform": by_platform, "leadingPlatform": leader,
         "hint": hint_text, "rows": rows,
     }
+    try:  # abone/takipçi: güncel, bugün, 7 gün, 30 gün, günlük seri (scripts/followers.py)
+        from followers import summary as followers_summary
+        insights["followers"] = followers_summary()
+    except Exception as e:
+        insights["followers"] = {"error": str(e)[:200]}
     save_json(DATA / "insights.json", insights)
     (DATA / "prompt_hint.txt").write_text(hint_text, encoding="utf-8")
     print(json.dumps({k: v for k, v in insights.items() if k != "rows"}, ensure_ascii=False, indent=2))
