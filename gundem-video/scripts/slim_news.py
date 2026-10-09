@@ -84,7 +84,11 @@ def main():
     fresh, old = [], []
     for cl in clusters:
         if seen_before(cl["item"]["_w"], used):
-            old.append(cl)
+            if cl["p"] == 3:  # gelişen sert haber (can kaybı artışı vb.): listede kalır, e=1 ile işaretlenir
+                cl["old"] = True
+                fresh.append(cl)
+            else:
+                old.append(cl)
         else:
             fresh.append(cl)
     chosen = fresh

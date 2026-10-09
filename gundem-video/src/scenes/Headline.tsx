@@ -3,9 +3,10 @@ import { styleFor } from "../categories";
 import { Captions } from "./Captions";
 import { theme } from "../theme";
 
-type Props = { index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string };
+type Props = {
+  categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string };
 
-export const Headline = ({ index, total, title, narration, source, category, breaking, durationInFrames, words, image }: Props) => {
+export const Headline = ({ categoryLabel, index, total, title, narration, source, category, breaking, durationInFrames, words, image }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
@@ -33,7 +34,7 @@ export const Headline = ({ index, total, title, narration, source, category, bre
       ) : null}
       {/* üst şerit */}
       <div style={{ position: "absolute", top: 110, left: 80, right: 80, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6, color: st.accent, background: `${st.accent}22`, padding: "10px 26px", borderRadius: 14 }}>{st.label}</div>
+        <div style={{ fontSize: 38, fontWeight: 800, letterSpacing: 6, color: st.accent, background: `${st.accent}22`, padding: "10px 26px", borderRadius: 14 }}>{categoryLabel || st.label}</div>
         <div style={{ fontSize: 40, fontWeight: 700, color: theme.muted }}>{index + 1} / {total}</div>
       </div>
 

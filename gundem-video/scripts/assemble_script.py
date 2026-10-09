@@ -165,6 +165,7 @@ def record_category_suggestions(segs):
         name = re.sub(r"[^a-zçğıöşü_]", "", (s.get("categorySuggestion") or "").lower())
         if not name or name in CATEGORIES:
             continue
+        s["categoryLabel"] = name.upper().replace("I", "I").replace("İ", "İ")  # kartta hemen görünür; görsel/ses en yakın kategoriden
         row = sug.setdefault(name, {"count": 0, "examples": [], "queued": False})
         row["count"] += 1
         row["last"] = datetime.now().isoformat(timespec="minutes")

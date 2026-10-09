@@ -3,10 +3,11 @@ import { styleFor } from "../categories";
 import { theme } from "../theme";
 import { Captions } from "./Captions";
 
-type Props = { title: string; narration: string; category?: string; breaking?: boolean; image?: string; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
+type Props = {
+  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
 
 /** KANCA: ilk 3 saniye. Dev yazı, kırmızı flaş, varsa tam ekran fotoğraf, kelime kelime altyazı. */
-export const Hook = ({ title, narration, category, breaking, image, words, durationInFrames }: Props) => {
+export const Hook = ({ categoryLabel, title, narration, category, breaking, image, words, durationInFrames }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
@@ -30,7 +31,7 @@ export const Hook = ({ title, narration, category, breaking, image, words, durat
       {/* üst etiket */}
       <div style={{ position: "absolute", top: 120, left: 80, display: "flex", gap: 14, alignItems: "center" }}>
         <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, opacity: 0.6 + 0.4 * Math.abs(Math.sin(frame / 4)) }} />
-        <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 8, color: accent }}>{breaking ? "SON DAKİKA" : st.label}</div>
+        <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 8, color: accent }}>{breaking ? "SON DAKİKA" : categoryLabel || st.label}</div>
       </div>
       {/* dev başlık */}
       <div style={{ position: "absolute", left: 70, right: 70, top: 560, transform: `scale(${0.85 + 0.15 * pop})`, transformOrigin: "left center" }}>

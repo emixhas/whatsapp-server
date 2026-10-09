@@ -171,6 +171,7 @@ class _PublicVideo:
         self.srv = None
         self.base = None
         self.remote = None
+        self.extra = []
 
     def ensure(self, name: str) -> str:
         env = load_env()
@@ -235,6 +236,10 @@ class _PublicVideo:
         return url
 
     def close(self):
+        if (load_env().get("HOSTINGER_KEEP") or "0") != "1":
+            for rel in self.extra:
+                hostinger.delete(rel)
+            self.extra = []
         if self.remote and (load_env().get("HOSTINGER_KEEP") or "0") != "1":
             hostinger.delete(self.remote)  # yayın bitti, web alanında yer kaplamasın
             print(f"🌐 Hostinger: silindi {self.remote}", file=sys.stderr, flush=True)
@@ -255,7 +260,16 @@ def ig_upload(path: Path):
     try:
         base = pub_srv.ensure(path.name)
         video_url = base + "/videos/" + urllib.parse.quote(path.name)
-        c = ig_call("POST", f"{uid}/media", {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}, creds)
+        params = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}
+        cover = path.with_name(path.stem + "-kapak.jpg")
+        if cover.exists() and hostinger.configured():
+            try:
+                params["cover_url"] = hostinger.upload(cover, f"videos/{cover.name}")
+                pub_srv.extra.append(f"videos/{cover.name}")
+                print(f"🌐 Hostinger: kapak yüklendi {cover.name}", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
+        c = ig_call("POST", f"{uid}/media", params, creds)
         cid = c["id"]
         for _ in range(72):  # Instagram videoyu çekip işler; 6 dk'ya kadar bekle
             st = ig_call("GET", cid, {"fields": "status_code,status"}, creds)

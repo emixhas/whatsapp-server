@@ -7,6 +7,8 @@ export type Segment = {
   narration: string;
   /** Haber kategorisi: src/categories.ts içindeki sabit listeden. */
   category?: string;
+  /** Claude'un önerdiği yeni kategori etiketi (ör. "KÜLTÜR"): sabit listede yoksa kartta bu yazılır, görsel/ses en yakın kategoriden gelir. */
+  categoryLabel?: string;
   /** Günün en büyük haberi: "SON DAKİKA" manşet muamelesi görür. En fazla bir habere verilir. */
   breaking?: boolean;
   /** Kaynak adı (ör. "AA", "TRT Haber"). */

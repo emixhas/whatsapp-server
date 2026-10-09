@@ -16,8 +16,9 @@ KURALLAR
   için (spor, hava, teknoloji). Aynı olayın iki haberini seçme; en yeni sürümünü al.
 - "c" alanı aynı olayı kaç kaynağın verdiğini gösterir: yüksek c = herkesin konuştuğu, en çok merak
   edilen haber. Eşit önemde c yüksek olanı seç; kanca için p ve c birlikte en yüksek haber idealdir.
-- "e":1 işaretli haberler önceki videoda kullanıldı. Yalnızca yeterli yeni haber yoksa, en sonda ve
-  yeni bir gelişme varsa seç; bir önceki videonun aynısını tekrar etme.
+- "e":1 işaretli haberler önceki videoda kullanıldı. p=3 ve e=1 ise (gelişen büyük olay) yalnızca
+  YENİ bir gelişme varsa (artan can kaybı, yeni karar, gözaltı) o gelişmeyi anlatarak seç; aynı
+  bilgiyi tekrar etme. Diğer e=1 haberleri yalnızca yeterli yeni haber yoksa en sonda kullan.
 - Tam olarak __HABER__ haber seç. Kanca haberi aynı zamanda 1. haber olarak kalır (tam metniyle).
   Haber sayısı kadar "haber" segmenti yaz; şemadaki örnek 4 haber içindir, sayıyı __HABER__ yap.
 - Her haber için: kısa ekran başlığı ("title", en fazla 8 kelime) ve 1-2 cümlelik tarafsız
