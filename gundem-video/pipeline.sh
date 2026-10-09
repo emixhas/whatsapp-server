@@ -5,6 +5,7 @@
 #           TTS_ENGINE=silent bash pipeline.sh   (sessiz test)
 #           SKIP_CLAUDE=1 bash pipeline.sh       (work/claude_out.json hazırsa Claude'u atla)
 #           ANLIK=1 DURATION=30 bash pipeline.sh (work/anlik_topic.txt konusunda tek konulu son dakika videosu)
+#           GUNLUK=1 bash pipeline.sh            (günün özeti: yatay 1920x1080, ~4 dk, YouTube; settings.daily)
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -30,11 +31,19 @@ if [ "${ANLIK:-0}" = "1" ]; then
   HABER=$(( DURATION / 10 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 4 ] && HABER=4
   FORMAT="anlik"; FORMAT_LABEL="Son Dakika"
 fi
-export ANLIK="${ANLIK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
+# Günlük uzun özet: bugünkü videoların haberleri + günün RSS'i, yatay video (Remotion GunlukOzet)
+if [ "${GUNLUK:-0}" = "1" ]; then
+  FORMAT="gunluk"; FORMAT_LABEL="Günün Özeti"; FORMAT_TONE="toparlayıcı, akıcı, günün en önemli gelişmelerini sıralayan"
+  DURATION="${GUNLUK_DURATION:-$($PY -c "import sys;sys.path.insert(0,'scripts');from common import settings;print((settings().get('daily') or {}).get('duration',240))")}"
+  HABER="$($PY -c "import sys;sys.path.insert(0,'scripts');from common import settings;print(min(12,max(4,int((settings().get('daily') or {}).get('stories',10)))))")"
+  WORDS=$(( DURATION * 24 / 10 ))
+  FORMAT_INTRO="Günün özeti. Bugün Türkiye'de öne çıkan haberler."
+fi
+export ANLIK="${ANLIK:-0}" GUNLUK="${GUNLUK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
 # Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
 SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
-[ "$ANLIK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."
-export DURATION WORDS HABER
+[ "$ANLIK" = "1" ] || [ "$GUNLUK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."
+export DURATION WORDS HABER FORMAT FORMAT_LABEL
 # Senaryo için "medium" yeterli (ölçüldü: aynı 7 haber/kategori, çıktı tokenı high'ın yarısı).
 # Claude modeli: settings.claudeModel ("opus" varsayılan; boşsa Claude Code'un kendi varsayılanı)
 CLAUDE_MODEL="${CLAUDE_MODEL-$($PY -c "import json;print(json.load(open('data/settings.json')).get('claudeModel','opus') or '')" 2>/dev/null || echo opus)}"
@@ -82,6 +91,9 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     # Tek konu: RSS'ten konuyla ilgili haberler + editörün yazdığı bilgi, ayrı senaryo kuralları
     $PY scripts/topic_news.py work/news.json work/anlik_topic.txt work/news_prompt.json
     PROMPT_FILE="prompts/anlik.md"
+  elif [ "$GUNLUK" = "1" ]; then
+    $PY scripts/daily_news.py work/news.json work/news_prompt.json "$HABER"
+    PROMPT_FILE="prompts/gunluk.md"
   else
     $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
     PROMPT_FILE="prompts/senaryo.md"
@@ -111,7 +123,8 @@ DATE=$($PY -c "import json;print(json.load(open('public/episode.json'))['date'])
 N=$($PY -c "import json;print(json.load(open('public/episode.json'))['episodeOfDay'])")
 OUT="out/${DATE}-${N}.mp4"
 if [ -f "$OUT" ]; then echo "!! $OUT zaten var, üzerine yazılmıyor"; N=$(( $(ls out/${DATE}-*.mp4 2>/dev/null | wc -l) + 1 )); OUT="out/${DATE}-${N}.mp4"; $PY -c "import json;p='public/episode.json';d=json.load(open(p));d['episodeOfDay']=$N;json.dump(d,open(p,'w'),ensure_ascii=False,indent=2)"; fi
-npx remotion render src/index.ts GundemVideo "work/render.mp4" --codec h264 --crf 18 --log error
+COMP="GundemVideo"; [ "$GUNLUK" = "1" ] && COMP="GunlukOzet"  # günlük özet yatay
+npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 --log error
 # Ses seviyesini YouTube standardına getir (-14 LUFS, tepe -1 dB); görüntüye dokunmaz
 ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
 rm -f work/render.mp4

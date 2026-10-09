@@ -138,14 +138,25 @@ def build_caption(video_name: str, max_len: int = 2000):
     rng = meta.get("timeRange") or ""
     stamp = " · ".join(x for x in (day, slot.title() if slot else "", rng) if x)
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    if anlik:  # tek konulu son dakika videosu
+    if meta.get("format") == "gunluk":  # günlük uzun özet (yatay, YouTube; Shorts değil)
+        title = f"Günün Özeti {day}: {first} | {s['channelName']}"
+        lines = [f"📺 GÜNÜN ÖZETİ · {s['channelName']} · {day}", f"Bugünün en önemli {len(haber)} haberi tek videoda.", ""]
+        # YouTube bölümleri: açıklamada 00:00 ile başlayan zaman damgaları videoyu bölümlere ayırır
+        t, chapters = 0.0, []
+        for seg in meta.get("segments", []):
+            if seg.get("kind") == "haber":
+                chapters.append(f"{int(t // 60):02d}:{int(t % 60):02d} {seg.get('title', '')}")
+            t += float(seg.get("duration") or 0)
+        if chapters:
+            lines += ["00:00 Giriş", *chapters, ""]
+    elif anlik:  # tek konulu son dakika videosu
         title = f"🔴 SON DAKİKA: {first} | {s['channelName']} #Shorts"
         lines = [f"🔴 SON DAKİKA · {s['channelName']} · {day} · {rng}", ""]
     else:
         title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
         lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
     for i, h in enumerate(haber, 1):
-        head = h["title"] if anlik else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
+        head = h["title"] if anlik else f"{i}. {h['title']}" if meta.get("format") == "gunluk" else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
         lines.append(head)
         if h.get("narration"):
             lines.append(h["narration"].strip())
@@ -156,7 +167,9 @@ def build_caption(video_name: str, max_len: int = 2000):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
     tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
-    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
+    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
+              else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"
+              else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
     tail = "\n" + " ".join(tags)
     return title[:100], "\n".join(lines)[:max(0, max_len - len(tail))] + tail
 

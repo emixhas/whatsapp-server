@@ -51,6 +51,7 @@ export function parseCommand(raw) {
     return { action: "publish", platforms: ["youtube", "instagram", "tiktok"].filter((p) => t.replace("tik tok", "tiktok").includes(p)), reply: "" };
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
   const words = t.split(" ").length;
+  if (/(günün özeti|günlük özet|uzun özet).*(üret|hazırla|yap|başlat|çıkar)/.test(t)) return { action: "daily_summary", reply: "" };
   if (/haftal[ıi]k.*(rapor|özet|performans)|(bu|geçen) hafta.*(nasıl gitti|rapor)/.test(t)) return { action: "weekly_report", reply: "" };
   if (words > 9 || /(^| )(ve|bir de|sonra da|neden|niye|niçin|sence|hangisi|nasıl)( |$)/.test(t)) return { action: "brain", reply: "" };
   if (/^(sesini|sesi|konuşmanı|biraz)?\s*(biraz\s*)?(daha\s*)?(hızlandır|hızlı konuş)\s*(lütfen)?$/.test(t) || /^(ses|konuşma)\s*(hızını)?\s*(biraz\s*)?(artır|yükselt|hızlandır)$/.test(t)) return { action: "voice_speed", delta: 25, reply: "" };

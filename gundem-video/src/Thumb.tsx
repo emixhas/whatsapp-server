@@ -90,7 +90,7 @@ export const Thumb = ({ text, category, breaking, image, variant = "A", channel 
         </div>
         <div style={{ marginTop: 22 * s, display: "flex", alignItems: "center", gap: 18 }}>
           <div style={{ width: 120 * s, height: 12 * s, background: accent, borderRadius: 7 }} />
-          <div style={{ fontSize: 38 * s, fontWeight: 900, color: theme.white, letterSpacing: 3, textShadow: "0 3px 12px rgba(0,0,0,1)" }}>HER 5 SAATTE BİR</div>
+          <div style={{ fontSize: 38 * s, fontWeight: 900, color: theme.white, letterSpacing: 3, textShadow: "0 3px 12px rgba(0,0,0,1)" }}>{slotLabel === "GÜNÜN ÖZETİ" ? "HER AKŞAM GÜNÜN ÖZETİ" : "HER 5 SAATTE BİR"}</div>
           <div style={{ width: 120 * s, height: 12 * s, background: accent, borderRadius: 7 }} />
         </div>
       </div>

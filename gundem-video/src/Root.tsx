@@ -1,5 +1,6 @@
 import { CalculateMetadataFunction, Composition, staticFile } from "remotion";
 import { GundemVideo } from "./GundemVideo";
+import { GunlukOzet, WIDE_H, WIDE_W } from "./GunlukOzet";
 import { Thumb } from "./Thumb";
 import { Still } from "remotion";
 import { Episode, FPS, HEIGHT, WIDTH } from "./types";
@@ -33,6 +34,17 @@ export const Root = () => (
     width={WIDTH}
     height={HEIGHT}
     durationInFrames={30 * FPS}
+    defaultProps={{ episode: sampleEpisode }}
+    calculateMetadata={calculateMetadata}
+  />
+  {/* günlük uzun özet: yatay, YouTube (pipeline GUNLUK=1) */}
+  <Composition
+    id="GunlukOzet"
+    component={GunlukOzet}
+    fps={FPS}
+    width={WIDE_W}
+    height={WIDE_H}
+    durationInFrames={60 * FPS}
     defaultProps={{ episode: sampleEpisode }}
     calculateMetadata={calculateMetadata}
   />

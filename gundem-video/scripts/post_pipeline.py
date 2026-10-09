@@ -88,6 +88,13 @@ def targets(video: str, s: dict) -> tuple[list, str]:
         chosen += extra
     if anlik and "youtube" in chosen and "youtube" in conn and not youtube_allowed(video, meta, s):
         chosen = [p for p in chosen if p != "youtube"]
+    if meta.get("format") == "gunluk":  # yatay 4 dk: yalnız YouTube (Reels/TikTok dikey kısa video ister)
+        if "youtube" in conn and "youtube" not in chosen and (auto_all or s.get("daily", {}).get("autoPublish", True)):
+            chosen.append("youtube")
+        dropped = [p for p in chosen if p != "youtube"]
+        if dropped:
+            print(f"📺 günün özeti yatay uzun video: yalnız YouTube'a gider ({', '.join(dropped)} atlandı)")
+        chosen = [p for p in chosen if p == "youtube"]
     off = [p for p in chosen if p not in conn]
     for p in off:
         print(f"📤 {p}: hesap bağlı değil, atlandı (Ayarlar → Yayın hesapları)")

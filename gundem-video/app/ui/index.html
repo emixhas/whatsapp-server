@@ -127,6 +127,12 @@
       <div id="brkList" style="display:grid;gap:4px;margin-top:8px;font-size:13px"></div>
       <div class="acts" style="margin-top:8px"><button class="ghost" id="brkCheck">Şimdi kontrol et</button></div>
     </div>
+    <div class="card mynet">
+      <h2>📺 GÜNÜN ÖZETİ (YOUTUBE, YATAY)</h2>
+      <label class="row"><span class="sw" id="dailyOn"></span><span>Her akşam <input id="dailyTime" type="time" style="width:96px"> saatinde günün en önemli haberlerinden ~<b id="dailyMin">4</b> dakikalık yatay video üret ve YouTube'a yükle (bölümlü açıklama, oynatma listesi)</span></label>
+      <div class="next" id="dailyInfo">Yükleniyor…</div>
+      <div class="acts" style="margin-top:8px"><button class="ghost" id="dailyRun">Şimdi üret</button></div>
+    </div>
     <div class="card anlik">
       <h2>⚡ ANLIK HABER · SON DAKİKA</h2>
       <textarea id="anlikTxt" rows="4" maxlength="1500" placeholder="Gündemdeki konuyu ve bildiklerini yaz. Örnek: Maltepe'de 7 katlı bina çöktü, ilk bilgilere göre 2 kişi hayatını kaybetti, arama kurtarma sürüyor."></textarea>
@@ -414,6 +420,11 @@ async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').cla
   $('#mynetList').innerHTML=(m.items||[]).map((it,i)=>`<div class="mi">${it.image?`<img src="${it.image}" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}<div class="t"><b>${i+1}.</b> ${(it.title||'(başlık sayfadan okunacak)').replace(/</g,'&lt;')}<br><small>${it.valuable?`<b style="color:#F2B705">⭐ değerli · YouTube'a da gider</b> (${String(it.valueReason||'').replace(/</g,'&lt;')}) `:''}${m.producedToday.includes(it.url)?'✅ bugün videosu üretildi':''}</small></div><button class="ghost" data-mu="${it.url}">🎬 Video üret</button></div>`).join('')||'<div class="conninfo">Manşet listesi henüz yok. "Şimdi kontrol et"e basın.</div>';
   document.querySelectorAll('[data-mu]').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await post('/api/mynet/produce',{url:b.dataset.mu});toast(r.ok?(r.queued?'Sıraya alındı ⏳':'Video üretiliyor ⚡'):(r.error||'Üretilemedi'),!r.ok);loadMynet();});
 }catch{$('#mynetInfo').textContent='Mynet bilgisi alınamadı.';}}
+async function loadDaily(){try{const d=await api('/api/daily');$('#dailyOn').classList.toggle('on',d.enabled!==false);if(document.activeElement!==$('#dailyTime'))$('#dailyTime').value=`${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`;$('#dailyMin').textContent=Math.round((d.duration||240)/60);
+  const t=new Date().toISOString().slice(0,10);$('#dailyInfo').textContent=d.last?.day===t?`Bugünün özeti ${new Date(d.last.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}'de başlatıldı.`:d.enabled===false?'Kapalı.':'Bugün henüz üretilmedi.';}catch{$('#dailyInfo').textContent='Bilgi alınamadı.';}}
+$('#dailyOn').onclick=async()=>{const on=!$('#dailyOn').classList.contains('on');await post('/api/settings',{daily:{enabled:on}});loadDaily();};
+$('#dailyTime').onchange=async()=>{const [h,m]=($('#dailyTime').value||'21:30').split(':').map(Number);await post('/api/settings',{daily:{hour:h,minute:m}});loadDaily();};
+$('#dailyRun').onclick=async()=>{const r=await post('/api/daily/run');toast(r.ok?'Günün özeti üretiliyor 📺':(r.error||'Başlatılamadı'),!r.ok);loadDaily();};
 async function loadBreaking(){try{const b=await api('/api/breaking');$('#brkOn').classList.toggle('on',b.enabled!==false);$('#brkEvery').textContent=b.intervalMin||15;
   const last=b.lastCheck?new Date(b.lastCheck*1000).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'henüz yok';const next=b.nextCheckIn!=null?Math.ceil(b.nextCheckIn/60000)+' dk sonra':'kapalı';
   $('#brkInfo').innerHTML=`Son kontrol: <b style="font-size:14px">${last}</b> · sonraki: ${next} · bugün üretilen: ${(b.producedToday||[]).length}/${b.maxPerDay}`;
@@ -425,7 +436,7 @@ $('#brkCheck').onclick=async()=>{$('#brkInfo').textContent='Kontrol ediliyor…'
 $('#mynetOn').onclick=async()=>{const on=!$('#mynetOn').classList.contains('on');await post('/api/settings',{mynet:{enabled:on}});loadMynet();};
 $('#mynetCheck').onclick=async()=>{$('#mynetInfo').textContent='Kontrol ediliyor…';const r=await post('/api/mynet/check');toast(r.ok?`${r.items?.length||0} manşet, ${r.new?.length||0} yeni`:(r.error||'Kontrol başarısız'),!r.ok);loadMynet();};
 $('#mynetAll').onclick=async()=>{if(!confirm('Manşetteki haberlerin hepsi için video üretilecek (sırayla). Devam?'))return;const r=await post('/api/mynet/produce-all');toast(`${(r.results||[]).filter(x=>x.ok).length} video sıraya alındı`);loadMynet();};
-loadMynet();setInterval(loadMynet,60000);loadBreaking();setInterval(loadBreaking,60000);
+loadMynet();setInterval(loadMynet,60000);loadBreaking();setInterval(loadBreaking,60000);loadDaily();setInterval(loadDaily,60000);
 $('#ytValuable').onclick=async()=>{const on=!$('#ytValuable').classList.contains('on');await post('/api/settings',{youtubePolicy:{onlyValuable:on}});refreshStatus();};
 $('#ytExtraMax').onchange=async()=>{await post('/api/settings',{youtubePolicy:{extraDailyMax:Math.max(0,Math.min(20,Number($('#ytExtraMax').value)||0))}});refreshStatus();};
 $('#anlikAuto').onclick=async()=>{const on=!$('#anlikAuto').classList.contains('on');await post('/api/settings',{anlikAutoPublish:on});refreshStatus();};

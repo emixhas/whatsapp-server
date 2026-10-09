@@ -140,7 +140,8 @@ def yt_upload(path: Path):
             print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
     meta = episode_meta(path.name) or {}
     lists = yt_add_to_playlists(yt, vid, meta)
-    return {"id": vid, "url": f"https://youtube.com/shorts/{vid}", "publishedAt": now_iso(), "title": title,
+    url = f"https://youtube.com/watch?v={vid}" if meta.get("format") == "gunluk" else f"https://youtube.com/shorts/{vid}"
+    return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
             "titleVariant": meta.get("titleVariant"), "playlists": lists}
 
 
