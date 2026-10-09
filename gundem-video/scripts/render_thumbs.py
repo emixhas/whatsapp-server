@@ -20,7 +20,7 @@ titles = ep.get("titles", {})
 for v in ("A", "B"):
     text = titles.get("cover") if v == "A" else titles.get("B", titles.get("cover", ""))
     props = {"text": text or first.get("title", ""), "category": first.get("category"), "breaking": bool(first.get("breaking")),
-             "image": first.get("image"), "variant": v, "channel": settings()["channelName"].upper(),
+             "image": first.get("imageTall") or first.get("image"), "variant": v, "channel": settings()["channelName"].upper(),
              "dayLabel": ep.get("dayLabel"), "slotLabel": ep.get("slotLabel"), "timeRange": ep.get("timeRange")}
     out = f"{base}-kapak{v}.jpg"
     r = subprocess.run(["npx", "remotion", "still", "src/index.ts", "Thumb", out, "--props", json.dumps(props, ensure_ascii=False), "--log", "error"] + (["--browser-executable", os.environ["PUPPETEER_EXECUTABLE_PATH"], "--chrome-mode=chrome-for-testing"] if os.environ.get("PUPPETEER_EXECUTABLE_PATH") else []),

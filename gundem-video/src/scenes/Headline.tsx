@@ -1,13 +1,14 @@
 import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
 import { Captions } from "./Captions";
+import { MediaBg } from "./MediaBg";
 import { fitFontSize, textWidth } from "../fit";
 import { theme } from "../theme";
 
 type Props = {
-  categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string };
+  categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string; video?: string; videoDuration?: number };
 
-export const Headline = ({ categoryLabel, index, total, title, narration, source, category, breaking, durationInFrames, words, image }: Props) => {
+export const Headline = ({ categoryLabel, index, total, title, narration, source, category, breaking, durationInFrames, words, image, video, videoDuration }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
@@ -41,14 +42,14 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
 
       {/* görsel alanı: kaynak fotoğrafı varsa yavaş yakınlaşan fotoğraf + köşede illüstrasyon rozeti; yoksa illüstrasyon */}
       <div style={{ position: "absolute", top: 220, left: 80, width: 920, height: 560, borderRadius: 32, background: theme.card, overflow: "hidden", transform: `scale(${0.9 + 0.1 * illuIn})`, opacity: illuIn }}>
-        {image ? (
+        {image || video ? (
           <>
-            <Img src={staticFile(image)} style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${1.04 + interpolate(frame, [0, durationInFrames], [0, 0.08])})` }} />
+            <MediaBg image={image} video={video} videoDuration={videoDuration} durationInFrames={durationInFrames} />
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,.85) 100%)" }} />
             <div style={{ position: "absolute", right: 18, bottom: 14, width: 920, height: 560, transform: "scale(0.3)", transformOrigin: "bottom right", filter: "drop-shadow(0 6px 16px rgba(0,0,0,.6))" }}>
               <st.Illustration />
             </div>
-            <div style={{ position: "absolute", left: 22, bottom: 16, fontSize: 24, color: "rgba(255,255,255,.75)", letterSpacing: 2 }}>FOTOĞRAF: {(source || "KAYNAK").toUpperCase()}</div>
+            <div style={{ position: "absolute", left: 22, bottom: 16, fontSize: 24, color: "rgba(255,255,255,.75)", letterSpacing: 2 }}>{video ? "VİDEO" : "FOTOĞRAF"}: {(source || "KAYNAK").toUpperCase()}</div>
           </>
         ) : (
           <st.Illustration />

@@ -50,10 +50,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `__FORMAT_ADI__`, `__FORMAT_INTRO__`, `__FORMAT_TON__` gider; intro'da format etiketi görünür.
 - Müzik: `scripts/make_music.py` üç yatağı sentezler (`public/music/*.mp3`), `settings.musicVolume`
   (0.07) ile döngülü çalar. Telifli dosya kullanma; yatakları betikten yeniden üret.
-- Haber görselleri: `fetch_news.py` yalnızca RSS'in verdiği görseli alır (enclosure, media:content,
-  <image>, description img). `assemble_script.attach_images()` başlık benzerliğiyle (Jaccard ≥ 0.08)
-  eşler; `fetch_images.py` indirip 1840x1120 kırpar (`public/images/`, git dışı). Kartta görsel varsa
-  Ken Burns + alt gradyan + köşede küçük illüstrasyon + "FOTOĞRAF: kaynak" yazısı.
+- Haber medyası (tam boy fotoğraf, HD, video): `assemble_script.attach_images()` her haberi başlık benzerliğiyle
+  (Jaccard ≥ 0.08) `work/news.json` kaydına eşler, `articleUrl` (haber sayfası) ve varsa `imageUrl` (RSS
+  küçük görseli) yazar. `fetch_images.py`: sayfadaki og:image/twitter:image (yayıncının tam boy fotoğrafı)
+  + RSS görseli; her adres için `hd_variants()` (BBC ichef 1024, AA thumbs_b_c, WordPress -WxH eki, ?w=1920)
+  önce denenir, en büyük gerçek fotoğraf seçilir (1600 px bulununca durur). Çıktı `seg-XX.jpg` 1840x1120
+  (oran yakınsa kırpılır, değilse fotoğrafın tamamı keskin + aynı fotoğrafın bulanık zemini) ve
+  `seg-XX-tall.jpg` 1080x1920 (kanca ve dikey kapak, hep bulanık zemin; dikey kırpıp büyütme YOK, bulanıklık
+  yapıyordu). Video: önce yt-dlp (haber sayfasındaki gömülü oynatıcı, ≤1080p, yalnızca ilk N sn), olmazsa
+  og:video/<video>/JSON-LD adresi ffmpeg ile; sessiz, kart 1280x780, kanca 1080x1920 → `vid-XX.mp4`,
+  `videoDuration`. YouTube gömmeleri alınmaz (telif eşleşmesi; `settings.media.allowYoutubeEmbeds`).
+  `settings.media` {video, maxVideoSeconds 20}; panel Gelişmiş'te aç/kapat. yt-dlp pipeline'da haftada bir
+  güncellenir. Remotion `MediaBg.tsx`: video varsa `Loop` + `OffthreadVideo` (sessiz), yoksa Ken Burns
+  fotoğraf; kartta "VİDEO:"/"FOTOĞRAF: kaynak" yazısı.
 - Bölüm meta: `dayLabel` ("9 Ekim Cuma"), `slotLabel` ("2. 5 SAAT"), `timeRange` ("09:00–14:00"),
   `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,
   illüstrasyon `Sequence from={-40}` ile oturmuş haliyle) ve açıklama (`build_caption`: her haberin başlığı + metni + kaynağı) bunları gösterir.

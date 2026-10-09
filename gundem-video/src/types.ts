@@ -19,8 +19,14 @@ export type Segment = {
   duration: number;
   /** Kelime zamanları, segment başına göre saniye (tts.py doldurur). */
   words?: { w: string; s: number; e: number }[];
-  /** Haber görseli (public/ altına göre), varsa. */
+  /** Haber görseli (public/ altına göre), varsa: 1840x1120 kart. */
   image?: string;
+  /** 1080x1920 dikey sürüm: fotoğrafın tamamı keskin, arkası bulanık (kanca ve dikey kapak). */
+  imageTall?: string;
+  /** Haber videosu (public/ altına göre, sessiz); varsa fotoğrafın yerine oynar. */
+  video?: string;
+  /** Video klibinin saniye cinsinden süresi (döngü için). */
+  videoDuration?: number;
 };
 
 export type Episode = {

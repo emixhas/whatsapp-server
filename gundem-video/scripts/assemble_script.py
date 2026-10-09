@@ -114,7 +114,8 @@ def _norm_words(t: str):
 
 
 def attach_images(segs):
-    """Her haberi work/news.json'daki en benzer başlıkla eşleştirir; görsel URL'sini segmente koyar."""
+    """Her haberi work/news.json'daki en benzer başlıkla eşleştirir; haber sayfası adresini (articleUrl, tam boy
+    fotoğraf ve video oradan alınır) ve varsa RSS görselini (imageUrl) segmente koyar."""
     news = load_json(ROOT / "work" / "news.json", {}).get("items", []) if (ROOT / "work" / "news.json").exists() else []
     if not news:
         return 0
@@ -125,7 +126,7 @@ def attach_images(segs):
         words = _norm_words(s.get("title", "") + " " + s.get("narration", ""))
         best, score = None, 0.0
         for it in news:
-            if not it.get("image"):
+            if not it.get("image") and not it.get("link"):
                 continue
             iw = _norm_words(it.get("title", "") + " " + (it.get("summary") or ""))
             if not iw:
@@ -134,7 +135,10 @@ def attach_images(segs):
             if j > score:
                 best, score = it, j
         if best and score >= 0.08:
-            s["imageUrl"] = best["image"]
+            if best.get("image"):
+                s["imageUrl"] = best["image"]
+            if (best.get("link") or "").startswith("http"):
+                s["articleUrl"] = best["link"]
             s["imageSource"] = best.get("source")
             n += 1
     return n
@@ -281,7 +285,7 @@ def main(src: str, dst: str):
 
     matched = attach_images(segs)
     if matched:
-        print(f"  {matched} habere kaynak görseli eşleşti")
+        print(f"  {matched} haber kaynağıyla eşleşti (fotoğraf ve video haber sayfasından alınacak)")
     now = datetime.now()
     date = now.strftime("%Y-%m-%d")
     titles = data.get("titles") or {}

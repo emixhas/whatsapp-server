@@ -184,6 +184,7 @@
       <div class="acts"><button class="ghost ok" id="saveSettings">Kaydet</button></div>
       </details>
       <details class="grp"><summary>🔧 Gelişmiş</summary>
+      <label class="row"><span class="sw" id="mediaVideo"></span><span>Haber videolarını kullan (haber sayfasında video varsa fotoğraf yerine kısa sessiz klip oynar)</span></label>
 <h2>CLOUDFLARE TÜNELİ</h2><div class="conninfo" id="tunInfo"></div>
       <div class="acts"><button class="ghost ok" id="tunStart">Tüneli başlat</button><button class="ghost" id="tunStop">Durdur</button><label class="row" style="margin:0 0 0 10px"><span class="sw" id="tunAuto"></span><span style="font-size:13px">Panel açılınca otomatik başlat</span></label></div>
               <h2 style="margin-top:14px">SİSTEM</h2>
@@ -299,7 +300,7 @@ function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtub
   $('#waInfo').innerHTML=w.status==='connected'?`✅ Bağlı: +${w.phone}. Sahip: +${w.owner||'?'}. ${w.pending?'⏳ Onay bekleyen: '+w.pending.video+' → '+w.pending.platforms.join(', '):''}<br>WhatsApp'tan yazabilirsiniz: "onay", "iptal", "60 saniyelik video üret", "durum", "rapor", "son videoyu gönder".`:w.status==='qr'?'📱 Telefonda WhatsApp → Bağlı Cihazlar → Cihaz Bağla → bu QR\'ı okutun.':w.status==='connecting'?'⏳ Bağlanıyor…':`${w.error?'❌ '+w.error+'<br>':''}Bağlı değil. "WhatsApp\'ı bağla" deyip QR okutun. Oturum <code>secrets/wa-auth</code> içinde saklanır, bir kez okutmak yeter.`;
   if(w.qrSvg&&w.status==='qr'){$('#waQr').innerHTML=w.qrSvg;$('#waQr').style.display='block';}else $('#waQr').style.display='none';
   if(document.activeElement!==$('#waOwner'))$('#waOwner').value=ws.owner||'';
-  $('#waStages').classList.toggle('on',ws.notifyStages!==false);
+  $('#waStages').classList.toggle('on',ws.notifyStages!==false);$('#mediaVideo').classList.toggle('on',s.settings?.media?.video!==false);
   const cn=s.connections||{};const accs=['youtube','instagram','tiktok'].filter(k=>cn[k]?.connected);const ap=s.settings?.autopublish||{};const auto=!!s.schedule?.enabled;
   $('#autoSum').textContent=auto?`açık · her ${s.schedule.hours} saat · yayın: ${Object.keys(ap).filter(k=>ap[k]).join(', ')||'kapalı'} · onay ${ws.requireApproval===false?'kapalı':'açık'}`:'kapalı';
   $('#accSum').textContent=accs.length?`bağlı: ${accs.join(', ')}`:'hesap bağlı değil';$('#waSum').textContent=w.status==='connected'?'bağlı':'bağlı değil';
@@ -346,6 +347,7 @@ $('#voiceRefresh').onclick=()=>loadVoices(true);
 document.addEventListener('DOMContentLoaded',()=>loadVoices(false));setTimeout(()=>loadVoices(false),800);
 $('#autoOn').onclick=async()=>{if(!confirm('Tam otomatik mod: her 5 saatte üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı. Açılsın mı?'))return;const r=await post('/api/automode',{enabled:true});addMsg('j',r.ok?`Tam otomatik mod açık: her ${r.hours} saatte üretim; otomatik yayın: ${r.connected.length?r.connected.join(', '):'bağlı hesap yok, önce hesap bağlayın'}.`:'Açılamadı: '+(r.error||''));speak(r.ok?'Tam otomatik mod açık.':'Açılamadı.');refreshStatus();};
 $('#autoOff').onclick=async()=>{const r=await post('/api/automode',{enabled:false});addMsg('j','Otomatik üretim ve yayın durduruldu.');refreshStatus();};
+$('#mediaVideo').onclick=async()=>{const on=!$('#mediaVideo').classList.contains('on');await post('/api/settings',{media:{video:on}});refreshStatus();};
 $('#waStages').onclick=async()=>{const on=!$('#waStages').classList.contains('on');await post('/api/settings',{whatsapp:{notifyStages:on}});refreshStatus();};
 $('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
 $('#selfTestBtn').onclick=async()=>{addMsg('j','Sistem kontrolü başladı; satırlar canlı logda.');const r=await post('/api/selftest');addMsg('j',r.summary||'bitti');};

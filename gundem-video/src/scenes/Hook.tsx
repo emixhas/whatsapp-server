@@ -1,20 +1,20 @@
-import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
 import { fitFontSize } from "../fit";
 import { theme } from "../theme";
 import { Captions } from "./Captions";
+import { MediaBg } from "./MediaBg";
 
 type Props = {
-  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
+  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; video?: string; videoDuration?: number; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
 
 /** KANCA: ilk 3 saniye. Dev yazı, kırmızı flaş, varsa tam ekran fotoğraf, kelime kelime altyazı. */
-export const Hook = ({ categoryLabel, title, narration, category, breaking, image, words, durationInFrames }: Props) => {
+export const Hook = ({ categoryLabel, title, narration, category, breaking, image, video, videoDuration, words, durationInFrames }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
   const flash = interpolate(frame, [0, 2, 12], [0.9, 0.9, 0], { extrapolateRight: "clamp" });
   const pop = spring({ frame, fps, config: { damping: 9, stiffness: 180 } });
-  const zoom = 1.06 + interpolate(frame, [0, durationInFrames], [0, 0.1]);
   const shake = frame < 8 ? Math.sin(frame * 3.1) * (8 - frame) * 1.2 : 0;
   const fadeOut = interpolate(frame, [durationInFrames - 6, durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const accent = breaking ? theme.red : st.accent;
@@ -22,9 +22,9 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
   const titleSize = fitFontSize({ text: title, maxWidth: 940, base: title.length > 14 ? 150 : 190, min: 64, maxLines: 3 });
   return (
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white, opacity: fadeOut, transform: `translate(${shake}px,0)` }}>
-      {image ? (
+      {image || video ? (
         <>
-          <Img src={staticFile(image)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `scale(${zoom})` }} />
+          <MediaBg image={image} video={video} videoDuration={videoDuration} durationInFrames={durationInFrames} zoomFrom={1.0} zoomTo={1.08} />
           <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(7,10,18,.35) 0%, rgba(7,10,18,.55) 50%, rgba(7,10,18,.95) 100%)" }} />
         </>
       ) : (
