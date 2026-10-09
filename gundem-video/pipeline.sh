@@ -41,6 +41,8 @@ CLAUDE_MODEL="${CLAUDE_MODEL-$($PY -c "import json;print(json.load(open('data/se
 MODEL_ARGS=(); [ -n "$CLAUDE_MODEL" ] && MODEL_ARGS=(--model "$CLAUDE_MODEL")
 CLAUDE_EFFORT="${CLAUDE_EFFORT:-$($PY -c "import json;e=json.load(open('data/settings.json')).get('claudeEffort','medium');print(e.get('script','medium') if isinstance(e,dict) else e)" 2>/dev/null || echo medium)}"
 export CLAUDE_EFFORT
+# Claude proje dışında boş klasörde ve araçsız çalışır: proje CLAUDE.md'si okunmaz, dosya gezmez (hızlı, az token)
+CLAUDE_CWD="${TMPDIR:-/tmp}/emixhas-claude"; mkdir -p "$CLAUDE_CWD"
 mkdir -p work out public/audio
 # Tek seferde tek üretim: launchd ve panel çakışmasın. mkdir atomik olduğu için kilit olarak kullanılır.
 LOCK="work/pipeline.lock"
@@ -80,7 +82,8 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     PROMPT_FILE="prompts/senaryo.md"
   fi
   { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" "$PROMPT_FILE"; cat work/news_prompt.json; } \
-    | "$CLAUDE" -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
+    | (cd "$CLAUDE_CWD" && "$CLAUDE" -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --effort "${CLAUDE_EFFORT:-medium}" --output-format json \
+        --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence) > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
   $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json

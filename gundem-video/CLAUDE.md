@@ -129,6 +129,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yerleri, nvm dahil → kullanıcının giriş kabuğu); launchd servisi kabuk ayarlarını yüklemediği için gerekli.
   `pipeline.sh` de aynı betiği kullanır. `claudeError()` hataları Türkçe açıklamaya çevirir (bulunamadı,
   oturum kapalı, sınır, zaman aşımı, internet). Sistem kontrolü küçük bir istekle oturumu doğrular.
+  Yalın çağrı (`CLAUDE_LEAN` + `claudeCwd()`): `--tools "" --strict-mcp-config --disable-slash-commands
+  --no-session-persistence`, çalışma klasörü proje DIŞINDA (`$TMPDIR/emixhas-claude`) ki proje CLAUDE.md'si her
+  çağrıda okunmasın; beyin, senaryo (pipeline.sh) ve sistem kontrolü böyle çalışır. Ölçüm: girdi 52.500 → 2.600
+  token, beyin yanıtı ~11 sn. `--bare` KULLANMA (OAuth girişini okumaz).
   Model `settings.claudeModel` (varsayılan "opus" takma adı; "sonnet", "haiku" ya da boş = Claude Code
   varsayılanı) beyin, senaryo ve sistem kontrolünde `--model` olarak geçer; panel Ayarlar → Gelişmiş.
 - Eylemler: generate/schedule/note/sync_metrics/open_video/settings/improvement/restart doğrudan
