@@ -272,6 +272,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yükler (24 saatten eski bayat haber atılır); post_pipeline her yayından sonra, panel saatte bir (üretim yokken)
   çağırır. `--status` YouTube için `holdUntil`/`queued` verir. Doğrulanmamış kanalın sınırı düşüktür
   (youtube.com/verify ile telefon doğrulaması sınırı yükseltir).
+- YouTube kuralı (kullanıcı kararı, sınır yüzünden; `settings.youtubePolicy` {onlyValuable true, extraDailyMax 3,
+  extraKeywords}): otomatik 5 saatlik üretimler YouTube'a HER ZAMAN gider; anlık/Mynet videoları yalnız DEĞERLİYSE
+  ve günde en çok `extraDailyMax` tane (`data/youtube_extra.json`). Instagram/TikTok etkilenmez; elle yayın
+  (panel, WhatsApp "onay") kurala takılmaz. Değer `scripts/news_value.py`: anahtar kelime grupları (can kaybı,
+  kaza/afet, cebe dokunan: asgari ücret/zam/maaş/vergi/akaryakıt, kamu duyurusu: tatil/sınav/yasak, güvenlik) +
+  `prompts/anlik.md`in istediği `importance` 1-5 (4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar).
+  `assemble_script.news_value()` meta'ya `value` yazar; `post_pipeline.youtube_allowed()` karar verir ("⭐ değerli
+  haber" / "📤 youtube: atlandı —"). WhatsApp bildirimi sıradan anlık haberde YouTube'u "onay" listesine koyar.
+  Mynet: `mynet_watch.py` her manşet başlığını puanlar (`valuable`, `valueReason`); panel yeni manşetlerde
+  değerliyi önce üretir, sıradan manşet günde `mynet.maxPerDay` (3), değerli dahil toplam `valuableMaxPerDay` (6).
+  Panelde Anlık kartında anahtar + günlük sayı, Mynet kartında ⭐ rozeti.
 
 ## Kanal kimliği (değiştirirken tutarlı kal)
 - Renkler `src/theme.ts`: koyu lacivert zemin, kırmızı vurgu (#E30A17), beyaz başlık, gri alt metin.

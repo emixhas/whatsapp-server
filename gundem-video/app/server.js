@@ -45,7 +45,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 },
@@ -193,14 +193,18 @@ app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: stat
 // ---------- Mynet manşet takibi: her N dakikada manşet alanı (6 haber) kontrol edilir; yeni giren haber için
 // kaynak gösterilerek, kendi cümlelerimizle anlık (son dakika) video üretilir. Günlük üst sınır var (YouTube kotası).
 const MYNET_DONE = path.join(DATA, "mynet_produced.json");
-const mynetCfg = () => ({ enabled: true, intervalMin: 30, maxPerDay: 3, duration: 30, ...(settings().mynet || {}) });
+const mynetCfg = () => ({ enabled: true, intervalMin: 30, maxPerDay: 3, valuableMaxPerDay: 6, duration: 30, ...(settings().mynet || {}) });
 const today = () => new Date().toISOString().slice(0, 10);
 const mynetDone = () => readJson(MYNET_DONE, {});
 const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
-async function mynetProduce(url, { manual = false } = {}) {
-  const done = mynetDone(); const day = today(); const list = done[day] || [];
+// Değerli manşet (ölüm, kaza, asgari ücret, zam…; mynet_watch.py "valuable") önce ve ayrı sınırla üretilir:
+// sıradan manşet günde maxPerDay, değerli manşet toplamda valuableMaxPerDay'e kadar. YouTube'a yalnız değerliler gider.
+async function mynetProduce(url, { manual = false, item = null } = {}) {
+  const done = mynetDone(); const day = today(); const list = done[day] || []; const c = mynetCfg();
   if (list.includes(url)) return { ok: false, error: "Bu haber için bugün zaten video üretildi." };
-  if (!manual && list.length >= Number(mynetCfg().maxPerDay)) { push(`📰 Mynet: günlük sınır (${mynetCfg().maxPerDay}) doldu, yeni manşet atlandı`); return { ok: false, error: "günlük sınır doldu" }; }
+  const cap = item?.valuable ? Number(c.valuableMaxPerDay) : Number(c.maxPerDay);
+  if (!manual && list.length >= cap) { push(`📰 Mynet: günlük sınır (${cap}) doldu, ${item?.valuable ? "değerli" : "sıradan"} manşet atlandı: ${(item?.title || "").slice(0, 70)}`); return { ok: false, error: "günlük sınır doldu" }; }
+  if (item?.valuable) push(`⭐ Mynet: değerli manşet (${item.valueReason}) — video YouTube'a da gidecek`);
   const a = await pyJson(["scripts/mynet_watch.py", "--article", url]);
   if (!a || a.ok === false || !a.title) { push(`📰 Mynet: haber okunamadı (${a?.error || "başlık yok"})`); return { ok: false, error: a?.error || "haber okunamadı" }; }
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
@@ -217,7 +221,7 @@ async function mynetCheck({ manual = false } = {}) {
   if (!r.items?.length) push("📰 Mynet: manşet alanı bulunamadı (sayfa yapısı değişmiş olabilir)");
   else if (r.first) push(`📰 Mynet manşet takibi başladı: ${r.items.length} haber kaydedildi; bundan sonra yeni girenler için video üretilecek`);
   else if (manual || r.new.length) push(`📰 Mynet kontrol edildi: ${r.items.length} manşet, ${r.new.length} yeni`);
-  for (const it of r.new || []) await mynetProduce(it.url);
+  for (const it of [...(r.new || [])].sort((a, b) => (b.valuable ? 1 : 0) - (a.valuable ? 1 : 0))) await mynetProduce(it.url, { item: it });
   return r;
 }
 setInterval(() => { const c = mynetCfg(); if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
@@ -422,7 +426,7 @@ async function think(text, mode = "chat") {
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", value: meta.value || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
 const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const statusText = async () => {
   const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
@@ -762,6 +766,7 @@ const STAGE_VOICE = [
   [/^📤 tiktok: (tamam|zaten)/, "TikTok'a gönderildi."],
   [/^📤 youtube: sınır doldu/, "YouTube günlük yükleme sınırı doldu. Video sıraya alındı, sınır açılınca otomatik yüklenecek."],
   [/^📤 youtube: hata/, "YouTube'a yüklenemedi."],
+  [/^⭐ değerli haber/, "Değerli haber, YouTube'a da yükleniyor."],
   [/^📤 instagram: hata/, "Instagram'a yüklenemedi."],
   [/^📤 tiktok: hata/, "TikTok'a yüklenemedi."],
   [/^📤 tekrar denenecek/, "Yüklenemeyen platform birazdan tekrar denenecek."],

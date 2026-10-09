@@ -5,6 +5,9 @@ Hangi platformlara yayın: settings.autopublish içinde açık olanlar; ayrıca
   - otomatik üretim (zamanlayıcı) açıksa ya da settings.autoMode (tam otomatik) açıksa bağlı TÜM hesaplar,
   - anlık (son dakika) videoda settings.anlikAutoPublish açıksa (varsayılan) bağlı TÜM hesaplar.
 Bağlı hesaplar yayın anında okunur; sonradan bağlanan hesap da otomatik dahil olur.
+YouTube kuralı (settings.youtubePolicy, günlük yükleme sınırı yüzünden): anlık/Mynet videosu YouTube'a yalnız
+değerliyse (meta "value", scripts/news_value.py) ve günün ek kotası (extraDailyMax) dolmadıysa gider;
+otomatik 5 saatlik üretimler her zaman gider. Instagram/TikTok bu kuraldan etkilenmez.
 Hiçbir yere yayınlanmıyorsa nedeni loga açıkça yazılır.
 """
 import json
@@ -14,7 +17,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, episode_meta, settings  # noqa: E402
+from common import DATA, ROOT, episode_meta, load_json, save_json, settings  # noqa: E402
 
 PLIST = Path.home() / "Library" / "LaunchAgents" / "com.gundem.video.plist"
 
@@ -35,6 +38,37 @@ def connected() -> list:
         return []
 
 
+YT_EXTRA = DATA / "youtube_extra.json"  # {gün: [anlık videolar]} — YouTube'a giden değerli anlık haberler
+
+
+def youtube_allowed(video: str, meta: dict, s: dict) -> bool:
+    """Anlık videonun YouTube'a gidip gitmeyeceği; kararı loga yazar."""
+    pol = s.get("youtubePolicy") or {}
+    if not pol.get("onlyValuable", True):
+        return True
+    v = meta.get("value")
+    if not v:  # eski video: değeri şimdi hesapla
+        from news_value import score
+        text = " ".join(f"{x.get('title', '')} {x.get('narration', '')}" for x in meta.get("segments", []) if x.get("kind") in ("hook", "haber"))
+        v = score(text, pol.get("extraKeywords"))
+    if not v.get("valuable"):
+        print("📤 youtube: atlandı — sıradan haber" + (f" ({v.get('reason')})" if v.get("reasons") or v.get("importance") else "") + "; YouTube'a yalnız otomatik üretimler ve değerli haberler gider (günlük yükleme sınırı)")
+        return False
+    day = time.strftime("%Y-%m-%d")
+    used = load_json(YT_EXTRA, {})
+    today = used.get(day, [])
+    name = Path(video).name
+    limit = int(pol.get("extraDailyMax", 3))
+    if name not in today and len(today) >= limit:
+        print(f"📤 youtube: atlandı — değerli haber ama bugünkü ek YouTube hakkı ({limit}) doldu ({v.get('reason')})")
+        return False
+    if name not in today:
+        today.append(name)
+    save_json(YT_EXTRA, {d: x for d, x in used.items() if d >= time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))} | {day: today})
+    print(f"⭐ değerli haber: YouTube'a da gidiyor ({v.get('reason')}; bugün {len(today)}/{limit})")
+    return True
+
+
 def targets(video: str, s: dict) -> tuple[list, str]:
     ap = s.get("autopublish", {}) or {}
     chosen = [p for p in PLATFORMS if ap.get(p)]
@@ -52,6 +86,8 @@ def targets(video: str, s: dict) -> tuple[list, str]:
         if extra:
             print(f"⚡ anlık haber: bağlı tüm hesaplarda otomatik paylaşılıyor ({', '.join(chosen + extra)})")
         chosen += extra
+    if anlik and "youtube" in chosen and "youtube" in conn and not youtube_allowed(video, meta, s):
+        chosen = [p for p in chosen if p != "youtube"]
     off = [p for p in chosen if p not in conn]
     for p in off:
         print(f"📤 {p}: hesap bağlı değil, atlandı (Ayarlar → Yayın hesapları)")

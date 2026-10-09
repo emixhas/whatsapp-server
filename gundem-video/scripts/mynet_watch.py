@@ -108,7 +108,14 @@ def headlines(page: str, base: str, count: int) -> list:
     # 2) yedek: görselli ilk haber linkleri
     if not chosen:
         chosen = list({x["url"]: x for x in links if x["image"]}.values()) or list({x["url"]: x for x in links}.values())
-    return [{k: v for k, v in x.items() if k != "ctx"} for x in chosen[:count]]
+    out = [{k: v for k, v in x.items() if k != "ctx"} for x in chosen[:count]]
+    # haber değeri (YouTube kuralı ve üretim önceliği): ölüm, kaza, asgari ücret, zam… → valuable
+    from news_value import score
+    kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
+    for x in out:
+        v = score(x["title"], kw)
+        x["valuable"], x["valueReason"] = v["valuable"], v["reason"]
+    return out
 
 
 def _meta(page: str, *names) -> str:

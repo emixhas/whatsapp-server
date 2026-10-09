@@ -89,6 +89,9 @@ _DEFAULTS = ({
         "claudeModel": "opus",
         # Anlık (son dakika) video bitince bağlı tüm hesaplarda onaysız paylaşılsın
         "anlikAutoPublish": True,
+        # YouTube günlük yükleme sınırı: otomatik (5 saatlik) üretimler her zaman; anlık/Mynet videoları yalnız
+        # değerliyse (scripts/news_value.py) ve günde en çok extraDailyMax tane. Elle yayın bu kurala takılmaz.
+        "youtubePolicy": {"onlyValuable": True, "extraDailyMax": 3, "extraKeywords": []},
         # Mynet manşet takibi (scripts/mynet_watch.py, panel her intervalMin dakikada kontrol eder)
         "mynet": {"enabled": True, "url": "https://www.mynet.com/", "count": 6, "intervalMin": 30, "maxPerDay": 3, "duration": 30},
         # Haber medyası: tam boy fotoğraf her zaman; video (yt-dlp, haber sayfasından) açılıp kapatılabilir

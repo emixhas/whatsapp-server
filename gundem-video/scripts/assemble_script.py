@@ -204,6 +204,20 @@ def episode_of_day(date: str) -> int:
     return n
 
 
+def news_value(data: dict, segs: list) -> dict:
+    """Anlık videonun YouTube değeri (scripts/news_value.py): anahtar kelime + modelin verdiği önem."""
+    from news_value import score
+    pol = load_json(DATA / "settings.json", {}).get("youtubePolicy") or {}
+    text = " ".join(f"{s.get('title', '')} {s.get('narration', '')}" for s in segs if s.get("kind") in ("hook", "haber"))
+    topic = DATA.parent / "work" / "anlik_topic.txt"  # konunun başı (başlık + özet); uzun gövde yanlış pozitif yapar
+    text += " " + (topic.read_text(encoding="utf-8")[:300] if topic.exists() else "")
+    v = score(text, pol.get("extraKeywords"), data.get("importance"))
+    if data.get("importanceReason"):
+        v["importanceReason"] = str(data["importanceReason"])[:200]
+    print(f"  haber değeri: {'DEĞERLİ' if v['valuable'] else 'sıradan'} ({v['reason']})")
+    return v
+
+
 def tr_upper(t: str) -> str:
     """Türkçe büyük harf (i → İ, ı → I); Python'un upper() i'yi yanlış olarak I yapar."""
     return (t or "").replace("i", "İ").replace("ı", "I").upper()
@@ -335,6 +349,7 @@ def main(src: str, dst: str):
         "slotLabel": "ANLIK HABER" if ANLIK else f"{regular_slot_of_day(date)}. {hours} SAAT",
         "timeRange": now.strftime("%H:%M") if ANLIK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
+        "value": news_value(data, segs) if ANLIK else None,
         "sourceName": src_name or None,
         "sourceUrl": src_url or None,
         "scheduleHours": hours,

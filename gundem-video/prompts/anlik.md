@@ -35,6 +35,14 @@ KURALLAR
   AFAD → Afet ve Acil Durum Yönetimi Başkanlığı, TL → lira, % → yüzde). Parantez ve tire kullanma.
 - Outro metni sabittir: "Gelişmeleri takip etmeye devam ediyoruz. Son dakika haberleri için takip etmeyi unutma."
 
+ÖNEM ("importance", 1-5)
+- Haberin halk için değeri. YouTube'a günde sınırlı video yüklenebildiği için yalnızca 4 ve 5 YouTube'a gider.
+- 5: can kaybı, büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli/memur maaşı,
+  akaryakıt/doğal gaz/elektrik zammı, vergi, faiz kararı gibi herkesin cebine dokunan karar.
+- 4: okul tatili, sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; ülke çapında ses getiren gelişme.
+- 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, spor sonucu.
+- Abartma: emin değilsen 3 ver. "importanceReason" alanına tek cümlelik gerekçe yaz.
+
 BAŞLIK VARYANTLARI ("titles")
 - "A": haberci başlık (olayın kendisi), "B": merak uyandıran ama dürüst başlık. İkisi de en fazla 7 kelime.
 - "cover": kapakta büyük yazılacak 2-4 kelime.
@@ -44,6 +52,8 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
 
 {
   "titles": {"A": "...", "B": "...", "cover": "..."},
+  "importance": 3,
+  "importanceReason": "...",
   "segments": [
     {"kind": "hook", "title": "...", "narration": "...", "source": "...", "category": "..."},
     {"kind": "intro", "narration": "Son dakika."},
