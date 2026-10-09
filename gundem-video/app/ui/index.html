@@ -39,6 +39,11 @@
   select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px}
   details.grp{border:1px solid var(--line);border-radius:14px;padding:0 14px;margin:10px 0;background:rgba(5,8,17,.35)}details.grp>summary{cursor:pointer;list-style:none;padding:12px 0;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:10px}details.grp>summary::-webkit-details-marker{display:none}details.grp>summary::after{content:"›";margin-left:auto;color:var(--mut);transition:.2s}details.grp[open]>summary::after{transform:rotate(90deg)}details.grp>summary .sum{font-weight:500;color:var(--mut);font-size:12px;letter-spacing:0}details.grp>*:not(summary){margin-left:2px}details.grp h2{margin-top:14px}
   #toast{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;flex-direction:column;gap:8px}#toast div{background:#0b1a12;border:1px solid var(--green);color:#dfffe9;padding:10px 14px;border-radius:12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:tin .2s}#toast div.err{background:#2a1010;border-color:#ff5c5c;color:#ffd6d6}@keyframes tin{from{transform:translateY(10px);opacity:0}}
+  .platgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 4px}
+  .platgrid .pc{background:#070b16;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px}
+  .platgrid .pc h3{margin:0 0 6px;font-size:13px;letter-spacing:1px}.platgrid .pc .s{color:var(--mut);font-size:12px;margin-bottom:6px}
+  .platgrid .pc a{color:var(--txt);text-decoration:none}.platgrid .pc a:hover{text-decoration:underline}
+  .ptag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:800;color:#0B0F1A;margin-left:4px}
   .mynet .mi{display:flex;gap:10px;align-items:center;background:#070b16;border:1px solid var(--line);border-radius:12px;padding:8px}
   .mynet .mi img{width:72px;height:44px;object-fit:cover;border-radius:8px;flex:none;background:#111}
   .mynet .mi .t{flex:1;font-size:13px;line-height:1.3}.mynet .mi .t small{color:var(--mut)}
@@ -134,7 +139,9 @@
     <div class="card tab" id="tab-analytics">
       <h2>ANALİTİK <button class="ghost" id="syncBtn" style="float:right">⟳ İzlenmeleri güncelle</button></h2>
       <div class="kpi" id="kpi"></div>
-      <h2>KATEGORİYE GÖRE ORTALAMA İZLENME</h2><div class="bars" id="byCat"></div>
+      <h2>PLATFORMA GÖRE İZLENME</h2><div class="bars" id="byPlat"></div>
+      <div class="platgrid" id="platTop"></div>
+      <h2 style="margin-top:14px">KATEGORİYE GÖRE ORTALAMA İZLENME</h2><div class="bars" id="byCat"></div>
       <h2 style="margin-top:14px">SÜREYE GÖRE</h2><div class="bars" id="byDur"></div>
       <h2 style="margin-top:14px">SAATE GÖRE</h2><div class="bars" id="byHour"></div>
       <h2 style="margin-top:14px">EN İYİ VİDEOLAR</h2><div id="top"></div>
@@ -416,11 +423,18 @@ $('#effBrain').onchange=e=>post('/api/settings',{claudeEffort:{brain:e.target.va
 $('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});toast('Kanal ayarları kaydedildi ✓');refreshStatus();};
 
 // ================= analitik
+const PLAT={youtube:{n:'YouTube',c:'#FF4D4D'},instagram:{n:'Instagram',c:'#F06292'},tiktok:{n:'TikTok',c:'#25F4EE'}};
+const ptag=p=>p&&PLAT[p]?`<span class="ptag" style="background:${PLAT[p].c}">${PLAT[p].n}</span>`:'';
+const esc=s=>String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'})[c]);
 const bars=(el,obj)=>{const ents=Object.entries(obj||{}).filter(([,v])=>v!=null).sort((a,b)=>b[1]-a[1]);const max=Math.max(1,...ents.map(e=>e[1]));$(el).innerHTML=ents.length?ents.map(([k,v])=>`<div><span>${k}</span><i style="width:${v/max*100}%"></i><span>${v.toLocaleString('tr-TR')}</span></div>`).join(''):'<span class="empty">veri yok</span>';};
 async function loadInsights(){const i=await api('/api/insights');if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
-  $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`;
+  $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
+  const bp=i.byPlatform||{};
+  bars('#byPlat',Object.fromEntries(Object.entries(bp).filter(([,v])=>v.total).map(([k,v])=>[`${PLAT[k].n} (${v.videos} video, ort. ${v.avg.toLocaleString('tr-TR')})`,v.total])));
+  $('#platTop').innerHTML=Object.entries(bp).map(([k,v])=>`<div class="pc" style="border-color:${PLAT[k].c}55"><h3 style="color:${PLAT[k].c}">${PLAT[k].n}</h3><div class="s">toplam ▶ ${v.total.toLocaleString('tr-TR')} · ${v.videos} video · ortalama ${v.avg.toLocaleString('tr-TR')}</div>${(v.top||[]).map((t,n)=>`<div style="margin:4px 0">${n+1}. ${t.url?`<a href="${t.url}" target="_blank">${esc(t.title||t.name)}</a>`:esc(t.title||t.name)} · <b>▶ ${t.views.toLocaleString('tr-TR')}</b></div>`).join('')||'<span class="empty">henüz veri yok</span>'}</div>`).join('');
   bars('#byCat',i.byCategory);bars('#byDur',Object.fromEntries(Object.entries(i.byDuration||{}).map(([k,v])=>[k+' sn',v])));bars('#byHour',Object.fromEntries(Object.entries(i.byHour||{}).map(([k,v])=>[k+':00',v])));
-  $('#top').innerHTML=(i.top||[]).map((r,k)=>`<div style="margin:6px 0">${k+1}. <b>${r.firstTitle??r.name}</b> · ▶ ${r.views.toLocaleString('tr-TR')} · ${r.targetDuration??'?'} sn · ${(r.categories||[]).join(', ')}</div>`).join('')||'<span class="empty">henüz izlenme verisi yok</span>';$('#hint').textContent=i.hint||'';}
+  $('#top').innerHTML=(i.top||[]).map((r,k)=>{const per=[['youtube',r.yt_views],['instagram',r.ig_views],['tiktok',r.tt_views]].filter(([,v])=>v).map(([p,v])=>`${PLAT[p].n} ${v.toLocaleString('tr-TR')}`).join(' · ');
+    return `<div style="margin:8px 0">${k+1}. <b>${esc(r.firstTitle??r.name)}</b> · ▶ ${r.views.toLocaleString('tr-TR')} ${r.bestPlatform?'· en çok '+ptag(r.bestPlatform):''}<br><span style="color:var(--mut);font-size:12px">${per}${per?' · ':''}${r.targetDuration??'?'} sn · ${(r.categories||[]).join(', ')}</span></div>`;}).join('')||'<span class="empty">henüz izlenme verisi yok</span>';$('#hint').textContent=i.hint||'';}
 $('#syncBtn').onclick=async()=>{$('#syncBtn').disabled=true;const r=await post('/api/metrics/sync');$('#syncBtn').disabled=false;addMsg('j',r.ok?`İzlenmeler güncellendi (YouTube ${r.youtube??0}, Instagram ${r.instagram??0}).`:'Güncellenemedi: '+(r.errors||[]).join('; '));loadInsights();loadVideos();};
 
 // ================= raporlar, hafıza

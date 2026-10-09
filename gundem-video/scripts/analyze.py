@@ -63,7 +63,20 @@ def main():
     hour_avg = {k: avg(v) for k, v in by_hour.items()}
     var_avg = {k: avg(v) for k, v in by_var.items()}
     fmt_avg = {k: avg(v) for k, v in by_fmt.items()}
-    top = sorted(with_data, key=lambda r: -r["views"])[:5]
+    top = sorted(with_data, key=lambda r: -r["views"])[:10]
+    # Platform analizi: toplam, video başına ortalama, platformun en çok izlenen videosu; her videonun en güçlü platformu
+    PL = (("youtube", "yt_views"), ("instagram", "ig_views"), ("tiktok", "tt_views"))
+    by_platform = {}
+    for pl, key in PL:
+        vals = [(r, r.get(key) or 0) for r in rows if r.get(key)]
+        best = max(vals, key=lambda x: x[1]) if vals else None
+        by_platform[pl] = {"total": sum(v for _, v in vals), "videos": len(vals), "avg": round(sum(v for _, v in vals) / len(vals)) if vals else 0,
+                           "best": {"name": best[0]["name"], "title": best[0]["firstTitle"], "views": best[1], "url": (best[0].get("urls") or {}).get(pl)} if best else None,
+                           "top": [{"name": r["name"], "title": r["firstTitle"], "views": v, "url": (r.get("urls") or {}).get(pl)} for r, v in sorted(vals, key=lambda x: -x[1])[:3]]}
+    for r in rows:
+        per = {pl: r.get(key) or 0 for pl, key in PL}
+        r["bestPlatform"] = max(per, key=per.get) if any(per.values()) else None
+    leader = max(by_platform, key=lambda k: by_platform[k]["total"]) if any(v["total"] for v in by_platform.values()) else None
     breaking_avg = avg([r["views"] for r in with_data if r["breaking"]])
     normal_avg = avg([r["views"] for r in with_data if not r["breaking"]])
 
@@ -89,7 +102,8 @@ def main():
         "withDataCount": len(with_data), "totalViews": sum(r["views"] for r in rows),
         "byCategory": cat_avg, "byDuration": dur_avg, "byHour": hour_avg, "byTitleVariant": var_avg, "byFormat": fmt_avg,
         "breakingAvg": breaking_avg, "normalAvg": normal_avg,
-        "top": [{k: r[k] for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "categories", "targetDuration", "urls")} for r in top],
+        "top": [{k: r.get(k) for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "bestPlatform", "categories", "targetDuration", "urls")} for r in top],
+        "byPlatform": by_platform, "leadingPlatform": leader,
         "hint": hint_text, "rows": rows,
     }
     save_json(DATA / "insights.json", insights)
