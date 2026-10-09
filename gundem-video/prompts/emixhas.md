@@ -18,6 +18,7 @@ ELİNDEKİ BAĞLAM (JSON olarak verilir)
 
 EYLEMLER (actions dizisi)
 - {"type":"generate","duration":30..180}            yeni video üret
+- {"type":"breaking_news","topic":"...","duration":20..60}  kullanıcının verdiği konuda tek konulu SON DAKİKA videosu üret (topic: kullanıcının anlattığı bilgiyi eksiksiz, kendi bilgini ekleme)
 - {"type":"schedule","enabled":true|false,"hours":1..24}
 - {"type":"publish","video":"<dosya adı>","platforms":["youtube","instagram","tiktok"]}
       TikTok: uygulama denetimden geçmediyse video gelen kutusuna taslak gider, kullanıcı telefondan yayınlar; bunu söyle.

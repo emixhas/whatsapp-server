@@ -4,6 +4,7 @@
 #           DURATION=60 bash pipeline.sh         (60 saniyelik video)
 #           TTS_ENGINE=silent bash pipeline.sh   (sessiz test)
 #           SKIP_CLAUDE=1 bash pipeline.sh       (work/claude_out.json hazırsa Claude'u atla)
+#           ANLIK=1 DURATION=30 bash pipeline.sh (work/anlik_topic.txt konusunda tek konulu son dakika videosu)
 set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -23,6 +24,13 @@ DURATION="${DURATION:-$(echo "$FMT_JSON" | $PY -c "import json,sys;print(json.lo
 export FORMAT FORMAT_LABEL
 WORDS=$(( DURATION * 24 / 10 ))          # ~150 kelime/dk temposunda sığan kelime
 HABER=$(( DURATION / 8 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 12 ] && HABER=12
+# Anlık haber: tek konu, 2-4 segment (ne oldu, ayrıntılar, son durum); konu work/anlik_topic.txt
+if [ "${ANLIK:-0}" = "1" ]; then
+  [ -s work/anlik_topic.txt ] || { echo "HATA: anlık haber konusu boş (work/anlik_topic.txt)"; exit 1; }
+  HABER=$(( DURATION / 10 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 4 ] && HABER=4
+  FORMAT="anlik"; FORMAT_LABEL="Son Dakika"
+fi
+export ANLIK="${ANLIK:-0}"
 export DURATION WORDS HABER
 # Senaryo için "medium" yeterli (ölçüldü: aynı 7 haber/kategori, çıktı tokenı high'ın yarısı).
 # Claude modeli: settings.claudeModel ("opus" varsayılan; boşsa Claude Code'un kendi varsayılanı)
@@ -45,17 +53,30 @@ cleanup() { rm -rf "$LOCK"; [ -n "$RESERVED" ] && rm -f "$RESERVED"; }
 trap cleanup EXIT
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
+[ "$ANLIK" = "1" ] && echo "⚡ ANLIK HABER: $(head -c 160 work/anlik_topic.txt | tr '\n' ' ')"
 echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (format ${FORMAT} · ${FORMAT_LABEL}, hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
 
 echo "-- 1/4 haberler"
-$PY scripts/fetch_news.py work/news.json
+if [ "$ANLIK" = "1" ]; then
+  # Anlık haberde RSS olmasa da editörün yazdığı bilgiyle devam edilir
+  $PY scripts/fetch_news.py work/news.json || { echo "  ! haberler çekilemedi; yalnızca yazdığın bilgiyle devam ediliyor"; echo '{"items":[]}' > work/news.json; }
+else
+  $PY scripts/fetch_news.py work/news.json
+fi
 
 echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
-  $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
-  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" prompts/senaryo.md; cat work/news_prompt.json; } \
+  if [ "$ANLIK" = "1" ]; then
+    # Tek konu: RSS'ten konuyla ilgili haberler + editörün yazdığı bilgi, ayrı senaryo kuralları
+    $PY scripts/topic_news.py work/news.json work/anlik_topic.txt work/news_prompt.json
+    PROMPT_FILE="prompts/anlik.md"
+  else
+    $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
+    PROMPT_FILE="prompts/senaryo.md"
+  fi
+  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" "$PROMPT_FILE"; cat work/news_prompt.json; } \
     | "$CLAUDE" -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
   $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
 fi

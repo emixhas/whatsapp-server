@@ -24,6 +24,9 @@ CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "sagli
 ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
 # Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
 OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."
+# Anlık (tek konulu son dakika) videonun kapanışı; panelden "Anlık haber üret" ile ANLIK=1 gelir
+ANLIK = os.environ.get("ANLIK") == "1"
+OUTRO_ANLIK = "Gelişmeleri takip etmeye devam ediyoruz. Son dakika haberleri için takip etmeyi unutma."
 
 
 # Seslendirme motorları kısaltmaları yanlış okur; bilinen kısaltmalar açılır (kelime sınırı ile).
@@ -197,6 +200,15 @@ def episode_of_day(date: str) -> int:
     return n
 
 
+def regular_slot_of_day(date: str) -> int:
+    """Kaçıncı 5 saatlik video: o günün anlık olmayan videoları + 1 (anlık videolar sayımı kaydırmaz)."""
+    n = 0
+    for f in (ROOT / "out").glob(f"{date}-*.json"):
+        if re.match(rf"{re.escape(date)}-\d+\.json$", f.name) and load_json(f, {}).get("format") != "anlik":
+            n += 1
+    return n + 1
+
+
 def main(src: str, dst: str):
     raw = Path(src).read_text(encoding="utf-8")
     data = extract_json(raw)
@@ -219,7 +231,7 @@ def main(src: str, dst: str):
     if len(segs) > 1 and segs[1].get("kind") != "intro":
         sys.exit("İkinci segment intro olmalı")
     # Outro her videoda aynı kancalı kapanış: marka tutarlılığı için Claude'un yazdığı metin ezilir
-    segs[-1]["narration"] = OUTRO_TEXT
+    segs[-1]["narration"] = OUTRO_ANLIK if ANLIK else OUTRO_TEXT
     hk = segs[0]
     if len(hk.get("narration", "").split()) > 10:
         hk["narration"] = " ".join(hk["narration"].split()[:10]).rstrip(",;:") + "."
@@ -240,6 +252,9 @@ def main(src: str, dst: str):
         if s["kind"] in ("haber", "hook") and s.get("category") not in ("asayis", "dunya", "hava") and ASAYIS.search(f"{s.get('title', '')} {s['narration']}"):
             print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
             s["category"] = "asayis"
+    if ANLIK and haber:
+        haber[0]["breaking"] = True  # anlık videonun ilk haberi her zaman SON DAKİKA kartı
+        segs[0]["breaking"] = True
     breaking = [s for s in haber if s.get("breaking")]
     for s in breaking[1:]:
         s["breaking"] = False  # en fazla bir manşet
@@ -271,14 +286,15 @@ def main(src: str, dst: str):
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
         "dayLabel": f"{now.day} {AYLAR[now.month - 1]} {GUNLER[now.weekday()]}",
         "episodeOfDay": ep_n,
-        "slotLabel": f"{ep_n}. {hours} SAAT",
-        "timeRange": f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
+        "slotLabel": "ANLIK HABER" if ANLIK else f"{regular_slot_of_day(date)}. {hours} SAAT",
+        "timeRange": now.strftime("%H:%M") if ANLIK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
+        "anlik": ANLIK,
         "scheduleHours": hours,
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,
         "format": os.environ.get("FORMAT", "ozel"),
         "formatLabel": os.environ.get("FORMAT_LABEL", "Gündem"),
-        "music": f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
+        "music": "music/ogle.mp3" if ANLIK else f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
         "segments": segs,
     }
     Path(dst).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")

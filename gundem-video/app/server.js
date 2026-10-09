@@ -88,19 +88,40 @@ function notifyStage(line) {
 }
 const announce = (reply, extra = {}) => { for (const r of clients) r.write(`event: jarvis\ndata: ${JSON.stringify({ reply, ...extra })}\n\n`); };
 
-function startPipeline(duration) {
+function startPipeline(duration, extraEnv = {}) {
   if (state.running) return { ok: false, error: "Zaten bir üretim sürüyor." };
   const lock = path.join(WORK, "pipeline.lock", "pid");
   if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
   duration = Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
-  push(`▶ ${duration} saniyelik üretim başlatıldı`);
-  const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration) } });
+  push(extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
+  const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration), ...extraEnv } });
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
   child.on("close", (code) => { state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
+
+// ---------- Anlık haber: editörün yazdığı konuda tek konulu son dakika videosu
+// Başka üretim sürüyorsa istek sıraya girer ve o bitince kendiliğinden başlar (zamanlayıcı üretimi dahil).
+const anlikQueue = []; // sırayla üretilecek anlık haber istekleri
+const pipelineBusy = () => { if (state.running) return true; const lock = path.join(WORK, "pipeline.lock", "pid"); if (!existsSync(lock)) return false; try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return true; } catch { return false; } };
+function startAnlik(topic, duration) {
+  topic = String(topic || "").replace(/\s+/g, " ").trim().slice(0, 1500);
+  if (topic.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın (en az birkaç kelime)." };
+  duration = Math.min(60, Math.max(20, Number(duration) || 30));
+  if (pipelineBusy()) {
+    anlikQueue.push({ topic, duration, at: Date.now() });
+    push(`⚡ anlık haber sıraya alındı (${anlikQueue.length}. sırada, şu an başka üretim sürüyor): ${topic.slice(0, 80)}`);
+    return { ok: true, queued: true, position: anlikQueue.length, duration };
+  }
+  mkdirSync(WORK, { recursive: true });
+  writeFileSync(path.join(WORK, "anlik_topic.txt"), topic + "\n");
+  return { ...startPipeline(duration, { ANLIK: "1" }), anlik: true };
+}
+setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration); } }, 10000);
+app.post("/api/anlik", (req, res) => res.json(startAnlik(req.body?.topic, req.body?.duration)));
+app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
 
 // ---------- zamanlayıcı (launchd)
 const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem.video.plist");
@@ -271,11 +292,12 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest"]);
+const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
+    case "breaking_news": return startAnlik(a.topic, a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
     case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
@@ -546,6 +568,7 @@ async function handleCommand(text) {
   text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   switch (cmd.action) {
+    case "anlik": { const r = startAnlik(cmd.topic, cmd.duration); reply = !r.ok ? r.error : r.queued ? `Anlık haber ${r.position}. sıraya alındı. Süren üretim bitince başlayacak.` : `Son dakika videosu üretiliyor: ${String(cmd.topic).slice(0, 60)}. Bitince haber vereceğim.`; if (!r.ok) action = "none"; break; }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
     case "play_latest": if (!videos.length) { reply = "Henüz üretilmiş video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = `Son video açılıyor: ${label(videos[0])}.`; } break;
     case "status": reply = await statusText(); break;

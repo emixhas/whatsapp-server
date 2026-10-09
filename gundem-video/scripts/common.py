@@ -128,15 +128,20 @@ def build_caption(video_name: str, max_len: int = 2000):
     slot = meta.get("slotLabel") or (f"{meta.get('episodeOfDay', '')}. 5 saat" if meta.get("episodeOfDay") else "")
     rng = meta.get("timeRange") or ""
     stamp = " · ".join(x for x in (day, slot.title() if slot else "", rng) if x)
-    title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
-    lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
+    anlik = meta.get("anlik") or meta.get("format") == "anlik"
+    if anlik:  # tek konulu son dakika videosu
+        title = f"🔴 SON DAKİKA: {first} | {s['channelName']} #Shorts"
+        lines = [f"🔴 SON DAKİKA · {s['channelName']} · {day} · {rng}", ""]
+    else:
+        title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
+        lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
     for i, h in enumerate(haber, 1):
-        head = f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
+        head = h["title"] if anlik else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
         lines.append(head)
         if h.get("narration"):
             lines.append(h["narration"].strip())
         if h.get("source"):
             lines.append(f"Kaynak: {h['source']}")
         lines.append("")
-    lines += ["Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", "", s["hashtags"]]
+    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", "", ("#sondakika " if anlik and "#sondakika" not in s["hashtags"] else "") + s["hashtags"]]
     return title[:100], "\n".join(lines)[:max_len]

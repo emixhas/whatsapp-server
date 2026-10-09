@@ -52,6 +52,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Bölüm meta: `dayLabel` ("9 Ekim Cuma"), `slotLabel` ("2. 5 SAAT"), `timeRange` ("09:00–14:00"),
   `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,
   illüstrasyon `Sequence from={-40}` ile oturmuş haliyle) ve açıklama (`build_caption`: her haberin başlığı + metni + kaynağı) bunları gösterir.
+- Anlık haber (tek konulu son dakika): panel "⚡ ANLIK HABER" kartı → `POST /api/anlik {topic, duration 20-60}`,
+  WhatsApp/ses "son dakika: <konu>" ya da "anlık haber: <konu>" (iki nokta zorunlu), beyin eylemi `breaking_news`.
+  Konu `work/anlik_topic.txt`, `ANLIK=1 bash pipeline.sh`: `scripts/topic_news.py` RSS'ten konuya uyan haberleri
+  süzer (4 harflik kök eşleşmesi), `prompts/anlik.md` tek konu ve 2-4 segment yazdırır, RSS çekilemezse yalnızca
+  editörün bilgisiyle devam eder. `assemble`: ilk haber `breaking`, outro `OUTRO_ANLIK`, `slotLabel` "ANLIK HABER",
+  `timeRange` üretim saati, `format` "anlik"; `regular_slot_of_day()` anlık videoları "N. 5 SAAT" sayımına katmaz.
+  `build_caption` "🔴 SON DAKİKA:" başlığı kullanır. Başka üretim sürerken istekler sıraya girer (FIFO, 10 sn kontrol).
 - Kategori öğrenme: prompt uygun kategori yoksa `categorySuggestion` yazdırır; `assemble` sayar
   (`data/category_suggestions.json`), 3 tekrarda geliştirme kuyruğuna görev yazar; `analyze` insights'a koyar.
 - A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm
