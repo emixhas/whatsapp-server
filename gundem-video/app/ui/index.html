@@ -81,7 +81,7 @@
         <div class="state" id="stateLbl">HAZIR</div>
         <div class="heard" id="heard">Küreye tıklayın ve konuşun, ya da yazın</div>
         <div class="reply" id="reply"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="selfTestBtn" title="tüm bağlantıları ve motorları sına">🩺 Sistem kontrolü</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="stopAllBtn" title="üretimi ve arka planda çalışan tüm modelleri kapatır">⏹ Hepsini durdur</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="selfTestBtn" title="tüm bağlantıları ve motorları sına">🩺 Sistem kontrolü</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
         <div id="diag" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;font-size:11px;color:var(--mut)"><span id="dMic">mikrofon: ?</span><span>·</span><span id="dAudio">ses: ?</span><span>·</span><span id="dRec">tanıma: ?</span></div>
         <div class="chips">
           <span class="chip" data-say="otuz saniyelik video üret">30 sn üret</span><span class="chip" data-say="altmış saniyelik video üret">60 sn üret</span>
@@ -255,7 +255,8 @@ function drawOrb(){t+=.016;sample();const c=COLORS[mode];const W=orb.width,H=orb
   for(let k=0;k<3;k++){const x=bg.width*(.2+k*.3)+Math.sin(t*.25+k)*110,y=bg.height*(.3+(k%2)*.4)+Math.cos(t*.18+k)*70;const r=360+amp*260;const gg=bctx.createRadialGradient(x,y,0,x,y,r);gg.addColorStop(0,hex(k===1?c:'#2E4B9A',.16+amp*.25));gg.addColorStop(1,'rgba(0,0,0,0)');bctx.fillStyle=gg;bctx.fillRect(0,0,bg.width,bg.height);}
   // Boşta (hazır, ses yok) saniyede 12 kare yeter; dinleme/konuşma/düşünmede akıcı çizim. Sekme gizliyse çizilmez.
   if(document.hidden){setTimeout(drawOrb,1000);return;}
-  if(mode==='idle'&&amp<.02)setTimeout(()=>requestAnimationFrame(drawOrb),80);else requestAnimationFrame(drawOrb);}
+  // boşta saniyede 1 kare (ısınmasın); dinleme/konuşma/düşünme/üretimde akıcı
+  if(mode==='idle'&&amp<.02)setTimeout(()=>requestAnimationFrame(drawOrb),1000);else if(mode==='working')setTimeout(()=>requestAnimationFrame(drawOrb),100);else requestAnimationFrame(drawOrb);}
 drawOrb();
 
 // ================= durum, log
@@ -377,6 +378,7 @@ $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:
 $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
+$('#stopAllBtn').onclick=async()=>{if(status.running&&!confirm('Süren üretim de durdurulacak. Emin misin?'))return;const r=await post('/api/stopall');const m=`Durduruldu: ${r.pipeline?'üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı.`;toast(m);addMsg('j',m);refreshStatus();};
 $('#anlikAuto').onclick=async()=>{const on=!$('#anlikAuto').classList.contains('on');await post('/api/settings',{anlikAutoPublish:on});refreshStatus();};
 $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topic.length<8){toast('Konuyu biraz daha ayrıntılı yaz',true);$('#anlikTxt').focus();return;}
   const btn=$('#anlikBtn');btn.disabled=true;

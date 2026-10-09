@@ -92,6 +92,62 @@ function notifyStage(line) {
 }
 const announce = (reply, extra = {}) => { for (const r of clients) r.write(`event: jarvis\ndata: ${JSON.stringify({ reply, ...extra })}\n\n`); };
 
+// ---------- Arka plan süreç temizliği: kullanılmayan model ve yardımcı süreçler kapatılır (ısınma önlemi)
+// Üretim sürmüyorsa bizim başlattığımız ağır süreçler (ses modelleri, Remotion'un Chrome'u, yt-dlp, kapak çizimi)
+// açık kalmamalı. Her 5 dk'da 10 dk'dan uzun yaşayanlar, üretim bitince hepsi kapatılır; panelde "Hepsini durdur".
+let pipelineProc = null;
+const HEAVY = [
+  [/tts_server\.py/, "Chatterbox ses modeli"], [/voxcpm_tts\.py/, "VoxCPM ses modeli"], [/ema_tts\.py/, "EMA ses modeli"],
+  [/trendyol-tts/, "Trendyol ses modeli"], [/yt_dlp/, "yt-dlp video indirme"], [/render_thumbs\.(mjs|py)/, "kapak çizimi"],
+  [/fetch_images\.py/, "fotoğraf/video indirme"], [/remotion.*\b(render|still)\b/, "Remotion"], [/@remotion\/compositor|remotion-compositor/, "Remotion derleyici"],
+  [/chrome-headless-shell|Chrome Headless|headless_shell/, "Remotion tarayıcısı"], [/speak\.py/, "Emixhas sesi"],
+];
+const etimeSec = (t) => { const m = String(t).trim().match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/); return m ? (+(m[1] || 0)) * 86400 + (+(m[2] || 0)) * 3600 + (+m[3]) * 60 + (+m[4]) : 0; };
+function processTable() {
+  const out = spawnSync("ps", ["-axo", "pid=,ppid=,etime=,%cpu=,command="], { encoding: "utf8" }).stdout || "";
+  return out.split("\n").map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+([\d.]+)\s+(.*)$/)).filter(Boolean)
+    .map((m) => ({ pid: +m[1], ppid: +m[2], age: etimeSec(m[3]), cpu: +m[4], cmd: m[5] }));
+}
+function heavyProcs() {
+  const me = process.pid;
+  return processTable().filter((p) => p.pid !== me && !/app\/server\.js/.test(p.cmd)).map((p) => {
+    const hit = HEAVY.find(([re]) => re.test(p.cmd));
+    if (!hit) return null;
+    // Remotion tarayıcısı yalnızca projenin kendi kopyasıysa (node_modules/.remotion); kullanıcının Chrome'una dokunulmaz
+    if (hit[1] === "Remotion tarayıcısı" && !p.cmd.includes(ROOT) && !p.cmd.includes("/.remotion/")) return null;
+    return { ...p, what: hit[1] };
+  }).filter(Boolean);
+}
+function killTree(pid) {
+  const table = processTable(); const kids = (id) => table.filter((p) => p.ppid === id).flatMap((p) => [...kids(p.pid), p.pid]);
+  const all = [...kids(pid), pid];
+  for (const id of all) { try { process.kill(id, "SIGTERM"); } catch { /* yok */ } }
+  setTimeout(() => { for (const id of all) { try { process.kill(id, "SIGKILL"); } catch { /* kapandı */ } } }, 4000);
+  return all.length;
+}
+function reap({ minAgeSec = 600, reason = "boşta", force = false } = {}) {
+  if (!force && pipelineBusy()) return { ok: true, killed: [] };
+  const victims = heavyProcs().filter((p) => p.age >= minAgeSec && !(minAgeSec === 0 && !force && /speak\.py/.test(p.cmd) && p.age < 60));
+  for (const p of victims) killTree(p.pid);
+  if (victims.length) push(`🧹 ${reason}: ${[...new Set(victims.map((v) => v.what))].join(", ")} kapatıldı (${victims.length} süreç)`);
+  return { ok: true, killed: victims.map((v) => ({ pid: v.pid, what: v.what, cpu: v.cpu })) };
+}
+setInterval(() => { try { reap({ minAgeSec: 600, reason: "kullanılmayan süreç" }); } catch { /* ps yok */ } }, 5 * 60000);
+// Hepsini durdur: üretim (panelden ya da zamanlayıcıdan), sıradaki anlık haberler ve tüm ağır süreçler
+function stopAll() {
+  let n = 0;
+  if (pipelineProc) { n += killTree(pipelineProc.pid); }
+  const lock = path.join(WORK, "pipeline.lock", "pid");
+  if (existsSync(lock)) { try { const pid = Number(readFileSync(lock, "utf8").trim()); process.kill(pid, 0); n += killTree(pid); } catch { /* eski kilit */ } }
+  anlikQueue.length = 0;
+  const r = reap({ minAgeSec: 0, reason: "durduruldu", force: true });
+  try { stopTts(); } catch { /* yok */ }
+  push(`⏹ hepsi durduruldu: üretim ${n ? "kapatıldı" : "yoktu"}, ${r.killed.length} arka plan süreci kapatıldı`);
+  return { ok: true, pipeline: n > 0, killed: r.killed };
+}
+app.post("/api/stopall", (_req, res) => res.json(stopAll()));
+app.get("/api/procs", (_req, res) => res.json({ busy: pipelineBusy(), procs: heavyProcs().map(({ pid, what, cpu, age }) => ({ pid, what, cpu, age })) }));
+
 function startPipeline(duration, extraEnv = {}) {
   if (state.running) return { ok: false, error: "Zaten bir üretim sürüyor." };
   const lock = path.join(WORK, "pipeline.lock", "pid");
@@ -100,9 +156,10 @@ function startPipeline(duration, extraEnv = {}) {
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
   push(extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration), ...extraEnv } });
+  pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti" }), 3000); state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -576,6 +633,7 @@ async function handleCommand(text) {
   text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   switch (cmd.action) {
+    case "stopall": { const r = stopAll(); reply = `Durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}${r.killed.length ? r.killed.length + " arka plan süreci kapatıldı." : "Arka planda çalışan model yoktu."}`; break; }
     case "anlik": { const r = startAnlik(cmd.topic, cmd.duration); reply = !r.ok ? r.error : r.queued ? `Anlık haber ${r.position}. sıraya alındı. Süren üretim bitince başlayacak.` : `Son dakika videosu üretiliyor: ${String(cmd.topic).slice(0, 60)}. Bitince haber vereceğim.`; if (!r.ok) action = "none"; break; }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
     case "play_latest": if (!videos.length) { reply = "Henüz üretilmiş video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = `Son video açılıyor: ${label(videos[0])}.`; } break;
@@ -611,14 +669,15 @@ app.post("/api/command", async (req, res) => res.json(await handleCommand(req.bo
 const SPEAK_CACHE = path.join(WORK, "speak-cache");
 const speakKey = (text) => createHash("sha1").update(JSON.stringify([text, settings().voice || {}])).digest("hex");
 const speakInflight = new Map();
-function synthSpeech(text) {
+function synthSpeech(text, { low = false } = {}) {
   text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 500);
   if (!text) return Promise.resolve(null);
   const file = path.join(SPEAK_CACHE, speakKey(text) + ".wav");
   if (existsSync(file)) return Promise.resolve(file);
   if (speakInflight.has(file)) return speakInflight.get(file); // aynı cümle zaten üretiliyorsa onu bekle
   const job = new Promise((resolve) => {
-    const child = spawn(PY, ["scripts/speak.py"], { cwd: ROOT, env: ENV }); const chunks = [];
+    // arka plan ısınması için düşük öncelik (nice): kullanıcının işini yavaşlatmaz, fanı az çalıştırır
+    const child = low && isMac ? spawn("nice", ["-n", "15", PY, "scripts/speak.py"], { cwd: ROOT, env: ENV }) : spawn(PY, ["scripts/speak.py"], { cwd: ROOT, env: ENV }); const chunks = [];
     child.stdout.on("data", (c) => chunks.push(c));
     child.on("error", () => resolve(null));
     child.on("close", (code) => {
@@ -686,7 +745,7 @@ function stageVoice(line) {
 }
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
 const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Son dakika videosu üretiliyor.", ...STAGE_PHRASES];
-setTimeout(async () => { for (const t of QUICK_PHRASES) await synthSpeech(t); }, 20000);
+setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy()) break; await synthSpeech(t, { low: true }); } }, 20000);
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
 let lastReportDay = null;

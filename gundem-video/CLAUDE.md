@@ -157,6 +157,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Seslendirme öncesi `prep_text`: rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler
   normal yazıma. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
   (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
+- Isınma önlemi (kullanıcı isteği, geri alma): `reap()` üretim sürmüyorken bizim başlattığımız ağır süreçleri
+  (`HEAVY`: ses modelleri, yt-dlp, kapak çizimi, Remotion ve onun Chrome'u — yalnızca node_modules/.remotion
+  kopyası, kullanıcının Chrome'una dokunulmaz) kapatır: her 5 dk'da 10 dk'dan uzun yaşayanlar, üretim bitince
+  hepsi. `POST /api/stopall` + panel "⏹ Hepsini durdur" + komut "her şeyi durdur / modelleri kapat" üretimi
+  (panel ya da zamanlayıcı kilidi) süreç ağacıyla birlikte, anlık kuyruğu ve tüm ağır süreçleri kapatır.
+  `GET /api/procs` çalışanları listeler. Panel küresi boştayken saniyede 1 kare çizer; ses ön ısıtması `nice`.
 - Modeller sürekli açık TUTULMAZ (kullanıcı isteği): her ses modeli yalnızca üretimde ya da ön dinlemede
   yüklenir, iş bitince süreç kapanır. Doğal ses: `scripts/tts_server.py` Chatterbox Multilingual (MIT,
   Türkçe, klonlama) modelini :3139'da sunar ama panel onu başlatmaz; `natural_tts.on_demand()` sunucuyu
