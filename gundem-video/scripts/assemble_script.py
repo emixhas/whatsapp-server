@@ -289,6 +289,7 @@ def main(src: str, dst: str):
     if ANLIK and haber:
         haber[0]["breaking"] = True  # anlık videonun ilk haberi her zaman SON DAKİKA kartı
         segs[0]["breaking"] = True
+    src_name, src_url = os.environ.get("ANLIK_SOURCE", "").strip(), os.environ.get("ANLIK_URL", "").strip()
     breaking = [s for s in haber if s.get("breaking")]
     for s in breaking[1:]:
         s["breaking"] = False  # en fazla bir manşet
@@ -297,6 +298,17 @@ def main(src: str, dst: str):
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 
     matched = attach_images(segs)
+    if ANLIK and src_url:  # haber sitesinden gelen anlık haber: fotoğraf/video o haberin sayfasından
+        for s in segs:
+            if s.get("kind") in ("hook", "haber"):
+                s["articleUrl"] = src_url
+                s.pop("imageUrl", None)
+                if src_name and s.get("source") in (None, "", "Türkiye Gündemi"):
+                    s["source"] = src_name
+        if src_name:  # kanca ve ilk haber kartı her zaman asıl kaynağı gösterir
+            segs[0]["source"] = src_name
+            if haber:
+                haber[0]["source"] = src_name
     if matched:
         print(f"  {matched} haber kaynağıyla eşleşti (fotoğraf ve video haber sayfasından alınacak)")
     now = datetime.now()
@@ -323,6 +335,8 @@ def main(src: str, dst: str):
         "slotLabel": "ANLIK HABER" if ANLIK else f"{regular_slot_of_day(date)}. {hours} SAAT",
         "timeRange": now.strftime("%H:%M") if ANLIK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
+        "sourceName": src_name or None,
+        "sourceUrl": src_url or None,
         "scheduleHours": hours,
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,

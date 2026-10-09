@@ -8,7 +8,10 @@ KURALLAR
 - Toplam seslendirme metni EN FAZLA __KELIME__ kelime. Bu sınır kesindir.
 - Bilgi kaynağı yalnızca "konu" metni ve "ilgili_haberler". Bunlarda olmayan hiçbir bilgiyi, rakamı,
   ismi, yeri ekleme. Rakam ve isimleri aynen koru. Tahmin, yorum, spekülasyon yok.
-- "konu" metnindeki bir bilgi ilgili haberlerin hiçbirinde geçmiyorsa onu doğrulanmış gerçek gibi sunma:
+- Veride "kaynak" alanı varsa "konu" o haber sitesinin yayımladığı haber metnidir: bilgiyi o siteye dayandır,
+  "source" alanına o adı yaz (ör. "Mynet"), ilk haber segmentinde kaynağı bir kez an ("Mynet'in haberine göre").
+  Metni KENDİ CÜMLELERİNLE yeniden yaz; kaynaktaki cümleleri ve başlığı birebir kopyalama.
+- "kaynak" alanı yoksa ve "konu" metnindeki bir bilgi ilgili haberlerin hiçbirinde geçmiyorsa onu doğrulanmış gerçek gibi sunma:
   "bildirildi", "iddia edildi", "ilk bilgilere göre" gibi temkinli ifade kullan. İlgili haberlerle
   çelişiyorsa haberlerdeki bilgiyi esas al.
 - Video bir KANCA ile açılır ("hook"): olayın tek cümlesi, en fazla 8 kelime, somut (yer adı ya da rakam).

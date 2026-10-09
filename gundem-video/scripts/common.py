@@ -89,6 +89,8 @@ _DEFAULTS = ({
         "claudeModel": "opus",
         # Anlık (son dakika) video bitince bağlı tüm hesaplarda onaysız paylaşılsın
         "anlikAutoPublish": True,
+        # Mynet manşet takibi (scripts/mynet_watch.py, panel her intervalMin dakikada kontrol eder)
+        "mynet": {"enabled": True, "url": "https://www.mynet.com/", "count": 6, "intervalMin": 30, "maxPerDay": 3, "duration": 30},
         # Haber medyası: tam boy fotoğraf her zaman; video (yt-dlp, haber sayfasından) açılıp kapatılabilir
         "media": {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True},
         "claudeEffort": {"script": "medium", "brain": "high", "chat": "low"},
@@ -147,5 +149,7 @@ def build_caption(video_name: str, max_len: int = 2000):
         if h.get("source"):
             lines.append(f"Kaynak: {h['source']}")
         lines.append("")
+    if meta.get("sourceUrl"):
+        lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", "", ("#sondakika " if anlik and "#sondakika" not in s["hashtags"] else "") + s["hashtags"]]
     return title[:100], "\n".join(lines)[:max_len]

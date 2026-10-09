@@ -8,6 +8,7 @@ Eşleşme: konu metnindeki anlamlı kelimelerin ilk 4 harfi (Türkçe ekler kesi
 fazla kelimeyle uyan en az 3 haber varsa tek kelimelik uyanlar elenir (ilgisiz haber karışmasın).
 """
 import json
+import os
 import re
 import sys
 
@@ -46,8 +47,13 @@ def main():
         rel.append({"k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:300], "s": (it.get("published") or "")[11:16], "u": s})
         if len(rel) >= 12:
             break
-    json.dump({"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
-               "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel},
+    src = os.environ.get("ANLIK_SOURCE", "").strip()
+    out = {"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
+           "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel}
+    if src:  # konu bir haber sitesinin manşetinden geldi (ör. Mynet): doğrulanmış haber metni
+        out["kaynak"] = src
+        out["aciklama"] += f" kaynak = 'konu' metninin geldiği haber sitesi ({src})."
+    json.dump(out,
               open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"anlık konu: {topic[:80]} · ilgili haber: {len(rel)} (toplam {len(items)} haber tarandı)")
 

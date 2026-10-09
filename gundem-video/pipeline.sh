@@ -30,7 +30,7 @@ if [ "${ANLIK:-0}" = "1" ]; then
   HABER=$(( DURATION / 10 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 4 ] && HABER=4
   FORMAT="anlik"; FORMAT_LABEL="Son Dakika"
 fi
-export ANLIK="${ANLIK:-0}"
+export ANLIK="${ANLIK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
 # Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
 SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
 [ "$ANLIK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."

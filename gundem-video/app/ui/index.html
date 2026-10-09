@@ -39,6 +39,10 @@
   select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px}
   details.grp{border:1px solid var(--line);border-radius:14px;padding:0 14px;margin:10px 0;background:rgba(5,8,17,.35)}details.grp>summary{cursor:pointer;list-style:none;padding:12px 0;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:10px}details.grp>summary::-webkit-details-marker{display:none}details.grp>summary::after{content:"›";margin-left:auto;color:var(--mut);transition:.2s}details.grp[open]>summary::after{transform:rotate(90deg)}details.grp>summary .sum{font-weight:500;color:var(--mut);font-size:12px;letter-spacing:0}details.grp>*:not(summary){margin-left:2px}details.grp h2{margin-top:14px}
   #toast{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;flex-direction:column;gap:8px}#toast div{background:#0b1a12;border:1px solid var(--green);color:#dfffe9;padding:10px 14px;border-radius:12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:tin .2s}#toast div.err{background:#2a1010;border-color:#ff5c5c;color:#ffd6d6}@keyframes tin{from{transform:translateY(10px);opacity:0}}
+  .mynet .mi{display:flex;gap:10px;align-items:center;background:#070b16;border:1px solid var(--line);border-radius:12px;padding:8px}
+  .mynet .mi img{width:72px;height:44px;object-fit:cover;border-radius:8px;flex:none;background:#111}
+  .mynet .mi .t{flex:1;font-size:13px;line-height:1.3}.mynet .mi .t small{color:var(--mut)}
+  .mynet .mi button{flex:none;font-size:12px;padding:6px 10px}
   .anlik{border-color:#5a1218;background:linear-gradient(180deg,rgba(227,10,23,.10),var(--panel) 60%)}.anlik h2{color:#ff6b74}
   .anlik textarea{width:100%;box-sizing:border-box;resize:vertical;background:#070b16;color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;margin-bottom:8px}.anlik textarea:focus{outline:none;border-color:var(--red)}
   .next{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#070b16;font-size:13px}.next b{font-size:22px;font-variant-numeric:tabular-nums;color:var(--c)}
@@ -102,6 +106,13 @@
       <label class="row"><span class="sw" id="apYt"></span><span>Üretince YouTube'a otomatik yükle (onaysız)</span></label>
       <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle (onaysız)</span></label>
       <label class="row"><span class="sw" id="apTt"></span><span>Üretince TikTok'a otomatik gönder (onaysız)</span></label>
+    </div>
+    <div class="card mynet">
+      <h2>📰 MYNET MANŞET TAKİBİ</h2>
+      <label class="row"><span class="sw" id="mynetOn"></span><span>30 dakikada bir kontrol et; manşete yeni haber girerse kaynak göstererek video üret ve paylaş</span></label>
+      <div class="next" id="mynetInfo">Yükleniyor…</div>
+      <div id="mynetList" style="display:grid;gap:6px;margin-top:8px"></div>
+      <div class="acts" style="margin-top:8px;gap:8px;flex-wrap:wrap"><button class="ghost" id="mynetCheck">Şimdi kontrol et</button><button class="ghost" id="mynetAll">Manşetteki 6 haberin hepsi için video üret</button></div>
     </div>
     <div class="card anlik">
       <h2>⚡ ANLIK HABER · SON DAKİKA</h2>
@@ -379,6 +390,18 @@ $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
 $('#stopAllBtn').onclick=async()=>{if(status.running&&!confirm('Süren üretim de durdurulacak. Emin misin?'))return;const r=await post('/api/stopall');const m=`Durduruldu: ${r.pipeline?'üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı.`;toast(m);addMsg('j',m);refreshStatus();};
+// Mynet manşet takibi
+async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').classList.toggle('on',m.enabled!==false);
+  const last=m.lastCheck?new Date(m.lastCheck).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'henüz yok';
+  const next=m.nextCheckIn!=null?Math.ceil(m.nextCheckIn/60000)+' dk sonra':'kapalı';
+  $('#mynetInfo').innerHTML=`Son kontrol: <b style="font-size:14px">${last}</b> · sonraki: ${next} · bugün üretilen: ${m.producedToday.length}/${m.maxPerDay} (otomatik sınır)`;
+  $('#mynetList').innerHTML=(m.items||[]).map((it,i)=>`<div class="mi">${it.image?`<img src="${it.image}" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}<div class="t"><b>${i+1}.</b> ${(it.title||'(başlık sayfadan okunacak)').replace(/</g,'&lt;')}<br><small>${m.producedToday.includes(it.url)?'✅ bugün videosu üretildi':''}</small></div><button class="ghost" data-mu="${it.url}">🎬 Video üret</button></div>`).join('')||'<div class="conninfo">Manşet listesi henüz yok. "Şimdi kontrol et"e basın.</div>';
+  document.querySelectorAll('[data-mu]').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await post('/api/mynet/produce',{url:b.dataset.mu});toast(r.ok?(r.queued?'Sıraya alındı ⏳':'Video üretiliyor ⚡'):(r.error||'Üretilemedi'),!r.ok);loadMynet();});
+}catch{$('#mynetInfo').textContent='Mynet bilgisi alınamadı.';}}
+$('#mynetOn').onclick=async()=>{const on=!$('#mynetOn').classList.contains('on');await post('/api/settings',{mynet:{enabled:on}});loadMynet();};
+$('#mynetCheck').onclick=async()=>{$('#mynetInfo').textContent='Kontrol ediliyor…';const r=await post('/api/mynet/check');toast(r.ok?`${r.items?.length||0} manşet, ${r.new?.length||0} yeni`:(r.error||'Kontrol başarısız'),!r.ok);loadMynet();};
+$('#mynetAll').onclick=async()=>{if(!confirm('Manşetteki haberlerin hepsi için video üretilecek (sırayla). Devam?'))return;const r=await post('/api/mynet/produce-all');toast(`${(r.results||[]).filter(x=>x.ok).length} video sıraya alındı`);loadMynet();};
+loadMynet();setInterval(loadMynet,60000);
 $('#anlikAuto').onclick=async()=>{const on=!$('#anlikAuto').classList.contains('on');await post('/api/settings',{anlikAutoPublish:on});refreshStatus();};
 $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topic.length<8){toast('Konuyu biraz daha ayrıntılı yaz',true);$('#anlikTxt').focus();return;}
   const btn=$('#anlikBtn');btn.disabled=true;

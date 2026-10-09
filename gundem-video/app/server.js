@@ -45,7 +45,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 },
@@ -170,22 +170,61 @@ function startPipeline(duration, extraEnv = {}) {
 // Başka üretim sürüyorsa istek sıraya girer ve o bitince kendiliğinden başlar (zamanlayıcı üretimi dahil).
 const anlikQueue = []; // sırayla üretilecek anlık haber istekleri
 const pipelineBusy = () => { if (state.running) return true; const lock = path.join(WORK, "pipeline.lock", "pid"); if (!existsSync(lock)) return false; try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return true; } catch { return false; } };
-function startAnlik(topic, duration) {
+function startAnlik(topic, duration, opts = {}) {
   topic = String(topic || "").replace(/\s+/g, " ").trim().slice(0, 1500);
   if (topic.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın (en az birkaç kelime)." };
   duration = Math.min(60, Math.max(20, Number(duration) || 30));
   if (pipelineBusy()) {
-    anlikQueue.push({ topic, duration, at: Date.now() });
+    anlikQueue.push({ topic, duration, opts, at: Date.now() });
     push(`⚡ anlık haber sıraya alındı (${anlikQueue.length}. sırada, şu an başka üretim sürüyor): ${topic.slice(0, 80)}`);
     return { ok: true, queued: true, position: anlikQueue.length, duration };
   }
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), topic + "\n");
-  return { ...startPipeline(duration, { ANLIK: "1" }), anlik: true };
+  const env = { ANLIK: "1" };
+  if (opts.source) env.ANLIK_SOURCE = String(opts.source);
+  if (opts.url) env.ANLIK_URL = String(opts.url);
+  return { ...startPipeline(duration, env), anlik: true };
 }
-setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration); } }, 10000);
+setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {}); } }, 10000);
 app.post("/api/anlik", (req, res) => res.json(startAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
+
+// ---------- Mynet manşet takibi: her N dakikada manşet alanı (6 haber) kontrol edilir; yeni giren haber için
+// kaynak gösterilerek, kendi cümlelerimizle anlık (son dakika) video üretilir. Günlük üst sınır var (YouTube kotası).
+const MYNET_DONE = path.join(DATA, "mynet_produced.json");
+const mynetCfg = () => ({ enabled: true, intervalMin: 30, maxPerDay: 3, duration: 30, ...(settings().mynet || {}) });
+const today = () => new Date().toISOString().slice(0, 10);
+const mynetDone = () => readJson(MYNET_DONE, {});
+const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
+async function mynetProduce(url, { manual = false } = {}) {
+  const done = mynetDone(); const day = today(); const list = done[day] || [];
+  if (list.includes(url)) return { ok: false, error: "Bu haber için bugün zaten video üretildi." };
+  if (!manual && list.length >= Number(mynetCfg().maxPerDay)) { push(`📰 Mynet: günlük sınır (${mynetCfg().maxPerDay}) doldu, yeni manşet atlandı`); return { ok: false, error: "günlük sınır doldu" }; }
+  const a = await pyJson(["scripts/mynet_watch.py", "--article", url]);
+  if (!a || a.ok === false || !a.title) { push(`📰 Mynet: haber okunamadı (${a?.error || "başlık yok"})`); return { ok: false, error: a?.error || "haber okunamadı" }; }
+  const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
+  push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
+  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url });
+  if (r.ok) { done[day] = [...list, url]; for (const d of Object.keys(done)) if (d < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete done[d]; writeFileSync(MYNET_DONE, JSON.stringify(done, null, 2)); }
+  return { ...r, title: a.title };
+}
+let mynetLast = 0;
+async function mynetCheck({ manual = false } = {}) {
+  mynetLast = Date.now();
+  const r = await pyJson(["scripts/mynet_watch.py", "--check"]);
+  if (!r.ok) { push(`📰 Mynet kontrolü başarısız: ${r.error}`); return r; }
+  if (!r.items?.length) push("📰 Mynet: manşet alanı bulunamadı (sayfa yapısı değişmiş olabilir)");
+  else if (r.first) push(`📰 Mynet manşet takibi başladı: ${r.items.length} haber kaydedildi; bundan sonra yeni girenler için video üretilecek`);
+  else if (manual || r.new.length) push(`📰 Mynet kontrol edildi: ${r.items.length} manşet, ${r.new.length} yeni`);
+  for (const it of r.new || []) await mynetProduce(it.url);
+  return r;
+}
+setInterval(() => { const c = mynetCfg(); if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
+app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, mynetLast + Number(mynetCfg().intervalMin || 30) * 60000 - Date.now()) : null }); });
+app.post("/api/mynet/check", async (_req, res) => res.json(await mynetCheck({ manual: true })));
+app.post("/api/mynet/produce", async (req, res) => res.json(await mynetProduce(String(req.body?.url || ""), { manual: true })));
+app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); const out = []; for (const it of st.items || []) out.push(await mynetProduce(it.url, { manual: true })); res.json({ ok: true, results: out }); });
 
 // ---------- zamanlayıcı (launchd)
 const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem.video.plist");
@@ -729,6 +768,7 @@ const STAGE_VOICE = [
   [/^💬 WhatsApp'a gönderildi/, "Video WhatsApp'tan gönderildi."],
   [/^✖ üretim hata/, "Üretim hata ile bitti."],
   [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
+  [/^📰 Mynet: yeni manşet/, "Mynet manşetine yeni bir haber girdi, video hazırlanıyor."],
   [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
 ];
 const STAGE_PHRASES = [...new Set(STAGE_VOICE.map(([, t]) => t))];
