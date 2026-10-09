@@ -85,7 +85,7 @@ _DEFAULTS = ({
         "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
         "narrationEngine": "auto",
         # Video anlatım sesi: single → voice; alternate → kanca/1./3. haber voiceA, intro/2./4. haber voiceB (scripts/voices.py)
-        "narration": {"mode": "single", "voice": "auto", "voiceA": "vox-kadin", "voiceB": "vox-erkek"},
+        "narration": {"mode": "single", "voice": "auto", "voiceA": "vox-kadin", "voiceB": "vox-erkek", "femaleGainDb": 3, "maleGainDb": 0},
         "claudeModel": "opus",
         # Haber medyası: tam boy fotoğraf her zaman; video (yt-dlp, haber sayfasından) açılıp kapatılabilir
         "media": {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True},

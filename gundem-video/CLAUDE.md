@@ -270,6 +270,11 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
 - Piper `length_scale` 0.82 ≈ 150 kelime/dk. 1.0 fazla yavaştı (~120). Değiştirmek için
   `PIPER_LENGTH_SCALE=0.78 bash pipeline.sh` gibi; 0.75'in altı anlaşılırlığı bozar.
 - Segment sonu sessizliği 0.15 sn + Piper cümle boşluğu 0.12 sn.
+- Seslendirme seviyesi (`tts.add_pause`): her segment POLISH sonrası `loudnorm=I=-18` ile eşit yüksekliğe
+  getirilir, sonra kadın sesi `settings.narration.femaleGainDb` (varsayılan +3 dB), erkek sesi `maleGainDb` (0)
+  kadar yükseltilir, `alimiter` bozulmayı önler. Cinsiyeti belirsiz motorlar kadın sayılır (tek erkek ses
+  vox-erkek). Panel Ayarlar → Sesler'de iki kaydırıcı (0-8 dB). Son MP4 loudnorm'u toplamı -14 LUFS'a çeker;
+  bu kazanç seslendirmeyi müziğe ve efektlere göre öne çıkarır.
 - Son MP4 ffmpeg loudnorm ile -14 LUFS'a getirilir (YouTube hedefi). Remotion çıktısı ~-17.6 idi.
 
 ## Kurallar

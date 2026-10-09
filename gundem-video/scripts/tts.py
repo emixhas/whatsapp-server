@@ -59,9 +59,20 @@ POLISH = "highpass=f=70,equalizer=f=180:t=q:w=1.2:g=-1.5,equalizer=f=3000:t=q:w=
          "acompressor=threshold=-20dB:ratio=2.5:attack=8:release=140:makeup=2,alimiter=limit=0.95"
 
 
-def add_pause(path: Path) -> None:
+def voice_gain_db(v: dict) -> float:
+    """Ses seviyesi: tüm segmentler önce aynı yüksekliğe getirilir (-18 LUFS), sonra kadın sesi
+    settings.narration.femaleGainDb (varsayılan +3 dB), erkek sesi maleGainDb (0) kadar yükseltilir.
+    Cinsiyeti belirsiz motorlar (Trendyol, EMA…) kadın sesi sayılır; katalogdaki tek erkek ses vox-erkek."""
+    n = voices._S.get("narration", {}) or {}
+    key = "maleGainDb" if v.get("gender") == "erkek" else "femaleGainDb"
+    return float(n.get(key, 0.0 if key == "maleGainDb" else 3.0))
+
+
+def add_pause(path: Path, gain_db: float = 0.0) -> None:
     tmp = path.with_name(path.stem + ".tmp.wav")
-    af = (POLISH + "," if os.environ.get("TTS_POLISH", "1") != "0" else "") + f"apad=pad_dur={PAUSE_SEC}"
+    # eşit yükseklik + ses kazancı; limitleyici bozulmayı (patlamayı) önler
+    level = f"loudnorm=I=-18:TP=-2:LRA=11,volume={gain_db:+.1f}dB,alimiter=limit=0.95"
+    af = (POLISH + "," if os.environ.get("TTS_POLISH", "1") != "0" else "") + level + f",apad=pad_dur={PAUSE_SEC}"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-af", af, "-ar", "44100", "-ac", "1", str(tmp)], check=True)
     tmp.replace(path)
 
@@ -97,7 +108,7 @@ def main(script_path: str, episode_path: str):
     segments = []
     for i, seg in enumerate(segs):
         out = outs[i]
-        add_pause(out)
+        add_pause(out, voice_gain_db(chosen[i]))
         seg = dict(seg)
         seg["audio"] = f"audio/{out.name}"
         seg["voice"] = chosen[i]["id"]
