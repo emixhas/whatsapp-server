@@ -2,7 +2,7 @@
 // Başlat: npm run panel   → http://localhost:3131
 import express from "express";
 import { spawn, execFile, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -79,7 +79,8 @@ const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
   // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
-  if (/^\{"autopublish"/.test(line) && !state.running) setTimeout(() => { try { reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }); } catch { /* yok */ } }, 5000); };
+  if (/^\{"autopublish"/.test(line) && !state.running) setTimeout(() => { try { reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }); } catch { /* yok */ } }, 5000);
+  if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
@@ -162,7 +163,7 @@ function startPipeline(duration, extraEnv = {}) {
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }), 3000); state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -282,7 +283,7 @@ function tailLaunchd() {
     const fd = openSync(LAUNCHD_LOG, "r"); const buf = Buffer.alloc(size - launchdPos); readSync(fd, buf, 0, buf.length, launchdPos); closeSync(fd); launchdPos = size;
     launchdBuf += buf.toString("utf8");
     const lines = launchdBuf.split("\n"); launchdBuf = lines.pop() || "";
-    for (const l of lines) { if (!l.trim()) continue; if (/üretim başladı/.test(l) && !state.running) { state.running = true; state.startedAt = Date.now(); state.scheduled = true; push("⏰ zamanlayıcı üretimi başladı"); } push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); if (/^\{"autopublish"/.test(l) || /yayın\/analiz adımı hata/.test(l)) { if (state.scheduled) { state.running = false; state.scheduled = false; push("✔ zamanlayıcı üretimi tamamlandı"); } } }
+    for (const l of lines) { if (!l.trim()) continue; if (/üretim başladı/.test(l) && !state.running) { state.running = true; state.startedAt = Date.now(); state.scheduled = true; push("⏰ zamanlayıcı üretimi başladı"); } push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); if (/^\{"autopublish"/.test(l) || /yayın\/analiz adımı hata/.test(l) || /^✖ üretim hata/.test(l)) { if (state.scheduled) { state.running = false; state.scheduled = false; push("✔ zamanlayıcı üretimi tamamlandı"); } } }
   } catch { /* okunamadı */ }
 }
 setInterval(tailLaunchd, 2000);
@@ -773,6 +774,7 @@ const STAGE_VOICE = [
   [/^📤 otomatik yayın yapılmadı/, "Otomatik yayın yapılmadı, ayrıntı logda."],
   [/^💬 WhatsApp'a gönderildi/, "Video WhatsApp'tan gönderildi."],
   [/^✖ üretim hata/, "Üretim hata ile bitti."],
+  [/^⚠️ sağlık: (?!Video üretimi)/, "Dikkat, bir sistem uyarısı var. Ayrıntıyı WhatsApp'a gönderdim."],
   [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
   [/^📰 Mynet: yeni manşet/, "Mynet manşetine yeni bir haber girdi, video hazırlanıyor."],
   [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
@@ -797,6 +799,54 @@ function stageVoice(line) {
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
 const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Son dakika videosu üretiliyor.", ...STAGE_PHRASES];
 setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy()) break; await synthSpeech(t, { low: true }); } }, 20000);
+
+// ---------- sağlık uyarıları: üretim hatası, kaçan üretim, disk, yayın bağlantısının süresi → WhatsApp + sesli
+// Her uyarı anahtarıyla data/health_alerts.json'a yazılır, aynı uyarı `everyH` saat dolmadan tekrar gönderilmez.
+const HEALTH_FILE = path.join(DATA, "health_alerts.json");
+async function healthAlert(key, text, { everyH = 12 } = {}) {
+  const seen = readJson(HEALTH_FILE, {});
+  if (seen[key] && Date.now() - seen[key] < everyH * 3600000) return false;
+  seen[key] = Date.now(); writeJson(HEALTH_FILE, seen);
+  push(`⚠️ sağlık: ${text}`);
+  if (settings().health?.whatsapp !== false) { try { await wa.send(`⚠️ *Emixhas sağlık uyarısı*\n${text}`); } catch { /* WhatsApp bağlı değil: log + ses yeter */ } }
+  return true;
+}
+const healthClear = (key) => { const seen = readJson(HEALTH_FILE, {}); if (seen[key]) { delete seen[key]; writeJson(HEALTH_FILE, seen); } };
+function productionFailed(line) {
+  // hatanın nedeni: son satırlardaki HATA / ! satırları
+  const why = state.log.slice(-40).filter((l) => /^(HATA|  ! |!! |Error|Traceback)|hata verdi|bulunamadı/.test(l)).slice(-3).join("\n");
+  healthAlert(`fail-${Math.floor(Date.now() / 600000)}`, `Video üretimi hata ile bitti.\n${why || line}\nPanel logunda ayrıntı var; sorun sürerse "sistem kontrolü" yazın.`, { everyH: 0.15 });
+}
+async function healthCheck() {
+  const s = settings(); if (s.health?.enabled === false) return;
+  // 1) kaçan üretim: zamanlayıcı açık, son videodan beri aralık + 40 dk geçti, üretim de sürmüyor
+  try {
+    const sch = await getSchedule();
+    const regular = listVideos().filter((v) => { const m = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), {}); return !(m.anlik || m.format === "anlik"); });
+    // zamanlayıcı yeni açıldıysa ondan önceki boşluk sayılmaz
+    const last = Math.max(regular[0] ? statSync(path.join(OUT, regular[0].name)).mtimeMs : 0, Number(readSched().loadedAt) || 0) || null;
+    const gap = (Number(sch.hours) || 5) * 3600000 + 40 * 60000;
+    if (sch.enabled && !state.running && last && Date.now() - last > gap) healthAlert("missed", `Zamanlanmış üretim gecikti: son düzenli video ${Math.round((Date.now() - last) / 3600000)} saat önce. Mac uykuda mı, internet var mı? Panelden "şimdi üret" diyebilirsiniz.`, { everyH: 5 });
+    else healthClear("missed");
+  } catch { /* zamanlayıcı okunamadı */ }
+  // 2) disk
+  try {
+    const st = statfsSync(OUT); const freeGb = (st.bavail * st.bsize) / 1e9;
+    if (freeGb < (s.health?.minFreeGb ?? 5)) healthAlert("disk", `Disk dolmak üzere: ${freeGb.toFixed(1)} GB boş. Eski videoları panelden silin; disk dolarsa üretim durur.`, { everyH: 12 });
+  } catch { /* statfs yok */ }
+  // 3) yayın bağlantıları: Instagram token süresi, YouTube/TikTok bağlantısı koptu mu
+  try {
+    const conn = await brain.connections();
+    const dl = conn.instagram?.daysLeft;
+    if (conn.instagram?.connected && dl != null && dl <= 7) healthAlert("ig-token", `Instagram bağlantısının süresi ${dl} gün içinde doluyor. Ayarlar → Yayın hesapları → Instagram'ı yeniden bağlayın.`, { everyH: 24 });
+    const was = readJson(path.join(DATA, "health_conn.json"), {});
+    for (const p of ["youtube", "instagram", "tiktok"]) if (was[p] && !conn[p]?.connected) healthAlert(`lost-${p}`, `${{ youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" }[p]} bağlantısı koptu; otomatik yayın o platforma gitmiyor. Ayarlar → Yayın hesapları.`, { everyH: 24 });
+    writeJson(path.join(DATA, "health_conn.json"), Object.fromEntries(["youtube", "instagram", "tiktok"].map((p) => [p, !!conn[p]?.connected])));
+  } catch { /* bağlantılar okunamadı */ }
+}
+setInterval(() => { healthCheck().catch(() => {}); }, 10 * 60000);
+setTimeout(() => { healthCheck().catch(() => {}); }, 120000);
+app.get("/api/health", async (_req, res) => { await healthCheck().catch(() => {}); res.json({ alerts: readJson(HEALTH_FILE, {}), log: state.log.filter((l) => l.startsWith("⚠️ sağlık")).slice(-20) }); });
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
 let lastReportDay = null, lastFlush = 0;

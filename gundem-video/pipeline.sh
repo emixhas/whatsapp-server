@@ -54,7 +54,12 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 echo $$ > "$LOCK/pid"
 RESERVED=""
-cleanup() { rm -rf "$LOCK"; [ -n "$RESERVED" ] && rm -f "$RESERVED"; }
+cleanup() {
+  rc=$?
+  rm -rf "$LOCK"; [ -n "$RESERVED" ] && rm -f "$RESERVED"
+  # zamanlayıcı üretiminde de panel hatayı görsün (sağlık uyarısı); 3 = başka üretim sürüyordu
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then echo "✖ üretim hata ile bitti (kod $rc)"; fi
+}
 trap cleanup EXIT
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
 exec > >(tee -a "$LOG") 2>&1
