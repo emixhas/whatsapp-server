@@ -78,7 +78,7 @@ const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
-const STAGE = /^(⚡ |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
+const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
 function notifyStage(line) {
   try {
@@ -333,7 +333,7 @@ const statusText = async () => {
   if (vids[0]) lines.push(`🎞 Son video: ${label(vids[0])}${vids[0].views ? " · ▶ " + vids[0].views : ""}`);
   return lines.join("\n");
 };
-const wa = await makeWhatsApp({ ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
+const wa = await makeWhatsApp({ autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
 app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
 app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));
@@ -460,18 +460,23 @@ async function setAutoMode(on) {
     const hours = Number(settings().scheduleHours) || 5;
     const sch = await setSchedule(true, hours);
     if (!sch.ok) return { ok: false, error: sch.error };
-    patchSettings({ autopublish: { youtube: connected.includes("youtube"), instagram: connected.includes("instagram"), tiktok: connected.includes("tiktok") }, whatsapp: { requireApproval: false, notifyStages: true, notifyOnVideo: true }, scheduleHours: hours });
+    patchSettings({ autoMode: true, autopublish: { youtube: connected.includes("youtube"), instagram: connected.includes("instagram"), tiktok: connected.includes("tiktok") }, whatsapp: { requireApproval: false, notifyStages: true, notifyOnVideo: true }, scheduleHours: hours });
     push(`⚡ tam otomatik mod: her ${hours} saatte üretim, otomatik yayın → ${connected.join(", ") || "bağlı hesap yok"}, onay kapalı`);
     return { ok: true, connected, hours };
   }
   await setSchedule(false, 5);
-  patchSettings({ autopublish: { youtube: false, instagram: false, tiktok: false }, whatsapp: { requireApproval: true } });
+  patchSettings({ autoMode: false, autopublish: { youtube: false, instagram: false, tiktok: false }, whatsapp: { requireApproval: true } });
   push("⏹ otomatik mod kapatıldı: üretim ve otomatik yayın durdu");
   return { ok: true, connected };
 }
 app.post("/api/automode", async (req, res) => res.json(await setAutoMode(req.body?.enabled !== false)));
 app.get("/api/schedule", async (_req, res) => res.json(await getSchedule()));
-app.post("/api/schedule", async (req, res) => res.json(await setSchedule(!!req.body.enabled, Number(req.body.hours) || 5)));
+// Otomatik üretim anahtarı: açıkken videolar bağlı TÜM hesaplara onaysız yayınlanır (kullanıcı isteği), kapanınca eski hâl
+app.post("/api/schedule", async (req, res) => {
+  const on = !!req.body.enabled; const r = await setSchedule(on, Number(req.body.hours) || 5);
+  if (r.ok) { patchSettings({ autoMode: on }); push(on ? "🤖 otomatik üretim açık: videolar bağlı tüm hesaplara onaysız yayınlanacak" : "⏸ otomatik üretim kapalı"); }
+  res.json(r);
+});
 // Ses kataloğu: kurulu sesler ve ön dinleme (scripts/voices.py). Liste 30 sn önbellekli.
 let voiceCache = { t: 0, rows: [] };
 const runPy = (args, timeoutMs) => new Promise((resolve) => execFile(PY, args, { cwd: ROOT, env: ENV, timeout: timeoutMs, maxBuffer: 4e6 }, (err, stdout, stderr) => resolve({ err, stdout: String(stdout || ""), stderr: String(stderr || "") })));

@@ -224,8 +224,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 5, manşet etkisi → `data/insights.json`
   ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:
   öğrenme döngüsü budur. İpucu kurallarla çelişirse kurallar kazanır (prompt'ta yazılı).
-- `scripts/post_pipeline.py`: üretim sonunda ayarlardaki otomatik yayın + analiz. launchd ile
-  panel kapalıyken de çalışır.
+- `scripts/post_pipeline.py`: üretim sonunda otomatik yayın + analiz (launchd ile panel kapalıyken de çalışır).
+  Hedef: `autopublish` anahtarları ∪ (otomatik üretim açıksa — launchd plist var — ya da `settings.autoMode`
+  açıksa bağlı TÜM hesaplar) ∪ (anlık videoda `anlikAutoPublish` ise bağlı tüm hesaplar). Bağlı hesaplar yayın
+  anında `publish.py --status` ile okunur (sonradan bağlanan da dahil). Başarısız platform 90 sn sonra bir kez
+  daha denenir. Yayın yoksa nedeni "📤 otomatik yayın yapılmadı: …" ile yazılır. Panelde "Otomatik üretim"
+  anahtarı `autoMode`u da açar/kapatır; WhatsApp bildirimi aynı kuralla onay istemez (`autoAll`).
 - Başlık/açıklama `scripts/common.py: build_caption` üretir (ilk haber başlığı + kanal adı + #Shorts).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
 
