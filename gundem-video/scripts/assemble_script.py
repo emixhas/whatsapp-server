@@ -221,6 +221,16 @@ def short_title(t: str, max_chars: int = 32, max_words: int = 4) -> str:
     return " ".join(out).rstrip(",;:-–")
 
 
+def intro_text() -> str:
+    """Sabit intro cümlesi: format adı + "son N saatin Türkiye gündemi"."""
+    if ANLIK:
+        return "Son dakika."
+    hours = int(load_json(DATA / "settings.json", {}).get("scheduleHours") or 5)
+    label = os.environ.get("FORMAT_LABEL", "").strip() or "Gündem"
+    label = label[:1] + label[1:].replace("I", "ı").replace("İ", "i").lower()  # "Güne Başlarken" → "Güne başlarken"
+    return f"{label}, son {hours} saatin Türkiye gündemi."
+
+
 def regular_slot_of_day(date: str) -> int:
     """Kaçıncı 5 saatlik video: o günün anlık olmayan videoları + 1 (anlık videolar sayımı kaydırmaz)."""
     n = 0
@@ -253,6 +263,9 @@ def main(src: str, dst: str):
         sys.exit("İkinci segment intro olmalı")
     # Outro her videoda aynı kancalı kapanış: marka tutarlılığı için Claude'un yazdığı metin ezilir
     segs[-1]["narration"] = OUTRO_ANLIK if ANLIK else OUTRO_TEXT
+    # Intro da sabit: "Güne başlarken, son 5 saatin Türkiye gündemi." (anlık haberde "Son dakika.")
+    if len(segs) > 1 and segs[1].get("kind") == "intro":
+        segs[1]["narration"] = intro_text()
     hk = segs[0]
     if len(hk.get("narration", "").split()) > 10:
         hk["narration"] = " ".join(hk["narration"].split()[:10]).rstrip(",;:") + "."
@@ -279,7 +292,7 @@ def main(src: str, dst: str):
     breaking = [s for s in haber if s.get("breaking")]
     for s in breaking[1:]:
         s["breaking"] = False  # en fazla bir manşet
-    words = sum(len(s["narration"].split()) for s in segs if s["kind"] != "outro")
+    words = sum(len(s["narration"].split()) for s in segs if s["kind"] not in ("outro", "intro"))
     if words > MAX_WORDS_TOTAL:
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 

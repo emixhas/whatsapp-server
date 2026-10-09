@@ -40,6 +40,12 @@ export type Episode = {
   music?: string;        // public/ altına göre müzik yatağı
   musicVolume?: number;
   titleVariant?: "A" | "B";
+  titles?: { A?: string; B?: string; cover?: string };
+  dayLabel?: string;     // "9 Ekim Cuma"
+  slotLabel?: string;    // "2. 5 SAAT" ya da "ANLIK HABER"
+  timeRange?: string;    // "09:00–14:00"
+  scheduleHours?: number;
+  anlik?: boolean;
   segments: Segment[];
 };
 

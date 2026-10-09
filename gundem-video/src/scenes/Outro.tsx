@@ -6,13 +6,13 @@ import { TurkeyMap } from "./TurkeyMap";
 type Word = { w: string; s: number; e: number };
 
 /** Platform simgeleri: kodla çizilir, dış dosya yok. */
-const YouTubeIcon = ({ size }: { size: number }) => (
+export const YouTubeIcon = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 100 100">
     <rect x="6" y="22" width="88" height="56" rx="18" fill="#FF0000" />
     <polygon points="42,38 42,62 64,50" fill="#fff" />
   </svg>
 );
-const InstagramIcon = ({ size }: { size: number }) => (
+export const InstagramIcon = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 100 100">
     <defs>
       <linearGradient id="ig" x1="0" y1="1" x2="1" y2="0">
@@ -24,7 +24,7 @@ const InstagramIcon = ({ size }: { size: number }) => (
     <circle cx="71" cy="29" r="5" fill="#fff" />
   </svg>
 );
-const TikTokIcon = ({ size }: { size: number }) => {
+export const TikTokIcon = ({ size }: { size: number }) => {
   const note = "M54 14 h12 c1 10 8 17 18 18 v12 c-7 0 -13 -2 -18 -6 v30 a21 21 0 1 1 -21 -21 h3 v12 h-3 a9 9 0 1 0 9 9 z";
   return (
     <svg width={size} height={size} viewBox="0 0 100 100">

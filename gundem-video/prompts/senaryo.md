@@ -37,7 +37,7 @@ KURALLAR
   Listede gerçekten uyan kategori yoksa en yakınını "category" olarak yaz ve ayrıca
   "categorySuggestion" alanına önerdiğin yeni kategori adını küçük harfle yaz (ör. "kultur", "otomotiv").
   Bu alan isteğe bağlıdır; çoğu haberde yazılmaz.
-- Intro (kanal kimliği) kancadan SONRA gelir ve çok kısadır: tam olarak "__FORMAT_INTRO__" (en fazla 5 kelime).
+- Intro (kanal kimliği) kancadan SONRA gelir: tam olarak "__FORMAT_INTRO__" (kelime bütçesine dahil değildir).
 - Outro metni sabittir, tam olarak şu cümle: "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma." (kelime bütçesine dahil değildir).
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA, hem title hem narration alanında açık yaz.
   Zorunlu açılımlar: AKP → AK Parti; CHP → Cumhuriyet Halk Partisi; MHP → Milliyetçi Hareket Partisi;

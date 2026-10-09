@@ -483,7 +483,8 @@ def tt_upload(path: Path):
         opts = info.get("privacy_level_options") or ["SELF_ONLY"]
         privacy = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in opts else opts[0]
         init = tt_http("POST", f"{TT_API}/post/publish/video/init/",
-                       {"post_info": {"title": title[:150], "privacy_level": privacy, "disable_duet": False, "disable_comment": False, "disable_stitch": False},
+                       {"post_info": {"title": title[:150], "privacy_level": privacy, "disable_duet": False, "disable_comment": False, "disable_stitch": False,
+                                      "video_cover_timestamp_ms": 0},  # videonun ilk karesi = kapak
                         "source_info": source}, H)
     else:
         privacy = None

@@ -5,12 +5,20 @@ import { Headline } from "./scenes/Headline";
 import { Hook } from "./scenes/Hook";
 import { Intro } from "./scenes/Intro";
 import { Outro } from "./scenes/Outro";
+import { Thumb } from "./Thumb";
 import { Episode, FPS } from "./types";
 
 const WHOOSH_FRAMES = 17; // 0.55 sn
 
+/** Kapak yazısı: render_thumbs.py ile aynı kural (A varyantı kapak vuruşu, B merak başlığı). */
+export const coverText = (e: Episode) => {
+  const t = e.titles || {}; const first = e.segments.find((s) => s.kind === "haber");
+  return (e.titleVariant === "B" ? t.B || t.cover : t.cover) || first?.title || "";
+};
+
 export const GundemVideo = ({ episode }: { episode: Episode }) => {
   const haberler = episode.segments.filter((s) => s.kind === "haber");
+  const first = haberler[0];
   let cursor = 0;
   return (
     <AbsoluteFill>
@@ -38,7 +46,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             {seg.kind === "hook" ? (
               <Hook title={seg.title ?? ""} narration={seg.narration} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} image={seg.imageTall || seg.image} video={seg.video} videoDuration={seg.videoDuration} words={seg.words} durationInFrames={dur} />
             ) : seg.kind === "intro" ? (
-              <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} words={seg.words} />
+              <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} dayLabel={episode.dayLabel}
+                slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} words={seg.words} />
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} />
             ) : (
@@ -47,6 +56,14 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
           </Sequence>
         );
       })}
+      {/* İlk kare = kapak (tek kare, 33 ms). TikTok ve Instagram varsayılan kapağı ilk kareden alır; kapak
+          render edilemezse render_thumbs.py da kapağı bu kareden çıkarır. */}
+      {episode.titles || first ? (
+        <Sequence from={0} durationInFrames={1}>
+          <Thumb text={coverText(episode)} category={first?.category} breaking={!!first?.breaking} image={first?.imageTall || first?.image}
+            variant={episode.titleVariant || "A"} dayLabel={episode.dayLabel} slotLabel={episode.slotLabel} timeRange={episode.timeRange} />
+        </Sequence>
+      ) : null}
     </AbsoluteFill>
   );
 };

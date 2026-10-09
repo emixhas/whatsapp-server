@@ -365,12 +365,23 @@ app.get("/w/:base", (req, res) => {
 ${haber.map((h, i) => `<div class="h"><span class="t ${h.breaking ? "b" : ""}">${h.breaking ? "SON DAKİKA" : esc((h.category || "genel").toUpperCase())}</span><b>${i + 1}. ${esc(h.title)}</b>${esc(h.narration)}</div>`).join("")}
 <a class="d" href="/videos/${encodeURIComponent(name)}" download>⬇ Videoyu indir / paylaş</a></main></body></html>`);
 });
-async function thumbBuffer(name) { const src = path.join(OUT, name); const dst = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (!existsSync(dst) && existsSync(src)) await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", "4", "-i", src, "-frames:v" , "1", "-vf", "scale=320:-1", dst]); try { return readFileSync(dst); } catch { return null; } }
+// Küçük resim: varsa videonun kapağı (out/<ad>-kapak.jpg), yoksa videonun 4. saniyesi. Kapak yenilenince küçük resim de yenilenir.
+async function makeThumb(name, width) {
+  const src = path.join(OUT, name); const dst = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg"));
+  const cover = path.join(OUT, name.replace(/\.mp4$/, "-kapak.jpg"));
+  const stale = existsSync(dst) && existsSync(cover) && statSync(cover).mtimeMs > statSync(dst).mtimeMs;
+  if (!existsSync(dst) || stale) {
+    if (existsSync(cover)) await run("ffmpeg", ["-y", "-loglevel", "error", "-i", cover, "-vf", `scale=${width}:-1`, dst]);
+    else if (existsSync(src)) await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", "4", "-i", src, "-frames:v", "1", "-vf", `scale=${width}:-1`, dst]);
+  }
+  return dst;
+}
+async function thumbBuffer(name) { try { return readFileSync(await makeThumb(name, 480)); } catch { return null; } }
 
 // ---------- API: videolar
 app.get("/api/videos", (_req, res) => res.json(listVideos()));
-app.get("/api/thumb/:name", async (req, res) => { const name = path.basename(req.params.name), src = path.join(OUT, name); if (!existsSync(src)) return res.status(404).end(); const dst = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (!existsSync(dst)) await run("ffmpeg", ["-y", "-loglevel", "error", "-ss", "4", "-i", src, "-frames:v", "1", "-vf", "scale=360:-1", dst]); res.sendFile(dst); });
-app.delete("/api/videos/:name", (req, res) => { const name = path.basename(req.params.name); for (const f of [name, name.replace(/\.mp4$/, ".json")]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t); res.json({ ok: true }); });
+app.get("/api/thumb/:name", async (req, res) => { const name = path.basename(req.params.name); if (!existsSync(path.join(OUT, name))) return res.status(404).end(); const dst = await makeThumb(name, 480); if (!existsSync(dst)) return res.status(404).end(); res.sendFile(dst); });
+app.delete("/api/videos/:name", (req, res) => { const name = path.basename(req.params.name); for (const f of [name, name.replace(/\.mp4$/, ".json"), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t); res.json({ ok: true }); });
 app.post("/api/reveal", async (req, res) => { const p = path.join(OUT, path.basename(req.body.name || "")); if (!existsSync(p) || !isMac) return res.json({ ok: false }); res.json(await run("open", ["-R", p])); });
 app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}` + (req.query.name ? "/videos/" + path.basename(String(req.query.name)) : "/"); res.json({ url, svg: await QRCode.toString(url, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }) }); });
 
@@ -621,6 +632,8 @@ function synthSpeech(text) {
   return job;
 }
 app.post("/api/speak", async (req, res) => { const f = await synthSpeech(req.body?.text); if (!f || !existsSync(f)) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.sendFile(f); });
+// Kapağı eksik eski videolar için panel açıldıktan 90 sn sonra arka planda bir kez kapak üretilir
+setTimeout(() => { if (pipelineBusy()) return; const c = spawn(PY, ["scripts/render_thumbs.py", "--missing"], { cwd: ROOT, env: ENV }); c.stdout.on("data", (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { if (!/kapak eksik video yok/.test(l)) push("🖼 " + l); })); }, 90000);
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
 const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Video üretimi başladı.", "Son dakika videosu üretiliyor."];
 setTimeout(async () => { for (const t of QUICK_PHRASES) await synthSpeech(t); }, 20000);

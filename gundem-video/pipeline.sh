@@ -31,6 +31,9 @@ if [ "${ANLIK:-0}" = "1" ]; then
   FORMAT="anlik"; FORMAT_LABEL="Son Dakika"
 fi
 export ANLIK="${ANLIK:-0}"
+# Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
+SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
+[ "$ANLIK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."
 export DURATION WORDS HABER
 # Senaryo için "medium" yeterli (ölçüldü: aynı 7 haber/kategori, çıktı tokenı high'ın yarısı).
 # Claude modeli: settings.claudeModel ("opus" varsayılan; boşsa Claude Code'un kendi varsayılanı)

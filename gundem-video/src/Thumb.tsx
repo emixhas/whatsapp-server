@@ -64,7 +64,7 @@ export const Thumb = ({ text, category, breaking, image, variant = "A", channel 
 
       {/* üst blok: kanal, SON DAKİKA bandı, gün, N. 5 SAAT + saat aralığı */}
       <div style={{ position: "absolute", top: wide ? 26 : 70, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 * s, textAlign: "center" }}>
-        <div style={{ fontSize: 40 * s, fontWeight: 900, letterSpacing: 9 * s, textShadow: "0 3px 14px rgba(0,0,0,1)" }}>{channel}</div>
+        <div style={{ fontSize: 40 * s, fontWeight: 900, letterSpacing: 9 * s, textShadow: "0 3px 14px rgba(0,0,0,1)" }}>{trUpper(channel)}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 * s, fontSize: 52 * s, fontWeight: 900, letterSpacing: 6 * s, background: accent, color: breaking || accent === theme.red ? theme.white : "#0B0F1A",
           padding: `${10 * s}px ${34 * s}px`, borderRadius: 12, transform: "skewX(-8deg)", boxShadow: `0 0 ${40 * s}px ${accent}cc, 0 10px 30px rgba(0,0,0,.6)` }}>
           <span style={{ width: 22 * s, height: 22 * s, borderRadius: "50%", background: "currentColor", boxShadow: "0 0 12px currentColor" }} />
