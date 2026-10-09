@@ -92,6 +92,8 @@ def main(script_path: str, episode_path: str):
         try:
             voices.synthesize(jobs)
             pending = []
+            # panel bu satırı "Ses modeli sorunsuz başlatıldı" diye seslendirir
+            print(f"🔊 ses modeli sorunsuz başlatıldı: {' + '.join(dict.fromkeys(c['label'] for c in chosen))}", flush=True)
             break
         except RuntimeError as e:
             bad = str(e).split(":")[0]

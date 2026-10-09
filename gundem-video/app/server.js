@@ -77,7 +77,9 @@ function listVideos() {
 const state = { running: false, startedAt: null, duration: null, log: [], exitCode: null, lastVideo: null, busy: null };
 const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
-const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } }); };
+const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
+  // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
+  if (/^\{"autopublish"/.test(line) && !state.running) setTimeout(() => { try { reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }); } catch { /* yok */ } }, 5000); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
@@ -125,11 +127,12 @@ function killTree(pid) {
   setTimeout(() => { for (const id of all) { try { process.kill(id, "SIGKILL"); } catch { /* kapandı */ } } }, 4000);
   return all.length;
 }
-function reap({ minAgeSec = 600, reason = "boşta", force = false } = {}) {
+function reap({ minAgeSec = 600, reason = "boşta", force = false, announceIdle = false } = {}) {
   if (!force && pipelineBusy()) return { ok: true, killed: [] };
   const victims = heavyProcs().filter((p) => p.age >= minAgeSec && !(minAgeSec === 0 && !force && /speak\.py/.test(p.cmd) && p.age < 60));
   for (const p of victims) killTree(p.pid);
   if (victims.length) push(`🧹 ${reason}: ${[...new Set(victims.map((v) => v.what))].join(", ")} kapatıldı (${victims.length} süreç)`);
+  else if (announceIdle) push(`🧹 ${reason}: modeller kapalı, arka planda açık süreç kalmadı`);
   return { ok: true, killed: victims.map((v) => ({ pid: v.pid, what: v.what, cpu: v.cpu })) };
 }
 setInterval(() => { try { reap({ minAgeSec: 600, reason: "kullanılmayan süreç" }); } catch { /* ps yok */ } }, 5 * 60000);
@@ -159,7 +162,7 @@ function startPipeline(duration, extraEnv = {}) {
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti" }), 3000); state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }), 3000); state.running = false; state.exitCode = code; push(code === 0 ? "✔ üretim tamamlandı" : `✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -725,6 +728,8 @@ const STAGE_VOICE = [
   [/^📤 otomatik yayın yapılmadı/, "Otomatik yayın yapılmadı, ayrıntı logda."],
   [/^💬 WhatsApp'a gönderildi/, "Video WhatsApp'tan gönderildi."],
   [/^✖ üretim hata/, "Üretim hata ile bitti."],
+  [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
+  [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
 ];
 const STAGE_PHRASES = [...new Set(STAGE_VOICE.map(([, t]) => t))];
 let lastStage = { text: "", at: 0 }, macQueue = Promise.resolve();
