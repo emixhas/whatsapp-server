@@ -13,12 +13,15 @@ export function claudeBin(ROOT, { fresh = false } = {}) {
   return claudeCache;
 }
 // claude bir node betiği olabilir (npm/nvm kurulumu); kendi klasörü PATH'e eklenir ki "node" bulunsun.
+// Model: settings.claudeModel ("opus" = en güncel Opus). Boş bırakılırsa Claude Code'un kendi varsayılanı.
+export const claudeModelArgs = (s) => { const m = String(s?.claudeModel ?? "opus").trim(); return m ? ["--model", m] : []; };
 export const claudeEnv = (bin) => ({ ...process.env, PATH: `${path.dirname(bin)}:${process.env.PATH || ""}` });
 // Hata metnini kullanıcıya anlaşılır Türkçe açıklamaya çevirir.
 export function claudeError(msg) {
   const m = String(msg || "");
   if (/ENOENT|bulunamadı/i.test(m)) return "Claude Code bulunamadı. Terminalde 'which claude' çıktısını secrets/.env içine CLAUDE_BIN=... olarak yazın.";
   if (/log ?in|not logged|authenticat|api key|unauthori|401|oauth|credential/i.test(m)) return "Claude oturumu açık değil. Terminalde 'claude' yazıp /login ile giriş yapın, sonra paneli yeniden başlatın.";
+  if (/usage credits|out of credits|credit balance|insufficient credit/i.test(m)) return "Seçili Claude modelinin kullanım kredisi bitti. Ayarlar → Gelişmiş → Claude modeli bölümünden başka bir model seçin.";
   if (/rate limit|usage limit|429|overloaded|529/i.test(m)) return "Claude kullanım sınırına ulaşıldı ya da servis yoğun. Biraz sonra tekrar deneyin.";
   if (/zaman aşımı|timed? ?out/i.test(m)) return "Claude zamanında yanıt vermedi. Ayarlar → Gelişmiş bölümünde beyin seviyesini 'medium' yapmayı deneyin.";
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|network|fetch failed|getaddrinfo/i.test(m)) return "İnternet bağlantısı yok ya da Claude sunucusuna ulaşılamıyor.";
@@ -73,7 +76,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
       const e = settings().claudeEffort; const effort = (e && typeof e === "object" ? e.brain : e) || "high";
       const bin = claudeBin(ROOT);
       if (!bin) return reject(new Error("Claude Code bulunamadı"));
-      const child = spawn(bin, ["-p", "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: claudeEnv(bin) });
+      const child = spawn(bin, ["-p", ...claudeModelArgs(settings()), "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: claudeEnv(bin) });
       let out = "", err = "";
       const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("Claude zaman aşımı")); }, timeoutMs);
       child.on("error", (er) => { clearTimeout(t); claudeCache = null; reject(er); });
