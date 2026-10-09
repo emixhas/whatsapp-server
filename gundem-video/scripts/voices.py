@@ -181,9 +181,25 @@ def tr_lower(w: str) -> str:
     return w.replace("İ", "i").replace("I", "ı").lower()
 
 
+# Kelime gibi okunan kısa büyük harfli adlar: ses motorları bunları harf harf okur ("AK" → "A, K").
+# Yalnızca SESE gider; ekranda yine "AK Parti" yazar. Harf harf okunması doğru olanlar (PKK, THY, BBC) listede yok.
+SPOKEN_WORDS = {"AK": "Ak", "DEM": "Dem", "İYİ": "İyi", "TİP": "Tip", "HÜDA": "Hüda", "PAR": "Par", "EMEP": "Emep"}
+_PARTY_CTX = re.compile(r"\b(AK|DEM|İYİ|TİP)\b(?=\s+(?:Parti|PARTİ|parti))|\b(HÜDA)\s+(PAR)\b|\bAK\b(?=\s*(?:Partili|PARTİLİ|Parti'|PARTİ'))")
+
+
+def speakable(text: str) -> str:
+    """Parti adları gibi kelime olarak okunması gereken kısaltmaları normal yazıma çevirir (AK Parti → Ak Parti)."""
+    def fix(m):
+        return " ".join(SPOKEN_WORDS.get(g, g) for g in m.groups() if g)
+    t = _PARTY_CTX.sub(fix, text)
+    t = re.sub(r"\bAK\b(?=[\s-]*(?:Parti|PARTİ|parti))", "Ak", t)
+    # Kesme işaretinden sonraki büyük harfli ekler harf harf okunmasın: PARTİ'YE → PARTİ'ye, PKK'NIN → PKK'nın
+    return re.sub(r"(?<=[A-Za-zÇĞİÖŞÜçğıöşü])['’]([A-ZÇĞİÖŞÜ]{1,6})\b", lambda m: "'" + tr_lower(m.group(1)), t)
+
+
 def prep_text(text: str) -> str:
-    """Yerel modeller için: rakamlar yazıya, BÜYÜK HARFLİ kelimeler (NATO, TÜİK) normal yazıma."""
-    t = normalize_tr(text)
+    """Yerel modeller için: rakamlar yazıya, parti adları kelime olarak, BÜYÜK HARFLİ kelimeler (NATO, TÜİK) normal yazıma."""
+    t = speakable(normalize_tr(text))
     return re.sub(r"\b([A-ZÇĞİÖŞÜ]{4,})\b", lambda m: m.group(1)[0] + tr_lower(m.group(1)[1:]), t)
 
 
@@ -233,7 +249,7 @@ def _run_chatterbox(text: str, out: Path) -> None:
 def _run_say(name: str, text: str, out: Path) -> None:
     aiff = out.with_suffix(".aiff")
     rate = int(_S.get("voice", {}).get("rate", 195)) - 15
-    subprocess.run(["say", "-v", name, "-r", str(rate), "-o", str(aiff), text], check=True, capture_output=True)
+    subprocess.run(["say", "-v", name, "-r", str(rate), "-o", str(aiff), speakable(text)], check=True, capture_output=True)
     resample(aiff, out)
 
 
