@@ -106,8 +106,9 @@
       <h2>⚡ ANLIK HABER · SON DAKİKA</h2>
       <textarea id="anlikTxt" rows="4" maxlength="1500" placeholder="Gündemdeki konuyu ve bildiklerini yaz. Örnek: Maltepe'de 7 katlı bina çöktü, ilk bilgilere göre 2 kişi hayatını kaybetti, arama kurtarma sürüyor."></textarea>
       <label class="row"><span>Süre</span><select id="anlikDur"><option value="20">20 sn</option><option value="30" selected>30 sn</option><option value="45">45 sn</option><option value="60">60 sn</option></select><span style="color:var(--mut);font-size:12px">tek konu, 2-4 bölüm</span></label>
+      <label class="row"><span class="sw" id="anlikAuto"></span><span>Bitince bağlı tüm hesaplarda otomatik paylaş (onaysız)</span></label>
       <button class="primary" id="anlikBtn">⚡ Anlık haber üret</button>
-      <div class="next" id="anlikInfo">Konu RSS'teki ilgili haberlerle birleştirilir. Haberlerde olmayan bilgi "ilk bilgilere göre" gibi temkinli dille anlatılır. Otomatik yayın açıksa bağlı hesaplarda da paylaşılır. WhatsApp'tan da yazabilirsin: <b style="font-size:13px">son dakika: konu</b></div>
+      <div class="next" id="anlikInfo">Konu RSS'teki ilgili haberlerle birleştirilir. Haberlerde olmayan bilgi "ilk bilgilere göre" gibi temkinli dille anlatılır. Anahtar açıksa video bitince bağlı tüm hesaplarda paylaşılır. WhatsApp'tan da yazabilirsin: <b style="font-size:13px">son dakika: konu</b></div>
     </div>
   </section>
 
@@ -307,7 +308,7 @@ function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtub
   $('#waInfo').innerHTML=w.status==='connected'?`✅ Bağlı: +${w.phone}. Sahip: +${w.owner||'?'}. ${w.pending?'⏳ Onay bekleyen: '+w.pending.video+' → '+w.pending.platforms.join(', '):''}<br>WhatsApp'tan yazabilirsiniz: "onay", "iptal", "60 saniyelik video üret", "durum", "rapor", "son videoyu gönder".`:w.status==='qr'?'📱 Telefonda WhatsApp → Bağlı Cihazlar → Cihaz Bağla → bu QR\'ı okutun.':w.status==='connecting'?'⏳ Bağlanıyor…':`${w.error?'❌ '+w.error+'<br>':''}Bağlı değil. "WhatsApp\'ı bağla" deyip QR okutun. Oturum <code>secrets/wa-auth</code> içinde saklanır, bir kez okutmak yeter.`;
   if(w.qrSvg&&w.status==='qr'){$('#waQr').innerHTML=w.qrSvg;$('#waQr').style.display='block';}else $('#waQr').style.display='none';
   if(document.activeElement!==$('#waOwner'))$('#waOwner').value=ws.owner||'';
-  $('#waStages').classList.toggle('on',ws.notifyStages!==false);$('#mediaVideo').classList.toggle('on',s.settings?.media?.video!==false);$('#mediaYt').classList.toggle('on',s.settings?.media?.allowYoutubeEmbeds!==false);
+  $('#waStages').classList.toggle('on',ws.notifyStages!==false);$('#anlikAuto').classList.toggle('on',s.settings?.anlikAutoPublish!==false);$('#mediaVideo').classList.toggle('on',s.settings?.media?.video!==false);$('#mediaYt').classList.toggle('on',s.settings?.media?.allowYoutubeEmbeds!==false);
   const cn=s.connections||{};const accs=['youtube','instagram','tiktok'].filter(k=>cn[k]?.connected);const ap=s.settings?.autopublish||{};const auto=!!s.schedule?.enabled;
   $('#autoSum').textContent=auto?`açık · her ${s.schedule.hours} saat · yayın: ${Object.keys(ap).filter(k=>ap[k]).join(', ')||'kapalı'} · onay ${ws.requireApproval===false?'kapalı':'açık'}`:'kapalı';
   $('#accSum').textContent=accs.length?`bağlı: ${accs.join(', ')}`:'hesap bağlı değil';$('#waSum').textContent=w.status==='connected'?'bağlı':'bağlı değil';
@@ -367,6 +368,7 @@ $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:
 $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
+$('#anlikAuto').onclick=async()=>{const on=!$('#anlikAuto').classList.contains('on');await post('/api/settings',{anlikAutoPublish:on});refreshStatus();};
 $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topic.length<8){toast('Konuyu biraz daha ayrıntılı yaz',true);$('#anlikTxt').focus();return;}
   const btn=$('#anlikBtn');btn.disabled=true;
   try{const r=await post('/api/anlik',{topic,duration:Number($('#anlikDur').value)});
