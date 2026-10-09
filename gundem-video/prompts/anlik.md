@@ -37,9 +37,10 @@ KURALLAR
 
 ÖNEM ("importance", 1-5)
 - Haberin halk için değeri. YouTube'a günde sınırlı video yüklenebildiği için yalnızca 4 ve 5 YouTube'a gider.
-- 5: can kaybı, büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli/memur maaşı,
-  akaryakıt/doğal gaz/elektrik zammı, vergi, faiz kararı gibi herkesin cebine dokunan karar.
-- 4: okul tatili, sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; ülke çapında ses getiren gelişme.
+- 5: can kaybı, büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli zammı ve aylığı,
+  memur maaşı ve zammı, bayram ikramiyesi, akaryakıt/doğal gaz/elektrik zammı, vergi, faiz kararı gibi herkesin
+  cebine dokunan karar; bayram tatili, resmi tatil, idari izin, okul tatili kararı.
+- 4: sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; ülke çapında ses getiren gelişme.
 - 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, spor sonucu.
 - Abartma: emin değilsen 3 ver. "importanceReason" alanına tek cümlelik gerekçe yaz.
 

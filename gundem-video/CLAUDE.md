@@ -276,7 +276,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   extraKeywords}): otomatik 5 saatlik üretimler YouTube'a HER ZAMAN gider; anlık/Mynet videoları yalnız DEĞERLİYSE
   ve günde en çok `extraDailyMax` tane (`data/youtube_extra.json`). Instagram/TikTok etkilenmez; elle yayın
   (panel, WhatsApp "onay") kurala takılmaz. Değer `scripts/news_value.py`: anahtar kelime grupları (can kaybı,
-  kaza/afet, cebe dokunan: asgari ücret/zam/maaş/vergi/akaryakıt, kamu duyurusu: tatil/sınav/yasak, güvenlik) +
+  kaza/afet, emekli/memur maaşı + asgari ücret, zam/fiyat/vergi, tatil/bayram/idari izin, kamu duyurusu:
+  sınav/yasak, güvenlik; magazin/spor kelimesi varsa yalnız model 4-5 derse) +
   `prompts/anlik.md`in istediği `importance` 1-5 (4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar).
   `assemble_script.news_value()` meta'ya `value` yazar; `post_pipeline.youtube_allowed()` karar verir ("⭐ değerli
   haber" / "📤 youtube: atlandı —"). WhatsApp bildirimi sıradan anlık haberde YouTube'u "onay" listesine koyar.
