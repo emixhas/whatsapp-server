@@ -80,7 +80,7 @@
         <div class="heard" id="heard">Küreye tıklayın ve konuşun, ya da yazın</div>
         <div class="reply" id="reply"></div>
         <label class="row" style="margin:0"><span class="sw" id="always"></span><span style="color:var(--mut);font-size:12px">Sürekli dinle: "<span class="wakeName">Emixhas</span>" deyince uyanır</span></label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="selfTestBtn" title="tüm bağlantıları ve motorları sına">🩺 Sistem kontrolü</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
         <div id="diag" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;font-size:11px;color:var(--mut)"><span id="dMic">mikrofon: ?</span><span>·</span><span id="dAudio">ses: ?</span><span>·</span><span id="dRec">tanıma: ?</span></div>
         <div class="chips">
           <span class="chip" data-say="otuz saniyelik video üret">30 sn üret</span><span class="chip" data-say="altmış saniyelik video üret">60 sn üret</span>
@@ -97,9 +97,9 @@
       <button class="primary" id="gen">Şimdi üret</button>
       <div class="next" id="nextBox">Otomatik üretim kapalı.</div>
       <label class="row" style="margin-top:12px"><span class="sw" id="sched"></span><span>Otomatik üretim, her</span><select id="hours"><option>1</option><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option><option>12</option></select><span>saatte bir</span></label>
-      <label class="row"><span class="sw" id="apYt"></span><span>Üretince YouTube'a otomatik yükle</span></label>
-      <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle</span></label>
-      <label class="row"><span class="sw" id="apTt"></span><span>Üretince TikTok'a otomatik gönder</span></label>
+      <label class="row"><span class="sw" id="apYt"></span><span>Üretince YouTube'a otomatik yükle (onaysız)</span></label>
+      <label class="row"><span class="sw" id="apIg"></span><span>Üretince Instagram'a otomatik yükle (onaysız)</span></label>
+      <label class="row"><span class="sw" id="apTt"></span><span>Üretince TikTok'a otomatik gönder (onaysız)</span></label>
     </div>
   </section>
 
@@ -142,7 +142,7 @@
       <div class="acts"><button class="ghost ok" id="waStart">WhatsApp'ı bağla (QR)</button><button class="ghost" id="waTest">Test mesajı</button><button class="ghost" id="waSend">Son videoyu gönder</button><button class="ghost danger" id="waLogout">Bağlantıyı kes</button><button class="ghost" id="waSwitch">Başka numara bağla (yeni QR)</button></div>
       <label class="row"><span class="sw" id="waNotify"></span><span>Video bitince metni ve linkleri WhatsApp'a gönder</span></label>
       <label class="row"><span class="sw" id="waFile"></span><span>Video dosyasını da gönder (WhatsApp'tan doğrudan izlenir)</span></label>
-      <label class="row"><span class="sw" id="waApprove"></span><span>Yayın için WhatsApp'tan "onay" bekle</span></label>
+      <label class="row"><span class="sw" id="waApprove"></span><span>Otomatik yükleme kapalı olan platformlar için WhatsApp'tan "onay" bekle</span></label>
       <label class="row"><span class="sw" id="waAuto"></span><span>Panel açılınca otomatik bağlan</span></label>
             </details>
       <details class="grp"><summary>🎙 Sesler <span class="sum" id="voiceSum"></span></summary>
@@ -338,6 +338,7 @@ $('#autoOn').onclick=async()=>{if(!confirm('Tam otomatik mod: her 5 saatte üret
 $('#autoOff').onclick=async()=>{const r=await post('/api/automode',{enabled:false});addMsg('j','Otomatik üretim ve yayın durduruldu.');refreshStatus();};
 $('#waStages').onclick=async()=>{const on=!$('#waStages').classList.contains('on');await post('/api/settings',{whatsapp:{notifyStages:on}});refreshStatus();};
 $('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
+$('#selfTestBtn').onclick=async()=>{addMsg('j','Sistem kontrolü başladı; satırlar canlı logda.');const r=await post('/api/selftest');addMsg('j',r.summary||'bitti');};
 $('#restartBtn').onclick=async()=>{await post('/api/restart');addMsg('j','Panel yeniden başlıyor; sayfa 5 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),5000);};
 $('#ttsStart').onclick=async()=>{await post('/api/tts/start');addMsg('j','Doğal ses motoru başlatılıyor; ilerlemeyi canlı logda görürsünüz.');setTimeout(refreshStatus,2500);};
 $('#ttsStop').onclick=async()=>{await post('/api/tts/stop');refreshStatus();};

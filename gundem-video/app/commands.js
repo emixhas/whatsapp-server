@@ -62,6 +62,7 @@ export function parseCommand(raw) {
   if (/(son|en yeni|sonuncu).*(oynat|aç|göster|izle)/.test(t) || /(oynat|izle)/.test(t)) return { action: "play_latest", reply: "" };
   if (/finder/.test(t)) return { action: "reveal", reply: "" };
   if (/(paylaş|gönder|telefon)/.test(t)) return { action: "share", reply: "" };
+  if (/\b(sistem kontrol|kontrol et|kendini test et|test yap|sistem testi|her şey yolunda mı)\b/.test(t)) return { action: "selftest", reply: "" };
   if (/(durum|ne durumda|nasıl gidiyor|bitti mi|kaç video)/.test(t)) return { action: "status", reply: "" };
   if (/(rapor|özet ver|nasıl gitti|performans)/.test(t)) return { action: "report", reply: "" };
   if (/(plan|strateji|ne yapalım|öneri)/.test(t)) return { action: "plan", reply: "" };

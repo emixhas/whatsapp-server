@@ -98,11 +98,14 @@ export async function makeWhatsApp({ automode = async () => ({ ok: false, error:
     const words = v.segments.map((s, i) => s.kind === "haber" ? `${i}. ${s.breaking ? "🔴 SON DAKİKA · " : ""}[${(s.category || "genel").toUpperCase()}] *${s.title}*\n${s.narration}` : `_${s.narration}_`).join("\n\n");
     const linkLines = "";
     const already = v.published || {};
-    const platforms = L.platforms.filter((pl) => !already[pl]);  // zaten yayındaki platform için onay isteme
-    const askLine = ask && w.requireApproval !== false
-      ? (platforms.length ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*` : "\n\n(Yayın için bağlı platform yok; panelden YouTube/TikTok bağlayın.)")
-      : "";
-    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${askLine}`;
+    const ap = settings().autopublish || {};
+    const autoPl = L.platforms.filter((pl) => ap[pl] && !already[pl]);      // otomatik yayın açık: onay gerekmez
+    const platforms = L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
+    const autoLine = autoPl.length ? `\n\n🚀 Otomatik yayın: ${autoPl.join(", ")} (onay gerekmez, yüklenince bildirilir)` : "";
+    const askLine = (ask && w.requireApproval !== false && platforms.length)
+      ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*`
+      : (!autoPl.length && !L.platforms.length ? "\n\n(Yayın için bağlı platform yok; panelden hesap bağlayın.)" : "");
+    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${autoLine}${askLine}`;
     const jid = ownerJid();
     let fileSent = false;
     if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, head); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }

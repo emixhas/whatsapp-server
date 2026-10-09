@@ -48,6 +48,7 @@ EYLEMLER (actions dizisi)
 - {"type":"connect","platform":"instagram"|"youtube"|"tiktok"}   hesabı bağla (tarayıcıda giriş açılır; Instagram için tünel otomatik açılır)
 - {"type":"tunnel","enabled":true|false}               Cloudflare tünelini aç/kapat (Instagram yayını için gerekli)
 - {"type":"whatsapp_send","video":"<dosya adı>"}         videoyu metni ve linkleriyle sahibine WhatsApp'tan gönder, onay iste
+- {"type":"selftest"}                                 sistem kontrolü (araçlar, haber kaynakları, hesaplar, köprü, sesler, zamanlayıcı); sonuç loga, sese ve WhatsApp'a
 - {"type":"automode","enabled":true|false}            tam otomatik mod: 5 saatte bir üretim + bağlı hesaplara otomatik yayın + onay kapalı + aşama bildirimleri
 - {"type":"natural_voice","enabled":true|false}        Doğal ses sunucusunu (Chatterbox) başlat/durdur; narrationEngine'i "chatterbox" yapmayı unutma
 

@@ -202,8 +202,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--setup", action="store_true")
     ap.add_argument("--upload")
+    ap.add_argument("--check", action="store_true")
     a = ap.parse_args()
-    if a.setup:
+    if a.check:
+        base = site_url()
+        print(json.dumps({"configured": configured(), "site": base, "callback": bool(base) and reachable(base + "/instagram/callback/")}))
+    elif a.setup:
         setup()
     elif a.upload:
         p = Path(a.upload)
