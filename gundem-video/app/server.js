@@ -396,7 +396,7 @@ async function execAction(a) {
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : "hata " + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
@@ -760,6 +760,7 @@ const STAGE_VOICE = [
   [/^📤 youtube: (tamam|zaten)/, "YouTube'da paylaşıldı."],
   [/^📤 instagram: (tamam|zaten)/, "Instagram'da paylaşıldı."],
   [/^📤 tiktok: (tamam|zaten)/, "TikTok'a gönderildi."],
+  [/^📤 youtube: sınır doldu/, "YouTube günlük yükleme sınırı doldu. Video sıraya alındı, sınır açılınca otomatik yüklenecek."],
   [/^📤 youtube: hata/, "YouTube'a yüklenemedi."],
   [/^📤 instagram: hata/, "Instagram'a yüklenemedi."],
   [/^📤 tiktok: hata/, "TikTok'a yüklenemedi."],
@@ -793,7 +794,7 @@ const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.",
 setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy()) break; await synthSpeech(t, { low: true }); } }, 20000);
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
-let lastReportDay = null;
+let lastReportDay = null, lastFlush = 0;
 setInterval(async () => {
   const s = settings();
   const conn = await brain.connections();
@@ -801,6 +802,13 @@ setInterval(async () => {
   const m = readJson(path.join(DATA, "metrics.json"), { lastSync: null });
   const due = !m.lastSync || Date.now() - Date.parse(m.lastSync) > s.metricsSyncMinutes * 60000;
   if (anyConnected && due && !state.running) { await execAction({ type: "sync_metrics" }); push("· izlenmeler güncellendi"); }
+  // günlük yükleme sınırı yüzünden sıraya alınan videolar: saatte bir, üretim yokken dene
+  if (anyConnected && !state.running && Date.now() - lastFlush > 60 * 60000 && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
+    lastFlush = Date.now();
+    const r = await py("publish.py", ["--flush"]);
+    for (const l of String(r.stdout || "").trim().split("\n").slice(0, -1)) if (l.startsWith("📤")) push(l);
+    if (r.json?.uploaded?.length) await py("analyze.py");
+  }
   const now = new Date(); const day = now.toISOString().slice(0, 10);
   if (now.getHours() === Number(s.dailyReportHour) && lastReportDay !== day && !state.running) { lastReportDay = day; const r = await think("günlük rapor", "report"); announce(r.reply, { report: r.report, reportFile: r.reportFile }); push(`· günlük rapor hazır: ${r.reportFile}`); }
 }, 60000);

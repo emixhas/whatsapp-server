@@ -80,11 +80,18 @@ def publish(plat: str) -> bool:
     except Exception:
         print(f"📤 {plat}: hata {last}", flush=True)
         return False
+    if j.get("limit"):  # günlük sınır: sıraya alındı, 90 sn sonra denemek boşuna
+        print(f"📤 {plat}: sınır doldu — {j.get('error')}", flush=True)
+        return True
     print(f"📤 {plat}: " + (("zaten yayında " if j.get("skipped") else "tamam ") + (j.get("url") or j.get("note") or "") if j.get("ok") else "hata " + str(j.get("error"))), flush=True)
     return bool(j.get("ok"))
 
 
 failed = [p for p in plats if not publish(p)]
+# sınır yüzünden bekleyen eski videolar (sınır açıldıysa; yeni video önce gider)
+fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush"], capture_output=True, text=True)
+for line in fl.stdout.strip().splitlines()[:-1]:
+    print(line, flush=True)
 if failed:
     # geçici hatalar (Instagram "medya hazır değil", ağ kopması) için 90 sn sonra bir kez daha denenir
     print(f"📤 tekrar denenecek (90 sn sonra): {', '.join(failed)}", flush=True)

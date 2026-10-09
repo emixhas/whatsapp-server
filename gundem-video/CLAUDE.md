@@ -265,6 +265,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   anahtarı `autoMode`u da açar/kapatır; WhatsApp bildirimi aynı kuralla onay istemez (`autoAll`).
 - Başlık/açıklama `scripts/common.py: build_caption` üretir (ilk haber başlığı + kanal adı + #Shorts).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
+- Günlük yükleme sınırı (YouTube `uploadLimitExceeded` = kanal sınırı, `quotaExceeded` = API kotası):
+  `publish.py` platformu 3 saat beklemeye alır (`data/publish_hold.json`), videoyu `data/publish_queue.json`
+  sırasına ekler ve `{"limit": true}` döner; post_pipeline 90 sn tekrarını yapmaz ("📤 youtube: sınır doldu —"),
+  bekleme süresince yeni videolar API'ye gitmeden sıraya girer. `publish.py --flush` sırayı en yeni haberden
+  yükler (24 saatten eski bayat haber atılır); post_pipeline her yayından sonra, panel saatte bir (üretim yokken)
+  çağırır. `--status` YouTube için `holdUntil`/`queued` verir. Doğrulanmamış kanalın sınırı düşüktür
+  (youtube.com/verify ile telefon doğrulaması sınırı yükseltir).
 
 ## Kanal kimliği (değiştirirken tutarlı kal)
 - Renkler `src/theme.ts`: koyu lacivert zemin, kırmızı vurgu (#E30A17), beyaz başlık, gri alt metin.

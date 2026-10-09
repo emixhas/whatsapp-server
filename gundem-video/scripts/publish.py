@@ -6,6 +6,11 @@
   python3 scripts/publish.py --file out/2026-10-07-1.mp4 --platform youtube
   python3 scripts/publish.py --file out/2026-10-07-1.mp4 --platform instagram
   python3 scripts/publish.py --status                          # bağlantı durumu (JSON)
+  python3 scripts/publish.py --flush                           # sınır yüzünden sıraya alınanları yüklemeyi dene
+
+Günlük yükleme sınırı (YouTube uploadLimitExceeded/quotaExceeded) dolunca platform LIMIT_HOURS süre
+beklemeye alınır (data/publish_hold.json), video sıraya eklenir; panel saatte bir --flush çağırır,
+sınır açılınca sıradakiler en yeniden eskiye yüklenir. QUEUE_MAX_HOURS'ten eski haberler bayatladığı için atılır.
 """
 import argparse
 import json
@@ -16,8 +21,58 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from common import OUT, SECRETS, build_caption, episode_meta, load_env, metrics, now_iso, save_metrics
+from datetime import datetime, timedelta, timezone
+
+from common import DATA, OUT, SECRETS, build_caption, episode_meta, load_env, load_json, metrics, now_iso, save_json, save_metrics
 import hostinger
+
+HOLD_FILE = DATA / "publish_hold.json"    # {"youtube": {"until": iso, "reason": "..."}}
+QUEUE_FILE = DATA / "publish_queue.json"  # [{"video": ad, "platform": p, "at": iso}]
+LIMIT_HOURS = 3        # sınır dolunca bu kadar saat sonra yeniden denenir
+QUEUE_MAX_HOURS = 24   # daha eski sıradaki haber videoları yüklenmez (bayat haber)
+LIMIT_REASONS = ("uploadLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded")
+
+
+class LimitReached(RuntimeError):
+    """Platformun günlük yükleme/kota sınırı doldu; kısa sürede tekrar denemek boşuna."""
+
+
+def _parse(ts):
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def hold_until(plat):
+    h = (load_json(HOLD_FILE, {}) or {}).get(plat) or {}
+    until = _parse(h.get("until", ""))
+    return until if until and until > datetime.now(timezone.utc) else None
+
+
+def set_hold(plat, reason):
+    holds = load_json(HOLD_FILE, {}) or {}
+    until = datetime.now(timezone.utc) + timedelta(hours=LIMIT_HOURS)
+    holds[plat] = {"until": until.isoformat(), "reason": reason, "since": now_iso()}
+    save_json(HOLD_FILE, holds)
+    return until
+
+
+def clear_hold(plat):
+    holds = load_json(HOLD_FILE, {}) or {}
+    if holds.pop(plat, None) is not None:
+        save_json(HOLD_FILE, holds)
+
+
+def enqueue(video, plat):
+    q = load_json(QUEUE_FILE, []) or []
+    if not any(x.get("video") == video and x.get("platform") == plat for x in q):
+        q.append({"video": video, "platform": plat, "at": now_iso()})
+        save_json(QUEUE_FILE, q)
+
+
+def local_hhmm(dt):
+    return dt.astimezone().strftime("%H:%M")
 
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
 
@@ -55,8 +110,14 @@ def yt_upload(path: Path):
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}}
     req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(str(path), chunksize=-1, resumable=True))
     resp = None
-    while resp is None:
-        _, resp = req.next_chunk()
+    try:
+        while resp is None:
+            _, resp = req.next_chunk()
+    except Exception as e:  # günlük sınır: okunur mesaj, kısa aralıkla yeniden deneme yok
+        reason = next((r for r in LIMIT_REASONS if r in str(e)), None)
+        if reason:
+            raise LimitReached(reason) from e
+        raise
     vid = resp["id"]
     thumb = path.with_name(path.stem + "-kapakYT.jpg")  # 16:9 YouTube kapağı; yoksa dikey
     if not thumb.exists():
@@ -538,7 +599,9 @@ def status():
     env = load_env()
     yt_ok = (SECRETS / "youtube_token.json").exists()
     return {
-        "youtube": {"connected": yt_ok, "clientFile": (SECRETS / "youtube_client.json").exists()},
+        "youtube": {"connected": yt_ok, "clientFile": (SECRETS / "youtube_client.json").exists(),
+                    "holdUntil": (hold_until("youtube") or None) and hold_until("youtube").isoformat(),
+                    "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
         "instagram": ig_status(env),
         "tiktok": {"connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
                    "mode": (env.get("TIKTOK_MODE") or "inbox").lower()},
@@ -551,9 +614,12 @@ def main():
     ap.add_argument("--platform", choices=["youtube", "instagram", "tiktok"])
     ap.add_argument("--connect", choices=["youtube", "tiktok", "instagram"])
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
+    if a.flush:
+        print(json.dumps(flush(), ensure_ascii=False)); return
     if a.connect == "youtube":
         try:
             yt_service(interactive=True)
@@ -577,17 +643,71 @@ def main():
     path = Path(a.file) if Path(a.file).is_absolute() else OUT / Path(a.file).name
     if not path.exists():
         sys.exit(f"Dosya yok: {path}")
+    res = upload(path, a.platform)
+    print(json.dumps(res, ensure_ascii=False))
+    if not res.get("ok"):
+        sys.exit(1)
+
+
+PLAT_NAME = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
+
+
+def upload(path: Path, plat: str) -> dict:
+    """Tek yükleme; sınır doluysa sıraya alır ({"ok": False, "limit": True, "queued": True})."""
     m = metrics()
     entry = m["videos"].setdefault(path.name, {})
-    if entry.get(a.platform, {}).get("id"):
-        print(json.dumps({"ok": True, "skipped": True, "message": f"{a.platform} için zaten yayınlanmış", **entry[a.platform]}, ensure_ascii=False)); return
+    if entry.get(plat, {}).get("id"):
+        return {"ok": True, "skipped": True, "message": f"{plat} için zaten yayınlanmış", **entry[plat]}
+    until = hold_until(plat)
+    if until:
+        enqueue(path.name, plat)
+        return {"ok": False, "limit": True, "queued": True,
+                "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı dolu; video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
     try:
-        res = {"youtube": yt_upload, "instagram": ig_upload, "tiktok": tt_upload}[a.platform](path)
+        res = {"youtube": yt_upload, "instagram": ig_upload, "tiktok": tt_upload}[plat](path)
+    except LimitReached as e:
+        until = set_hold(plat, str(e))
+        enqueue(path.name, plat)
+        return {"ok": False, "limit": True, "queued": True,
+                "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
     except Exception as e:  # hatayı JSON olarak döndür, panel okur
-        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)); sys.exit(1)
-    entry[a.platform] = res
+        return {"ok": False, "error": str(e)}
+    clear_hold(plat)
+    m = metrics()
+    m["videos"].setdefault(path.name, {})[plat] = res
     save_metrics(m)
-    print(json.dumps({"ok": True, **res}, ensure_ascii=False))
+    return {"ok": True, **res}
+
+
+def flush() -> dict:
+    """Sıradaki (sınır yüzünden bekleyen) videoları yükler; en yeni haber önce."""
+    q = load_json(QUEUE_FILE, []) or []
+    if not q:
+        return {"ok": True, "queued": 0}
+    now = datetime.now(timezone.utc)
+    done, keep = [], []
+    for it in sorted(q, key=lambda x: x.get("at", ""), reverse=True):
+        plat, name = it.get("platform"), it.get("video", "")
+        at = _parse(it.get("at", "")) or now
+        path = OUT / Path(name).name
+        if not path.exists() or now - at > timedelta(hours=QUEUE_MAX_HOURS):
+            print(f"📤 sıradan çıkarıldı (eski ya da silinmiş): {name} → {plat}", flush=True)
+            continue
+        if hold_until(plat):
+            keep.append(it); continue
+        res = upload(path, plat)
+        if res.get("ok"):
+            done.append(f"{plat}:{name}")
+            print(f"📤 {plat}: " + ("zaten yayında " if res.get("skipped") else "tamam ") + f"{res.get('url') or ''} (sıradan)", flush=True)
+        elif res.get("limit"):
+            keep.append(it)
+        else:
+            print(f"📤 {plat}: hata {res.get('error')} (sıradan, atlandı)", flush=True)
+    # bu arada başka bir üretimin sıraya eklediklerini koru
+    seen = {(x.get("video"), x.get("platform")) for x in q}
+    added = [x for x in (load_json(QUEUE_FILE, []) or []) if (x.get("video"), x.get("platform")) not in seen]
+    save_json(QUEUE_FILE, keep + added)
+    return {"ok": True, "uploaded": done, "queued": len(keep)}
 
 
 if __name__ == "__main__":
