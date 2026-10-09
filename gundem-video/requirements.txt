@@ -4,7 +4,7 @@ certifi
 google-api-python-client
 google-auth-oauthlib
 # Sesli komutla YouTube'da şarkı açmak için (ilk sonucu bulur):
-yt-dlp
+yt-dlp[default]   # haber videoları (YouTube için yt-dlp-ejs bileşeni dahil) ve sesli komutla şarkı açma
 # Doğal ses (Chatterbox Multilingual, MIT). Ağır: torch ~2 GB. Kurulum: bash scripts/install_voice.sh
 # torch
 # torchaudio

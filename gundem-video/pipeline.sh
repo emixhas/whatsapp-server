@@ -91,7 +91,7 @@ $PY scripts/tts.py work/script.json public/episode.json
 echo "-- görseller ve videolar (tam boy fotoğraf, HD, haber videosu)"
 # yt-dlp haber sitelerindeki oynatıcılar değiştikçe güncellenmeli: haftada bir sessizce güncellenir
 if [ ! -f work/.ytdlp_updated ] || [ -n "$(find work/.ytdlp_updated -mtime +7 2>/dev/null)" ]; then
-  $PY -m pip install -q -U yt-dlp >/dev/null 2>&1 && touch work/.ytdlp_updated && echo "  yt-dlp güncellendi" || true
+  $PY -m pip install -q -U "yt-dlp[default]" >/dev/null 2>&1 && touch work/.ytdlp_updated && echo "  yt-dlp güncellendi" || true
 fi
 $PY scripts/fetch_images.py public/episode.json || echo "  ! görsel adımı atlandı"
 

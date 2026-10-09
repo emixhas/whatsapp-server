@@ -7,8 +7,9 @@ Kaynak sırası (segment başına):
   1. Haberin kendi sayfası (articleUrl): og:image, twitter:image, image_src → yayıncının tam boy fotoğrafı.
      Video: önce yt-dlp (açık kaynak, binlerce siteyi tanır; sayfaya gömülü oynatıcıdaki videoyu bulur,
      en çok 1080p ve yalnızca ilk N saniyeyi indirir), olmazsa sayfadaki og:video / <video> / JSON-LD
-     contentUrl adresleri ffmpeg ile (mp4 ya da m3u8). YouTube gömmeleri varsayılan olarak alınmaz
-     (YouTube'a yeniden yüklemek telif eşleşmesi doğurur; settings.media.allowYoutubeEmbeds).
+     contentUrl adresleri ffmpeg ile (mp4 ya da m3u8); en son sayfadaki gömülü YouTube/Dailymotion/Vimeo
+     oynatıcısı yt-dlp ile (kullanıcı kararıyla açık; settings.media.allowYoutubeEmbeds). YouTube için yt-dlp
+     JavaScript çalıştırıcısı olarak Node kullanır (Remotion için zaten kurulu) ve yt-dlp-ejs bileşenini ister.
   2. RSS'in verdiği küçük görsel (imageUrl).
   Her görsel adresi için önce bilinen HD sürümleri denenir (BBC ichef genişliği, AA thumbs_b_c, WordPress
   -800x450 eki, ?w= parametresi). En büyük piksel alanlı görsel seçilir; 1600 px ve üstü bulununca durulur.
@@ -22,6 +23,7 @@ Kaynak sırası (segment başına):
 import html
 import json
 import re
+import shutil
 import ssl
 import subprocess
 import sys
@@ -40,7 +42,7 @@ except ImportError:
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
 OUT = ROOT / "public" / "images"
-MEDIA = {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": False, **(settings().get("media") or {})}
+MEDIA = {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True, **(settings().get("media") or {})}
 
 
 def get(url: str, limit: int, referer: str = "", timeout: int = 20) -> bytes:
@@ -62,24 +64,29 @@ def _meta(page: str, *names: str) -> list:
     return out
 
 
-def page_media(url: str) -> tuple[list, list]:
-    """Haber sayfasındaki görsel ve video adresleri (mutlak), önem sırasıyla."""
+EMBED = re.compile(r"(youtube\.com/(?:embed|watch|shorts)|youtube-nocookie\.com/embed|youtu\.be/|dailymotion\.com/(?:embed/)?video|player\.vimeo\.com/video)", re.I)
+
+
+def page_media(url: str) -> tuple[list, list, list]:
+    """Haber sayfasındaki görsel adresleri, doğrudan video dosyaları ve gömülü oynatıcılar (mutlak), önem sırasıyla."""
     try:
         page = get(url, 3 * 1024 * 1024, timeout=15).decode("utf-8", "replace")
     except Exception as e:
         print(f"  ! haber sayfası açılamadı ({url[:60]}): {e}", file=sys.stderr)
-        return [], []
+        return [], [], []
     imgs = _meta(page, "og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src", "image")
     imgs += re.findall(r'<link[^>]+rel=["\']image_src["\'][^>]+href=["\']([^"\']+)', page, re.I)
     vids = _meta(page, "og:video:secure_url", "og:video:url", "og:video", "twitter:player:stream", "contenturl")
     vids += re.findall(r'<(?:video|source)\b[^>]*\bsrc=["\']([^"\']+\.(?:mp4|m3u8)[^"\']*)', page, re.I)
     vids += re.findall(r'"contentUrl"\s*:\s*"([^"]+\.(?:mp4|m3u8)[^"]*)"', page)
     vids += re.findall(r'["\'](https?:[^"\']+\.(?:mp4|m3u8)(?:\?[^"\']*)?)["\']', page)[:3]
-    absu = lambda u: urllib.parse.urljoin(url, html.unescape(u.replace("\\/", "/")))
+    absu = lambda u: urllib.parse.urljoin(url, ("https:" + u) if u.startswith("//") else html.unescape(u.replace("\\/", "/")))
     uniq = lambda xs: list(dict.fromkeys(absu(x) for x in xs if x and not x.startswith("data:")))
-    # gömülü oynatıcı sayfaları (YouTube vb.) video dosyası değildir
-    vids = [v for v in uniq(vids) if re.search(r"\.(mp4|m3u8)(\?|$)", v, re.I) and not re.search(r"youtube|youtu\.be|dailymotion|vimeo", v)]
-    return uniq(imgs), vids
+    embeds = re.findall(r'<iframe\b[^>]*\b(?:data-)?src=["\']([^"\']+)', page, re.I) + vids
+    embeds = [e for e in uniq(embeds) if EMBED.search(e)]
+    # gömülü oynatıcı sayfaları (YouTube vb.) video dosyası değildir; onları yt-dlp açar
+    vids = [v for v in uniq(vids) if re.search(r"\.(mp4|m3u8)(\?|$)", v, re.I) and not EMBED.search(v)]
+    return uniq(imgs), vids, embeds
 
 
 # ---------- HD sürüm adayları ----------
@@ -196,6 +203,9 @@ def fetch_video_ytdlp(page_url: str, dst: Path, w: int, h: int, seconds: float) 
             "-f", "bv*[height<=1080][ext=mp4]/bv*[height<=1080]/b[height<=1080]/bv*/b",
             "--download-sections", f"*0-{int(seconds)}", "--force-keyframes-at-cuts", "--remux-video", "mp4",
             "--user-agent", UA, "-o", tmpl, page_url]
+    node = shutil.which("node")
+    if node:  # YouTube imza çözümü için JavaScript çalıştırıcısı
+        args[-1:-1] = ["--js-runtimes", f"node:{node}", "--remote-components", "ejs:github"]
     if not MEDIA.get("allowYoutubeEmbeds"):
         args[-1:-1] = ["--match-filter", "extractor_key!=Youtube"]
     try:
@@ -240,7 +250,7 @@ def main():
             continue
         if art and art not in pages:
             pages[art] = page_media(art)
-        p_imgs, p_vids = pages.get(art, ([], [])) if art else ([], [])
+        p_imgs, p_vids, p_embeds = pages.get(art, ([], [], [])) if art else ([], [], [])
         cands = list(dict.fromkeys(p_imgs + ([rss] if rss else [])))
         tall = seg["kind"] == "hook"
         # video: kanca dikey tam ekran, haber kartı 1280x780 (kart oranı 920x560)
@@ -249,6 +259,11 @@ def main():
             secs = min(float(MEDIA.get("maxVideoSeconds") or 20), max(6.0, float(seg.get("duration") or 8) + 1))
             vw, vh = (1080, 1920) if tall else (1280, 780)
             d = fetch_video_ytdlp(art, dst, vw, vh, secs) or (fetch_video(p_vids, art, dst, vw, vh, secs) if p_vids else 0.0)
+            if not d and MEDIA.get("allowYoutubeEmbeds"):
+                for emb in p_embeds[:2]:  # sayfaya gömülü YouTube/Dailymotion/Vimeo oynatıcısı
+                    d = fetch_video_ytdlp(emb, dst, vw, vh, secs)
+                    if d:
+                        break
             if d:
                 seg["video"], seg["videoDuration"] = f"images/{dst.name}", round(d, 2)
                 n_vid += 1

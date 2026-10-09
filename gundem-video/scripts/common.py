@@ -88,7 +88,7 @@ _DEFAULTS = ({
         "narration": {"mode": "single", "voice": "auto", "voiceA": "vox-kadin", "voiceB": "vox-erkek"},
         "claudeModel": "opus",
         # Haber medyası: tam boy fotoğraf her zaman; video (yt-dlp, haber sayfasından) açılıp kapatılabilir
-        "media": {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": False},
+        "media": {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True},
         "claudeEffort": {"script": "medium", "brain": "high"},
         "formats": {
             "sabah": {"hours": [5, 11], "duration": 45, "label": "Güne Başlarken", "intro": "Güne başlarken Türkiye gündemi.", "tone": "sakin, bilgilendirici, günün ajandasını kuran"},

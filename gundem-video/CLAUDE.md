@@ -59,9 +59,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `seg-XX-tall.jpg` 1080x1920 (kanca ve dikey kapak, hep bulanık zemin; dikey kırpıp büyütme YOK, bulanıklık
   yapıyordu). Video: önce yt-dlp (haber sayfasındaki gömülü oynatıcı, ≤1080p, yalnızca ilk N sn), olmazsa
   og:video/<video>/JSON-LD adresi ffmpeg ile; sessiz, kart 1280x780, kanca 1080x1920 → `vid-XX.mp4`,
-  `videoDuration`. YouTube gömmeleri alınmaz (telif eşleşmesi; `settings.media.allowYoutubeEmbeds`).
-  `settings.media` {video, maxVideoSeconds 20}; panel Gelişmiş'te aç/kapat. yt-dlp pipeline'da haftada bir
-  güncellenir. Remotion `MediaBg.tsx`: video varsa `Loop` + `OffthreadVideo` (sessiz), yoksa Ken Burns
+  `videoDuration`. Sayfaya gömülü YouTube/Dailymotion/Vimeo oynatıcıları da yt-dlp ile alınır (kullanıcı
+  kararı: kısa klip, sorun görmüyor; `settings.media.allowYoutubeEmbeds`, varsayılan açık, panelde anahtar).
+  YouTube için yt-dlp `--js-runtimes node:<yol>` (Node, Remotion için zaten kurulu) ve yt-dlp-ejs bileşeni
+  (`yt-dlp[default]`, yoksa `--remote-components ejs:github`) kullanır. `settings.media` {video,
+  maxVideoSeconds 20, allowYoutubeEmbeds}; panel Gelişmiş'te iki anahtar. `yt-dlp[default]` pipeline'da
+  haftada bir güncellenir. Remotion `MediaBg.tsx`: video varsa `Loop` + `OffthreadVideo` (sessiz), yoksa Ken Burns
   fotoğraf; kartta "VİDEO:"/"FOTOĞRAF: kaynak" yazısı.
 - Bölüm meta: `dayLabel` ("9 Ekim Cuma"), `slotLabel` ("2. 5 SAAT"), `timeRange` ("09:00–14:00"),
   `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,
