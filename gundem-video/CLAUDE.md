@@ -212,6 +212,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   girer), zamanlanmış üretim gecikti (son düzenli video aralık + 40 dk'dan eski), disk < `health.minFreeGb` (5),
   Instagram token ≤ 7 gün, bir yayın bağlantısı koptu (`data/health_conn.json`). `settings.health` {enabled,
   whatsapp, minFreeGb}. `GET /api/health`.
+- Haftalık rapor `scripts/weekly_report.py` (son 7 gün: video sayısı, toplam ve önceki haftaya göre fark, platform
+  toplamları ve önde olan, en çok izlenen 5 video + önde olduğu platform + link, en iyi kategori/saat, anlık vs
+  düzenli, kurallı öneriler) → `data/reports/hafta-<tarih>.md`. Panel `settings.weeklyReport` {enabled, weekday 1
+  (pazartesi), hour 10}'da önce izlenmeleri çeker, metni WhatsApp'a gönderir, özeti seslendirir
+  (`data/weekly_report_last.json` tekrarı engeller). Komut: "haftalık rapor", "bu hafta nasıl gitti";
+  `POST /api/weekly-report`.
 - Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,

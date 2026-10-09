@@ -689,6 +689,7 @@ async function handleCommand(text) {
     case "share": if (!videos.length) { reply = "Paylaşacak video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = "Paylaşım paneli açıldı. Telefonunuzla QR kodu okutun."; } break;
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
+    case "weekly_report": { const r = await weeklyReport({ send: true }); reply = r.ok ? r.summary : `Haftalık rapor hazırlanamadı: ${r.error}`; break; }
     case "sync_metrics": { const r = await execAction({ type: "sync_metrics" }); reply = r.ok ? `İzlenmeler güncellendi: YouTube ${r.youtube ?? 0}, Instagram ${r.instagram ?? 0}, TikTok ${r.tiktok ?? 0} video.` : "İzlenmeler güncellenemedi. Bağlantıları kontrol edin."; break; }
     case "publish": { if (!videos[0]) { reply = "Yayınlanacak video yok."; action = "none"; break; } const plats = cmd.platforms.length ? cmd.platforms : ["youtube", "instagram", "tiktok"]; const act = { type: "publish", video: videos[0].name, platforms: plats };
       if (needsConfirm(act)) { action = "confirm"; payload = { actions: [act] }; reply = `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlansın mı? Onaylamak için ekrandaki düğmeye basın.`; }
@@ -847,6 +848,27 @@ async function healthCheck() {
 setInterval(() => { healthCheck().catch(() => {}); }, 10 * 60000);
 setTimeout(() => { healthCheck().catch(() => {}); }, 120000);
 app.get("/api/health", async (_req, res) => { await healthCheck().catch(() => {}); res.json({ alerts: readJson(HEALTH_FILE, {}), log: state.log.filter((l) => l.startsWith("⚠️ sağlık")).slice(-20) }); });
+
+// ---------- haftalık rapor (scripts/weekly_report.py): her pazartesi weeklyReport.hour'da WhatsApp'a + sesli özet
+async function weeklyReport({ send = true } = {}) {
+  try { const conn = await brain.connections(); if (["youtube", "instagram", "tiktok"].some((p) => conn[p]?.connected)) await execAction({ type: "sync_metrics" }); } catch { /* izlenmeler çekilemedi: eldeki veriyle */ }
+  const r = await py("weekly_report.py");
+  if (!r.json?.ok) return { ok: false, error: (r.stderr || r.stdout || "").slice(-200) };
+  push(`📊 haftalık rapor hazır: ${path.basename(r.json.file)}`);
+  if (send) { try { await wa.send(r.json.text); } catch { push("💬 haftalık rapor WhatsApp'a gönderilemedi (bağlı değil)"); } }
+  announce(r.json.summary, { report: r.json.text, reportFile: r.json.file });
+  return { ok: true, ...r.json };
+}
+const WEEKLY_FILE = path.join(DATA, "weekly_report_last.json");
+setInterval(async () => {
+  const s = settings(); const w = { enabled: true, weekday: 1, hour: 10, ...(s.weeklyReport || {}) };
+  const now = new Date(); const day = now.toISOString().slice(0, 10);
+  if (!w.enabled || now.getDay() !== Number(w.weekday) || now.getHours() !== Number(w.hour) || state.running) return;
+  if (readJson(WEEKLY_FILE, {}).day === day) return;
+  writeJson(WEEKLY_FILE, { day });
+  await weeklyReport({ send: true }).catch((e) => push(`📊 haftalık rapor hatası: ${e.message}`));
+}, 5 * 60000);
+app.post("/api/weekly-report", async (_req, res) => res.json(await weeklyReport({ send: true })));
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
 let lastReportDay = null, lastFlush = 0;
