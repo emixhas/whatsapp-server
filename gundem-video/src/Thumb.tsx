@@ -1,5 +1,6 @@
 import { AbsoluteFill, Img, Sequence, staticFile } from "remotion";
 import { styleFor } from "./categories";
+import { fitFontSize } from "./fit";
 import { theme } from "./theme";
 
 export type ThumbProps = {
@@ -16,7 +17,9 @@ export const Thumb = ({ text, category, breaking, image, variant = "A", channel 
   const accent = breaking ? theme.red : st.accent;
   const len = text.length;
   // Başlık boyutu: metin uzunluğuna göre, dikeyde 118–150, genişte 72–96
-  const headSize = wide ? (len > 34 ? 78 : len > 24 ? 90 : 104) : len > 34 ? 126 : len > 24 ? 140 : variant === "B" ? 160 : 150;
+  const baseSize = wide ? (len > 34 ? 78 : len > 24 ? 90 : 104) : len > 34 ? 126 : len > 24 ? 140 : variant === "B" ? 160 : 150;
+  // Uzun kelime kapaktan taşmasın: dikeyde 960 px ve 3 satır, genişte 1100 px ve 2 satır
+  const headSize = fitFontSize({ text, maxWidth: wide ? 1100 : 960, base: baseSize, min: wide ? 52 : 72, maxLines: wide ? 2 : 3 });
   const s = wide ? 0.62 : 1; // rozet ölçeği
   return (
     <AbsoluteFill style={{ background: `linear-gradient(160deg, ${theme.bg} 0%, ${theme.bgAccent} 60%, #050811 100%)`, fontFamily: theme.font, color: theme.white, overflow: "hidden", alignItems: "center" }}>

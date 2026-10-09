@@ -31,6 +31,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (≤ 8-10 kelime), 2-4 kelimelik dev ekran başlığı, kırmızı/kategori flaşı, varsa tam ekran fotoğraf,
   `sfx/sondakika.wav`. Sonra kısa intro (kanal kimliği, ≤ 5 kelime), sonra haberler. Claude kanca
   vermezse `assemble_script` ilk haberin ilk cümlesinden üretir. `Hook.tsx`.
+- Yazı sığdırma (`src/fit.ts`): kanca başlığı, haber kartı başlığı ve kapak başlığı sabit puntoyla DEĞİL,
+  `fitFontSize()` ile çizilir: metin tarayıcıda ölçülür, hiçbir kelime taşmayacak ve en çok 3 satır (geniş
+  kapakta 2) olacak en büyük punto seçilir. `assemble_script.short_title()` başlığı kelime ortasından kesmez
+  (en çok 4 kelime / 32 karakter), `tr_upper()` Türkçe büyük harf yapar (i → İ). Prompt kanca başlığını
+  ≤ 24 karakter ve anlamı tam ister.
 - Haber seçimi: `fetch_news` kaynak başına 25 (≈100), `slim_news` önem puanlar (3 sert haber: can
   kaybı/saldırı/savaş/afet/büyük kaza; 2 önemli karar; 1 diğer), aynı olayı veren kaynakları kümeler
   (`c` = kaynak sayısı, "en çok konuşulan" ölçüsü), `data/used_news.json` içindeki son 48 saatte videoya

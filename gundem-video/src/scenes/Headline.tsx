@@ -1,6 +1,7 @@
 import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
 import { Captions } from "./Captions";
+import { fitFontSize, textWidth } from "../fit";
 import { theme } from "../theme";
 
 type Props = {
@@ -58,7 +59,7 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
       <div style={{ position: "absolute", top: 830, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 28 }}>
           <div style={{ fontSize: 150, fontWeight: 900, color: st.accent, lineHeight: 0.85 }}>{String(index + 1).padStart(2, "0")}</div>
-          <div style={{ fontSize: breaking ? 84 : 76, fontWeight: 900, lineHeight: 1.06, paddingBottom: 6 }}>{title}</div>
+          <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 920 - 28 - textWidth(String(index + 1).padStart(2, "0"), 150), base: breaking ? 84 : 76, min: 48, maxLines: 3, upper: false }), fontWeight: 900, lineHeight: 1.06, paddingBottom: 6, overflowWrap: "normal", wordBreak: "keep-all" }}>{title}</div>
         </div>
         {source ? <div style={{ opacity: textIn, marginTop: 18, fontSize: 32, color: theme.muted }}>Kaynak: {source}</div> : null}
       </div>

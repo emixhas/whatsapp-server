@@ -200,6 +200,23 @@ def episode_of_day(date: str) -> int:
     return n
 
 
+def tr_upper(t: str) -> str:
+    """Türkçe büyük harf (i → İ, ı → I); Python'un upper() i'yi yanlış olarak I yapar."""
+    return (t or "").replace("i", "İ").replace("ı", "I").upper()
+
+
+def short_title(t: str, max_chars: int = 32, max_words: int = 4) -> str:
+    """Ekran başlığını kelime ortasından KESMEDEN kısaltır: en çok max_words kelime ve max_chars karakter.
+    İlk kelime tek başına uzunsa bile bütün kalır (video tarafı puntoyu küçültüp sığdırır)."""
+    words = (t or "").replace("…", " ").split()
+    out = []
+    for w in words[:max_words]:
+        if out and len(" ".join(out + [w])) > max_chars:
+            break
+        out.append(w)
+    return " ".join(out).rstrip(",;:-–")
+
+
 def regular_slot_of_day(date: str) -> int:
     """Kaçıncı 5 saatlik video: o günün anlık olmayan videoları + 1 (anlık videolar sayımı kaydırmaz)."""
     n = 0
@@ -222,7 +239,7 @@ def main(src: str, dst: str):
         if first:
             sent = re.split(r"(?<=[.!?])\s", first["narration"].strip())[0]
             words = sent.split()
-            hook = {"kind": "hook", "title": " ".join(first["title"].split()[:3]).upper(), "narration": " ".join(words[:9]).rstrip(",;:") + ("." if not sent.endswith((".", "!", "?")) else ""),
+            hook = {"kind": "hook", "title": tr_upper(" ".join(first["title"].split()[:3])), "narration": " ".join(words[:9]).rstrip(",;:") + ("." if not sent.endswith((".", "!", "?")) else ""),
                     "source": first.get("source"), "category": first.get("category"), "breaking": first.get("breaking", False)}
             segs.insert(0, hook)
             print("  kanca otomatik üretildi (Claude vermedi)", file=sys.stderr)
@@ -235,7 +252,7 @@ def main(src: str, dst: str):
     hk = segs[0]
     if len(hk.get("narration", "").split()) > 10:
         hk["narration"] = " ".join(hk["narration"].split()[:10]).rstrip(",;:") + "."
-    hk["title"] = (hk.get("title") or " ".join(hk["narration"].split()[:3])).upper()[:28]
+    hk["title"] = tr_upper(short_title(hk.get("title") or " ".join(hk["narration"].split()[:3])))
     if hk.get("category") not in CATEGORIES:
         hk["category"] = next((x.get("category") for x in segs if x.get("kind") == "haber" and x.get("category") in CATEGORIES), "genel")
     for s in segs:
@@ -271,7 +288,7 @@ def main(src: str, dst: str):
     first = next((x for x in haber), {})
     title_a = expand_abbr(titles.get("A") or first.get("title", "Günün özeti"))
     title_b = expand_abbr(titles.get("B") or title_a)
-    cover = expand_abbr(titles.get("cover") or first.get("title", "")[:28])
+    cover = short_title(expand_abbr(titles.get("cover") or first.get("title", "")), max_chars=30, max_words=5)
     ep_n = episode_of_day(date_str := now.strftime("%Y-%m-%d"))
     variant = "A" if ep_n % 2 == 1 else "B"  # dönüşümlü A/B: tek bölümler A, çift bölümler B
     hours = int(load_json(DATA / "settings.json", {}).get("scheduleHours") or 5)

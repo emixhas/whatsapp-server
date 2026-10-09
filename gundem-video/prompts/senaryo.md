@@ -9,7 +9,8 @@ KURALLAR
   Örnekler: "İzmir'de zincirleme kaza: 3 kişi hayatını kaybetti." / "Merkez Bankası faizi değiştirmedi."
   / "Ankara'da bakanlık binasına saldırı." Soru biçimi de olabilir ama dürüst olmalı.
   Kanca haberi, listedeki önem puanı en yüksek (p=3) haberden seçilir; p=3 yoksa p=2'den.
-  Kanca için ayrıca 2-4 kelimelik ekran başlığı ("title") yaz: "3 ÖLÜ", "FAİZ SABİT" gibi.
+  Kanca için ayrıca 2-4 kelimelik ekran başlığı ("title") yaz: "3 ÖLÜ", "FAİZ SABİT" gibi. En fazla 24
+  karakter ve kendi başına anlamı tamam olmalı ("KIZINA MÜEBBET" doğru, "KIZINA AĞIRLAŞTIRILMIŞ" yarım).
   Can kaybı içeren kancada saygılı ve kuru ol; kan, ceset gibi grafik ifade kullanma.
 - Seçim önceliği: 1) p=3 sert haberler (can kaybı, saldırı, savaş, afet, büyük kaza) MUTLAKA alınır
   ve ilk sıralara konur; 2) p=2 önemli kararlar (ekonomi, siyaset, yargı); 3) diğerleri çeşitlilik

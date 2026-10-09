@@ -1,5 +1,6 @@
 import { AbsoluteFill, Img, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { styleFor } from "../categories";
+import { fitFontSize } from "../fit";
 import { theme } from "../theme";
 import { Captions } from "./Captions";
 
@@ -17,6 +18,8 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
   const shake = frame < 8 ? Math.sin(frame * 3.1) * (8 - frame) * 1.2 : 0;
   const fadeOut = interpolate(frame, [durationInFrames - 6, durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const accent = breaking ? theme.red : st.accent;
+  // Başlık 940 px genişliğe (1080 - 2×70) ve en çok 3 satıra sığar; uzun kelime taşmaz, bölünmez
+  const titleSize = fitFontSize({ text: title, maxWidth: 940, base: title.length > 14 ? 150 : 190, min: 64, maxLines: 3 });
   return (
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white, opacity: fadeOut, transform: `translate(${shake}px,0)` }}>
       {image ? (
@@ -34,8 +37,8 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
         <div style={{ fontSize: 36, fontWeight: 800, letterSpacing: 8, color: accent }}>{breaking ? "SON DAKİKA" : categoryLabel || st.label}</div>
       </div>
       {/* dev başlık */}
-      <div style={{ position: "absolute", left: 70, right: 70, top: 560, transform: `scale(${0.85 + 0.15 * pop})`, transformOrigin: "left center" }}>
-        <div lang="tr" style={{ fontSize: title.length > 14 ? 150 : 190, fontWeight: 900, lineHeight: 0.95, textTransform: "uppercase", textShadow: "0 10px 40px rgba(0,0,0,.8)", textWrap: "balance" as never }}>{title}</div>
+      <div style={{ position: "absolute", left: 70, right: 70, top: 560, transform: `scale(${0.85 + 0.15 * Math.min(1, pop)})`, transformOrigin: "left center" }}>
+        <div lang="tr" style={{ fontSize: titleSize, fontWeight: 900, lineHeight: 0.95, textTransform: "uppercase", overflowWrap: "normal", wordBreak: "keep-all", textShadow: "0 10px 40px rgba(0,0,0,.8)", textWrap: "balance" as never }}>{title}</div>
         <div style={{ marginTop: 30, width: 240 * pop, height: 14, background: accent, borderRadius: 7 }} />
       </div>
       <Captions words={words} accent={accent} bottom={500} size={64} />

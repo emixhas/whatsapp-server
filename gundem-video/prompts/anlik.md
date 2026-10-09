@@ -12,7 +12,8 @@ KURALLAR
   "bildirildi", "iddia edildi", "ilk bilgilere göre" gibi temkinli ifade kullan. İlgili haberlerle
   çelişiyorsa haberlerdeki bilgiyi esas al.
 - Video bir KANCA ile açılır ("hook"): olayın tek cümlesi, en fazla 8 kelime, somut (yer adı ya da rakam).
-  Kanca için 2-4 kelimelik ekran başlığı ("title") yaz: "BİNA ÇÖKTÜ", "3 ÖLÜ" gibi.
+  Kanca için 2-4 kelimelik ekran başlığı ("title") yaz: "BİNA ÇÖKTÜ", "3 ÖLÜ" gibi. En fazla 24 karakter
+  ve kendi başına anlamı tamam olmalı ("KIZINA MÜEBBET" doğru, "KIZINA AĞIRLAŞTIRILMIŞ" yarım).
 - Intro tam olarak: "Son dakika." (kelime bütçesine dahildir).
 - Tam olarak __HABER__ "haber" segmenti yaz, hepsi aynı konunun farklı yönü olsun:
   1) ne oldu (olayın kendisi, "breaking": true SADECE bu segmentte),
