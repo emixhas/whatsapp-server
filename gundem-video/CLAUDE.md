@@ -107,6 +107,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `maxPerDay` (YouTube kotası günde ~6 yükleme); elle "Video üret" sınırsız ama aynı haber günde bir kez.
   Durum `data/mynet_state.json` (görülenler 7 gün), üretilenler `data/mynet_produced.json`. Panel kartı:
   6 manşet, her biri için "🎬 Video üret", "hepsi için üret", "şimdi kontrol et", aç/kapat.
+- Çoklu son dakika takibi (`scripts/breaking_watch.py`, `settings.breaking` {enabled, intervalMin 15, perSource 8,
+  minSources 3, maxPerDay 4, duration 30, sources [{name, url}]}): Hürriyet, Sözcü, NTV, AA, Habertürk son dakika
+  RSS'leri (adresler ayardan değişir; ulaşılamayan kaynak panelde ❌ ve logda görünür). Yeni haber (ilk taramada
+  mevcutlar "görüldü", 3 saatten eski yayın sayılmaz) → aynı olayı veren siteler `same_event()` (5 harflik kökler,
+  ≥4 ortak ya da ≥2 ortak + Jaccard ≥ 0.34) ile birleşir, Mynet manşeti de sayıma girer. Aday: değerli (news_value)
+  ya da ≥ minSources sitede. `data/breaking_produced.json` (assemble_script her anlık üretimde, panel üretime
+  alırken `--mark` yazar) son 12 saatte aynı olayın ikinci videosunu engeller; Mynet `dup` ile aynı kuralı kullanır.
+  `ANLIK_SOURCE_COUNT` assemble'a gider: 3+ kaynak YouTube için değerli sayılır, açıklamaya "N kaynakta" eklenir.
+  Panel kartı "🗞 SON DAKİKA KAYNAKLARI" (kaynak durumu, son haberler, şimdi kontrol et, aç/kapat), `GET /api/breaking`,
+  `POST /api/breaking/check`; günlük sayaç `data/breaking_daily.json`.
 - Kategori öğrenme: prompt uygun kategori yoksa `categorySuggestion` yazdırır; `assemble` sayar
   (`data/category_suggestions.json`), 3 tekrarda geliştirme kuyruğuna görev yazar; `analyze` insights'a koyar.
 - A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm

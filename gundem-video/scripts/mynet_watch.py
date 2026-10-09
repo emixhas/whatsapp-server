@@ -112,9 +112,14 @@ def headlines(page: str, base: str, count: int) -> list:
     # haber değeri (YouTube kuralı ve üretim önceliği): ölüm, kaza, asgari ücret, zam… → valuable
     from news_value import score
     kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
+    from breaking_watch import already_produced, source_count
     for x in out:
+        srcs = sorted(set(source_count(x["title"])) | {"Mynet"})
         v = score(x["title"], kw)
-        x["valuable"], x["valueReason"] = v["valuable"], v["reason"]
+        x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
+        if len(srcs) > 1:
+            x["valueReason"] += f" · {len(srcs)} kaynakta"
+        x["dup"] = already_produced(x["title"])  # aynı olayın videosu son 12 saatte üretildi
     return out
 
 

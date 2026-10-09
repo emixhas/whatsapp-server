@@ -223,6 +223,17 @@ def news_value(data: dict, segs: list) -> dict:
     topic = DATA.parent / "work" / "anlik_topic.txt"  # konunun başı (başlık + özet); uzun gövde yanlış pozitif yapar
     text += " " + (topic.read_text(encoding="utf-8")[:300] if topic.exists() else "")
     v = score(text, pol.get("extraKeywords"), data.get("importance"))
+    n = int(os.environ.get("ANLIK_SOURCE_COUNT") or 1)  # breaking_watch: bu olayı veren farklı site sayısı
+    if n > 1:
+        v["reasons"].append(f"{n} kaynakta")
+        v["reason"] += f" · {n} kaynakta"
+        if n >= 3 and (v.get("importance") or 3) >= 3:  # çok konuşulan haber YouTube için de değerli
+            v["valuable"] = True
+    try:  # çoklu son dakika takibi aynı olay için ikinci video üretmesin
+        from breaking_watch import mark_produced
+        mark_produced(" ".join([data.get("titles", {}).get("A") or "", *(s.get("title", "") for s in segs if s.get("kind") == "haber")][:3]))
+    except Exception as e:
+        print(f"  ! üretilen haber kaydı yazılamadı: {e}")
     if data.get("importanceReason"):
         v["importanceReason"] = str(data["importanceReason"])[:200]
     print(f"  haber değeri: {'DEĞERLİ' if v['valuable'] else 'sıradan'} ({v['reason']})")

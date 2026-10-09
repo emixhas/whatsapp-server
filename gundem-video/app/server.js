@@ -185,6 +185,7 @@ function startAnlik(topic, duration, opts = {}) {
   const env = { ANLIK: "1" };
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
+  if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
   return { ...startPipeline(duration, env), anlik: true };
 }
 setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {}); } }, 10000);
@@ -205,12 +206,14 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   if (list.includes(url)) return { ok: false, error: "Bu haber için bugün zaten video üretildi." };
   const cap = item?.valuable ? Number(c.valuableMaxPerDay) : Number(c.maxPerDay);
   if (!manual && list.length >= cap) { push(`📰 Mynet: günlük sınır (${cap}) doldu, ${item?.valuable ? "değerli" : "sıradan"} manşet atlandı: ${(item?.title || "").slice(0, 70)}`); return { ok: false, error: "günlük sınır doldu" }; }
+  if (!manual && item?.dup) { push(`📰 Mynet: "${(item.title || "").slice(0, 70)}" için son 12 saatte zaten video üretildi, atlandı`); return { ok: false, error: "aynı olay zaten üretildi" }; }
   if (item?.valuable) push(`⭐ Mynet: değerli manşet (${item.valueReason}) — video YouTube'a da gidecek`);
   const a = await pyJson(["scripts/mynet_watch.py", "--article", url]);
   if (!a || a.ok === false || !a.title) { push(`📰 Mynet: haber okunamadı (${a?.error || "başlık yok"})`); return { ok: false, error: a?.error || "haber okunamadı" }; }
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
-  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url });
+  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1 });
+  if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {});
   if (r.ok) { done[day] = [...list, url]; for (const d of Object.keys(done)) if (d < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete done[d]; writeFileSync(MYNET_DONE, JSON.stringify(done, null, 2)); }
   return { ...r, title: a.title };
 }
@@ -230,6 +233,32 @@ app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "myne
 app.post("/api/mynet/check", async (_req, res) => res.json(await mynetCheck({ manual: true })));
 app.post("/api/mynet/produce", async (req, res) => res.json(await mynetProduce(String(req.body?.url || ""), { manual: true })));
 app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); const out = []; for (const it of st.items || []) out.push(await mynetProduce(it.url, { manual: true })); res.json({ ok: true, results: out }); });
+
+// ---------- çoklu son dakika takibi (scripts/breaking_watch.py): Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışları.
+// Değerli ya da 3+ sitede çıkan YENİ olay → anlık video (kaynak: ilk veren site). Günlük sınır breaking.maxPerDay.
+const BREAKING_DONE = path.join(DATA, "breaking_daily.json");
+const breakingCfg = () => ({ enabled: true, intervalMin: 15, maxPerDay: 4, duration: 30, ...(settings().breaking || {}) });
+let breakingLast = 0;
+async function breakingCheck({ manual = false } = {}) {
+  breakingLast = Date.now();
+  const r = await pyJson(["scripts/breaking_watch.py", "--check"]);
+  if (!r?.ok) { push(`🗞 son dakika takibi başarısız: ${r?.error || "?"}`); return r || { ok: false }; }
+  const bad = Object.entries(r.sources || {}).filter(([, v]) => !v.ok).map(([k]) => k);
+  if (manual || r.candidates?.length || bad.length) push(`🗞 son dakika kaynakları kontrol edildi: ${r.fresh} yeni haber, ${r.candidates.length} video adayı${bad.length ? ` · ulaşılamayan: ${bad.join(", ")}` : ""}`);
+  const done = readJson(BREAKING_DONE, {}); const day = today(); const list = done[day] || [];
+  for (const c of r.candidates || []) {
+    if (list.length >= Number(breakingCfg().maxPerDay)) { push(`🗞 günlük son dakika sınırı (${breakingCfg().maxPerDay}) doldu: "${c.title.slice(0, 70)}" atlandı`); break; }
+    const a = c.url ? await pyJson(["scripts/mynet_watch.py", "--article", c.url]) : null;
+    const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
+    push(`${c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.valueReason}) → video üretiliyor`);
+    const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count });
+    if (res.ok) { await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); list.push(c.title); done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)))); }
+  }
+  return r;
+}
+setInterval(() => { const c = breakingCfg(); if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
+app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, breakingLast + Number(breakingCfg().intervalMin || 15) * 60000 - Date.now()) : null }); });
+app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
 
 // ---------- zamanlayıcı (launchd)
 const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem.video.plist");
