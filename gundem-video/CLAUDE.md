@@ -166,7 +166,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,
   dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı). Boştayken saniyede ~12 kare,
   sekme gizliyken çizilmez (CPU tasarrufu).
-- Yanıtlar `scripts/speak.py` ile Piper'dan seslendirilir (yoksa tarayıcı sesi).
+- Hızlı yanıt: `/api/speak` sesi `work/speak-cache/` altına önbellekler (anahtar: metin + `settings.voice`, en
+  çok 400 dosya), aynı anda gelen aynı cümle tek kez üretilir; panel açılışında sık cümleler (`QUICK_PHRASES`)
+  arka planda hazırlanır. UI `speak()` yanıtı cümlelere böler, ilk cümle hazır olunca çalar, o çalarken
+  sıradakini ister. Beyin 1,2 sn'den uzun düşünürse önbellekteki "Bir saniye, bakıyorum." hemen çalar.
+  `voices.python_with()` içe aktarma kontrolünü `work/.python_with.json`a yazar (kurulu: 24 saat, değil:
+  10 dk; kurulum betikleri siler) ki her yanıtta torch yüklemesi tekrarlanmasın. Sohbet `claudeEffort.chat`
+  (varsayılan low) ile düşünür; rapor ve plan `brain` (high). Prompt sesli yanıtı ≤ 2 kısa cümle ister.
+- Yanıtlar `scripts/speak.py` ile seslendirilir (EMA ya da Yelda; yoksa tarayıcı sesi).
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
 - Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg).
 - Paylaşım: QR ile telefona yerel link (aynı Wi-Fi); Finder'da göster; indir; YouTube/Instagram'a yükle.

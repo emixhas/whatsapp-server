@@ -5,6 +5,7 @@ import { spawn, execFile, spawnSync } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import { parseCommand } from "./commands.js";
@@ -44,7 +45,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 60, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek" }, tunnelAutoStart: false, claudeModel: "opus", media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek" }, tunnelAutoStart: false, claudeModel: "opus", media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true }, scheduleHours: 5 };
@@ -589,7 +590,40 @@ async function handleCommand(text) {
 app.post("/api/command", async (req, res) => res.json(await handleCommand(req.body?.text)));
 
 // ---------- Jarvis sesi
-app.post("/api/speak", (req, res) => { const text = String(req.body?.text || "").slice(0, 500); const child = spawn(PY, ["scripts/speak.py"], { cwd: ROOT, env: ENV }); const chunks = []; child.stdout.on("data", (c) => chunks.push(c)); child.on("close", (code) => { if (code !== 0 || !chunks.length) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.send(Buffer.concat(chunks)); }); child.stdin.end(text); });
+// ---------- Emixhas'ın sesi: üretilen ses diske önbelleklenir (aynı cümle + aynı ses ayarı = anında çalar)
+const SPEAK_CACHE = path.join(WORK, "speak-cache");
+const speakKey = (text) => createHash("sha1").update(JSON.stringify([text, settings().voice || {}])).digest("hex");
+const speakInflight = new Map();
+function synthSpeech(text) {
+  text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!text) return Promise.resolve(null);
+  const file = path.join(SPEAK_CACHE, speakKey(text) + ".wav");
+  if (existsSync(file)) return Promise.resolve(file);
+  if (speakInflight.has(file)) return speakInflight.get(file); // aynı cümle zaten üretiliyorsa onu bekle
+  const job = new Promise((resolve) => {
+    const child = spawn(PY, ["scripts/speak.py"], { cwd: ROOT, env: ENV }); const chunks = [];
+    child.stdout.on("data", (c) => chunks.push(c));
+    child.on("error", () => resolve(null));
+    child.on("close", (code) => {
+      speakInflight.delete(file);
+      if (code !== 0 || !chunks.length) return resolve(null);
+      try {
+        mkdirSync(SPEAK_CACHE, { recursive: true }); writeFileSync(file, Buffer.concat(chunks));
+        // önbellek en çok 400 dosya: en eskiler silinir
+        const all = readdirSync(SPEAK_CACHE).map((f) => ({ f, t: statSync(path.join(SPEAK_CACHE, f)).mtimeMs })).sort((x, y) => y.t - x.t);
+        for (const o of all.slice(400)) { try { unlinkSync(path.join(SPEAK_CACHE, o.f)); } catch { /* yok */ } }
+      } catch { /* yazılamadı */ }
+      resolve(file);
+    });
+    child.stdin.end(text);
+  });
+  speakInflight.set(file, job);
+  return job;
+}
+app.post("/api/speak", async (req, res) => { const f = await synthSpeech(req.body?.text); if (!f || !existsSync(f)) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.sendFile(f); });
+// Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
+const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Video üretimi başladı.", "Son dakika videosu üretiliyor."];
+setTimeout(async () => { for (const t of QUICK_PHRASES) await synthSpeech(t); }, 20000);
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
 let lastReportDay = null;

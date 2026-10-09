@@ -172,10 +172,11 @@
             </details>
       <details class="grp"><summary>🧠 Emixhas ve kanal</summary>
 <h2>DÜŞÜNME DERİNLİĞİ</h2>
-      <div class="conninfo">Senaryo için "medium" yeterli; beyin (rapor, plan, analiz) için "high". Daha yüksek seviye daha yavaş yanıt verir.</div>
+      <div class="conninfo">Senaryo için "medium" yeterli. Sohbet için "low" en hızlı yanıtı verir; rapor ve plan için "high". Daha yüksek seviye daha yavaş yanıt verir.</div>
       <label class="row"><span style="min-width:160px">Claude modeli</span><select id="claudeModel"><option value="opus">Opus (önerilen)</option><option value="sonnet">Sonnet (hızlı)</option><option value="haiku">Haiku (en hafif)</option><option value="">Claude Code varsayılanı</option></select></label>
       <label class="row"><span style="min-width:160px">Senaryo (video)</span><select id="effScript"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></label>
-      <label class="row"><span style="min-width:160px">Emixhas beyni</span><select id="effBrain"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></label>
+      <label class="row"><span style="min-width:160px">Sohbet (hızlı yanıt)</span><select id="effChat"><option>low</option><option>medium</option><option>high</option></select></label>
+      <label class="row"><span style="min-width:160px">Rapor ve plan</span><select id="effBrain"><option>low</option><option>medium</option><option>high</option><option>xhigh</option></select></label>
       <div id="usageKpi" style="display:none"></div>
       <h2>KANAL</h2>
       <label class="row"><span style="min-width:130px">Kanal adı</span><input id="sName" style="flex:1;background:#0b1020;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px"></label>
@@ -311,7 +312,7 @@ function renderConn(s){const c=s.connections||{};$('#ytInfo').innerHTML=c.youtub
   const tv=s.tts||{};const cb=s.settings?.chatterbox||{};$('#ttsInfo').innerHTML=(tv.running?'⏳ Şu an bir iş için açık; iş bitince kendiliğinden kapanacak. ':'')+'Sürekli açık tutulmaz: bu ses seçiliyse yalnızca üretimde ve ön dinlemede yüklenir, iş bitince kapanır. Kurulum bir kez: <code>bash scripts/install_voice.sh</code>. Klon sesi için 5-10 sn temiz kayıt: <code>voices/ref.wav</code>.';
   const tr=s.turkishVoice||{};$('#voiceSum').textContent=(tr.trendyol?'Trendyol ✓ ':'')+(tr.ema?'EMA ✓ ':'')+(s.tts?.ready?'Chatterbox ✓':'')||'kurulu motor yok';$('#trInfo').innerHTML=(tr.trendyol?'✅ Trendyol-TTS hazır (MLX, Apple Silicon). ':'❌ Trendyol-TTS kurulu değil. ')+(tr.ema?'✅ EMA Lightning hazır.':'❌ EMA Lightning kurulu değil.')+(tr.trendyol&&tr.ema?'<br>Video anlatımı Trendyol ile, Emixhas\'ın konuşması EMA ile yapılır; rakamlar otomatik yazıya çevrilir.':'<br>Kurulum bir kez (~5 GB): <code>bash scripts/install_turkish_voice.sh</code>. Trendyol-TTS: 2026 Türkçe ölçümlerinde en doğal açık model (MIT). EMA Lightning: 34 MB, anında, ElevenLabs düzeyi doğallık ölçümü (Apache-2.0).');
   $('#narrEngine').value=s.settings?.narrationEngine||'auto';$('#voiceEngine').value=s.settings?.voice?.engine||'auto';$('#exag').value=cb.exaggeration??0.45;$('#exagTxt').textContent=(cb.exaggeration??0.45).toFixed(2);
-  $('#claudeModel').value=s.settings?.claudeModel??'opus';const eff=s.settings?.claudeEffort||{};$('#effScript').value=(typeof eff==='object'?eff.script:eff)||'medium';$('#effBrain').value=(typeof eff==='object'?eff.brain:eff)||'high';
+  $('#claudeModel').value=s.settings?.claudeModel??'opus';const eff=s.settings?.claudeEffort||{};$('#effScript').value=(typeof eff==='object'?eff.script:eff)||'medium';$('#effBrain').value=(typeof eff==='object'?eff.brain:eff)||'high';$('#effChat').value=(typeof eff==='object'?eff.chat:null)||'low';
   const ut=s.usage?.today,uT=s.usage?.total;const fmt=n=>n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e3?(n/1e3).toFixed(1)+'k':String(n||0);
   $('#usageKpi').innerHTML=`<div><b>${ut?ut.calls:0}</b><span>bugün Claude çağrısı</span></div><div><b>${fmt(ut?.input)}</b><span>bugün girdi token</span></div><div><b>${fmt(ut?.output)}</b><span>bugün çıktı token</span></div><div><b>${(ut?.cost||0).toFixed(2)} $</b><span>bugün API karşılığı</span></div><div><b>${(uT?.cost||0).toFixed(2)} $</b><span>toplam (${uT?.calls||0} çağrı)</span></div>`;
   if(s.resources){const r=s.resources;$('#sys').textContent=`⚙ CPU %${r.cpu} · RAM ${r.memUsedGb}/${r.memTotalGb} GB`;$('#sys').className=r.cpu>80?'':r.cpu>40?'':'';$('#sys').style.color=r.cpu>80?'#ff6b6b':r.cpu>40?'var(--amber)':'var(--mut)';}
@@ -366,6 +367,7 @@ $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topi
     toast(r.queued?'Sıraya alındı ⏳':'Anlık haber başladı ⚡');addMsg('j',m);speak(r.queued?'Anlık haber sıraya alındı.':'Son dakika videosu üretiliyor.');$('#anlikTxt').value='';refreshStatus();
   }catch(e){toast('Sunucuya ulaşılamadı',true);}finally{setTimeout(()=>{btn.disabled=false;},3000);}};
 $('#effScript').onchange=e=>post('/api/settings',{claudeEffort:{script:e.target.value}}).then(()=>addMsg('j','Senaryo effort: '+e.target.value));
+$('#effChat').onchange=e=>post('/api/settings',{claudeEffort:{chat:e.target.value}}).then(()=>addMsg('j','Sohbet seviyesi: '+e.target.value));
 $('#effBrain').onchange=e=>post('/api/settings',{claudeEffort:{brain:e.target.value}}).then(()=>addMsg('j','Beyin effort: '+e.target.value));
 $('#saveSettings').onclick=async()=>{await post('/api/settings',{channelName:$('#sName').value,hashtags:$('#sTags').value,dailyReportHour:+$('#sHour').value});toast('Kanal ayarları kaydedildi ✓');refreshStatus();};
 
@@ -402,27 +404,42 @@ function diag(){$('#dAudio').textContent='ses: '+(audioUnlocked?'açık':'tıkla
 
 // ---- konuşma (Emixhas sesi)
 let curAudio=null,speakWatchdog=null;
-function endSpeaking(reason){clearTimeout(speakWatchdog);if(curAudio){try{curAudio.pause();}catch{}curAudio=null;}if('speechSynthesis' in window)try{speechSynthesis.cancel();}catch{}analyser=null;setMode(status.running?'working':'idle');resumeRec();if(reason)logLine('🔊 konuşma bitti ('+reason+')');}
+function endSpeaking(reason){speakSeq++;clearTimeout(speakWatchdog);if(curAudio){try{curAudio.pause();}catch{}curAudio=null;}if('speechSynthesis' in window)try{speechSynthesis.cancel();}catch{}analyser=null;setMode(status.running?'working':'idle');resumeRec();if(reason)logLine('🔊 konuşma bitti ('+reason+')');}
 function stopSpeaking(){endSpeaking('durduruldu');}
-async function speak(text){if(!text)return;$('#reply').textContent=text;setMode('speaking');pauseRec();
-  clearTimeout(speakWatchdog);speakWatchdog=setTimeout(()=>endSpeaking('zaman aşımı'),Math.min(60000,8000+text.length*90));
-  try{const r=await fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});
-    if(r.status===200){const blob=await r.blob();const a=new Audio(URL.createObjectURL(blob));curAudio=a;
-      if(actx&&actx.state==='running'){try{const src=actx.createMediaElementSource(a);attachAnalyser(src,actx);analyser.connect(actx.destination);}catch{}}
-      a.onended=()=>{if(curAudio===a)endSpeaking('');};a.onerror=()=>endSpeaking('oynatma hatası');
-      try{await a.play();}catch(e){endSpeaking('tarayıcı otomatik sesi engelledi');$('#heard').textContent='🔇 Ses için sayfaya bir kez tıklayın.';return;}
+// Konuşma: yanıt cümlelere bölünür; ilk cümle hazır olur olmaz çalar, o çalarken sıradaki sunucuda üretilir.
+// Sunucu sesleri önbellekler; tekrar eden cümleler anında gelir. Ses yoksa kalan kısım tarayıcı sesiyle okunur.
+let speakSeq=0,ackAudio=null,ackTimer=null;
+function splitSpeech(text){const parts=String(text).replace(/\s+/g,' ').trim().match(/[^.!?…]+[.!?…]*["”']?/g)||[String(text)];
+  const out=[];for(let p of parts){p=p.trim();if(!p)continue;if(out.length&&out[out.length-1].length<40)out[out.length-1]+=' '+p;else out.push(p);}return out;}
+const fetchSpeech=t=>fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:t})}).then(r=>r.status===200?r.blob():null).catch(()=>null);
+function playBlob(blob,my){return new Promise(res=>{const a=new Audio(URL.createObjectURL(blob));curAudio=a;
+  if(actx&&actx.state==='running'){try{const src=actx.createMediaElementSource(a);attachAnalyser(src,actx);analyser.connect(actx.destination);}catch{}}
+  a.onended=()=>res(my===speakSeq&&curAudio===a);a.onerror=()=>{endSpeaking('oynatma hatası');res(false);};
+  a.play().catch(()=>{endSpeaking('tarayıcı otomatik sesi engelledi');$('#heard').textContent='🔇 Ses için sayfaya bir kez tıklayın.';res(false);});});}
+async function speak(text){if(!text)return;$('#reply').textContent=text;
+  // "bakıyorum" sesi hâlâ çalıyorsa bitmesini bekle (en çok 3 sn)
+  if(ackAudio&&!ackAudio.ended&&!ackAudio.paused)await new Promise(r=>{ackAudio.onended=r;setTimeout(r,3000);});ackAudio=null;
+  setMode('speaking');pauseRec();const my=++speakSeq;
+  clearTimeout(speakWatchdog);speakWatchdog=setTimeout(()=>endSpeaking('zaman aşımı'),Math.min(90000,10000+text.length*110));
+  const parts=splitSpeech(text);let next=fetchSpeech(parts[0]);
+  for(let i=0;i<parts.length;i++){const blob=await next;if(my!==speakSeq)return;
+    next=i+1<parts.length?fetchSpeech(parts[i+1]):null;   // sıradaki cümleyi şimdiden hazırla
+    if(!blob){logLine('🔊 sunucu sesi yok, tarayıcı sesine düşüldü');
+      if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(parts.slice(i).join(' '));u.lang='tr-TR';u.onend=()=>{if(my===speakSeq)endSpeaking('');};u.onerror=()=>endSpeaking('sentez hatası');speechSynthesis.speak(u);}else endSpeaking('ses yok');
       return;}
-    logLine('🔊 sunucu sesi yok ('+r.status+'), tarayıcı sesine düşüldü');}catch(e){logLine('🔊 ses isteği hatası: '+e.message);}
-  if('speechSynthesis' in window){const u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';u.onend=()=>endSpeaking('');u.onerror=()=>endSpeaking('sentez hatası');speechSynthesis.speak(u);}else endSpeaking('ses yok');}
+    if(!(await playBlob(blob,my)))return;}
+  if(my===speakSeq)endSpeaking('');}
+// Beyin düşünürken (1,2 sn'den uzun sürerse) önbellekteki kısa bir cümleyle hemen karşılık ver
+function playAck(){fetchSpeech('Bir saniye, bakıyorum.').then(b=>{if(!b||mode!=='thinking')return;const a=new Audio(URL.createObjectURL(b));ackAudio=a;a.play().catch(()=>{});});}
 $('#voiceTest').onclick=()=>{ensureCtx();speak('Ses testi. Beni duyuyorsanız her şey yolunda.');};
 
 // ---- komut işleme
 function renderPending(actions){if(!actions?.length){$('#pending').innerHTML='';return;}$('#pending').innerHTML=`<div class="pend">⚠ Onay bekleyen eylem:<br>${actions.map(a=>a.type==='publish'?`• ${a.video} → ${a.platforms.join(', ')} yayınla`:a.type==='autopublish'?`• otomatik yayın: YouTube ${a.youtube?'açık':'kapalı'}, Instagram ${a.instagram?'açık':'kapalı'}`:'• '+JSON.stringify(a)).join('<br>')}<br><button class="ghost ok" id="pOk">Onayla</button><button class="ghost" id="pNo">Vazgeç</button></div>`;
   $('#pOk').onclick=async()=>{setMode('working');const r=await post('/api/actions',{actions});setMode('idle');$('#pending').innerHTML='';addMsg('j',r.map(x=>`${x.type}: ${x.result?.ok?'tamam':'hata '+(x.result?.error||JSON.stringify(x.result?.results||''))}`).join('\n'));speak('Tamamlandı.');loadVideos();refreshStatus();};$('#pNo').onclick=()=>{$('#pending').innerHTML='';};}
 let thinkTimer=null;
-async function handle(text){if(!text)return;addMsg('u',text);$('#heard').textContent='“'+text+'”';setMode('thinking');clearTimeout(thinkTimer);thinkTimer=setTimeout(()=>{if(mode==='thinking')setMode('idle');},150000);
+async function handle(text){if(!text)return;addMsg('u',text);$('#heard').textContent='“'+text+'”';setMode('thinking');clearTimeout(thinkTimer);thinkTimer=setTimeout(()=>{if(mode==='thinking')setMode('idle');},150000);clearTimeout(ackTimer);ackTimer=setTimeout(()=>{if(mode==='thinking')playAck();},1200);
   let r;try{r=await post('/api/command',{text});}catch(e){clearTimeout(thinkTimer);setMode('error');addMsg('j','Sunucuya ulaşılamadı: '+e.message);setTimeout(()=>setMode('idle'),1500);return;}
-  clearTimeout(thinkTimer);
+  clearTimeout(thinkTimer);clearTimeout(ackTimer);
   if(r.action==='stop'){stopSpeaking();$('#reply').textContent='';return;}
   if(r.action==='play_latest'||r.action==='play_named'){await loadVideos();openVideo(r.payload.name);}
   if(r.action==='share'){await loadVideos();openVideo(r.payload.name);showShare();}

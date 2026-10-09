@@ -9,4 +9,5 @@ pip install chatterbox-tts
 python3 - <<'PY'
 import torch; print("MPS:", torch.backends.mps.is_available())
 PY
-echo "Kurulum tamam. Panelden 'Doğal sesi başlat' deyin; ilk açılışta model (~2 GB) iner."
+rm -f work/.python_with.json   # ses motoru kontrol önbelleği: yeni kurulum hemen görünsün
+echo "Kurulum tamam. Ayarlar → SESLER'den Chatterbox'ı seçin; model yalnızca üretimde yüklenir (ilk seferde ~2 GB iner)."

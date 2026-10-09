@@ -19,6 +19,7 @@ import json
 import os
 import re
 import shutil
+import time
 import subprocess
 import sys
 from pathlib import Path
@@ -72,9 +73,23 @@ _import_cache: dict = {}
 _disabled: set = set()
 
 
+_PYWITH_FILE = ROOT / "work" / ".python_with.json"
+
+
 def python_with(module: str):
-    """module'ü içe aktarabilen ilk Python (proje .venv'i ya da .venv-tr); yoksa None."""
+    """module'ü içe aktarabilen ilk Python (proje .venv'i ya da .venv-tr); yoksa None.
+    Kontrol (import) torch gibi ağır paketlerde saniyeler sürer; sonuç 24 saat diske yazılır ki Emixhas'ın her
+    sesli yanıtında tekrar yapılmasın. Paket sonradan bozulursa sentez hata verir ve yedek sese düşülür."""
     if module in _import_cache:
+        return _import_cache[module]
+    try:
+        disk = json.loads(_PYWITH_FILE.read_text())
+    except Exception:
+        disk = {}
+    hit = disk.get(module)
+    ttl = 86400 if hit and hit.get("py") else 600  # "kurulu değil" sonucu yalnızca 10 dk saklanır
+    if hit and time.time() - hit.get("at", 0) < ttl and (hit["py"] is None or Path(hit["py"]).exists()):
+        _import_cache[module] = Path(hit["py"]) if hit["py"] else None
         return _import_cache[module]
     found = None
     for py in (Path(sys.executable), TR_PY):
@@ -82,6 +97,12 @@ def python_with(module: str):
             found = py
             break
     _import_cache[module] = found
+    try:
+        disk[module] = {"py": str(found) if found else None, "at": time.time()}
+        _PYWITH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _PYWITH_FILE.write_text(json.dumps(disk))
+    except Exception:
+        pass
     return found
 
 

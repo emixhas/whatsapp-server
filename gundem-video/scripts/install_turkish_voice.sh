@@ -49,4 +49,5 @@ p = pathlib.Path("data/settings.json"); d = json.loads(p.read_text()) if p.exist
 d["narrationEngine"] = "auto"; d.setdefault("voice", {})["engine"] = "auto"
 p.parent.mkdir(exist_ok=True); p.write_text(json.dumps(d, ensure_ascii=False, indent=2))
 PYEOF
+rm -f work/.python_with.json   # ses motoru kontrol önbelleği: yeni kurulum hemen görünsün
 echo "Kurulum tamam. Video anlatımı ve Emixhas sesi 'Otomatik' yapıldı. Panel → Ayarlar → SESLER bölümünden dinleyip seçin."

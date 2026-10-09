@@ -89,7 +89,7 @@ _DEFAULTS = ({
         "claudeModel": "opus",
         # Haber medyası: tam boy fotoğraf her zaman; video (yt-dlp, haber sayfasından) açılıp kapatılabilir
         "media": {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True},
-        "claudeEffort": {"script": "medium", "brain": "high"},
+        "claudeEffort": {"script": "medium", "brain": "high", "chat": "low"},
         "formats": {
             "sabah": {"hours": [5, 11], "duration": 45, "label": "Güne Başlarken", "intro": "Güne başlarken Türkiye gündemi.", "tone": "sakin, bilgilendirici, günün ajandasını kuran"},
             "ogle": {"hours": [11, 17], "duration": 30, "label": "Son Dakika", "intro": "Son dakika, Türkiye gündemi.", "tone": "hızlı, net, en yeni gelişmeler öncelikli"},

@@ -73,7 +73,8 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
 
   function runClaude(prompt, mode, timeoutMs = mode === "chat" ? 180000 : 300000) {
     return new Promise((resolve, reject) => {
-      const e = settings().claudeEffort; const effort = (e && typeof e === "object" ? e.brain : e) || "high";
+      // Sohbet hızlı olsun diye ayrı ve düşük seviye (varsayılan low); rapor ve plan "brain" seviyesiyle düşünür
+      const e = settings().claudeEffort; const effort = (e && typeof e === "object" ? (mode === "chat" ? e.chat || "low" : e.brain) : e) || "high";
       const bin = claudeBin(ROOT);
       if (!bin) return reject(new Error("Claude Code bulunamadı"));
       const child = spawn(bin, ["-p", ...claudeModelArgs(settings()), "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: claudeEnv(bin) });
