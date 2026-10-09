@@ -106,33 +106,40 @@ function startPipeline(duration) {
 const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem.video.plist");
 const SCHED_FILE = path.join(DATA, "schedule.json");
 const readSched = () => { try { return JSON.parse(readFileSync(SCHED_FILE, "utf8")); } catch { return {}; } };
+// Üretim saatleri sabittir: 24 saat "hours" aralığıyla bölünür (5 → 00,05,10,15,20). Dakika settings.scheduleMinute.
+const slotsFor = (hours) => { const out = []; for (let h = 0; h < 24; h += Math.max(1, Math.round(hours))) out.push(h); return out; };
 async function getSchedule() {
-  let hours = null; if (existsSync(PLIST)) { const m = readFileSync(PLIST, "utf8").match(/<integer>(\d+)<\/integer>/); hours = m ? Number(m[1]) / 3600 : 5; }
   const enabled = existsSync(PLIST);
-  // Sıradaki üretim: launchd yüklendiği andan itibaren her N saatte bir. Son üretim zamanı out/ dosyalarından.
+  const sch = readSched();
+  let hours = sch.hours || null;
+  if (enabled && !hours) { const m = readFileSync(PLIST, "utf8").match(/<integer>(\d+)<\/integer>/); hours = m && Number(m[1]) > 60 ? Number(m[1]) / 3600 : 5; }
+  const minute = Number(settings().scheduleMinute) || 0;
+  const slots = enabled ? (sch.slots || slotsFor(hours || 5)) : [];
   const vids = listVideos();
   const lastRunAt = vids[0] ? statSync(path.join(OUT, vids[0].name)).mtimeMs : null;
   let nextRunAt = null, nextEpisode = null;
-  if (enabled && hours) {
-    const sch = readSched();
-    const base = sch.loadedAt || Date.now();
-    const step = hours * 3600 * 1000;
-    nextRunAt = base + Math.max(1, Math.ceil((Date.now() - base) / step)) * step;
-    if (state.running) nextRunAt = base + (Math.ceil((Date.now() - base) / step) + 1) * step;
+  if (enabled && slots.length) {
+    const now = new Date();
+    const cands = [];
+    for (const dayOff of [0, 1]) for (const h of slots) { const d = new Date(now); d.setDate(d.getDate() + dayOff); d.setHours(h, minute, 0, 0); if (d.getTime() > now.getTime() + (state.running ? 120000 : 0)) cands.push(d.getTime()); }
+    nextRunAt = Math.min(...cands);
     const d = new Date(nextRunAt); const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     nextEpisode = vids.filter((v) => v.name.startsWith(key)).length + 1;
   }
-  return { enabled, hours, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running, awake: !!caffeine };
+  return { enabled, hours, slots, minute, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running, awake: !!caffeine };
 }
 async function setSchedule(enabled, hours) {
   if (!isMac) return { ok: false, error: "launchd sadece macOS'ta" };
   if (existsSync(PLIST)) await run("launchctl", ["unload", PLIST]);
   if (!enabled) { if (existsSync(PLIST)) unlinkSync(PLIST); keepAwake(false); return { ok: true }; }
-  writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace(/__HOME__/g, process.env.HOME || "").replace("<integer>18000</integer>", `<integer>${Math.round(hours * 3600)}</integer>`));
+  const minute = Number(settings().scheduleMinute) || 0;
+  const slots = slotsFor(hours);
+  const cal = slots.map((h) => `    <dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>${minute}</integer></dict>`).join("\n");
+  writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace(/__HOME__/g, process.env.HOME || "").replace("__CALENDAR__", cal));
   patchSettings({ scheduleHours: hours });
   const r = await run("launchctl", ["load", PLIST]);
-  if (r.ok) { writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours })); keepAwake(true); }
-  return r.ok ? { ok: true } : { ok: false, error: r.stderr || "launchctl load başarısız" };
+  if (r.ok) { writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours, slots, minute })); keepAwake(true); push(`⏰ üretim saatleri: her gün ${slots.map((h) => String(h).padStart(2, "0") + ":" + String(minute).padStart(2, "0")).join(", ")}`); }
+  return r.ok ? { ok: true, slots } : { ok: false, error: r.stderr || "launchctl load başarısız" };
 }
 
 // ---------- Cloudflare Tunnel (Instagram'ın videoyu çekebilmesi ve TikTok geri dönüşü için)
@@ -347,7 +354,14 @@ function keepAwake(on) {
   if (on && !caffeine) { try { caffeine = spawn("caffeinate", ["-i", "-s"], { stdio: "ignore" }); caffeine.on("close", () => { caffeine = null; }); push("☕ uyanık tutma açık: Mac üretim saatlerini kaçırmasın diye uyumaz (ekran kapanabilir)"); } catch { /* yok */ } }
   if (!on && caffeine) { try { caffeine.kill(); } catch { /* yok */ } caffeine = null; push("☕ uyanık tutma kapandı"); }
 }
-setTimeout(async () => { try { if ((await getSchedule()).enabled) keepAwake(true); } catch { /* yok */ } }, 3000);
+setTimeout(async () => { try {
+  const sch = await getSchedule();
+  if (sch.enabled) {
+    keepAwake(true);
+    // Eski aralık tabanlı plist'i sabit saatlere taşı (bir kez)
+    if (!/StartCalendarInterval/.test(readFileSync(PLIST, "utf8"))) { push("⏰ zamanlayıcı sabit saatlere taşınıyor"); await setSchedule(true, sch.hours || 5); }
+  }
+} catch { /* yok */ } }, 3000);
 // ---------- Sistem kontrolü: her açılışta ve istekle; her satır loga, özet sesli + WhatsApp'a
 const which = (cmd) => { const r = spawnSync("bash", ["-lc", `command -v ${cmd}`], { env: ENV, encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
 async function selfTest({ quiet = false } = {}) {

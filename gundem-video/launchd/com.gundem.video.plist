@@ -11,10 +11,12 @@
   </array>
   <key>WorkingDirectory</key>
   <string>__PROJE_YOLU__</string>
-  <!-- 5 saat = 18000 saniye. Mac uykudaysa uyanınca kaçan çalışmayı bir kez yapar.
-       RunAtLoad kapalı: yüklenir yüklenmez üretmesin, panelden başlatılan üretimle çakışmasın. -->
-  <key>StartInterval</key>
-  <integer>18000</integer>
+  <!-- Sabit saatler (panel yazar: ör. 00:00, 05:00, 10:00, 15:00, 20:00). Mac uykudaysa uyanınca kaçan
+       çalışmayı bir kez yapar. RunAtLoad kapalı: yüklenir yüklenmez üretmesin. -->
+  <key>StartCalendarInterval</key>
+  <array>
+__CALENDAR__
+  </array>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
