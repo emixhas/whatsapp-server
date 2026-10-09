@@ -48,6 +48,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
+  stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 },
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
@@ -76,7 +77,7 @@ function listVideos() {
 const state = { running: false, startedAt: null, duration: null, log: [], exitCode: null, lastVideo: null, busy: null };
 const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
-const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); };
+const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } }); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
@@ -639,8 +640,52 @@ function synthSpeech(text) {
 app.post("/api/speak", async (req, res) => { const f = await synthSpeech(req.body?.text); if (!f || !existsSync(f)) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.sendFile(f); });
 // Kapağı eksik eski videolar için panel açıldıktan 90 sn sonra arka planda bir kez kapak üretilir
 setTimeout(() => { if (pipelineBusy()) return; const c = spawn(PY, ["scripts/render_thumbs.py", "--missing"], { cwd: ROOT, env: ENV }); c.stdout.on("data", (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { if (!/kapak eksik video yok/.test(l)) push("🖼 " + l); })); }, 90000);
+// ---------- Aşamaların sesli bildirimi: log satırı → kısa Türkçe cümle
+// Panel açıksa sayfa sırayla okur (SSE "stage"); panel kapalıysa Mac hoparlöründen çalar (gece sessiz saatleri hariç).
+// Cümleler sabittir; panel açılışında önbelleğe hazırlanır, anında çalar.
+const STAGE_VOICE = [
+  [/^⚡ ANLIK HABER/, "Son dakika videosu üretimi başladı."],
+  [/^== .*üretim başladı/, "Video üretimi başladı."],
+  [/^-- 1\/4 haberler/, "Haberler toplanıyor."],
+  [/^-- 2\/4 senaryo/, "Senaryo yazılıyor."],
+  [/^senaryo hazır/, "Senaryo hazırlandı."],
+  [/^-- 3\/4 seslendirme/, "Seslendirmeye başlandı."],
+  [/^\[[^\]]+\] \d+ segment/, "Seslendirme tamamlandı."],
+  [/^-- görseller/, "Haber fotoğrafları ve videoları alınıyor."],
+  [/^-- 4\/4 render/, "Video oluşturuluyor."],
+  [/^== bitti/, "Video hazır."],
+  [/^kapaklar hazır/, "Kapaklar hazırlandı."],
+  [/^🌐 Hostinger: yüklendi/, "Video Hostinger'a eklendi."],
+  [/^📤 youtube: (tamam|zaten)/, "YouTube'da paylaşıldı."],
+  [/^📤 instagram: (tamam|zaten)/, "Instagram'da paylaşıldı."],
+  [/^📤 tiktok: (tamam|zaten)/, "TikTok'a gönderildi."],
+  [/^📤 youtube: hata/, "YouTube'a yüklenemedi."],
+  [/^📤 instagram: hata/, "Instagram'a yüklenemedi."],
+  [/^📤 tiktok: hata/, "TikTok'a yüklenemedi."],
+  [/^📤 tekrar denenecek/, "Yüklenemeyen platform birazdan tekrar denenecek."],
+  [/^📤 otomatik yayın yapılmadı/, "Otomatik yayın yapılmadı, ayrıntı logda."],
+  [/^💬 WhatsApp'a gönderildi/, "Video WhatsApp'tan gönderildi."],
+  [/^✖ üretim hata/, "Üretim hata ile bitti."],
+];
+const STAGE_PHRASES = [...new Set(STAGE_VOICE.map(([, t]) => t))];
+let lastStage = { text: "", at: 0 }, macQueue = Promise.resolve();
+function stageVoice(line) {
+  const cfg = settings().stageVoice || {};
+  if (cfg.enabled === false) return;
+  const hit = STAGE_VOICE.find(([re]) => re.test(String(line)));
+  if (!hit) return;
+  const text = hit[1];
+  if (text === lastStage.text && Date.now() - lastStage.at < 8000) return; // aynı cümle art arda söylenmez
+  if (text === "Video üretimi başladı." && lastStage.text.startsWith("Son dakika") && Date.now() - lastStage.at < 30000) return;
+  lastStage = { text, at: Date.now() };
+  if (clients.size) { for (const r of clients) r.write(`event: stage\ndata: ${JSON.stringify({ text })}\n\n`); return; }
+  if (!isMac || cfg.macSpeaker === false) return;
+  const h = new Date().getHours(), qf = Number(cfg.quietFrom ?? 23), qt = Number(cfg.quietTo ?? 8);
+  if (qf > qt ? h >= qf || h < qt : h >= qf && h < qt) return; // gece sessiz saatleri
+  macQueue = macQueue.then(async () => { const f = await synthSpeech(text); if (f) await run("afplay", [f]); }).catch(() => {});
+}
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
-const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Video üretimi başladı.", "Son dakika videosu üretiliyor."];
+const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Son dakika videosu üretiliyor.", ...STAGE_PHRASES];
 setTimeout(async () => { for (const t of QUICK_PHRASES) await synthSpeech(t); }, 20000);
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor

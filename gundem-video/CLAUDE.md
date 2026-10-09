@@ -169,6 +169,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   zamanlayıcı (scheduleHours) + bağlı platformlara autopublish + onay kapalı + notifyStages. Zamanlayıcı
   `data/schedule.json` {loadedAt, hours} yazar; `getSchedule()` sıradaki üretim zamanını ve günün kaçıncı
   videosu olacağını hesaplar, UI "Üretim" kartında saniyelik geri sayım gösterir.
+- Sesli aşama bildirimi: `push()` → `stageVoice()` log satırını `STAGE_VOICE` tablosuyla kısa Türkçe cümleye çevirir
+  (üretim başladı, haberler toplanıyor, senaryo yazılıyor/hazırlandı, seslendirmeye başlandı/tamamlandı,
+  fotoğraf ve videolar, video oluşturuluyor, video hazır, kapaklar, Hostinger'a eklendi, YouTube/Instagram/TikTok
+  paylaşıldı ya da yüklenemedi, WhatsApp'tan gönderildi, hata). Panel açıksa SSE `stage` olayı; sayfa kuyrukla
+  sırayla okur, Emixhas konuşurken/dinlerken bekler. Panel kapalıysa Mac'te `afplay` (sessiz saatler
+  `stageVoice.quietFrom/quietTo`, varsayılan 23-08). Cümleler sabit; `QUICK_PHRASES` ile açılışta önbelleğe girer.
+  Ayarlar → WhatsApp grubunda iki anahtar (`stageVoice.enabled`, `stageVoice.macSpeaker`).
 - Aşama bildirimleri: `push()` içindeki `notifyStage()` STAGE kalıbına uyan log satırlarını 2,5 sn'de
   toplayıp WhatsApp'a gönderir (`settings.whatsapp.notifyStages`). Hostinger yükleme/silme satırları
   `publish.py` stderr'inden gelir (🌐). Panelde ayar kaydeden her istek sağ altta "Kaydedildi ✓" gösterir.
