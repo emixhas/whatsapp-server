@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import { parseCommand } from "./commands.js";
-import { makeBrain } from "./brain.js";
+import { makeBrain, claudeBin, claudeEnv, claudeError } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -384,7 +384,14 @@ async function selfTest({ quiet = false } = {}) {
   const rows = []; const add = (ok, what, detail = "") => { rows.push({ ok, what, detail }); push(`🩺 ${ok === true ? "✅" : ok === "warn" ? "⚠️" : "❌"} ${what}${detail ? ": " + detail : ""}`); };
   push("🩺 sistem kontrolü başladı");
   // 1) araçlar
-  for (const [cmd, why] of [["claude", "senaryo yazımı"], ["ffmpeg", "ses ve video"], ["cloudflared", "yedek tünel (isteğe bağlı)"]]) { const p = which(cmd); add(p ? true : cmd === "cloudflared" ? "warn" : false, `${cmd} (${why})`, p || "bulunamadı"); }
+  for (const [cmd, why] of [["ffmpeg", "ses ve video"], ["cloudflared", "yedek tünel (isteğe bağlı)"]]) { const p = which(cmd); add(p ? true : cmd === "cloudflared" ? "warn" : false, `${cmd} (${why})`, p || "bulunamadı"); }
+  // Claude (beyin + senaryo): yolu bul, küçük bir istekle oturumun açık olduğunu doğrula
+  const cb = claudeBin(ROOT, { fresh: true });
+  if (!cb) add(false, "Claude Code (beyin ve senaryo)", claudeError("ENOENT"));
+  else {
+    const ping = await new Promise((res) => { execFile(cb, ["-p", "--effort", "low", "--output-format", "json"], { cwd: ROOT, env: claudeEnv(cb), timeout: 90000 }, (e, out, err) => { let j = null; try { j = JSON.parse(out); } catch { /* json değil */ } res(!e && j && !j.is_error ? { ok: true } : { ok: false, msg: `${j?.result || ""} ${err || ""} ${e?.message || ""}` }); }).stdin.end("Sadece TAMAM yaz."); });
+    add(ping.ok ? true : false, "Claude Code (beyin ve senaryo)", ping.ok ? `yanıt veriyor (${cb})` : claudeError(ping.msg));
+  }
   add(existsSync(PY) ? true : "warn", "Python sanal ortamı", PY);
   // 2) disk ve videolar
   try { const df = spawnSync("df", ["-h", ROOT], { encoding: "utf8" }).stdout.trim().split("\n").pop().split(/\s+/); add(true, "Disk", `boş ${df[3]} (kullanım ${df[4]})`); } catch { /* yok */ }

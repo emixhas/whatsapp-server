@@ -9,7 +9,9 @@ cd "$(dirname "$0")"
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 # .venv varsa onun Python'u (piper orada kurulu), yoksa sistem python3
 PY="python3"; [ -x ".venv/bin/python3" ] && PY=".venv/bin/python3"
-command -v claude >/dev/null || { echo "HATA: 'claude' komutu bulunamadı. Claude Code kurulu ve PATH'te olmalı."; exit 1; }
+# Arka plan servisi kullanıcının kabuk ayarlarını yüklemez; Claude Code bilinen kurulum yerlerinde aranır
+CLAUDE="$(bash scripts/find_claude.sh)" || { echo "HATA: 'claude' komutu bulunamadı. Terminalde 'which claude' çıktısını secrets/.env içine CLAUDE_BIN=... olarak yazın."; exit 1; }
+export PATH="$(dirname "$CLAUDE"):$PATH"
 command -v ffmpeg >/dev/null || { echo "HATA: ffmpeg bulunamadı (brew install ffmpeg)."; exit 1; }
 # Format: FORMAT=sabah|ogle|aksam|ozel. Verilmezse saate göre seçilir; DURATION verilmezse formatın süresi.
 FMT_JSON=$($PY -c "import json,sys;sys.path.insert(0,'scripts');from common import pick_format,settings;k,f=pick_format();import os;k=os.environ.get('FORMAT') or k;f=settings()['formats'].get(k) or {'duration':30,'label':'Gündem','intro':'Türkiye gündemi, günün özeti.','tone':'tarafsız'};print(json.dumps({'key':k,**f},ensure_ascii=False))")
@@ -51,7 +53,7 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
   $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
   { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" prompts/senaryo.md; cat work/news_prompt.json; } \
-    | claude -p --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi:"; tail -n 5 work/claude_stderr.log; exit 1; }
+    | "$CLAUDE" -p --effort "${CLAUDE_EFFORT:-medium}" --output-format json > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
   $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json

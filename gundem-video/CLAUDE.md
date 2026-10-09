@@ -70,6 +70,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Beyin (`brain.js`): bağlam (videolar+metrikler, insights, bağlantılar, zamanlayıcı, ayarlar, son
   log, hafıza) + `prompts/emixhas.md` → `claude -p` → JSON {reply, report, actions}. Modlar: chat,
   report (günlük rapor), plan (7 günlük plan). Raporlar `data/reports/`, hafıza `data/memory.json`.
+  `claude` yolu `scripts/find_claude.sh` ile bulunur (CLAUDE_BIN env/secrets/.env → PATH → bilinen kurulum
+  yerleri, nvm dahil → kullanıcının giriş kabuğu); launchd servisi kabuk ayarlarını yüklemediği için gerekli.
+  `pipeline.sh` de aynı betiği kullanır. `claudeError()` hataları Türkçe açıklamaya çevirir (bulunamadı,
+  oturum kapalı, sınır, zaman aşımı, internet). Sistem kontrolü küçük bir istekle oturumu doğrular.
 - Eylemler: generate/schedule/note/sync_metrics/open_video/settings/improvement/restart doğrudan
   çalışır. publish/autopublish: `settings.fullAuthority` true ise doğrudan (varsayılan), false ise
   `pending` döner ve UI onay ister (`POST /api/actions`).

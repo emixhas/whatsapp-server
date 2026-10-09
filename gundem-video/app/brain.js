@@ -1,7 +1,29 @@
 // Emixhas'ın beyni: bağlamı toplar, claude -p ile düşünür, JSON yanıt döndürür.
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+
+// Claude Code komutunun tam yolu. Arka plan servisi kullanıcının kabuk ayarlarını yüklemediği için
+// scripts/find_claude.sh bilinen kurulum yerlerini ve kullanıcının kabuğunu dener. Bulunan yol saklanır.
+let claudeCache = null;
+export function claudeBin(ROOT, { fresh = false } = {}) {
+  if (claudeCache && !fresh && existsSync(claudeCache)) return claudeCache;
+  const r = spawnSync("bash", [path.join(ROOT, "scripts/find_claude.sh")], { encoding: "utf8", timeout: 40000, env: process.env });
+  claudeCache = r.status === 0 ? r.stdout.trim().split("\n").pop() : null;
+  return claudeCache;
+}
+// claude bir node betiği olabilir (npm/nvm kurulumu); kendi klasörü PATH'e eklenir ki "node" bulunsun.
+export const claudeEnv = (bin) => ({ ...process.env, PATH: `${path.dirname(bin)}:${process.env.PATH || ""}` });
+// Hata metnini kullanıcıya anlaşılır Türkçe açıklamaya çevirir.
+export function claudeError(msg) {
+  const m = String(msg || "");
+  if (/ENOENT|bulunamadı/i.test(m)) return "Claude Code bulunamadı. Terminalde 'which claude' çıktısını secrets/.env içine CLAUDE_BIN=... olarak yazın.";
+  if (/log ?in|not logged|authenticat|api key|unauthori|401|oauth|credential/i.test(m)) return "Claude oturumu açık değil. Terminalde 'claude' yazıp /login ile giriş yapın, sonra paneli yeniden başlatın.";
+  if (/rate limit|usage limit|429|overloaded|529/i.test(m)) return "Claude kullanım sınırına ulaşıldı ya da servis yoğun. Biraz sonra tekrar deneyin.";
+  if (/zaman aşımı|timed? ?out/i.test(m)) return "Claude zamanında yanıt vermedi. Ayarlar → Gelişmiş bölümünde beyin seviyesini 'medium' yapmayı deneyin.";
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|network|fetch failed|getaddrinfo/i.test(m)) return "İnternet bağlantısı yok ya da Claude sunucusuna ulaşılamıyor.";
+  return m.split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 300);
+}
 
 export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, pythonBin }) {
   const MEM = path.join(DATA, "memory.json");
@@ -46,15 +68,20 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
   }
   const usageToday = () => { const d = readJson(USAGE, { days: {}, total: {} }); return { today: d.days[new Date().toISOString().slice(0, 10)] || null, total: d.total || null }; };
 
-  function runClaude(prompt, mode, timeoutMs = 120000) {
+  function runClaude(prompt, mode, timeoutMs = mode === "chat" ? 180000 : 300000) {
     return new Promise((resolve, reject) => {
       const e = settings().claudeEffort; const effort = (e && typeof e === "object" ? e.brain : e) || "high";
-      const child = spawn("claude", ["-p", "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: process.env });
+      const bin = claudeBin(ROOT);
+      if (!bin) return reject(new Error("Claude Code bulunamadı"));
+      const child = spawn(bin, ["-p", "--effort", effort, "--output-format", "json"], { cwd: ROOT, env: claudeEnv(bin) });
       let out = "", err = "";
       const t = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("Claude zaman aşımı")); }, timeoutMs);
+      child.on("error", (er) => { clearTimeout(t); claudeCache = null; reject(er); });
+      child.stdin.on("error", () => { /* süreç erken kapandı; hata close/error ile gelir */ });
       child.stdout.on("data", (c) => (out += c));
       child.stderr.on("data", (c) => (err += c));
-      child.on("close", (code) => { clearTimeout(t); if (code !== 0) return reject(new Error(err || `claude çıkış kodu ${code}`));
+      child.on("close", (code) => { clearTimeout(t); if (code !== 0) { let msg = err; try { const j = JSON.parse(out); if (j.is_error || j.result) msg = `${j.result || ""} ${err}`; } catch { /* json değil */ } return reject(new Error(msg.trim() || out.trim() || `claude çıkış kodu ${code}`)); }
+        let j0 = null; try { j0 = JSON.parse(out); } catch { /* json değil */ } if (j0?.is_error) return reject(new Error(String(j0.result || "Claude hata döndürdü")));
         try { const j = JSON.parse(out); const u = j.usage || {}; const usage = { input: (u.input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.cache_read_input_tokens || 0), output: u.output_tokens || 0, thinking: u.output_tokens_details?.thinking_tokens || 0, cost: Number(j.total_cost_usd || 0), effort };
           recordUsage(mode, usage); resolve({ text: j.result || "", usage }); } catch { resolve({ text: out, usage: null }); } });
       child.stdin.end(prompt);
@@ -79,7 +106,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
         : `KULLANICI DEDİ Kİ: ${userText}`;
     const prompt = `${system}\n\nBAĞLAM:\n${JSON.stringify(ctx)}\n\n${task}\n\nSadece JSON döndür.`;
     let r;
-    try { r = await runClaude(prompt, mode); } catch (e) { return { reply: `Beyin şu an yanıt veremiyor: ${e.message}`, report: "", actions: [], error: true }; }
+    try { r = await runClaude(prompt, mode); } catch (e) { console.error("[beyin]", e.message); return { reply: `Beyne bağlanılamadı: ${claudeError(e.message)}`, report: "", actions: [], error: true }; }
     try { return { ...parseJson(r.text), usage: r.usage }; } catch { return { reply: r.text.slice(0, 300), report: "", actions: [], usage: r.usage }; }
   }
 
