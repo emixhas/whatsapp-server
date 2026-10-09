@@ -27,6 +27,15 @@ for v in ("A", "B"):
                        cwd=ROOT, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"  ! kapak {v} hatası: {r.stderr[-300:]}", file=sys.stderr)
+# YouTube için 16:9 kapak (seçilen varyantın metniyle)
+v = ep.get("titleVariant", "A")
+yt_text = titles.get("cover") if v == "A" else titles.get("B", titles.get("cover", ""))
+props = {"text": yt_text or first.get("title", ""), "category": first.get("category"), "breaking": bool(first.get("breaking")), "image": first.get("image"),
+         "variant": v, "channel": settings()["channelName"].upper(), "dayLabel": ep.get("dayLabel"), "slotLabel": ep.get("slotLabel"), "timeRange": ep.get("timeRange"), "wide": True}
+r = subprocess.run(["npx", "remotion", "still", "src/index.ts", "ThumbWide", f"{base}-kapakYT.jpg", "--props", json.dumps(props, ensure_ascii=False), "--log", "error"] + (["--browser-executable", os.environ["PUPPETEER_EXECUTABLE_PATH"], "--chrome-mode=chrome-for-testing"] if os.environ.get("PUPPETEER_EXECUTABLE_PATH") else []),
+                   cwd=ROOT, capture_output=True, text=True)
+if r.returncode != 0:
+    print(f"  ! YouTube kapağı hatası: {r.stderr[-300:]}", file=sys.stderr)
 chosen = f"{base}-kapak{ep.get('titleVariant', 'A')}.jpg"
 if Path(chosen).exists():
     shutil.copy(chosen, f"{base}-kapak.jpg")

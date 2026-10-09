@@ -56,8 +56,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`data/category_suggestions.json`), 3 tekrarda geliştirme kuyruğuna görev yazar; `analyze` insights'a koyar.
 - A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm
   numarasına göre dönüşümlü varyant seçer (`titleVariant`, `publishTitle`); `render_thumbs.py`
-  `Thumb` still'ini A ve B olarak render eder (`out/<ad>-kapakA/B.jpg`, seçilen `-kapak.jpg`);
-  `publish.py` YouTube'a kapak yükler ve varyantı metriklere yazar; `analyze.py` varyant ve format
+  `Thumb` still'ini A ve B olarak render eder (`out/<ad>-kapakA/B.jpg`, seçilen `-kapak.jpg`) ve
+  `ThumbWide` (1280x720) ile `-kapakYT.jpg` üretir; kapakta her şey ortalı, gün/"N. 5 saat"/saat
+  aralığı rozetleri var; `publish.py` YouTube'a `-kapakYT.jpg` (yoksa `-kapak.jpg`) yükler ve varyantı metriklere yazar; `analyze.py` varyant ve format
   ortalamalarını çıkarır, ipucuna ekler.
 - Sohbet hafızası: `brain.addExchange()` her komut/yanıtı `data/memory.json` `exchanges` içine yazar;
   bağlama son 36 saatin konuşmaları `recentConversation` olarak girer.

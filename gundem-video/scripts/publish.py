@@ -58,7 +58,9 @@ def yt_upload(path: Path):
     while resp is None:
         _, resp = req.next_chunk()
     vid = resp["id"]
-    thumb = path.with_name(path.stem + "-kapak.jpg")
+    thumb = path.with_name(path.stem + "-kapakYT.jpg")  # 16:9 YouTube kapağı; yoksa dikey
+    if not thumb.exists():
+        thumb = path.with_name(path.stem + "-kapak.jpg")
     if thumb.exists():
         try:
             yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()

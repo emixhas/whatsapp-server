@@ -25,6 +25,7 @@ const calculateMetadata: CalculateMetadataFunction<Props> = async ({ props }) =>
 export const Root = () => (
   <>
   <Still id="Thumb" component={Thumb} width={WIDTH} height={HEIGHT} defaultProps={{ text: "Merkez Bankası faizi sabit tuttu", category: "finans", breaking: false, variant: "A" }} />
+  <Still id="ThumbWide" component={Thumb} width={1280} height={720} defaultProps={{ text: "Merkez Bankası faizi sabit tuttu", category: "finans", breaking: false, variant: "A", wide: true }} />
   <Composition
     id="GundemVideo"
     component={GundemVideo}
