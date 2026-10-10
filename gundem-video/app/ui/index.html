@@ -78,6 +78,8 @@
   .vid .m{padding:9px;font-size:12px}.vid .m b{display:block;font-size:13px}.vid .m span{color:var(--mut)}
   .views{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border-radius:8px;padding:3px 8px;font-size:12px;font-weight:700}
   .tag{display:inline-block;font-size:9px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 3px 0 0}.tag.brk{background:var(--red);color:#fff}.tag.yt{background:#3a0d12;color:#ff6b6b}.tag.ig{background:#3a1030;color:#ff8ad8}.tag.tt{background:#0f2a2e;color:#69f0e6}
+  .askbg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:40}.askbg.open{display:flex}
+  .askbox{background:#0E1424;border:1px solid var(--line);border-radius:16px;padding:18px;max-width:460px;width:100%;white-space:pre-wrap;font-size:14px;line-height:1.45}.askbox .acts{justify-content:flex-end;margin-top:14px}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.open{display:flex}
   .box{background:#0E1424;border:1px solid var(--line);border-radius:20px;padding:18px;max-width:960px;width:100%;display:grid;grid-template-columns:280px 1fr;gap:18px;max-height:92vh;overflow:auto}
   @media(max-width:700px){.box{grid-template-columns:1fr}}
@@ -274,10 +276,20 @@
     <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
     <div class="qr" id="qr" style="display:none"></div></div>
 </div></div>
+<div class="askbg" id="askBg"><div class="askbox"><div id="askTxt"></div><div class="acts"><button class="ghost" id="askNo">Vazgeç</button><button class="ghost ok" id="askYes">Evet</button></div></div></div>
 
 <script>
 const $=s=>document.querySelector(s);const api=(u,o)=>fetch(u,o).then(r=>r.json());const post=(u,b)=>api(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})}).then(r=>{if(u==='/api/settings'&&typeof toast==='function')toast('Kaydedildi ✓');if(u==='/api/schedule'&&typeof toast==='function')toast(r.ok?'Zamanlayıcı güncellendi ✓':'Zamanlayıcı ayarlanamadı',!r.ok);return r;});
 let videos=[],current=null,status={},mode='idle';
+// Onay penceresi sayfanın içinde: tarayıcının confirm()'ü "bu sayfanın ek iletişim kutularını engelle" işaretlenince
+// sessizce false döner ve düğmeler hiçbir şey yapmıyor gibi görünür. ask() her zaman çalışır (Enter = evet, Esc = vazgeç).
+function ask(text){return new Promise(res=>{const bg=$('#askBg');$('#askTxt').textContent=text;bg.classList.add('open');
+  const done=v=>{bg.classList.remove('open');document.removeEventListener('keydown',key,true);$('#askYes').onclick=$('#askNo').onclick=bg.onclick=null;res(v);};
+  const key=e=>{if(e.key==='Escape'){e.preventDefault();done(false);}else if(e.key==='Enter'){e.preventDefault();done(true);}};
+  document.addEventListener('keydown',key,true);$('#askYes').onclick=()=>done(true);$('#askNo').onclick=()=>done(false);bg.onclick=e=>{if(e.target===bg)done(false);};$('#askYes').focus();});}
+// Görünmeyen JS hatası kalmasın: düğme "çalışmıyor" gibi görünürse nedeni sohbette yazsın
+window.addEventListener('error',e=>{const m='Panel hatası: '+(e.message||e.error)+(e.lineno?' (satır '+e.lineno+')':'');console.error(m);if(typeof addMsg==='function')addMsg('j',m);if(typeof toast==='function')toast(m,true);});
+window.addEventListener('unhandledrejection',e=>{const m='Panel hatası: '+(e.reason?.message||e.reason);if(typeof addMsg==='function')addMsg('j',m);if(typeof toast==='function')toast(m,true);});
 const COLORS={idle:'#36D1C4',listening:'#2ECC71',thinking:'#F2B705',speaking:'#FF4D8D',working:'#E30A17',error:'#ff5c5c'};
 const LABELS={idle:'HAZIR',listening:'DİNLİYORUM',thinking:'DÜŞÜNÜYOR',speaking:'KONUŞUYOR',working:'ÜRETİYOR',error:'HATA'};
 let wakeName='Emixhas',wakeRe=/\b(emixhas|emiks has|emiks|emix|emixas|emikhas|emihas|e mix has|emiş has|emişhas)\b/i;
@@ -367,7 +379,7 @@ $('#aReveal').onclick=()=>post('/api/reveal',{name:current.name});
 $('#aDel').onclick=async()=>{
   const on=[current.youtube&&'YouTube',current.instagram&&'Instagram',current.tiktok&&'TikTok'].filter(Boolean);
   const msg=on.length?`Bu video ${on.join(', ')} hesaplarından da silinsin mi?\n\n• YouTube ve Instagram'dan otomatik silinir (izin verirlerse).\n• TikTok silmeye izin vermiyor: yayınladıysanız uygulamadan silmeniz gerekir.\n\nVideo Mac'ten de silinecek. Geri alınamaz.`:'Bu video silinsin mi? (Hiçbir platforma yüklenmemiş, yalnız Mac\'ten silinir.)';
-  if(!confirm(msg))return;
+  if(!await ask(msg))return;
   const b=$('#aDel');b.disabled=true;b.textContent='Siliniyor…';
   const r=await fetch('/api/videos/'+current.name,{method:'DELETE'}).then(x=>x.json()).catch(()=>({}));
   b.disabled=false;b.textContent='🗑 Sil';
@@ -389,14 +401,14 @@ async function publish(name,platforms){
   const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`✅ ${PLAT[p]?.n||p}: ${x.skipped?'zaten yayında':'yayınlandı'}${x.url?' → '+x.url:x.note?' — '+x.note:''}`:`❌ ${PLAT[p]?.n||p}: ${x.error||'bilinmeyen hata'}`);
   addMsg('j',msgs.join('\n')||('Yayın yanıtı alınamadı: '+(r.error||'')));toast(r.ok?'Yayınlandı ✓':'Yayında sorun oldu, ayrıntı sohbette',!r.ok);
   speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
-$('#aPubYt').onclick=()=>confirm("YouTube'a yüklensin mi?")&&publish(current.name,['youtube']);$('#aPubIg').onclick=()=>confirm("Instagram'a yüklensin mi?")&&publish(current.name,['instagram']);$('#aPubTt').onclick=()=>confirm("TikTok'a gönderilsin mi?")&&publish(current.name,['tiktok']);
+$('#aPubYt').onclick=async()=>{const n=current.name;if(await ask("YouTube'a yüklensin mi?"))publish(n,['youtube']);};$('#aPubIg').onclick=async()=>{const n=current.name;if(await ask("Instagram'a yüklensin mi?"))publish(n,['instagram']);};$('#aPubTt').onclick=async()=>{const n=current.name;if(await ask("TikTok'a gönderilsin mi?"))publish(n,['tiktok']);};
 
 // ================= üretim ve ayarlar
 $('#dur').oninput=e=>$('#durTxt').textContent=e.target.value;
-$('#gen').onclick=async()=>{const r=await post('/api/generate',{duration:+$('#dur').value});if(!r.ok)alert(r.error);refreshStatus();};
-$('#sched').onclick=async()=>{const on=!$('#sched').classList.contains('on');const r=await post('/api/schedule',{enabled:on,hours:+$('#hours').value});if(!r.ok)alert(r.error||'Ayarlanamadı');refreshStatus();};
+$('#gen').onclick=async()=>{const r=await post('/api/generate',{duration:+$('#dur').value});if(!r.ok)toast(r.error||'Başlatılamadı',true);refreshStatus();};
+$('#sched').onclick=async()=>{const on=!$('#sched').classList.contains('on');const r=await post('/api/schedule',{enabled:on,hours:+$('#hours').value});if(!r.ok)toast(r.error||'Ayarlanamadı',true);refreshStatus();};
 $('#hours').onchange=()=>{if($('#sched').classList.contains('on'))post('/api/schedule',{enabled:true,hours:+$('#hours').value}).then(refreshStatus);};
-for(const [id,key] of [['apYt','youtube'],['apIg','instagram'],['apTt','tiktok']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');if(on&&!confirm(`Her üretimden sonra ${key} hesabına otomatik yüklensin mi? Hatalı bir özet de yayınlanır; ilk günlerde kapalı tutmanız önerilir.`))return;const ap={...status.settings.autopublish,[key]:on};await post('/api/settings',{autopublish:ap});refreshStatus();};
+for(const [id,key] of [['apYt','youtube'],['apIg','instagram'],['apTt','tiktok']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');if(on&&!await ask(`Her üretimden sonra ${key} hesabına otomatik yüklensin mi? Hatalı bir özet de yayınlanır; ilk günlerde kapalı tutmanız önerilir.`))return;const ap={...status.settings.autopublish,[key]:on};await post('/api/settings',{autopublish:ap});refreshStatus();};
 function renderConn(s){const c=s.connections||{};
   // bağlıyken düğme "Yeniden bağla" olur (yeni izinler için Google onayı yeniden açılır), yanında "Bağlantıyı kes"
   $('#ytConnect').textContent=c.youtube?.connected?(c.youtube.playlists===false?'🔄 Yeniden bağla (oynatma listesi izni)':'🔄 Yeniden bağla'):'YouTube\'u bağla';
@@ -441,7 +453,7 @@ function renderConn(s){const c=s.connections||{};
   if(s.resources){const r=s.resources;$('#sys').textContent=`⚙ CPU %${r.cpu} · RAM ${r.memUsedGb}/${r.memTotalGb} GB`;$('#sys').className=r.cpu>80?'':r.cpu>40?'':'';$('#sys').style.color=r.cpu>80?'#ff6b6b':r.cpu>40?'var(--amber)':'var(--mut)';}
   if(s.settings){$('#sName').value=s.settings.channelName||'';$('#sTags').value=s.settings.hashtags||'';if(!$('#sHour').options.length)for(let h=0;h<24;h++)$('#sHour').add(new Option(`${String(h).padStart(2,'0')}:00`,h));$('#sHour').value=String(s.settings.dailyReportHour??9);}}
 $('#ytConnect').onclick=async()=>{if(!status.connections?.youtube?.clientFile){const m='Önce Google Cloud\'dan OAuth istemci dosyasını indirip secrets/youtube_client.json olarak kaydedin. Adımlar yukarıda.';addMsg('j',m);speak('Önce Google istemci dosyası gerekiyor. Adımlar ekranda.');return;}addMsg('j','Tarayıcıda Google onay sayfası açılıyor… Hesabınızı seçip "Devam"/"İzin ver" deyin. "Google bu uygulamayı doğrulamadı" çıkarsa Gelişmiş → … sayfasına git.');const r=await post('/api/connect/youtube');addMsg('j',r.ok?(r.message||'YouTube bağlandı.'):'Bağlanamadı: '+(r.error||'').split('\n').pop());speak(r.ok?(r.playlists===false?'YouTube bağlandı ama oynatma listesi izni verilmedi.':'YouTube bağlandı.'):'Bağlanamadı.');refreshStatus();};
-$('#ytDisconnect').onclick=async()=>{if(!confirm('YouTube bağlantısı kesilsin mi? Otomatik YouTube yüklemesi, yeniden bağlayana kadar durur.'))return;const r=await post('/api/disconnect/youtube');addMsg('j',r.ok?'YouTube bağlantısı kesildi.':'Kesilemedi: '+(r.error||''));refreshStatus();};
+$('#ytDisconnect').onclick=async()=>{if(!await ask('YouTube bağlantısı kesilsin mi? Otomatik YouTube yüklemesi, yeniden bağlayana kadar durur.'))return;const r=await post('/api/disconnect/youtube');addMsg('j',r.ok?'YouTube bağlantısı kesildi.':'Kesilemedi: '+(r.error||''));refreshStatus();};
 $('#hostSetup').onclick=async()=>{addMsg('j','Hostinger köprüsü kuruluyor…');const r=await post('/api/hostinger/setup');addMsg('j',r.ok?'Köprü hazır. Meta\'daki geri dönüş adresini Instagram kartındaki adresle güncelleyin, sonra "Instagram\'ı bağla".':'Kurulamadı:\n'+(r.log||r.error||''));refreshStatus();};
 function igLastErr(ig){const e=ig.lastError;if(!e)return '';const esc=t=>String(t||'').replace(/[&<>]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[ch]));return `<br>❌ <b>Son yükleme hatası</b> (${esc((e.at||'').slice(0,16).replace('T',' '))}, ${esc(e.video)}): ${esc(e.error)}${e.hint?'<br>💡 '+esc(e.hint):''}`;}
 $('#igDiag').onclick=async()=>{const b=$('#igDiag');b.disabled=true;b.textContent='🩺 Sınanıyor…';addMsg('j','Instagram yayın zinciri sınanıyor: bağlantı, hesap türü, günlük kota ve videonun Meta tarafından çekilebilmesi…');try{const r=await post('/api/instagram/diagnose');const steps=r.steps||[];addMsg('j',steps.map(x=>(x.ok?'✅ ':'❌ ')+x.step+': '+x.detail).join('\n')||(r.error||'Sonuç alınamadı.'));const bad=steps.filter(x=>!x.ok);speak(bad.length?'Instagram sınamasında '+bad.length+' sorun var, ayrıntı sohbette.':'Instagram sınaması sorunsuz.');}catch(e){addMsg('j','Sınama yapılamadı: '+e);}b.disabled=false;b.textContent="🩺 Instagram'ı sına";refreshStatus();};
@@ -455,13 +467,13 @@ $('#ttSave').onclick=async()=>{const r=await post('/api/tiktok/keys',{key:$('#tt
 $('#ttMode').onchange=async()=>{await post('/api/tiktok/keys',{mode:$('#ttMode').value});refreshStatus();};
 $('#ttCheck').onclick=async()=>{const b=$('#ttCheck');b.disabled=true;const r=await post('/api/tiktok/check');b.disabled=false;
   addMsg('j',r.ok?(r.items?.length?'TikTok son gönderimler:\n'+r.items.map(i=>`• ${i.video}: ${i.text}`).join('\n'):'Henüz TikTok\'a gönderilmiş video yok.'):'TikTok durumu sorgulanamadı: '+(r.error||''));};
-$('#ttDisconnect').onclick=async()=>{if(!confirm('TikTok bağlantısı kesilsin mi?'))return;const r=await post('/api/disconnect/tiktok');addMsg('j',r.ok?'TikTok bağlantısı kesildi.':'Kesilemedi: '+(r.error||''));refreshStatus();};
+$('#ttDisconnect').onclick=async()=>{if(!await ask('TikTok bağlantısı kesilsin mi?'))return;const r=await post('/api/disconnect/tiktok');addMsg('j',r.ok?'TikTok bağlantısı kesildi.':'Kesilemedi: '+(r.error||''));refreshStatus();};
 $('#ttConnect').onclick=async()=>{if(!status.connections?.tiktok?.appKeys){addMsg('j','Önce TikTok Client key ve secret değerlerini karttaki alanlara yapıştırıp "Anahtarları kaydet"e basın. Adımlar kartta.');speak('Önce TikTok anahtarları gerekiyor.');return;}addMsg('j','Tarayıcıda TikTok girişi açılıyor…');const r=await post('/api/connect/tiktok');addMsg('j',r.ok?'TikTok bağlandı.':'Bağlanamadı: '+(r.error||''));speak(r.ok?'TikTok bağlandı.':'Bağlanamadı.');refreshStatus();};
 $('#waStart').onclick=async()=>{await post('/api/whatsapp/start');addMsg('j','WhatsApp bağlantısı başlatıldı; QR birkaç saniye içinde burada görünür.');let n=0;const iv=setInterval(async()=>{await refreshStatus();if(++n>20||status.whatsapp?.status==='connected')clearInterval(iv);},1500);};
 $('#waTest').onclick=async()=>{const r=await post('/api/whatsapp/test');addMsg('j',r.ok?'Test mesajı gönderildi.':'Gönderilemedi: '+r.error);};
 $('#waSend').onclick=async()=>{const r=await post('/api/whatsapp/send-latest');addMsg('j',r.ok?'Son video WhatsApp\'a gönderildi'+(r.awaitingApproval?', onay bekleniyor.':'.'):'Gönderilemedi: '+r.error);};
-$('#waLogout').onclick=async()=>{if(!confirm('WhatsApp bağlantısı kesilsin mi? Oturum silinir; tekrar bağlamak için QR okutulur.'))return;await post('/api/whatsapp/logout');toast('WhatsApp bağlantısı kesildi');refreshStatus();};
-$('#waSwitch').onclick=async()=>{if(!confirm('Mevcut WhatsApp oturumu kapatılıp yeni QR üretilsin mi? Yeni numarayı okutunca sahip numarasını da güncelleyin.'))return;await post('/api/whatsapp/logout');await post('/api/whatsapp/start');toast('Yeni QR hazırlanıyor…');let n=0;const iv=setInterval(async()=>{await refreshStatus();if(++n>20||status.whatsapp?.status==='connected')clearInterval(iv);},1500);};
+$('#waLogout').onclick=async()=>{if(!await ask('WhatsApp bağlantısı kesilsin mi? Oturum silinir; tekrar bağlamak için QR okutulur.'))return;await post('/api/whatsapp/logout');toast('WhatsApp bağlantısı kesildi');refreshStatus();};
+$('#waSwitch').onclick=async()=>{if(!await ask('Mevcut WhatsApp oturumu kapatılıp yeni QR üretilsin mi? Yeni numarayı okutunca sahip numarasını da güncelleyin.'))return;await post('/api/whatsapp/logout');await post('/api/whatsapp/start');toast('Yeni QR hazırlanıyor…');let n=0;const iv=setInterval(async()=>{await refreshStatus();if(++n>20||status.whatsapp?.status==='connected')clearInterval(iv);},1500);};
 $('#waOwnerSave').onclick=async()=>{await post('/api/settings',{whatsapp:{owner:$('#waOwner').value.trim()}});addMsg('j','Sahip numarası kaydedildi.');refreshStatus();};
 for(const [id,key] of [['waNotify','notifyOnVideo'],['waFile','sendVideoFile'],['waApprove','requireApproval'],['waAuto','autoStart']])$('#'+id).onclick=async()=>{const on=!$('#'+id).classList.contains('on');await post('/api/settings',{whatsapp:{[key]:on}});refreshStatus();};
 $('#tunStart').onclick=async()=>{const r=await post('/api/tunnel/start');addMsg('j',r.ok?'Tünel başlatılıyor…':'Başlatılamadı: '+r.error);setTimeout(refreshStatus,3000);setTimeout(refreshStatus,8000);};
@@ -485,7 +497,7 @@ async function playVoice(id,btn){vAudio.pause();const row=voiceRows.find(v=>v.id
 for(const id of ['nModeSingle','nModeAlt','nVoice','nVoiceA','nVoiceB'])$('#'+id).onchange=saveNarration;
 $('#voiceRefresh').onclick=()=>loadVoices(true);
 document.addEventListener('DOMContentLoaded',()=>loadVoices(false));setTimeout(()=>loadVoices(false),800);
-$('#autoOn').onclick=async()=>{if(!confirm('Tam otomatik mod: her 5 saatte üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı. Açılsın mı?'))return;const r=await post('/api/automode',{enabled:true});addMsg('j',r.ok?`Tam otomatik mod açık: her ${r.hours} saatte üretim; otomatik yayın: ${r.connected.length?r.connected.join(', '):'bağlı hesap yok, önce hesap bağlayın'}.`:'Açılamadı: '+(r.error||''));speak(r.ok?'Tam otomatik mod açık.':'Açılamadı.');refreshStatus();};
+$('#autoOn').onclick=async()=>{if(!await ask('Tam otomatik mod: her 5 saatte üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı. Açılsın mı?'))return;const r=await post('/api/automode',{enabled:true});addMsg('j',r.ok?`Tam otomatik mod açık: her ${r.hours} saatte üretim; otomatik yayın: ${r.connected.length?r.connected.join(', '):'bağlı hesap yok, önce hesap bağlayın'}.`:'Açılamadı: '+(r.error||''));speak(r.ok?'Tam otomatik mod açık.':'Açılamadı.');refreshStatus();};
 $('#autoOff').onclick=async()=>{const r=await post('/api/automode',{enabled:false});addMsg('j','Otomatik üretim ve yayın durduruldu.');refreshStatus();};
 $('#mediaYt').onclick=async()=>{const on=!$('#mediaYt').classList.contains('on');await post('/api/settings',{media:{allowYoutubeEmbeds:on,ytEmbedsMigrated:true}});refreshStatus();};
 $('#stVoice').onclick=async()=>{const on=!$('#stVoice').classList.contains('on');await post('/api/settings',{stageVoice:{enabled:on}});refreshStatus();};
@@ -499,7 +511,7 @@ $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:
 $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
-$('#stopAllBtn').onclick=async()=>{if(status.running&&!confirm('Süren üretim de durdurulacak. Emin misin?'))return;const r=await post('/api/stopall');const m=`Durduruldu: ${r.pipeline?'üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı.`;toast(m);addMsg('j',m);refreshStatus();};
+$('#stopAllBtn').onclick=async()=>{if(status.running&&!await ask('Süren üretim de durdurulacak. Emin misin?'))return;const r=await post('/api/stopall');const m=`Durduruldu: ${r.pipeline?'üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı.`;toast(m);addMsg('j',m);refreshStatus();};
 // Mynet manşet takibi
 async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').classList.toggle('on',m.enabled!==false);
   const last=m.lastCheck?new Date(m.lastCheck).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'henüz yok';
@@ -523,7 +535,7 @@ $('#brkOn').onclick=async()=>{const on=!$('#brkOn').classList.contains('on');awa
 $('#brkCheck').onclick=async()=>{$('#brkInfo').textContent='Kontrol ediliyor…';const r=await post('/api/breaking/check');toast(r.ok?`${r.fresh||0} yeni haber, ${(r.candidates||[]).length} video adayı`:(r.error||'Kontrol başarısız'),!r.ok);loadBreaking();};
 $('#mynetOn').onclick=async()=>{const on=!$('#mynetOn').classList.contains('on');await post('/api/settings',{mynet:{enabled:on}});loadMynet();};
 $('#mynetCheck').onclick=async()=>{$('#mynetInfo').textContent='Kontrol ediliyor…';const r=await post('/api/mynet/check');toast(r.ok?`${r.items?.length||0} manşet, ${r.new?.length||0} yeni`:(r.error||'Kontrol başarısız'),!r.ok);loadMynet();};
-$('#mynetAll').onclick=async()=>{if(!confirm('Manşetteki haberlerin hepsi için video üretilecek (sırayla). Devam?'))return;const r=await post('/api/mynet/produce-all');toast(`${(r.results||[]).filter(x=>x.ok).length} video sıraya alındı`);loadMynet();};
+$('#mynetAll').onclick=async()=>{if(!await ask('Manşetteki haberlerin hepsi için video üretilecek (sırayla). Devam?'))return;const r=await post('/api/mynet/produce-all');toast(`${(r.results||[]).filter(x=>x.ok).length} video sıraya alındı`);loadMynet();};
 loadMynet();setInterval(loadMynet,60000);loadBreaking();setInterval(loadBreaking,60000);loadDaily();setInterval(loadDaily,60000);
 $('#ytValuable').onclick=async()=>{const on=!$('#ytValuable').classList.contains('on');await post('/api/settings',{youtubePolicy:{onlyValuable:on}});refreshStatus();};
 $('#ytExtraMax').onchange=async()=>{await post('/api/settings',{youtubePolicy:{extraDailyMax:Math.max(0,Math.min(20,Number($('#ytExtraMax').value)||0))}});refreshStatus();};
