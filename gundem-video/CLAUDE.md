@@ -410,5 +410,10 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
   AudioContext kullanıcı hareketiyle açılır; askıdaysa ses doğrudan oynatılır (sessiz kalma hatası).
   Konuşma için zaman aşımı (8 sn + 90 ms/karakter), düşünme için 150 sn; "paused" bayrağı her bitişte
   sıfırlanır. Küreye tıklama konuşmayı keser ve dinlemeye geçer. Teşhis satırı: mikrofon/ses/tanıma.
+- Panel sekmesi günlerce açık kalır; bellek sızıntısına dikkat (gece "Hay aksi" çökmesi buydu): `playBlob` her
+  cümlede blob adresini `revokeObjectURL` ile bırakır, `attachAnalyser` düğümleri `audioNodes`ta tutar ve
+  `detachAnalyser()` (çalma bitince, `endSpeaking`, dinleme bitince) koparır; sohbet en çok 200, log 600 satır.
+  Güvenlik ağı: 03-06 arası 12 saatten uzun açık ve boştaysa ya da JS belleği 600 MB'ı geçerse sayfa kendini yeniler.
+  Yeni ses/DOM kodu eklerken oluşturduğunu bırak.
 - Önizleme: `npm run studio`. Sessiz hızlı test: `TTS_ENGINE=silent bash pipeline.sh`.
 - `out/`, `work/`, `public/audio/`, `voices/*.onnx` git'e girmez.

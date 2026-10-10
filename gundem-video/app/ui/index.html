@@ -276,7 +276,11 @@ function setMode(m){mode=m;document.documentElement.style.setProperty('--c',COLO
 const orb=$('#orb'),ctx=orb.getContext('2d');const bg=$('#bg'),bctx=bg.getContext('2d');
 let analyser=null,freq=null,level=0,t=0,levelPeak=0;
 const particles=Array.from({length:42},(_,i)=>({a:Math.random()*Math.PI*2,r:0.68+Math.random()*0.5,s:(0.2+Math.random()*0.5)*(i%2?1:-1),z:Math.random()}));
-function attachAnalyser(src,actx){analyser=actx.createAnalyser();analyser.fftSize=512;analyser.smoothingTimeConstant=.82;src.connect(analyser);freq=new Uint8Array(analyser.frequencyBinCount);}
+// Bellek: her bağlanan kaynak/analyser takip edilir ve iş bitince koparılır. Koparılmazsa her seslendirilen cümle
+// ses grafiğinde (ve <audio> öğesi bellekte) kalıyor, panel gece boyu açık kalınca sekme çöküyordu ("Hay aksi").
+let audioNodes=[];
+function detachAnalyser(){for(const n of audioNodes){try{n.disconnect();}catch{}}audioNodes=[];analyser=null;}
+function attachAnalyser(src,actx){detachAnalyser();analyser=actx.createAnalyser();analyser.fftSize=512;analyser.smoothingTimeConstant=.82;src.connect(analyser);freq=new Uint8Array(analyser.frequencyBinCount);audioNodes=[src,analyser];}
 function sample(){if(!analyser){level*=.9;return;}analyser.getByteFrequencyData(freq);let s=0;for(let i=2;i<48;i++)s+=freq[i];const v=s/46/255;level=level*.55+v*.45;levelPeak=Math.max(levelPeak*.96,level);}
 function hex(c,a){const n=parseInt(c.slice(1),16);return `rgba(${n>>16},${(n>>8)&255},${n&255},${a})`;}
 function drawOrb(){t+=.016;sample();const c=COLORS[mode];const W=orb.width,H=orb.height,cx=W/2,cy=H/2;ctx.clearRect(0,0,W,H);
@@ -528,12 +532,12 @@ const _post=post;window.postSaved=async(u,b,msg)=>{const r=await _post(u,b);if(u
 let nextRunAt=null,nextEp=null,slotsTxt='';
 function tickNext(){const el=$('#nextBox');if(!el)return;if(!nextRunAt){return;}const ms=nextRunAt-Date.now();if(ms<=0){el.innerHTML='<b>Üretim zamanı geldi</b> · zamanlayıcı başlatıyor…';return;}const h=Math.floor(ms/3.6e6),m=Math.floor(ms%3.6e6/6e4),sec=Math.floor(ms%6e4/1e3);const d=new Date(nextRunAt);const day=d.toLocaleDateString('tr-TR',{day:'numeric',month:'long',weekday:'long'});el.innerHTML=`Sıradaki: <b>günün ${nextEp}. videosu</b> · ${day} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}<br>Kalan süre: <b>${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}</b>${slotsTxt?`<div style="color:var(--mut);margin-top:4px">Üretim saatleri: ${slotsTxt}</div>`:''}`;}
 setInterval(tickNext,1000);
-function addMsg(who,text){if(!text)return;const d=document.createElement('div');d.className='msg '+who;d.textContent=text;$('#convo').appendChild(d);$('#convo').scrollTop=1e9;}
+function addMsg(who,text){if(!text)return;const c=$('#convo');const d=document.createElement('div');d.className='msg '+who;d.textContent=text;c.appendChild(d);while(c.children.length>200)c.removeChild(c.firstChild);c.scrollTop=1e9;}
 function diag(){$('#dAudio').textContent='ses: '+(audioUnlocked?'açık':'tıklayınca açılır');$('#dRec').textContent='tanıma: '+(SR?(listening?'dinliyor':always?'bekliyor':'hazır'):'desteklenmiyor');}
 
 // ---- konuşma (Emixhas sesi)
 let curAudio=null,speakWatchdog=null;
-function endSpeaking(reason){speakSeq++;clearTimeout(speakWatchdog);if(curAudio){try{curAudio.pause();}catch{}curAudio=null;}if('speechSynthesis' in window)try{speechSynthesis.cancel();}catch{}analyser=null;setMode(status.running?'working':'idle');resumeRec();if(reason)logLine('🔊 konuşma bitti ('+reason+')');}
+function endSpeaking(reason){speakSeq++;clearTimeout(speakWatchdog);if(curAudio){try{curAudio.pause();}catch{}curAudio=null;}if('speechSynthesis' in window)try{speechSynthesis.cancel();}catch{}detachAnalyser();setMode(status.running?'working':'idle');resumeRec();if(reason)logLine('🔊 konuşma bitti ('+reason+')');}
 function stopSpeaking(){endSpeaking('durduruldu');}
 // Konuşma: yanıt cümlelere bölünür; ilk cümle hazır olur olmaz çalar, o çalarken sıradaki sunucuda üretilir.
 // Sunucu sesleri önbellekler; tekrar eden cümleler anında gelir. Ses yoksa kalan kısım tarayıcı sesiyle okunur.
@@ -541,9 +545,11 @@ let speakSeq=0,ackAudio=null,ackTimer=null;
 function splitSpeech(text){const parts=String(text).replace(/\s+/g,' ').trim().match(/[^.!?…]+[.!?…]*["”']?/g)||[String(text)];
   const out=[];for(let p of parts){p=p.trim();if(!p)continue;if(out.length&&out[out.length-1].length<40)out[out.length-1]+=' '+p;else out.push(p);}return out;}
 const fetchSpeech=t=>fetch('/api/speak',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:t})}).then(r=>r.status===200?r.blob():null).catch(()=>null);
-function playBlob(blob,my){return new Promise(res=>{const a=new Audio(URL.createObjectURL(blob));curAudio=a;
+function playBlob(blob,my){return new Promise(res=>{const url=URL.createObjectURL(blob);const a=new Audio(url);curAudio=a;
+  // çalma bitince: blob adresi serbest, ses düğümleri kopar, öğe boşaltılır (bellek sızıntısı olmasın)
+  const done=()=>{try{URL.revokeObjectURL(url);}catch{}if(curAudio===a||!curAudio)detachAnalyser();a.removeAttribute('src');try{a.load();}catch{}};
   if(actx&&actx.state==='running'){try{const src=actx.createMediaElementSource(a);attachAnalyser(src,actx);analyser.connect(actx.destination);}catch{}}
-  a.onended=()=>res(my===speakSeq&&curAudio===a);a.onerror=()=>{endSpeaking('oynatma hatası');res(false);};
+  a.onended=()=>{const ok=my===speakSeq&&curAudio===a;done();res(ok);};a.onerror=()=>{done();endSpeaking('oynatma hatası');res(false);};
   a.play().catch(()=>{endSpeaking('tarayıcı otomatik sesi engelledi');$('#heard').textContent='🔇 Ses için sayfaya bir kez tıklayın.';res(false);});});}
 async function speak(text){if(!text)return;$('#reply').textContent=text;
   // "bakıyorum" sesi hâlâ çalıyorsa bitmesini bekle (en çok 3 sn)
@@ -559,7 +565,7 @@ async function speak(text){if(!text)return;$('#reply').textContent=text;
     if(!(await playBlob(blob,my)))return;}
   if(my===speakSeq)endSpeaking('');}
 // Beyin düşünürken (1,2 sn'den uzun sürerse) önbellekteki kısa bir cümleyle hemen karşılık ver
-function playAck(){fetchSpeech('Bir saniye, bakıyorum.').then(b=>{if(!b||mode!=='thinking')return;const a=new Audio(URL.createObjectURL(b));ackAudio=a;a.play().catch(()=>{});});}
+function playAck(){fetchSpeech('Bir saniye, bakıyorum.').then(b=>{if(!b||mode!=='thinking')return;const url=URL.createObjectURL(b);const a=new Audio(url);ackAudio=a;const free=()=>{try{URL.revokeObjectURL(url);}catch{}};a.addEventListener('ended',free);a.addEventListener('error',free);a.play().catch(free);});}
 $('#voiceTest').onclick=()=>{ensureCtx();speak('Ses testi. Beni duyuyorsanız her şey yolunda.');};
 
 // ---- komut işleme
@@ -600,7 +606,7 @@ if(!SR){$('#heard').textContent='Bu tarayıcı konuşma tanımayı desteklemiyor
 else{rec=new SR();rec.lang='tr-TR';rec.interimResults=true;rec.continuous=false;rec.maxAlternatives=1;
   rec.onstart=()=>{listening=true;starting=false;restartDelay=300;if(!always||armed){setMode('listening');$('#heard').textContent='Dinliyorum…';}logLine('🎙 dinleme başladı'+(always?' (sürekli)':''));diag();micViz();
     if(!always){clearTimeout(oneShotTimer);oneShotTimer=setTimeout(()=>{if(listening&&!always){try{rec.stop();}catch{}$('#heard').textContent='Bir şey duymadım. Tekrar tıklayın.';}},10000);}};
-  rec.onend=()=>{listening=false;starting=false;analyser=null;if(micStream&&!always){micStream.getTracks().forEach(t=>t.stop());micStream=null;}diag();if(mode==='listening'&&!armed)setMode(status.running?'working':'idle');
+  rec.onend=()=>{listening=false;starting=false;detachAnalyser();if(micStream&&!always){micStream.getTracks().forEach(t=>t.stop());micStream=null;}diag();if(mode==='listening'&&!armed)setMode(status.running?'working':'idle');
     if(always&&!paused){setTimeout(startRec,restartDelay);restartDelay=Math.min(3000,restartDelay*1.5);}};
   rec.onerror=e=>{starting=false;if(e.error==='not-allowed'||e.error==='service-not-allowed'){$('#heard').textContent='Mikrofon izni yok. Safari: Ayarlar → Web Siteleri → Mikrofon → bu site: İzin ver.';always=false;setMode('error');setTimeout(()=>setMode('idle'),2000);logLine('🎙 mikrofon izni reddedildi');}
     else if(e.error==='audio-capture'){$('#heard').textContent='Mikrofon bulunamadı.';logLine('🎙 mikrofon yok');}
@@ -617,6 +623,12 @@ $('#stopBtn').onclick=()=>{stopSpeaking();armed=false;};
 $('#micTest').onclick=async()=>{ensureCtx();try{micStream=micStream||await navigator.mediaDevices.getUserMedia({audio:true});$('#heard').textContent='Mikrofon açık. Bir şey söyleyin…';logLine('🎙 mikrofon testi: izin verildi');micPermission();if(!always){paused=false;startRec();}}catch(e){$('#heard').textContent='Mikrofon açılamadı: '+e.name;logLine('🎙 mikrofon testi hatası: '+e.name);}};
 micPermission();diag();
 refreshStatus();loadVideos();setInterval(refreshStatus,10000);
+// Güvenlik ağı: panel günlerce açık kalabiliyor. 03:00-05:59 arası, 12 saatten uzun açıksa ve hiçbir şey olmuyorsa
+// (konuşma/dinleme/üretim yok) ya da JS belleği 600 MB'ı geçtiyse sayfa kendini sessizce yeniler.
+const PAGE_START=Date.now();
+setInterval(()=>{const idle=mode==='idle'&&!status.running&&!stageQ.length;if(!idle)return;
+  const h=new Date().getHours(),mem=performance.memory?.usedJSHeapSize||0;
+  if((h>=3&&h<6&&Date.now()-PAGE_START>12*3600e3)||mem>600e6){try{sessionStorage.setItem('autoReload',String(Date.now()));}catch{}location.reload();}},5*60000);
 </script>
 </body>
 </html>
