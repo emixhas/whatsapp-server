@@ -461,7 +461,14 @@ def ig_diagnose() -> list:
     uid = creds[0]
     add("Instagram bağlantısı", True, "token var")
     try:
-        me = ig_call("GET", uid, {"fields": "user_id,username,account_type"}, creds)
+        # Facebook girişinde (graph.facebook.com) ve bazı hesap düğümlerinde account_type alanı yoktur ("nonexisting
+        # field"); o zaman yalnız kullanıcı adı sorulur. Facebook Sayfasına bağlı hesap zaten profesyoneldir.
+        try:
+            me = ig_call("GET", uid, {"fields": "username" if creds[2] == FB_API else "username,account_type"}, creds)
+        except Exception as e:
+            if "nonexisting field" not in str(e):
+                raise
+            me = ig_call("GET", uid, {"fields": "username"}, creds)
         at = (me.get("account_type") or "").upper()
         add("Oturum geçerli", True, f"@{me.get('username')}")
         if at and at not in ("BUSINESS", "MEDIA_CREATOR"):
