@@ -12,6 +12,8 @@
   header h1{font-size:17px;margin:0;letter-spacing:5px;font-weight:900}header h1 b{color:var(--red)}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}.dot.on{background:var(--green);box-shadow:0 0 10px var(--green)}.dot.busy{background:var(--amber);animation:blink 1s infinite}
   @keyframes blink{50%{opacity:.3}}
+  .sysbtn{border:1px solid #E30A17;background:#E30A17;color:#fff;font-weight:700;border-radius:999px;padding:7px 14px;cursor:pointer;font-size:13px;white-space:nowrap}.sysbtn.rest{background:#1f9d55;border-color:#1f9d55}.sysbtn:disabled{opacity:.6;cursor:wait}
+  .restbar{display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 24px;background:rgba(242,183,5,.12);border-bottom:1px solid rgba(242,183,5,.4);color:#F2B705;font-size:13px}.restbar.on{display:flex}
   .conn{display:flex;gap:10px;margin-left:auto;font-size:12px;color:var(--mut)}.conn span{padding:4px 10px;border:1px solid var(--line);border-radius:999px}.conn span.ok{border-color:var(--green);color:var(--green)}
   nav{display:flex;gap:6px;padding:10px 24px 0}nav button{background:transparent;border:1px solid transparent;color:var(--mut);padding:8px 14px;border-radius:10px;cursor:pointer;font-weight:600}nav button.on{color:var(--txt);border-color:var(--line);background:var(--panel)}
   main{display:grid;grid-template-columns:440px 1fr;gap:18px;padding:16px 24px 40px;align-items:start}
@@ -100,8 +102,10 @@
 <header>
   <h1><span id="aName">EMIXHAS</span> <span style="color:var(--mut);font-weight:400;letter-spacing:1px">· TÜRKİYE</span> <b>GÜNDEMİ</b></h1>
   <span class="dot" id="dot"></span><span id="stateTxt" style="color:var(--mut);font-size:13px">hazır</span>
+  <button class="sysbtn" id="sysStop" title="Üretimi, modelleri ve otomatik işleri durdurur; sıradaki planlı üretime ya da sizin talimatınıza kadar hiçbir şey başlamaz">⏸ Tüm sistemi durdur</button>
   <div class="conn"><span id="sys" title="işlemci ve bellek">⚙ —</span><span id="cWa">WhatsApp</span><span id="cYt">YouTube</span><span id="cIg">Instagram</span><span id="cTt">TikTok</span><span id="lan"></span></div>
 </header>
+<div class="restbar" id="restBar"><b>⏸ SİSTEM DURDURULDU</b><span id="restTxt"></span></div>
 <nav><button class="on" data-tab="videos">Videolar</button><button data-tab="analytics">Analitik</button><button data-tab="reports">Raporlar</button><button data-tab="settings">Bağlantılar & Ayarlar</button></nav>
 <main>
   <section style="display:flex;flex-direction:column;gap:16px">
@@ -111,7 +115,7 @@
         <div class="state" id="stateLbl">HAZIR</div>
         <div class="heard" id="heard">Küreye tıklayın ve konuşun, ya da yazın</div>
         <div class="reply" id="reply"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="stopAllBtn" title="üretimi ve arka planda çalışan tüm modelleri kapatır">⏹ Hepsini durdur</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="selfTestBtn" title="tüm bağlantıları ve motorları sına">🩺 Sistem kontrolü</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="ghost" id="stopBtn">■ Dur</button><button class="ghost" id="updateBtn" title="git pull + yeniden başlat">⬇ Güncelle</button><button class="ghost" id="stopAllBtn" title="üretimi, modelleri ve otomatik işleri durdurur (başlıktaki düğmeyle aynı)">⏹ Hepsini durdur</button><button class="ghost" id="restartBtn" title="paneli yeniden başlat">↻ Yeniden başlat</button><button class="ghost" id="selfTestBtn" title="tüm bağlantıları ve motorları sına">🩺 Sistem kontrolü</button><button class="ghost" id="micTest">🎙 Mikrofonu test et</button><button class="ghost" id="voiceTest">🔊 Sesi test et</button></div>
         <div id="diag" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;font-size:11px;color:var(--mut)"><span id="dMic">mikrofon: ?</span><span>·</span><span id="dAudio">ses: ?</span><span>·</span><span id="dRec">tanıma: ?</span></div>
         <div class="chips">
           <span class="chip" data-say="otuz saniyelik video üret">30 sn üret</span><span class="chip" data-say="altmış saniyelik video üret">60 sn üret</span>
@@ -193,6 +197,7 @@
       <details class="grp" open><summary>⚡ Otomasyon <span class="sum" id="autoSum"></span></summary>
         <div class="conninfo">Tam otomatik mod: her 5 saatte bir üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı, her aşamada WhatsApp bildirimi. Tek düğmeyle açılır; istediğiniz anahtarı sonradan soldaki Üretim kartından değiştirebilirsiniz.</div>
         <div class="acts"><button class="ghost ok" id="autoOn">⚡ Tam otomatik modu aç</button><button class="ghost" id="autoOff">Durdur (üretim ve yayın kapalı)</button></div>
+        <label class="row"><span class="sw" id="restAfter"></span><span>Her üretimden sonra sistemi durdur (ısınmasın): sıradaki planlı üretime ya da elle talimata kadar son dakika/Mynet taraması ve otomatik üretim bekler; "🎬 Video üret" gibi elle düğmeler her zaman çalışır</span></label>
         <label class="row"><span class="sw" id="stVoice"></span><span>Aşamaları sesli bildir (senaryo hazırlandı, seslendirmeye başlandı, Hostinger'a eklendi, YouTube'da paylaşıldı…)</span></label>
         <label class="row"><span class="sw" id="stMac"></span><span>Panel kapalıyken Mac hoparlöründen söyle (23:00–08:00 arası sessiz)</span></label>
         <label class="row"><span class="sw" id="waStages"></span><span>Her aşamayı WhatsApp'a bildir (üretim, ses, render, yükleme, yayın)</span></label>
@@ -338,7 +343,10 @@ function drawOrb(){t+=.016;sample();const c=COLORS[mode];const W=orb.width,H=orb
 drawOrb();
 
 // ================= durum, log
-function setState(s){status=s;$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor (${s.duration} sn)`:s.busy?s.busy:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='📱 '+s.lanUrl;
+function renderRest(s){const r=s.rest||{};const on=!!r.on;const b=$('#sysStop');if(!b.dataset.busy){b.textContent=on?'▶ Sistemi başlat':'⏸ Tüm sistemi durdur';b.classList.toggle('rest',on);}
+  $('#restBar').classList.toggle('on',on);if(on){const t=x=>new Date(x).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});$('#restTxt').textContent=`${t(r.since)}'den beri (${r.reason||'elle'}). Bilgisayar dinleniyor: modeller kapalı, otomatik üretim ve tarama yok. `+(r.until?`Sıradaki planlı iş ${t(r.until)} (${r.untilWhat||'üretim'}); o zaman kendiliğinden başlar.`:'Zamanlayıcı kapalı; siz başlatana kadar bekler.')+' Elle verdiğiniz her üretim talimatı sistemi uyandırır.';}
+  $('#restAfter').classList.toggle('on',s.settings?.restAfterProduction!==false);}
+function setState(s){status=s;renderRest(s);$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor (${s.duration} sn)`:s.busy?s.busy:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='📱 '+s.lanUrl;
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
   $('#cYt').className=s.connections?.youtube?.connected?'ok':'';$('#cIg').className=s.connections?.instagram?.connected?'ok':'';$('#cTt').className=s.connections?.tiktok?.connected?'ok':'';
   $('#sched').classList.toggle('on',!!s.schedule?.enabled);if(s.schedule?.hours)$('#hours').value=String(s.schedule.hours);
@@ -511,7 +519,13 @@ $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:
 $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
-$('#stopAllBtn').onclick=async()=>{if(status.running&&!await ask('Süren üretim de durdurulacak. Emin misin?'))return;const r=await post('/api/stopall');const m=`Durduruldu: ${r.pipeline?'üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı.`;toast(m);addMsg('j',m);refreshStatus();};
+async function systemStop(){if(status.running&&!await ask('Süren üretim de durdurulacak ve sistem dinlenmeye geçecek. Emin misin?'))return;const b=$('#sysStop');b.dataset.busy=1;b.disabled=true;b.textContent='Durduruluyor…';
+  try{const r=await post('/api/rest',{on:true});const t=r.rest?.until?new Date(r.rest.until).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):null;
+  const m=`Sistem durduruldu: ${r.pipeline?'süren üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı. ${t?`Sıradaki planlı iş ${t}; o zamana kadar`:'Siz başlatana kadar'} hiçbir şey başlamayacak.`;toast(m);addMsg('j',m);}finally{delete b.dataset.busy;b.disabled=false;refreshStatus();}}
+async function systemStart(){const r=await post('/api/rest',{on:false});const m=r.ended?'Sistem yeniden çalışıyor: son dakika ve Mynet takibi, zamanlanmış işler devam ediyor.':'Sistem zaten çalışıyor.';toast(m);addMsg('j',m);refreshStatus();}
+$('#sysStop').onclick=()=>status.rest?.on?systemStart():systemStop();
+$('#stopAllBtn').onclick=systemStop;
+$('#restAfter').onclick=async()=>{const on=!$('#restAfter').classList.contains('on');await post('/api/settings',{restAfterProduction:on});refreshStatus();};
 // Mynet manşet takibi
 async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').classList.toggle('on',m.enabled!==false);
   const last=m.lastCheck?new Date(m.lastCheck).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'henüz yok';

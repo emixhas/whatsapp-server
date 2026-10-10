@@ -212,7 +212,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kopyası, kullanıcının Chrome'una dokunulmaz) kapatır: her 5 dk'da 10 dk'dan uzun yaşayanlar, üretim bitince
   hepsi. `POST /api/stopall` + panel "⏹ Hepsini durdur" + komut "her şeyi durdur / modelleri kapat" üretimi
   (panel ya da zamanlayıcı kilidi) süreç ağacıyla birlikte, anlık kuyruğu ve tüm ağır süreçleri kapatır.
-  `GET /api/procs` çalışanları listeler. Sesli: `tts.py` sentez bitince "🔊 ses modeli sorunsuz başlatıldı" yazar →
+  `GET /api/procs` çalışanları listeler.
+- Dinlenme / "⏸ Tüm sistemi durdur" (kullanıcı isteği, ısınma): başlıkta hep görünen kırmızı düğme, `POST /api/rest {on}`
+  (`/api/stopall` ve komut "sistemi/her şeyi durdur" da aynı), "sistemi başlat" komutu/düğmesi ile çıkış. `restStart()`
+  üretimi, anlık sırasını ve modelleri kapatır, `data/rest.json` {on, since, reason, until, untilWhat} yazar; `until` =
+  `nextPlanned()` (sıradaki launchd slotu ya da bugünkü günün özeti saati). Dinlenmedeyken OTOMATİK hiçbir şey başlamaz:
+  Mynet ve son dakika taraması/üretimi (`opts.auto` → reddedilir, logda "⏸ … video üretilmedi"), günün özeti, izlenme
+  senkronu, YouTube sırası, günlük rapor, ses ön ısıtması, eksik kapak. Elle talimat (`startPipeline`/`startAnlik`
+  `auto` olmadan: panel, WhatsApp, sesli komut, 🎬 Video üret) `restEnd()` ile uyandırır; `until` gelince ya da launchd
+  üretimi başlayınca kendiliğinden biter. Her üretimin sonu `finishProduction()` (panel çocuğu kapanınca, zamanlayıcı
+  üretiminin son JSON satırında; 30 sn tekrar engeli): sırada anlık iş yoksa ve `settings.restAfterProduction` (varsayılan
+  açık, Ayarlar → Otomasyon) ise dinlenmeye geçer. Log "⏸ SİSTEM DURDURULDU (neden): …" / "▶ SİSTEM YENİDEN ÇALIŞIYOR:"
+  + `STAGE_VOICE` sesli cümleleri; komut yanıtı zaten söylüyorsa `stageMute` aşama cümlesini 3 sn susturur. Panelde sarı
+  "SİSTEM DURDURULDU" şeridi (ne zamandan beri, neden, sıradaki planlı iş). caffeinate (uyanık tutma) dinlenmede de sürer. Sesli: `tts.py` sentez bitince "🔊 ses modeli sorunsuz başlatıldı" yazar →
   "Ses modeli sorunsuz başlatıldı."; her üretimin sonunda (panel çocuğu kapanınca ya da zamanlayıcı üretiminde
   post_pipeline'ın son JSON satırında) `reap({announceIdle})` 🧹 satırı yazar ve "Modeller sorunsuz durduruldu.
   Bilgisayarınız ısınmasın diye kapatıldı." söylenir; "Hepsini durdur" da aynı cümleyi söyler. Panel küresi boştayken saniyede 1 kare çizer; ses ön ısıtması `nice`.

@@ -79,7 +79,7 @@ const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
   // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
-  if (/^\{"autopublish"/.test(line) && !state.running) setTimeout(() => { try { reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }); } catch { /* yok */ } }, 5000);
+  if (/^\{"autopublish"/.test(line)) setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000);
   if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
   if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
@@ -139,7 +139,7 @@ function reap({ minAgeSec = 600, reason = "boşta", force = false, announceIdle 
 }
 setInterval(() => { try { reap({ minAgeSec: 600, reason: "kullanılmayan süreç" }); } catch { /* ps yok */ } }, 5 * 60000);
 // Hepsini durdur: üretim (panelden ya da zamanlayıcıdan), sıradaki anlık haberler ve tüm ağır süreçler
-function stopAll() {
+function stopAll({ quiet = false } = {}) {
   let n = 0;
   if (pipelineProc) { n += killTree(pipelineProc.pid); }
   const lock = path.join(WORK, "pipeline.lock", "pid");
@@ -147,14 +147,59 @@ function stopAll() {
   anlikQueue.length = 0;
   const r = reap({ minAgeSec: 0, reason: "durduruldu", force: true });
   try { stopTts(); } catch { /* yok */ }
-  push(`⏹ hepsi durduruldu: üretim ${n ? "kapatıldı" : "yoktu"}, ${r.killed.length} arka plan süreci kapatıldı`);
+  if (!quiet) push(`⏹ hepsi durduruldu: üretim ${n ? "kapatıldı" : "yoktu"}, ${r.killed.length} arka plan süreci kapatıldı`);
   return { ok: true, pipeline: n > 0, killed: r.killed };
 }
-app.post("/api/stopall", (_req, res) => res.json(stopAll()));
+// ---------- Dinlenme ("⏸ Sistemi durdur" ve her üretimin sonu): üretim, modeller ve sıradaki anlık haberler kapatılır;
+// bir sonraki PLANLI üretime (launchd 5 saatlik slot ya da günün özeti saati) ya da elle verilen talimata kadar otomatik
+// hiçbir iş başlamaz: Mynet/son dakika taraması ve üretimi, izlenme senkronu, YouTube sırası, ses ön ısıtması, eksik
+// kapak çizimi. Elle talimat (panel düğmeleri, WhatsApp, sesli komut) sistemi uyandırır. Durum data/rest.json'da
+// (panel yeniden başlasa da sürer). settings.restAfterProduction (varsayılan açık): her üretimden sonra dinlenmeye geçer.
+const REST_FILE = path.join(DATA, "rest.json");
+const restInfo = () => readJson(REST_FILE, {});
+const resting = () => !!restInfo().on;
+const hhmm = (t) => new Date(t).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+async function nextPlanned() {
+  const cands = [];
+  try { const sch = await getSchedule(); if (sch.nextRunAt) cands.push({ at: sch.nextRunAt, what: "5 saatlik üretim" }); } catch { /* yok */ }
+  const d = dailyCfg();
+  if (d.enabled && readJson(DAILY_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(d.hour), Number(d.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "günün özeti" }); }
+  return cands.sort((a, b) => a.at - b.at)[0] || null;
+}
+async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
+  const r = stop ? stopAll({ quiet: true }) : reap({ minAgeSec: 0, reason, force: false });
+  const next = await nextPlanned();
+  writeJson(REST_FILE, { on: true, since: Date.now(), reason, until: next?.at || null, untilWhat: next?.what || null });
+  const killed = r.killed?.length || 0;
+  push(`⏸ SİSTEM DURDURULDU (${reason}): ${r.pipeline ? "süren üretim kapatıldı, " : ""}${killed ? `${killed} arka plan süreci kapatıldı` : "açık model kalmadı"}. ` +
+    (next ? `Sıradaki planlı iş ${hhmm(next.at)} (${next.what}); ` : "Zamanlayıcı kapalı; ") + "o zamana kadar ya da siz talimat verene kadar hiçbir şey başlamayacak.");
+  return { ok: true, rest: restInfo(), pipeline: !!r.pipeline, killed: r.killed || [] };
+}
+function restEnd(why) {
+  if (!resting()) return false;
+  writeJson(REST_FILE, { on: false, endedAt: Date.now(), endedWhy: why });
+  push(`▶ SİSTEM YENİDEN ÇALIŞIYOR: ${why}`);
+  return true;
+}
+// Her üretimin sonu (panelden, zamanlayıcıdan, anlık): modeller kapatılır; sırada iş yoksa ve ayar açıksa dinlenmeye geçilir.
+let lastFinishAt = 0;
+function finishProduction(reason = "üretim bitti") {
+  if (Date.now() - lastFinishAt < 30000 || pipelineBusy()) return;
+  lastFinishAt = Date.now();
+  if (anlikQueue.length) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${anlikQueue.length} anlık haber var, sistem durdurulmadı`); return; }
+  if (settings().restAfterProduction !== false) restStart({ reason, stop: false }).catch(() => {});
+  else reap({ minAgeSec: 0, reason, announceIdle: true });
+}
+// planlı zaman geldi: dinlenme biter (launchd üretimi zaten kendiliğinden başlar, günün özeti panel başlatır)
+setInterval(() => { const r = restInfo(); if (r.on && r.until && Date.now() >= r.until) restEnd(`planlı iş zamanı geldi (${r.untilWhat || "üretim"})`); }, 30000);
+app.get("/api/rest", (_req, res) => res.json(restInfo()));
+app.post("/api/rest", async (req, res) => res.json(req.body?.on === false ? { ok: true, ended: restEnd("panelden başlatıldı"), rest: restInfo() } : await restStart({ reason: "elle durduruldu" })));
+app.post("/api/stopall", async (_req, res) => res.json(await restStart({ reason: "elle durduruldu" })));
 app.get("/api/procs", (_req, res) => res.json({ busy: pipelineBusy(), procs: heavyProcs().map(({ pid, what, cpu, age }) => ({ pid, what, cpu, age })) }));
 
-function startPipeline(duration, extraEnv = {}) {
+function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   if (state.running) return { ok: false, error: "Zaten bir üretim sürüyor." };
+  if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede); otomatik üretim başlamadı." }; restEnd("elle üretim talimatı"); }
   const lock = path.join(WORK, "pipeline.lock", "pid");
   if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
   duration = extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
@@ -164,7 +209,7 @@ function startPipeline(duration, extraEnv = {}) {
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; setTimeout(() => reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -176,6 +221,7 @@ function startAnlik(topic, duration, opts = {}) {
   topic = String(topic || "").replace(/\s+/g, " ").trim().slice(0, 1500);
   if (topic.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın (en az birkaç kelime)." };
   duration = Math.min(60, Math.max(20, Number(duration) || 30));
+  if (resting()) { if (opts.auto) { push(`⏸ sistem durduruldu: otomatik anlık haber başlatılmadı (${topic.slice(0, 70)}); elle "🎬 Video üret" ile üretebilirsiniz`); return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; } restEnd("elle anlık haber talimatı"); }
   if (pipelineBusy()) {
     anlikQueue.push({ topic, duration, opts, at: Date.now() });
     push(`⚡ anlık haber sıraya alındı (${anlikQueue.length}. sırada, şu an başka üretim sürüyor): ${topic.slice(0, 80)}`);
@@ -187,7 +233,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
-  return { ...startPipeline(duration, env), anlik: true };
+  return { ...startPipeline(duration, env, { auto: !!opts.auto }), anlik: true };
 }
 setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {}); } }, 10000);
 app.post("/api/anlik", (req, res) => res.json(startAnlik(req.body?.topic, req.body?.duration)));
@@ -213,7 +259,7 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   if (!a || a.ok === false || !a.title) { push(`📰 Mynet: haber okunamadı (${a?.error || "başlık yok"})`); return { ok: false, error: a?.error || "haber okunamadı" }; }
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
-  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1 });
+  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1, auto: !manual });
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {});
   if (r.ok) { done[day] = [...list, url]; for (const d of Object.keys(done)) if (d < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete done[d]; writeFileSync(MYNET_DONE, JSON.stringify(done, null, 2)); }
   return { ...r, title: a.title };
@@ -229,7 +275,7 @@ async function mynetCheck({ manual = false } = {}) {
   for (const it of [...(r.new || [])].sort((a, b) => (b.valuable ? 1 : 0) - (a.valuable ? 1 : 0))) await mynetProduce(it.url, { item: it });
   return r;
 }
-setInterval(() => { const c = mynetCfg(); if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
+setInterval(() => { const c = mynetCfg(); if (resting()) return; if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
 app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, mynetLast + Number(mynetCfg().intervalMin || 30) * 60000 - Date.now()) : null }); });
 app.post("/api/mynet/check", async (_req, res) => res.json(await mynetCheck({ manual: true })));
 app.post("/api/mynet/produce", async (req, res) => res.json(await mynetProduce(String(req.body?.url || ""), { manual: true })));
@@ -252,12 +298,13 @@ async function breakingCheck({ manual = false } = {}) {
     const a = c.url ? await pyJson(["scripts/mynet_watch.py", "--article", c.url]) : null;
     const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
     push(`${c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.valueReason}) → video üretiliyor`);
-    const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count });
+    if (resting()) { push(`⏸ sistem durduruldu: "${c.title.slice(0, 70)}" için video üretilmedi (kartta 🎬 Video üret ile elle üretebilirsiniz)`); continue; }
+    const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count, auto: true });
     if (res.ok) { await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); list.push(c.title); done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)))); }
   }
   return r;
 }
-setInterval(() => { const c = breakingCfg(); if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
+setInterval(() => { const c = breakingCfg(); if (resting()) return; if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
 app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, breakingLast + Number(breakingCfg().intervalMin || 15) * 60000 - Date.now()) : null }); });
 app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
 // Paneldeki "🎬 Video üret": son haberlerden seçilen için otomatik adayla aynı yol (haber sayfası okunur, anlık video,
@@ -285,7 +332,7 @@ let followersSyncAt = 0; // "kaç abonemiz var" komutu en çok 30 dk'da bir canl
 function startDaily({ manual = false } = {}) {
   const c = dailyCfg();
   if (pipelineBusy()) return { ok: false, error: "Başka bir üretim sürüyor; bitince günün özeti başlar." };
-  const r = startPipeline(c.duration, { GUNLUK: "1", GUNLUK_DURATION: String(c.duration) });
+  const r = startPipeline(c.duration, { GUNLUK: "1", GUNLUK_DURATION: String(c.duration) }, { auto: !manual });
   if (r.ok) writeJson(DAILY_FILE, { day: today(), at: Date.now(), manual });
   return r;
 }
@@ -293,7 +340,7 @@ setInterval(() => {
   const c = dailyCfg(); if (!c.enabled) return;
   const now = new Date();
   if (now.getHours() * 60 + now.getMinutes() < Number(c.hour) * 60 + Number(c.minute)) return;
-  if (readJson(DAILY_FILE, {}).day === today() || pipelineBusy()) return;
+  if (readJson(DAILY_FILE, {}).day === today() || pipelineBusy() || resting()) return;
   startDaily();
 }, 60000);
 app.get("/api/daily", (_req, res) => res.json({ ...dailyCfg(), last: readJson(DAILY_FILE, {}) }));
@@ -351,7 +398,7 @@ function tailLaunchd() {
     const fd = openSync(LAUNCHD_LOG, "r"); const buf = Buffer.alloc(size - launchdPos); readSync(fd, buf, 0, buf.length, launchdPos); closeSync(fd); launchdPos = size;
     launchdBuf += buf.toString("utf8");
     const lines = launchdBuf.split("\n"); launchdBuf = lines.pop() || "";
-    for (const l of lines) { if (!l.trim()) continue; if (/üretim başladı/.test(l) && !state.running) { state.running = true; state.startedAt = Date.now(); state.scheduled = true; push("⏰ zamanlayıcı üretimi başladı"); } push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); if (/^\{"autopublish"/.test(l) || /yayın\/analiz adımı hata/.test(l) || /^✖ üretim hata/.test(l)) { if (state.scheduled) { state.running = false; state.scheduled = false; push("✔ zamanlayıcı üretimi tamamlandı"); } } }
+    for (const l of lines) { if (!l.trim()) continue; if (/üretim başladı/.test(l) && !state.running) { state.running = true; state.startedAt = Date.now(); state.scheduled = true; push("⏰ zamanlayıcı üretimi başladı"); restEnd("planlı 5 saatlik üretim başladı"); } push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); if (/^\{"autopublish"/.test(l) || /yayın\/analiz adımı hata/.test(l) || /^✖ üretim hata/.test(l)) { if (state.scheduled) { state.running = false; state.scheduled = false; push("✔ zamanlayıcı üretimi tamamlandı"); } } }
   } catch { /* okunamadı */ }
 }
 setInterval(tailLaunchd, 2000);
@@ -520,7 +567,7 @@ const knownVideos = new Set(readdirSync(OUT).filter((f) => f.endsWith(".mp4")));
 try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) { const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
 
 // ---------- API: durum
-app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status() }));
+app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status(), rest: restInfo() }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
 
 // ---------- Telefon için izleme sayfası (kısa link; WhatsApp'tan tıklanır)
@@ -781,7 +828,8 @@ async function handleCommand(text) {
   text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   switch (cmd.action) {
-    case "stopall": { const r = stopAll(); reply = `Durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}${r.killed.length ? r.killed.length + " arka plan süreci kapatıldı." : "Arka planda çalışan model yoktu."}`; break; }
+    case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
+    case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
     case "anlik": { const r = startAnlik(cmd.topic, cmd.duration); reply = !r.ok ? r.error : r.queued ? `Anlık haber ${r.position}. sıraya alındı. Süren üretim bitince başlayacak.` : `Son dakika videosu üretiliyor: ${String(cmd.topic).slice(0, 60)}. Bitince haber vereceğim.`; if (!r.ok) action = "none"; break; }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
     case "play_latest": if (!videos.length) { reply = "Henüz üretilmiş video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = `Son video açılıyor: ${label(videos[0])}.`; } break;
@@ -851,7 +899,7 @@ function synthSpeech(text, { low = false } = {}) {
 }
 app.post("/api/speak", async (req, res) => { const f = await synthSpeech(req.body?.text); if (!f || !existsSync(f)) return res.status(204).end(); res.setHeader("Content-Type", "audio/wav"); res.sendFile(f); });
 // Kapağı eksik eski videolar için panel açıldıktan 90 sn sonra arka planda bir kez kapak üretilir
-setTimeout(() => { if (pipelineBusy()) return; const c = spawn(PY, ["scripts/render_thumbs.py", "--missing"], { cwd: ROOT, env: ENV }); c.stdout.on("data", (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { if (!/kapak eksik video yok/.test(l)) push("🖼 " + l); })); }, 90000);
+setTimeout(() => { if (pipelineBusy() || resting()) return; const c = spawn(PY, ["scripts/render_thumbs.py", "--missing"], { cwd: ROOT, env: ENV }); c.stdout.on("data", (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { if (!/kapak eksik video yok/.test(l)) push("🖼 " + l); })); }, 90000);
 // ---------- Aşamaların sesli bildirimi: log satırı → kısa Türkçe cümle
 // Panel açıksa sayfa sırayla okur (SSE "stage"); panel kapalıysa Mac hoparlöründen çalar (gece sessiz saatleri hariç).
 // Cümleler sabittir; panel açılışında önbelleğe hazırlanır, anında çalar.
@@ -884,10 +932,14 @@ const STAGE_VOICE = [
   [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
   [/^📰 Mynet: yeni manşet/, "Mynet manşetine yeni bir haber girdi, video hazırlanıyor."],
   [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
+  [/^⏸ SİSTEM DURDURULDU/, "Sistem durduruldu. Bilgisayarınız ısınmasın diye tüm modeller kapatıldı. Bir sonraki planlı üretime ya da sizin talimatınıza kadar hiçbir şey başlamayacak."],
+  [/^▶ SİSTEM YENİDEN ÇALIŞIYOR/, "Sistem yeniden çalışıyor."],
 ];
 const STAGE_PHRASES = [...new Set(STAGE_VOICE.map(([, t]) => t))];
 let lastStage = { text: "", at: 0 }, macQueue = Promise.resolve();
+let stageMute = 0; // komut yanıtı aynı şeyi zaten söylüyorsa (sistemi durdur/başlat) aşama cümlesi 3 sn susar
 function stageVoice(line) {
+  if (Date.now() - stageMute < 3000 && /^(⏸|▶ SİSTEM)/.test(String(line))) return;
   const cfg = settings().stageVoice || {};
   if (cfg.enabled === false) return;
   const hit = STAGE_VOICE.find(([re]) => re.test(String(line)));
@@ -904,7 +956,7 @@ function stageVoice(line) {
 }
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
 const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Son dakika videosu üretiliyor.", ...STAGE_PHRASES];
-setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy()) break; await synthSpeech(t, { low: true }); } }, 20000);
+setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy() || resting()) break; await synthSpeech(t, { low: true }); } }, 20000);
 
 // ---------- sağlık uyarıları: üretim hatası, kaçan üretim, disk, yayın bağlantısının süresi → WhatsApp + sesli
 // Her uyarı anahtarıyla data/health_alerts.json'a yazılır, aynı uyarı `everyH` saat dolmadan tekrar gönderilmez.
@@ -988,6 +1040,7 @@ app.post("/api/weekly-report", async (_req, res) => res.json(await weeklyReport(
 let lastReportDay = null, lastFlush = 0;
 setInterval(async () => {
   const s = settings();
+  if (resting()) return; // sistem durduruldu: izlenme senkronu, YouTube sırası ve günlük rapor uyanınca
   const conn = await brain.connections();
   const anyConnected = conn.youtube?.connected || conn.instagram?.connected || conn.tiktok?.connected;
   const m = readJson(path.join(DATA, "metrics.json"), { lastSync: null });
