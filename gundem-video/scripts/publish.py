@@ -443,6 +443,24 @@ def ig_upload(path: Path):
     return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso()}
 
 
+def ig_hint(msg: str) -> str:
+    """Instagram hatalarına ne yapılacağını ekler (panel sohbetinde görünür)."""
+    m = msg.lower()
+    if "bağlı değil" in m:
+        return ""
+    if "media" in m and ("url" in m or "download" in m or "fetch" in m or "2207026" in m or "2207003" in m):
+        return " → Instagram videoyu adresinden çekemedi: Ayarlar → Hostinger köprüsü → \"Köprüyü kur / sına\" ile videos/ adresinin açıldığını doğrulayın."
+    if "session has expired" in m or "access token" in m or "oauth" in m or "190" in m:
+        return " → Instagram bağlantısının süresi dolmuş: Ayarlar → Instagram'ı yeniden bağlayın."
+    if "permission" in m or "not authorized" in m or "(#10)" in m or "(#200)" in m:
+        return " → İzin yok: Meta uygulamasında instagram_business_content_publish izni ve hesabın Instagram Testers'ta kabul edilmiş olması gerekir; sonra yeniden bağlayın."
+    if "aspect ratio" in m or "duration" in m or "2207" in m:
+        return " → Instagram video biçimini kabul etmedi (Reels: dikey 9:16, 3-90 sn)."
+    if "zaman aşımı" in m:
+        return " → Instagram işlemeyi 6 dakikada bitirmedi; bir süre sonra tekrar deneyin (çoğu zaman ikinci deneme geçer)."
+    return ""
+
+
 def ig_connect():
     """Tarayıcıda Instagram girişi (Instagram API with Instagram Login). Geri dönüş HTTPS olmak zorunda;
     panel tüneli /instagram/callback'i yerel :3138'e aktarır. Kısa ömürlü kod → 60 günlük token."""
@@ -939,7 +957,8 @@ def upload(path: Path, plat: str) -> dict:
         return {"ok": False, "limit": True, "queued": True,
                 "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
     except Exception as e:  # hatayı JSON olarak döndür, panel okur
-        return {"ok": False, "error": str(e)}
+        msg = str(e)
+        return {"ok": False, "error": msg + (ig_hint(msg) if plat == "instagram" else "")}
     clear_hold(plat)
     m = metrics()
     m["videos"].setdefault(path.name, {})[plat] = res

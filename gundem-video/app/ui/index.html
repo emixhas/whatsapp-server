@@ -358,7 +358,9 @@ async function loadVideos(){videos=await api('/api/videos');$('#count').textCont
   document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));}
 function openVideo(name){current=videos.find(v=>v.name===name);if(!current)return;$('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}`;
   const st=[];if(current.youtube)st.push(`<a href="${current.youtube.url}" target="_blank" class="tag yt">YouTube ▶ ${current.youtube.views??'?'} · ♥ ${current.youtube.likes??'?'}</a>`);if(current.instagram)st.push(`<a href="${current.instagram.url}" target="_blank" class="tag ig">Instagram ▶ ${current.instagram.views??'?'} · ♥ ${current.instagram.likes??'?'} · ↗ ${current.instagram.shares??'?'}</a>`);if(current.tiktok)st.push(`<a href="${current.tiktok.url||'#'}" target="_blank" class="tag tt">TikTok ${current.tiktok.status==='SEND_TO_USER_INBOX'?'gelen kutusunda':'▶ '+(current.tiktok.views??'?')+' · ♥ '+(current.tiktok.likes??'?')}</a>`);$('#mStats').innerHTML=st.join(' ');
-  $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';$('#aPubYt').disabled=!!current.youtube;$('#aPubIg').disabled=!!current.instagram;$('#aPubTt').disabled=!!current.tiktok;$('#modal').classList.add('open');$('#player').play().catch(()=>{});}
+  $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';for(const [id,p,lbl] of [['aPubYt','youtube',"▶ YouTube'a yükle"],['aPubIg','instagram',"◎ Instagram'a yükle"],['aPubTt','tiktok',"♪ TikTok'a gönder"]]){const b=$('#'+id);const done=!!current[p];const conn=!!status.connections?.[p]?.connected;
+    // zaten yayındaysa ya da hesap bağlı değilse neden tıklanmadığı düğmede yazsın
+    b.disabled=done;b.textContent=done?`✓ ${PLAT[p].n}'da yayında`:conn?lbl:`${lbl} (hesap bağlı değil)`;b.title=done?'Bu video zaten yayınlandı':conn?'':'Önce Ayarlar → Yayın hesapları'}$('#modal').classList.add('open');$('#player').play().catch(()=>{});}
 function closeModal(){$('#modal').classList.remove('open');$('#player').pause();$('#player').removeAttribute('src');}
 $('#aClose').onclick=closeModal;$('#modal').onclick=e=>{if(e.target.id==='modal')closeModal();};
 $('#aReveal').onclick=()=>post('/api/reveal',{name:current.name});
@@ -375,7 +377,18 @@ $('#aDel').onclick=async()=>{
   closeModal();loadVideos();};
 async function showShare(){const q=await api('/api/qr?name='+encodeURIComponent(current.name));$('#qr').innerHTML=q.svg+`<div style="margin-top:8px;color:var(--mut);font-size:12px">Telefon aynı Wi-Fi'de olmalı. Videoyu kaydedip paylaşım menüsünden gönderin.</div><div style="font-size:11px;margin-top:4px;word-break:break-all">${q.url}</div>`;$('#qr').style.display='block';}
 $('#aShare').onclick=showShare;
-async function publish(name,platforms){setMode('working');speak(`${platforms.join(' ve ')} üzerine yükleniyor.`);const r=await post('/api/publish',{name,platforms});setMode('idle');const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`${p}: yayınlandı${x.skipped?' (zaten vardı)':''}`:`${p}: hata, ${x.error}`);addMsg('j',msgs.join('\n'));speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
+async function publish(name,platforms){
+  const notConn=platforms.filter(p=>!status.connections?.[p]?.connected);
+  if(notConn.length){const m=`${notConn.map(p=>PLAT[p].n).join(', ')} hesabı bağlı değil. Ayarlar → Yayın hesapları'ndan bağlayın.`;addMsg('j',m);toast(m,true);return;}
+  const btns=['aPubYt','aPubIg','aPubTt'].map(i=>$('#'+i));btns.forEach(b=>b.disabled=true);
+  const wait=platforms.includes('instagram')?' Instagram videoyu işlerken 1-6 dakika sürebilir; sağdaki logdan izleyebilirsiniz.':'';
+  toast(`${platforms.map(p=>PLAT[p].n).join(', ')}: yükleniyor…`);addMsg('j',`${platforms.map(p=>PLAT[p].n).join(', ')} yüklemesi başladı.${wait}`);
+  setMode('working');speak(`${platforms.map(p=>PLAT[p].n).join(' ve ')} üzerine yükleniyor.`);
+  let r={};try{r=await post('/api/publish',{name,platforms});}catch(e){r={ok:false,results:{},error:String(e)};}
+  setMode('idle');btns.forEach(b=>b.disabled=false);
+  const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`✅ ${PLAT[p]?.n||p}: ${x.skipped?'zaten yayında':'yayınlandı'}${x.url?' → '+x.url:x.note?' — '+x.note:''}`:`❌ ${PLAT[p]?.n||p}: ${x.error||'bilinmeyen hata'}`);
+  addMsg('j',msgs.join('\n')||('Yayın yanıtı alınamadı: '+(r.error||'')));toast(r.ok?'Yayınlandı ✓':'Yayında sorun oldu, ayrıntı sohbette',!r.ok);
+  speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
 $('#aPubYt').onclick=()=>confirm("YouTube'a yüklensin mi?")&&publish(current.name,['youtube']);$('#aPubIg').onclick=()=>confirm("Instagram'a yüklensin mi?")&&publish(current.name,['instagram']);$('#aPubTt').onclick=()=>confirm("TikTok'a gönderilsin mi?")&&publish(current.name,['tiktok']);
 
 // ================= üretim ve ayarlar
