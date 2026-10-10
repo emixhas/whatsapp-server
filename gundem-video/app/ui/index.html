@@ -393,7 +393,7 @@ function renderConn(s){const c=s.connections||{};
       ${tt.https?'':'<br>⚠️ TikTok web girişi https adres ister; localhost kabul etmez. Önce Ayarlar → Hostinger köprüsünü kurun (Instagram için kurduğunuz köprü), adres kendiliğinden https olur.'}<br>
       ${hg2.hostinger?`<br>Formdaki zorunlu adresler (önce "Sayfaları oluştur"): Web/Desktop URL <code>${esc(hg2.hostingerUrl)}/uygulama/</code> · Terms of Service <code>${esc(hg2.hostingerUrl)}/uygulama/kosullar.html</code> · Privacy Policy <code>${esc(hg2.hostingerUrl)}/uygulama/gizlilik.html</code> (aşağıdaki "📄 Sayfaları oluştur" düğmesi)
       <br>"App review" bölümünü (açıklama, demo video) DOLDURMAYIN, "Submit for review"a basmayın: sayfanın üstünden <b>Sandbox</b>'a geçip orada çalışın.`:''}<br>
-      5) Uygulama sayfasındaki <b>Client key</b> ve <b>Client secret</b>'ı aşağıya yapıştırıp "Anahtarları kaydet"; sonra "TikTok'u bağla". Uygulamayı "Submit for review"a göndermeniz gerekmez: Sandbox'ta kendi hesabınızı <b>Target users</b>'a ekleyin.<br>
+      5) Uygulama sayfasındaki <b>Client key</b> ve <b>Client secret</b>'ı aşağıya yapıştırıp "Anahtarları kaydet"; sonra "TikTok'u bağla". Uygulamayı "Submit for review"a göndermeniz gerekmez: Sandbox'ta kendi hesabınızı <b>Target users</b>'a ekleyin (eklemezseniz TikTok "non_sandbox_target" hatası verir; tarayıcıda açık TikTok hesabı da aynı hesap olmalı).<br>
       ${tt.appKeys?'Anahtarlar kayıtlı ✔':'Anahtarlar henüz yok.'}`;
   $('#ttKeys').style.display=tt.connected?'none':'grid';
   const cp=$('#ttCopy');if(cp)cp.onclick=()=>{navigator.clipboard?.writeText(tt.redirect||'').then(()=>toast('Kopyalandı ✓'));};

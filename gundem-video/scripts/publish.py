@@ -661,13 +661,17 @@ def tt_connect():
     if got.get("error"):
         err = got.get("error_description") or got["error"]
         hint = ""
-        if "scope" in str(err).lower():
+        if "sandbox" in str(err).lower():
+            hint = " — giriş yapılan TikTok hesabı Sandbox → Target users listesinde değil: oraya ekleyin (aynı hesapla giriş yapın)"
+        elif "scope" in str(err).lower():
             hint = f" — uygulamada şu izinler açık olmalı: {tt_scopes(env)} (developers.tiktok.com → uygulama → Scopes)"
         elif "redirect" in str(err).lower():
             hint = f" — Login Kit → Redirect URI olarak AYNEN şunu yazın: {redirect}"
         raise RuntimeError(f"TikTok reddetti: {err}{hint}")
     if got.get("state") != state or "code" not in got:
-        raise RuntimeError(f"TikTok geri dönüşü alınamadı (5 dk içinde onay gelmedi). Login Kit → Redirect URI AYNEN şu olmalı: {redirect}")
+        raise RuntimeError("TikTok geri dönüşü alınamadı (5 dk içinde onay gelmedi). TikTok sayfasında hata kodu gördüyseniz: "
+                           "non_sandbox_target → hesabınızı Sandbox → Target users'a ekleyin; redirect_uri → Login Kit → Redirect URI "
+                           f"AYNEN şu olmalı: {redirect}; scope → Scopes'ta şunlar açık olmalı: {tt_scopes(env)}")
     tt_token_request(env, {"grant_type": "authorization_code", "code": got["code"], "redirect_uri": redirect})
 
 
