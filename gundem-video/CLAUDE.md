@@ -364,7 +364,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   çağırır. `--status` YouTube için `holdUntil`/`queued` verir. Doğrulanmamış kanalın sınırı düşüktür
   (youtube.com/verify ile telefon doğrulaması sınırı yükseltir).
 - YouTube kuralı (kullanıcı kararı, sınır yüzünden; `settings.youtubePolicy` {onlyValuable true, extraDailyMax 3,
-  extraKeywords}): otomatik 5 saatlik üretimler YouTube'a HER ZAMAN gider; anlık/Mynet videoları yalnız DEĞERLİYSE
+  extraKeywords, regularAuto true}): 5 saatlik (düzenli: anlık ve günün özeti olmayan) her video YouTube bağlıysa
+  autopublish anahtarı, zamanlayıcı ya da tam otomatik moddan bağımsız olarak onaysız YouTube'a gider (kullanıcı kararı;
+  `post_pipeline.targets` "▶ 5 saatlik video" satırı, `whatsapp.js` aynı kuralla "onay" istemez); anlık/Mynet videoları yalnız DEĞERLİYSE
   ve günde en çok `extraDailyMax` tane (`data/youtube_extra.json`). Instagram/TikTok etkilenmez; elle yayın
   (panel, WhatsApp "onay") kurala takılmaz. Değer `scripts/news_value.py`: anahtar kelime grupları (can kaybı,
   kaza/afet, emekli/memur maaşı + asgari ücret, zam/fiyat/vergi, tatil/bayram/idari izin, kamu duyurusu:

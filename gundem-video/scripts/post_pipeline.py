@@ -81,6 +81,11 @@ def targets(video: str, s: dict) -> tuple[list, str]:
         if extra:
             print(f"🤖 otomatik mod açık: bağlı tüm hesaplarda paylaşılıyor ({', '.join(chosen + extra)})")
         chosen += extra
+    # 5 saatlik (düzenli) video: YouTube'a her zaman sorulmadan gider (kullanıcı kararı; youtubePolicy.regularAuto)
+    regular = not anlik and meta.get("format") != "gunluk"
+    if regular and "youtube" in conn and "youtube" not in chosen and (s.get("youtubePolicy") or {}).get("regularAuto", True):
+        print("▶ 5 saatlik video: YouTube'a onaysız yükleniyor")
+        chosen.append("youtube")
     if anlik and s.get("anlikAutoPublish", True):
         extra = [p for p in conn if p not in chosen]
         if extra:
