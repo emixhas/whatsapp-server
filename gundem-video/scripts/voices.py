@@ -187,11 +187,25 @@ SPOKEN_WORDS = {"AK": "Ak", "DEM": "Dem", "İYİ": "İyi", "TİP": "Tip", "HÜDA
 _PARTY_CTX = re.compile(r"\b(AK|DEM|İYİ|TİP)\b(?=\s+(?:Parti|PARTİ|parti))|\b(HÜDA)\s+(PAR)\b|\bAK\b(?=\s*(?:Partili|PARTİLİ|Parti'|PARTİ'))")
 
 
+# Okunuş sözlüğü: yabancı kökenli marka/adların Türkçe okunuşu (yalnız seslendirmede; ekranda yazım değişmez).
+# Ekler korunur: "Mynet'in" → "Maynet'in". settings.pronunciations {"Kelime": "Okunuş"} ile genişletilir.
+PRONOUNCE = {"Mynet": "Maynet"}
+
+
+def _pronounce(t: str) -> str:
+    words = {**PRONOUNCE, **(settings().get("pronunciations") or {})}
+    for w, say in words.items():
+        if w and say:
+            t = re.sub(rf"(?<![\wçğıöşüÇĞİÖŞÜ]){re.escape(w)}(?![\wçğıöşüÇĞİÖŞÜ])", say, t, flags=re.IGNORECASE)
+    return t
+
+
 def speakable(text: str) -> str:
-    """Parti adları gibi kelime olarak okunması gereken kısaltmaları normal yazıma çevirir (AK Parti → Ak Parti)."""
+    """Parti adları gibi kelime olarak okunması gereken kısaltmaları normal yazıma çevirir (AK Parti → Ak Parti),
+    okunuş sözlüğünü uygular (Mynet → Maynet)."""
     def fix(m):
         return " ".join(SPOKEN_WORDS.get(g, g) for g in m.groups() if g)
-    t = _PARTY_CTX.sub(fix, text)
+    t = _PARTY_CTX.sub(fix, _pronounce(text))
     t = re.sub(r"\bAK\b(?=[\s-]*(?:Parti|PARTİ|parti))", "Ak", t)
     # Kesme işaretinden sonraki büyük harfli ekler harf harf okunmasın: PARTİ'YE → PARTİ'ye, PKK'NIN → PKK'nın
     return re.sub(r"(?<=[A-Za-zÇĞİÖŞÜçğıöşü])['’]([A-ZÇĞİÖŞÜ]{1,6})\b", lambda m: "'" + tr_lower(m.group(1)), t)
