@@ -239,7 +239,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   "Dikkat, bir sistem uyarısı var"; tekrar engeli `data/health_alerts.json`): üretim hata ile bitti (panel ya da
   zamanlayıcı; `pipeline.sh` trap'i hata kodunda "✖ üretim hata ile bitti" yazar, son HATA/! satırları mesaja
   girer), zamanlanmış üretim gecikti (son düzenli video aralık + 40 dk'dan eski), disk < `health.minFreeGb` (5),
-  Instagram token ≤ 7 gün, bir yayın bağlantısı koptu (`data/health_conn.json`). `settings.health` {enabled,
+  Instagram token ≤ 7 gün, bir yayın bağlantısı koptu (`data/health_conn.json`). Otomatik yayın düştü (`publishFailed`: "📤 yayınlanamadı" →
+  platform hata satırları + Instagram son hatası, her seferinde; "📤 otomatik yayın yapılmadı" → ayar nedeni, 12 saatte bir). `settings.health` {enabled,
   whatsapp, minFreeGb}. `GET /api/health`.
 - Haftalık rapor `scripts/weekly_report.py` (son 7 gün: video sayısı, toplam ve önceki haftaya göre fark, platform
   toplamları ve önde olan, en çok izlenen 5 video + önde olduğu platform + link, en iyi kategori/saat, anlık vs

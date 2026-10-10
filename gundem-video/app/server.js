@@ -80,7 +80,8 @@ const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWa
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
   // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
   if (/^\{"autopublish"/.test(line) && !state.running) setTimeout(() => { try { reap({ minAgeSec: 0, reason: "üretim bitti", announceIdle: true }); } catch { /* yok */ } }, 5000);
-  if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500); };
+  if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
+  if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500); };
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
@@ -905,6 +906,15 @@ function productionFailed(line) {
   // hatanın nedeni: son satırlardaki HATA / ! satırları
   const why = state.log.slice(-40).filter((l) => /^(HATA|  ! |!! |Error|Traceback)|hata verdi|bulunamadı/.test(l)).slice(-3).join("\n");
   healthAlert(`fail-${Math.floor(Date.now() / 600000)}`, `Video üretimi hata ile bitti.\n${why || line}\nPanel logunda ayrıntı var; sorun sürerse "sistem kontrolü" yazın.`, { everyH: 0.15 });
+}
+// Otomatik yayın olmadıysa nedeni (hangi platform, asıl hata) WhatsApp'a gider; sessizce yayınlanmamış video kalmasın
+function publishFailed(line) {
+  const none = /yapılmadı/.test(line); // hiç hedef yok (ayar): 12 saatte bir hatırlatılır, hata ise her seferinde
+  const errs = none ? [] : state.log.slice(-60).filter((l) => /^📤 \w+: (hata|hesap bağlı değil)/.test(l)).slice(-3);
+  const last = readJson(path.join(DATA, "publish_last_error.json"), {});
+  const ig = !none && /instagram/.test(line + errs.join(" ")) && last.instagram ? `\nInstagram son hata: ${String(last.instagram.error).slice(0, 400)}` : "";
+  const what = none ? "Video otomatik yayınlanmadı." : "Video otomatik yayınlanamadı.";
+  healthAlert(none ? "pub-none" : `pub-${Math.floor(Date.now() / 600000)}`, `${what}\n${line.replace(/^📤 /, "")}${errs.length ? "\n" + errs.join("\n") : ""}${ig}\nPanelden videoyu açıp tekrar yükleyebilir ya da Ayarlar → Instagram → "🩺 Instagram'ı sına" ile nedeni görebilirsiniz.`, { everyH: none ? 12 : 0.15 });
 }
 async function healthCheck() {
   const s = settings(); if (s.health?.enabled === false) return;
