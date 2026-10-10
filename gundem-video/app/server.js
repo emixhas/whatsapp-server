@@ -739,6 +739,7 @@ app.post("/api/tiktok/keys", (req, res) => {
   if (mode && ["inbox", "direct"].includes(mode)) writeEnvKey("TIKTOK_MODE", mode);
   push("♪ TikTok uygulama ayarları kaydedildi"); res.json({ ok: true });
 });
+app.post("/api/instagram/diagnose", async (_req, res) => { push("🩺 Instagram sınanıyor"); const r = await py("publish.py", ["--ig-diagnose"]); const j = r.json || { ok: false, steps: [{ step: "sınama", ok: false, detail: (r.stderr || r.stdout || "").slice(-300) }] }; for (const st of j.steps) push(`🩺 ${st.ok ? "✅" : "❌"} ${st.step}: ${st.detail}`); res.json(j); });
 app.post("/api/tiktok/check", async (_req, res) => { const r = await py("publish.py", ["--tt-check"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; for (const it of j.items || []) push(`♪ TikTok ${it.video}: ${it.text}`); if (!j.ok) push(`♪ TikTok durumu sorgulanamadı: ${j.error}`); res.json(j); });
 app.post("/api/disconnect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "tiktok"]); push("♪ TikTok bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/connect/tiktok", async (_req, res) => {

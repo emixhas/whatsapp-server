@@ -443,6 +443,67 @@ def ig_upload(path: Path):
     return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso()}
 
 
+LAST_ERR = DATA / "publish_last_error.json"  # {platform: {at, video, error}} — panel kartında gösterilir
+
+
+def ig_diagnose() -> list:
+    """Instagram yayın zincirini adım adım sınar: bağlantı → hesap türü → yayın kotası → videonun dış adresi
+    (Meta'nın tarayıcısı gibi) → son hata. Her adım {step, ok, detail}."""
+    steps = []
+
+    def add(step, ok, detail=""):
+        steps.append({"step": step, "ok": ok, "detail": detail})
+        return ok
+    try:
+        creds = ig_creds()
+    except Exception as e:
+        add("Instagram bağlantısı", False, str(e)); return steps
+    uid = creds[0]
+    add("Instagram bağlantısı", True, "token var")
+    try:
+        me = ig_call("GET", uid, {"fields": "user_id,username,account_type"}, creds)
+        at = (me.get("account_type") or "").upper()
+        add("Oturum geçerli", True, f"@{me.get('username')}")
+        if at and at not in ("BUSINESS", "MEDIA_CREATOR"):
+            add("Hesap türü", False, f"{at}: Reels yayını için Profesyonel hesap (İşletme ya da İçerik üretici) gerekir — Instagram → Ayarlar → Hesap türü")
+        else:
+            add("Hesap türü", True, at or "bilinmiyor (Facebook bağlantısı)")
+    except Exception as e:
+        add("Oturum geçerli", False, str(e) + ig_hint(str(e))); return steps
+    try:
+        lim = ig_call("GET", f"{uid}/content_publishing_limit", {"fields": "quota_usage,config"}, creds).get("data", [{}])[0]
+        used, total = lim.get("quota_usage", 0), (lim.get("config") or {}).get("quota_total", 50)
+        add("Günlük yayın hakkı", used < total, f"{used}/{total} kullanıldı")
+    except Exception as e:
+        add("Günlük yayın hakkı", True, f"sorgulanamadı ({str(e)[:80]}) — yayını engellemez")
+    vids = sorted(OUT.glob("*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if vids:
+        pub = _PublicVideo()
+        try:
+            base = pub.ensure(vids[0].name)
+            url = base + "/videos/" + urllib.parse.quote(vids[0].name)
+            # Meta videoyu kendi tarayıcısıyla (facebookexternalhit) çeker; güvenlik duvarı onu engelliyorsa yayın düşer
+            req = urllib.request.Request(url, headers={"User-Agent": "facebookexternalhit/1.1", "Range": "bytes=0-1023"})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    ctype, code = r.headers.get("Content-Type", ""), r.status
+                ok = code in (200, 206) and "video" in ctype
+                add("Video dış adresten açılıyor (Meta gibi)", ok, f"{url} → HTTP {code}, {ctype or 'türü yok'}"
+                    + ("" if ok else " — Content-Type video/mp4 olmalı; Hostinger güvenlik/bot korumasını videos/ için kapatın"))
+            except urllib.error.HTTPError as e:
+                add("Video dış adresten açılıyor (Meta gibi)", False, f"{url} → HTTP {e.code}: Hostinger Meta'nın tarayıcısını engelliyor olabilir (hPanel → Güvenlik / bot koruması)")
+        except Exception as e:
+            add("Video dış adrese yükleniyor", False, str(e))
+        finally:
+            pub.close()
+    else:
+        add("Video dış adresten açılıyor", True, "denenecek video yok")
+    last = (load_json(LAST_ERR, {}) or {}).get("instagram")
+    if last:
+        add("Son yayın hatası", False, f"{last.get('at', '')[:16]} · {last.get('video')}: {last.get('error')}")
+    return steps
+
+
 def ig_hint(msg: str) -> str:
     """Instagram hatalarına ne yapılacağını ekler (panel sohbetinde görünür)."""
     m = msg.lower()
@@ -847,7 +908,7 @@ def delete_remote(name: str) -> dict:
 # ---------------- durum
 def ig_status(env):
     import shutil
-    st = {"connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")), "login": (env.get("IG_LOGIN") or "instagram").lower(),
+    st = {"lastError": (load_json(LAST_ERR, {}) or {}).get("instagram"), "connected": False, "appKeys": bool(env.get("IG_APP_ID") and env.get("IG_APP_SECRET")), "publicUrl": bool(env.get("PUBLIC_BASE_URL")), "login": (env.get("IG_LOGIN") or "instagram").lower(),
           "hostinger": hostinger.configured(), "hostingerUrl": hostinger.site_url() if hostinger.configured() else None,
           "cloudflared": bool(shutil.which("cloudflared")), "username": None, "daysLeft": None, "via": None}
     if IG_TOKEN_FILE.exists():
@@ -885,11 +946,15 @@ def main():
     ap.add_argument("--disconnect", choices=["youtube", "tiktok"])
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--tt-check", action="store_true", help="son TikTok gönderimlerinin durumunu sor")
+    ap.add_argument("--ig-diagnose", action="store_true", help="Instagram yayın zincirini sına")
     ap.add_argument("--delete-remote", help="videoyu yüklendiği platformlardan sil (dosya adı)")
     ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
+    if a.ig_diagnose:
+        steps = ig_diagnose()
+        print(json.dumps({"ok": all(x["ok"] for x in steps), "steps": steps}, ensure_ascii=False)); return
     if a.delete_remote:
         print(json.dumps({"ok": True, "results": delete_remote(Path(a.delete_remote).name)}, ensure_ascii=False)); return
     if a.tt_check:
@@ -958,8 +1023,15 @@ def upload(path: Path, plat: str) -> dict:
                 "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
     except Exception as e:  # hatayı JSON olarak döndür, panel okur
         msg = str(e)
-        return {"ok": False, "error": msg + (ig_hint(msg) if plat == "instagram" else "")}
+        err = msg + (ig_hint(msg) if plat == "instagram" else "")
+        last = load_json(LAST_ERR, {}) or {}
+        last[plat] = {"at": now_iso(), "video": path.name, "error": err[:500]}
+        save_json(LAST_ERR, last)
+        return {"ok": False, "error": err}
     clear_hold(plat)
+    last = load_json(LAST_ERR, {}) or {}
+    if last.pop(plat, None) is not None:
+        save_json(LAST_ERR, last)
     m = metrics()
     m["videos"].setdefault(path.name, {})[plat] = res
     save_metrics(m)

@@ -305,6 +305,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yazar; işlem bitmediyse "hâlâ işliyor" der. `--tt-check` (`tt_check`) son 5 gönderimin durumunu TikTok'tan sorar
   (`TT_STATUS_TR`), panel "📨 Son gönderimleri kontrol et" (`POST /api/tiktok/check`). Token 24 saat,
   refresh otomatik. Metrikler `/v2/video/list/` (view/like/comment/share).
+- Yayın hatası kaybolmaz: `publish.upload()` başarısız yüklemeyi `data/publish_last_error.json` {platform: {at, video,
+  error}} dosyasına yazar (Instagram'da `ig_hint` açıklamasıyla), başarılı yükleme siler; `--status` Instagram için
+  `lastError` verir, panel Instagram kartında "Son yükleme hatası" olarak gösterir. `publish.py --ig-diagnose`
+  (`ig_diagnose`) zinciri adım adım sınar: bağlantı, oturum + hesap türü (BUSINESS/MEDIA_CREATOR olmalı),
+  `content_publishing_limit` günlük kotası, Meta'nın videoyu çekebilmesi (son videonun herkese açık adresine
+  facebookexternalhit User-Agent ve Range ile istek: HTTP 200/206 + video içerik türü) ve son hata. Panel
+  "🩺 Instagram'ı sına" → `POST /api/instagram/diagnose`, adımlar ✅/❌ olarak sohbete ve loga (🩺).
 - `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
   Sonunda `scripts/followers.py` abone/takipçi sayılarını çeker: YouTube `channels.list(mine)` subscriberCount
   (1000 üstünde yuvarlanır), Instagram `followers_count`, TikTok `user/info` follower_count (`user.info.stats` izni:
