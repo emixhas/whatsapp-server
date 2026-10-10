@@ -121,7 +121,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   alırken `--mark` yazar) son 12 saatte aynı olayın ikinci videosunu engeller; Mynet `dup` ile aynı kuralı kullanır.
   `ANLIK_SOURCE_COUNT` assemble'a gider: 3+ kaynak YouTube için değerli sayılır, açıklamaya "N kaynakta" eklenir.
   Panel kartı "🗞 SON DAKİKA KAYNAKLARI" (kaynak durumu, son haberler, şimdi kontrol et, aç/kapat), `GET /api/breaking`,
-  `POST /api/breaking/check`; günlük sayaç `data/breaking_daily.json`.
+  `POST /api/breaking/check`; günlük sayaç `data/breaking_daily.json`. Son haberlerin her birinde ⭐ (değerli),
+  "N sitede" ve "🎬 Video üret" düğmesi (`--list` her habere valuable/sources/produced ekler): `POST /api/breaking/produce
+  {link, force}` haberi kayıttan bulur (`--item LINK`; başlık/özet istemciden alınmaz), sayfayı okur, otomatik adayla
+  aynı `startAnlik` yolu (anlikAutoPublish ile bağlı hesaplara yayın, YouTube değer kuralı geçerli), `--mark` yazar.
+  Elle üretim günlük sınırı tüketmez ve ona takılmaz; aynı olay 12 saat içinde üretildiyse düğme "✓ Üretildi" olur,
+  basılırsa onay sorup `force` ile yine üretir.
 - Günün özeti (yatay uzun video, YouTube): `GUNLUK=1 bash pipeline.sh` → `scripts/daily_news.py` bugünkü videoların
   haberleri (out/<bugün>-N.json) + günün RSS'i, aynı olay birleşir (`same_event`), sıra: değerli/son dakika →
   bugün videoda işlenmiş → kaynak sayısı → RSS önemi; haber sayfası adresleri work/news.json'a eklenir (fotoğraf/video).

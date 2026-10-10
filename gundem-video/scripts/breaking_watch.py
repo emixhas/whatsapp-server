@@ -9,6 +9,7 @@ yazar) aday olmaz. İlk çalıştırmada her kaynağın mevcut haberleri "görü
 
   python3 scripts/breaking_watch.py --check          # {"ok", "sources": {ad: {ok, count, error}}, "candidates": [...]}
   python3 scripts/breaking_watch.py --list           # panel için son haberler ve kaynak durumu
+  python3 scripts/breaking_watch.py --item LINK      # paneldeki "Video üret" düğmesinin haberi
   python3 scripts/breaking_watch.py --count "başlık" # bu olayı kaç farklı kaynak verdi (son 12 saat)
   python3 scripts/breaking_watch.py --mark "başlık"  # bu olay için video üretiliyor (tekrar engeli)
 """
@@ -153,9 +154,24 @@ def check() -> dict:
 def listing() -> dict:
     st = load_json(STATE, {})
     rec = sorted(recent_items(st), key=lambda i: i.get("at", 0), reverse=True)
-    return {"ok": True, "sources": st.get("status", {}), "lastCheck": st.get("lastCheck"),
-            "recent": [{"source": i["source"], "title": i["title"], "link": i["link"]} for i in rec if i["source"] != "Mynet"][:20],
+    from news_value import score
+    kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
+    items = [i for i in rec if i["source"] != "Mynet"][:20]
+    out = []
+    for i in items:  # panelde her haberin yanında: değerli mi, kaç sitede, bu olay için video var mı
+        v = score(f"{i['title']} {(i.get('summary') or '')[:200]}", kw)
+        out.append({"source": i["source"], "title": i["title"], "link": i["link"], "valuable": v["valuable"], "valueReason": v["reason"],
+                    "sources": source_count(i["title"], st), "produced": already_produced(i["title"])})
+    return {"ok": True, "sources": st.get("status", {}), "lastCheck": st.get("lastCheck"), "recent": out,
             "produced": load_json(PRODUCED, [])[-10:]}
+
+
+def find_recent(link: str):
+    """Panelden seçilen haber (bağlantısıyla); başlık ve özet istemciden değil kayıttan alınır."""
+    for i in recent_items():
+        if i["source"] != "Mynet" and link and i.get("link") == link:
+            return {**i, "sources": source_count(i["title"]), "produced": already_produced(i["title"])}
+    return None
 
 
 if __name__ == "__main__":
@@ -167,6 +183,9 @@ if __name__ == "__main__":
             t = sys.argv[sys.argv.index("--count") + 1]
             s = source_count(t)
             out = {"ok": True, "sources": s, "count": len(s), "produced": already_produced(t)}
+        elif "--item" in sys.argv:
+            it = find_recent(sys.argv[sys.argv.index("--item") + 1])
+            out = {"ok": bool(it), "item": it} if it else {"ok": False, "error": "Haber listede yok (12 saatten eski olabilir); \"Şimdi kontrol et\"e basın."}
         elif "--list" in sys.argv:
             out = listing()
         else:

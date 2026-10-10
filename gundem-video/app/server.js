@@ -260,6 +260,22 @@ async function breakingCheck({ manual = false } = {}) {
 setInterval(() => { const c = breakingCfg(); if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
 app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, breakingLast + Number(breakingCfg().intervalMin || 15) * 60000 - Date.now()) : null }); });
 app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
+// Paneldeki "🎬 Video üret": son haberlerden seçilen için otomatik adayla aynı yol (haber sayfası okunur, anlık video,
+// bağlı hesaplara anlikAutoPublish kuralıyla yayın). Elle üretim günlük sınıra takılmaz; aynı olay 12 saatte bir kez
+// (force ile yine üretilir).
+app.post("/api/breaking/produce", async (req, res) => {
+  const link = String(req.body?.link || "");
+  const f = await pyJson(["scripts/breaking_watch.py", "--item", link]);
+  if (!f?.ok) return res.json({ ok: false, error: f?.error || "haber bulunamadı" });
+  const c = f.item;
+  if (c.produced && !req.body?.force) return res.json({ ok: false, produced: true, error: "Bu olay için son 12 saatte zaten video üretildi." });
+  const a = c.link ? await pyJson(["scripts/mynet_watch.py", "--article", c.link]) : null;
+  const topic = [c.title, a?.ok !== false && a?.description, (a?.ok !== false && a?.body) || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
+  push(`🎬 son dakika (elle): ${c.title.slice(0, 90)} (${(c.sources || [c.source]).join(", ")}) → video üretiliyor`);
+  const r = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.link, sourceCount: (c.sources || []).length || 1 });
+  if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {});
+  res.json({ ...r, title: c.title });
+});
 
 // ---------- günlük uzun özet (yatay, YouTube): her akşam settings.daily.hour:minute'da GUNLUK=1 pipeline.
 // Başka üretim sürüyorsa gün bitene kadar her dakika yeniden denenir; data/daily_last.json günde bir kez üretir.
