@@ -315,6 +315,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Gündem" / "· Günün Özeti (uzun)") + ilk haberin kategorisi ("· Ekonomi", "· Asayiş ve Kaza"…); yoksa herkese açık
   oluşturulur, kimlikler `data/youtube_playlists.json`. "youtube" kapsamı gerekir: eski token (upload+readonly) dosyadaki
   kapsamlarla okunur ve listesiz yükler, `--status` `playlists:false` verir, sistem kontrolü yeniden bağlamayı önerir.
+  `--connect youtube` (`yt_connect`) token geçerli olsa da Google onayını YENİDEN açar (prompt=consent, 10 dk bekler),
+  vazgeçilirse eski token kalır; dönen kapsamda liste izni yoksa söyler. `--disconnect youtube` izni geri alır ve token'ı
+  siler. Panel: bağlıyken düğme "🔄 Yeniden bağla", yanında "Bağlantıyı kes" (`POST /api/disconnect/youtube`).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
 - Günlük yükleme sınırı (YouTube `uploadLimitExceeded` = kanal sınırı, `quotaExceeded` = API kotası):
   `publish.py` platformu 3 saat beklemeye alır (`data/publish_hold.json`), videoyu `data/publish_queue.json`

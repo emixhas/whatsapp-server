@@ -87,6 +87,38 @@ PLAYLIST_BY_CATEGORY = {"finans": "Ekonomi", "siyaset": "Siyaset", "parti": "Siy
 
 
 # ---------------- YouTube
+def yt_connect():
+    """Panelden "YouTube'u bağla / yeniden bağla": token geçerli olsa bile tarayıcıda Google onayını YENİDEN açar
+    (prompt=consent), böylece sonradan eklenen kapsamlar (oynatma listesi) da verilir. Kullanıcı vazgeçerse eski
+    token korunur. Dönen kapsamlarda liste izni yoksa (onay ekranında işaret kaldırıldıysa) bunu söyler."""
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    client = SECRETS / "youtube_client.json"
+    if not client.exists():
+        raise RuntimeError(f"{client} yok. Google Cloud'dan OAuth istemci dosyasını buraya koyun.")
+    creds = InstalledAppFlow.from_client_secrets_file(str(client), YT_SCOPES).run_local_server(
+        port=0, prompt="consent", access_type="offline", timeout_seconds=600,
+        success_message="YouTube bağlandı. Bu sekmeyi kapatıp panele dönebilirsiniz.")
+    (SECRETS / "youtube_token.json").write_text(creds.to_json())
+    return bool(set(creds.scopes or []) & YT_MANAGE)
+
+
+def yt_disconnect():
+    """Bağlantıyı kes: Google'da izni geri al (olmazsa sessiz geç) ve token dosyasını sil."""
+    token = SECRETS / "youtube_token.json"
+    if not token.exists():
+        return False
+    try:
+        tok = json.loads(token.read_text())
+        t = tok.get("refresh_token") or tok.get("token")
+        if t:
+            urllib.request.urlopen(urllib.request.Request("https://oauth2.googleapis.com/revoke?" + urllib.parse.urlencode({"token": t}),
+                                                          method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"}), timeout=15)
+    except Exception as e:
+        print(f"  ! Google izni geri alınamadı (token yine de silindi): {e}", file=sys.stderr)
+    token.unlink()
+    return True
+
+
 def yt_service(interactive=False):
     try:
         from google.auth.transport.requests import Request
@@ -680,6 +712,7 @@ def main():
     ap.add_argument("--file")
     ap.add_argument("--platform", choices=["youtube", "instagram", "tiktok"])
     ap.add_argument("--connect", choices=["youtube", "tiktok", "instagram"])
+    ap.add_argument("--disconnect", choices=["youtube"])
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
@@ -687,12 +720,16 @@ def main():
         print(json.dumps(status(), ensure_ascii=False)); return
     if a.flush:
         print(json.dumps(flush(), ensure_ascii=False)); return
+    if a.disconnect == "youtube":
+        print(json.dumps({"ok": True, "removed": yt_disconnect(), "message": "YouTube bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.connect == "youtube":
         try:
-            yt_service(interactive=True)
+            lists = yt_connect()
         except Exception as e:  # paneli okunur bir mesajla bilgilendir
             print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)); sys.exit(1)
-        print(json.dumps({"ok": True, "message": "YouTube bağlandı"}, ensure_ascii=False)); return
+        msg = "YouTube bağlandı; oynatma listesi izni verildi" if lists else \
+            "YouTube bağlandı ama oynatma listesi izni verilmedi (Google onay ekranında 'YouTube hesabınızı yönetme' işaretli olmalı); yükleme yine çalışır"
+        print(json.dumps({"ok": True, "playlists": lists, "message": msg}, ensure_ascii=False)); return
     if a.connect == "instagram":
         try:
             tok = ig_connect()

@@ -682,7 +682,9 @@ app.post("/api/update", async (_req, res) => {
 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
 app.get("/api/connections", async (_req, res) => res.json(await brain.connections()));
-app.post("/api/connect/youtube", async (_req, res) => { const r = await py("publish.py", ["--connect", "youtube"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
+// Bağla / yeniden bağla: token geçerli olsa da Google onayı yeniden açılır (yeni kapsamlar için); en çok 10 dk bekler
+app.post("/api/connect/youtube", async (_req, res) => { push("▶ YouTube: tarayıcıda Google onayı açılıyor (yeniden bağlama)"); const r = await py("publish.py", ["--connect", "youtube"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }; push(`${j.ok ? "✔" : "✖"} YouTube: ${j.message || j.error}`); res.json(j); });
+app.post("/api/disconnect/youtube", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "youtube"]); push("YouTube bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 let igConnect = null; // süren bağlanma denemesi (publish.py --connect instagram)
 app.post("/api/connect/instagram", async (_req, res) => {
   // Geri dönüş adresi HTTPS olmalı: Hostinger köprüsü varsa sabit adres kullanılır, yoksa tünel açılır
