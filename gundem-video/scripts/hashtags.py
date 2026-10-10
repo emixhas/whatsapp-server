@@ -11,7 +11,8 @@ CATEGORY_TAGS = {"finans": "#ekonomi", "siyaset": "#siyaset", "parti": "#siyaset
                  "hava": "#havadurumu", "toplum": "#toplum", "egitim": "#eğitim", "teknoloji": "#teknoloji",
                  "saglik": "#sağlık", "dunya": "#dünya"}
 VALUE_TAGS = {"can kaybı": "#sondakika", "kaza/afet": "#kaza", "emekli/memur maaşı": "#emekli",
-              "zam/fiyat/vergi": "#zam", "tatil/izin": "#tatil", "kamu duyurusu": "#duyuru", "güvenlik": "#güvenlik"}
+              "zam/fiyat/vergi": "#zam", "tatil/izin": "#tatil", "kamu duyurusu": "#duyuru", "güvenlik": "#güvenlik",
+              "para ve destek": "#ekonomi", "sağlık ve gıda": "#sağlık", "milli başarı": "#millitakım"}
 
 
 def tr_lower(t: str) -> str:

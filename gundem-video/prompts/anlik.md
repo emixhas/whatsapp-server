@@ -40,8 +40,12 @@ KURALLAR
 - 5: can kaybı, büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli zammı ve aylığı,
   memur maaşı ve zammı, bayram ikramiyesi, akaryakıt/doğal gaz/elektrik zammı, vergi, faiz kararı gibi herkesin
   cebine dokunan karar; bayram tatili, resmi tatil, idari izin, okul tatili kararı.
-- 4: sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; ülke çapında ses getiren gelişme.
-- 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, spor sonucu.
+- 4: sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; sosyal yardım, evde bakım, KYK burs/kredi,
+  TOKİ, kredi/kredi kartı düzenlemesi; dolar/altın rekoru, borsada çöküş; salgın, gıda zehirlenmesi, ilaç toplatma,
+  hileli ürün listesi; milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
+  ülke çapında ses getiren gelişme.
+- 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, kulüp maçı
+  sonucu, transfer.
 - Abartma: emin değilsen 3 ver. "importanceReason" alanına tek cümlelik gerekçe yaz.
 
 BAŞLIK VARYANTLARI ("titles")

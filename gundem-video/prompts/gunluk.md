@@ -6,7 +6,8 @@ __HABER__ haberini önem sırasıyla anlatan, akıcı bir günlük özet senaryo
 KURALLAR
 - Toplam seslendirme metni EN FAZLA __KELIME__ kelime. Bu sınır kesindir.
 - Seçim: önce "d":1 haberler (can kaybı, afet, büyük kaza, terör; asgari ücret, emekli/memur maaşı, zam, vergi,
-  faiz; tatil, sınav, yasak duyuruları), sonra "c" yüksek (çok konuşulan) ve "v":1 haberler, sonra çeşitlilik için
+  faiz; tatil, sınav, yasak duyuruları; sosyal yardım, burs, piyasa rekoru; salgın, gıda/ilaç güvenliği; milli takım
+  başarısı), sonra "c" yüksek (çok konuşulan) ve "v":1 haberler, sonra çeşitlilik için
   ekonomi, siyaset, dünya, spor. Aynı olayın iki haberini seçme. Tam olarak __HABER__ "haber" segmenti yaz.
 - Video bir KANCA ile açılır ("hook"): günün en büyük haberinin tek cümlesi (en fazla 10 kelime, somut) ve 2-4
   kelimelik ekran başlığı ("title", en fazla 24 karakter, anlamı tamam).

@@ -55,7 +55,7 @@ def main(news_path: str, dst: str, n: int):
     slim = [{"b": c["title"], "o": (c.get("summary") or "")[:260], "k": c.get("source") or "", "c": len(c["sources"] - {""}),
              "v": 1 if c["fromVideo"] else 0, "d": 1 if (c["breaking"] or c["valuable"]) else 0, "kat": c.get("category") or ""} for c in chosen]
     save_json(Path(dst), {"aciklama": "b=başlık o=özet k=kaynak c=kaç kaynakta geçti v=1 bugün kısa videoda işlendi "
-                                     "d=1 değerli/son dakika (can kaybı, afet, zam, maaş, tatil…) kat=kategori",
+                                     "d=1 değerli/son dakika (can kaybı, afet, zam, maaş, tatil, yardım, salgın, milli başarı…) kat=kategori",
                           "tarih": day, "haberler": slim})
     # attach_images için: haber sayfası adresleri news.json'a (yoksa) eklenir
     have = {r.get("link") for r in rss}
