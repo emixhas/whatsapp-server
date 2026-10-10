@@ -130,9 +130,16 @@ def summary(data=None) -> dict:
         daily = []
         for k in range(13, -1, -1):
             d0 = midnight - timedelta(days=k)
-            end = _value_at(have, p, d0 + timedelta(days=1) - timedelta(seconds=1)) if k else cur
+            d1 = d0 + timedelta(days=1)
+            inday = [s for s in have if d0 <= _local(s["at"]) < d1]
+            if not inday:  # o gün hiç kayıt yok (takip başlamadı ya da Mac kapalıydı)
+                daily.append({"date": d0.date().isoformat(), "gain": None})
+                continue
             start = _value_at(have, p, d0 - timedelta(seconds=1))
-            daily.append({"date": d0.date().isoformat(), "gain": (end - start) if (end is not None and start is not None) else None})
+            partial = start is None  # gün başında kayıt yok: takibin başladığı gün, ilk kayda göre
+            if partial:
+                start = inday[0][p]
+            daily.append({"date": d0.date().isoformat(), "gain": inday[-1][p] - start, "partial": partial})
         out["platforms"][p] = {"current": cur, "today": today, "week": week, "month": month,
                                "partial": {"today": tp, "week": wp, "month": mp}, "since": since.isoformat(), "daily": daily}
     ps = out["platforms"].values()

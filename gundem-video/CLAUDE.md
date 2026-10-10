@@ -291,7 +291,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (1000 üstünde yuvarlanır), Instagram `followers_count`, TikTok `user/info` follower_count (`user.info.stats` izni:
   TT_SCOPES'a eklendi, eski bağlantıda yeniden bağlamak ve uygulamada izin açık olmak gerekir). Saatte en çok bir
   kayıt `data/followers.json` (400 gün); `summary()` güncel, bugün (yerel gece yarısından beri), 7 gün, 30 gün
-  kazanımı (`partial`: kayıt dönemden yeniyse ilk kayda göre) ve son 14 günün günlük kazanım serisi. `analyze.py`
+  kazanımı (`partial`: kayıt dönemden yeniyse ilk kayda göre) ve son 14 günün günlük kazanım serisi (kayıt olmayan
+  gün `null`; gün başında kayıt yoksa — takibin başladığı gün — o günün ilk kaydına göre, `partial`). Grafikte
+  kayıt yok = kesikli çizgi, 0 = ince çizgi, kısmi gün = soluk sütun; altında veri birikimini anlatan not. `analyze.py`
   insights'a `followers` koyar (beyin bağlamı da görür); panel Analitik'in başında "ABONE VE TAKİPÇİ" kartları
   (toplam + platform) ve günlük kazanım sütun grafiği (fareyle platform kırılımı); haftalık rapor 👥 satırları;
   komut "kaç abonemiz var / bugün kaç takipçi kazandık" (`followers` eylemi, 30 dk'da bir canlı çeker).
