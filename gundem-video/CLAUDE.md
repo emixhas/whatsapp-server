@@ -337,6 +337,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `--connect youtube` (`yt_connect`) token geçerli olsa da Google onayını YENİDEN açar (prompt=consent, 10 dk bekler),
   vazgeçilirse eski token kalır; dönen kapsamda liste izni yoksa söyler. `--disconnect youtube` izni geri alır ve token'ı
   siler. Panel: bağlıyken düğme "🔄 Yeniden bağla", yanında "Bağlantıyı kes" (`POST /api/disconnect/youtube`).
+- Sil (panel video penceresi "🗑 Sil" → `DELETE /api/videos/:name`, `?local=1` yalnız yerel): önce
+  `publish.py --delete-remote` (`delete_remote`): YouTube `videos.delete` ("youtube" izni; yoksa "Yeniden bağla"
+  der), Instagram `DELETE /{media-id}` (API reddederse "uygulamadan elle silin" + link), TikTok API silme sunmaz
+  (elle; inbox taslağı herkese açık değil), Hostinger kopyası, sınır sırası. Silinen platform kaydı metriklerden
+  düşer, silinemeyen kalır (link kaybolmasın). Sonra Mac'teki mp4/json/kapaklar silinir; sonuç sohbete ve loga (🗑).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
 - Günlük yükleme sınırı (YouTube `uploadLimitExceeded` = kanal sınırı, `quotaExceeded` = API kotası):
   `publish.py` platformu 3 saat beklemeye alır (`data/publish_hold.json`), videoyu `data/publish_queue.json`

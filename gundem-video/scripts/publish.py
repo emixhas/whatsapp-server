@@ -767,6 +767,65 @@ def tt_check(limit=5) -> list:
     return out
 
 
+# ---------------- platformlardan silme (panel "Sil")
+def delete_remote(name: str) -> dict:
+    """Videoyu yüklendiği platformlardan kaldırır. Sonuç {platform: {ok, message}}; silinenler metriklerden düşülür.
+    YouTube: videos.delete ("youtube" izni gerekir). Instagram: DELETE /{media-id} (API izin vermezse elle silinmeli).
+    TikTok: Content Posting API silme sunmaz; gelen kutusu taslağı herkese açık değildir, yayınlandıysa uygulamadan silinir."""
+    m = metrics()
+    entry = m["videos"].get(name, {})
+    out = {}
+    yt = entry.get("youtube") or {}
+    if yt.get("id"):
+        try:
+            yt_service().videos().delete(id=yt["id"]).execute()
+            out["youtube"] = {"ok": True, "message": "YouTube'dan silindi"}
+        except Exception as e:
+            msg = str(e)
+            if "404" in msg or "videoNotFound" in msg:
+                out["youtube"] = {"ok": True, "message": "YouTube'da zaten yok"}
+            elif "insufficient" in msg.lower() or "403" in msg:
+                out["youtube"] = {"ok": False, "message": "YouTube silme izni yok: Ayarlar → YouTube → 🔄 Yeniden bağla, sonra tekrar silin", "url": yt.get("url")}
+            else:
+                out["youtube"] = {"ok": False, "message": f"YouTube silinemedi: {msg[:160]}", "url": yt.get("url")}
+    ig = entry.get("instagram") or {}
+    if ig.get("id"):
+        try:
+            uid, token, base = ig_creds()
+            req = urllib.request.Request(f"{base}/{ig['id']}?" + urllib.parse.urlencode({"access_token": token}), method="DELETE")
+            with urllib.request.urlopen(req, timeout=30) as r:
+                r.read()
+            out["instagram"] = {"ok": True, "message": "Instagram'dan silindi"}
+        except urllib.error.HTTPError as e:
+            txt = e.read().decode("utf-8", "replace")[:200]
+            gone = e.code == 404 or "does not exist" in txt
+            out["instagram"] = {"ok": gone, "message": "Instagram'da zaten yok" if gone else
+                                "Instagram API bu gönderiyi silmeye izin vermedi; Instagram uygulamasından elle silin", "url": ig.get("url"), "detail": txt}
+        except Exception as e:
+            out["instagram"] = {"ok": False, "message": f"Instagram silinemedi: {str(e)[:160]}; uygulamadan elle silin", "url": ig.get("url")}
+    tt = entry.get("tiktok") or {}
+    if tt.get("publish_id") or tt.get("id"):
+        out["tiktok"] = {"ok": False, "manual": True, "url": tt.get("url"),
+                         "message": "TikTok API silmeye izin vermiyor: yayınladıysanız TikTok uygulamasından silin (gelen kutusu taslağı herkese açık değil)"}
+    try:  # web alanında kalmış kopya
+        if hostinger.configured():
+            hostinger.delete(f"videos/{name}")
+    except Exception:
+        pass
+    # silinenleri metriklerden düş; silinemeyen platform kaydı kalsın (link kaybolmasın)
+    m = metrics()
+    e2 = m["videos"].get(name, {})
+    for p, r in out.items():
+        if r.get("ok"):
+            e2.pop(p, None)
+    if name in m["videos"] and not any(k in e2 for k in ("youtube", "instagram", "tiktok")):
+        m["videos"].pop(name, None)
+    save_metrics(m)
+    q = [x for x in (load_json(QUEUE_FILE, []) or []) if x.get("video") != name]  # sınır sırasında bekliyorsa çıkar
+    save_json(QUEUE_FILE, q)
+    return out
+
+
 # ---------------- durum
 def ig_status(env):
     import shutil
@@ -808,10 +867,13 @@ def main():
     ap.add_argument("--disconnect", choices=["youtube", "tiktok"])
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--tt-check", action="store_true", help="son TikTok gönderimlerinin durumunu sor")
+    ap.add_argument("--delete-remote", help="videoyu yüklendiği platformlardan sil (dosya adı)")
     ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
+    if a.delete_remote:
+        print(json.dumps({"ok": True, "results": delete_remote(Path(a.delete_remote).name)}, ensure_ascii=False)); return
     if a.tt_check:
         try:
             print(json.dumps({"ok": True, "items": tt_check()}, ensure_ascii=False))

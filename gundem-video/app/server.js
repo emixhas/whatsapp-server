@@ -537,7 +537,21 @@ async function thumbBuffer(name) { try { return readFileSync(await makeThumb(nam
 // ---------- API: videolar
 app.get("/api/videos", (_req, res) => res.json(listVideos()));
 app.get("/api/thumb/:name", async (req, res) => { const name = path.basename(req.params.name); if (!existsSync(path.join(OUT, name))) return res.status(404).end(); const dst = await makeThumb(name, 480); if (!existsSync(dst)) return res.status(404).end(); res.sendFile(dst); });
-app.delete("/api/videos/:name", (req, res) => { const name = path.basename(req.params.name); for (const f of [name, name.replace(/\.mp4$/, ".json"), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t); res.json({ ok: true }); });
+// Sil: önce yüklendiği platformlardan (publish.py --delete-remote), sonra Mac'teki dosyalar. ?local=1 yalnız yerel siler.
+app.delete("/api/videos/:name", async (req, res) => { const name = path.basename(req.params.name);
+  let remote = {};
+  if (req.query.local !== "1") {
+    const m = readJson(path.join(DATA, "metrics.json"), { videos: {} }).videos?.[name] || {};
+    if (m.youtube?.id || m.instagram?.id || m.tiktok?.publish_id || m.tiktok?.id) {
+      push(`🗑 ${name}: platformlardan siliniyor`);
+      const r = await py("publish.py", ["--delete-remote", name]);
+      remote = r.json?.results || {};
+      for (const [p, v] of Object.entries(remote)) push(`🗑 ${p}: ${v.message}${!v.ok && v.url ? ` → ${v.url}` : ""}`);
+      if (!r.json) push(`🗑 platformlardan silme hatası: ${(r.stderr || r.stdout || "").slice(-200)}`);
+    }
+  }
+  for (const f of [name, name.replace(/\.mp4$/, ".json"), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t);
+  push(`🗑 ${name}: Mac'ten silindi`); py("analyze.py").catch(() => {}); res.json({ ok: true, remote }); });
 app.post("/api/reveal", async (req, res) => { const p = path.join(OUT, path.basename(req.body.name || "")); if (!existsSync(p) || !isMac) return res.json({ ok: false }); res.json(await run("open", ["-R", p])); });
 app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}` + (req.query.name ? "/videos/" + path.basename(String(req.query.name)) : "/"); res.json({ url, svg: await QRCode.toString(url, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }) }); });
 

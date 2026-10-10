@@ -362,7 +362,17 @@ function openVideo(name){current=videos.find(v=>v.name===name);if(!current)retur
 function closeModal(){$('#modal').classList.remove('open');$('#player').pause();$('#player').removeAttribute('src');}
 $('#aClose').onclick=closeModal;$('#modal').onclick=e=>{if(e.target.id==='modal')closeModal();};
 $('#aReveal').onclick=()=>post('/api/reveal',{name:current.name});
-$('#aDel').onclick=async()=>{if(!confirm('Bu video silinsin mi?'))return;await fetch('/api/videos/'+current.name,{method:'DELETE'});closeModal();loadVideos();};
+$('#aDel').onclick=async()=>{
+  const on=[current.youtube&&'YouTube',current.instagram&&'Instagram',current.tiktok&&'TikTok'].filter(Boolean);
+  const msg=on.length?`Bu video ${on.join(', ')} hesaplarından da silinsin mi?\n\n• YouTube ve Instagram'dan otomatik silinir (izin verirlerse).\n• TikTok silmeye izin vermiyor: yayınladıysanız uygulamadan silmeniz gerekir.\n\nVideo Mac'ten de silinecek. Geri alınamaz.`:'Bu video silinsin mi? (Hiçbir platforma yüklenmemiş, yalnız Mac\'ten silinir.)';
+  if(!confirm(msg))return;
+  const b=$('#aDel');b.disabled=true;b.textContent='Siliniyor…';
+  const r=await fetch('/api/videos/'+current.name,{method:'DELETE'}).then(x=>x.json()).catch(()=>({}));
+  b.disabled=false;b.textContent='🗑 Sil';
+  const rs=Object.entries(r.remote||{});
+  if(rs.length)addMsg('j','Silme sonucu:\n'+rs.map(([p,v])=>`${v.ok?'✅':'⚠️'} ${PLAT[p]?.n||p}: ${v.message}${!v.ok&&v.url?' → '+v.url:''}`).join('\n')+"\n✅ Mac'ten silindi.");
+  toast(rs.some(([,v])=>!v.ok)?'Silindi; bazı platformlarda elle silmeniz gerekiyor':'Video her yerden silindi ✓',rs.some(([,v])=>!v.ok));
+  closeModal();loadVideos();};
 async function showShare(){const q=await api('/api/qr?name='+encodeURIComponent(current.name));$('#qr').innerHTML=q.svg+`<div style="margin-top:8px;color:var(--mut);font-size:12px">Telefon aynı Wi-Fi'de olmalı. Videoyu kaydedip paylaşım menüsünden gönderin.</div><div style="font-size:11px;margin-top:4px;word-break:break-all">${q.url}</div>`;$('#qr').style.display='block';}
 $('#aShare').onclick=showShare;
 async function publish(name,platforms){setMode('working');speak(`${platforms.join(' ve ')} üzerine yükleniyor.`);const r=await post('/api/publish',{name,platforms});setMode('idle');const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`${p}: yayınlandı${x.skipped?' (zaten vardı)':''}`:`${p}: hata, ${x.error}`);addMsg('j',msgs.join('\n'));speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
