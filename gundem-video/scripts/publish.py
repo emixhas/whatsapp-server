@@ -533,8 +533,7 @@ def ig_connect():
 # ---------------- TikTok (Content Posting API + Login Kit)
 TT_AUTH = "https://www.tiktok.com/v2/auth/authorize/"
 TT_API = "https://open.tiktokapis.com/v2"
-# user.info.stats: takipçi sayısı (scripts/followers.py); TikTok geliştirici portalında uygulamaya eklenmiş olmalı
-TT_SCOPES = "user.info.basic,user.info.stats,video.list,video.upload,video.publish"
+# İzinler tt_scopes()'ta: user.info.stats takipçi sayısı (scripts/followers.py), video.publish yalnız doğrudan yayında
 TT_TOKEN_FILE = SECRETS / "tiktok_token.json"
 
 
@@ -578,8 +577,48 @@ def tt_access_token():
     return tok["access_token"]
 
 
+def tt_scopes(env=None) -> str:
+    """İstenen izinler: TIKTOK_SCOPES ile elle verilebilir. video.publish yalnız doğrudan yayında istenir (gelen kutusu
+    modunda gereksiz ve uygulamada açık değilse girişi bozar); user.info.stats takipçi sayısı içindir."""
+    env = env or load_env()
+    if env.get("TIKTOK_SCOPES"):
+        return env["TIKTOK_SCOPES"]
+    sc = ["user.info.basic", "user.info.stats", "video.list", "video.upload"]
+    if (env.get("TIKTOK_MODE") or "inbox").lower() == "direct":
+        sc.append("video.publish")
+    return ",".join(sc)
+
+
+def tt_redirect(env=None) -> str:
+    """Geri dönüş adresi. TikTok web girişi HTTPS ister (localhost kabul etmez): TIKTOK_REDIRECT_URI verilmemişse
+    Hostinger köprüsü (https://site/tiktok/callback/), o da yoksa yerel adres (yalnız masaüstü uygulamada çalışır)."""
+    env = env or load_env()
+    custom = env.get("TIKTOK_REDIRECT_URI", "")
+    # eski talimattaki localhost adresi Hostinger varken yok sayılır (TikTok web girişi onu kabul etmez)
+    if custom and not (hostinger.configured() and "localhost" in custom):
+        return custom
+    if hostinger.configured():
+        return hostinger.site_url() + "/tiktok/callback/"
+    return "http://localhost:3137/tiktok/callback"
+
+
+def tt_disconnect():
+    env = load_env()
+    if not TT_TOKEN_FILE.exists():
+        return False
+    try:
+        tok = json.loads(TT_TOKEN_FILE.read_text())
+        form = urllib.parse.urlencode({"client_key": env.get("TIKTOK_CLIENT_KEY", ""), "client_secret": env.get("TIKTOK_CLIENT_SECRET", ""),
+                                       "token": tok.get("access_token", "")}).encode()
+        urllib.request.urlopen(urllib.request.Request(f"{TT_API}/oauth/revoke/", data=form, headers={"Content-Type": "application/x-www-form-urlencoded"}), timeout=15)
+    except Exception as e:
+        print(f"  ! TikTok izni geri alınamadı (token yine de silindi): {e}", file=sys.stderr)
+    TT_TOKEN_FILE.unlink()
+    return True
+
+
 def tt_connect():
-    """Tarayıcıda TikTok girişi; yerel geri dönüş sunucusu kodu yakalar."""
+    """Tarayıcıda TikTok girişi. Geri dönüş Hostinger köprüsündeyse kod oradan yoklanır, yerel adresse yerel sunucu yakalar."""
     import http.server
     import secrets as _secrets
     import threading
@@ -588,7 +627,8 @@ def tt_connect():
     for k in ("TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"):
         if not env.get(k):
             raise RuntimeError(f"secrets/.env içinde {k} eksik (bkz. secrets/README.md)")
-    redirect = env.get("TIKTOK_REDIRECT_URI", "http://localhost:3137/tiktok/callback")
+    redirect = tt_redirect(env)
+    use_host = hostinger.configured() and redirect.startswith(hostinger.site_url() + "/tiktok/callback")
     state = _secrets.token_urlsafe(16)
     got = {}
 
@@ -601,22 +641,33 @@ def tt_connect():
         def log_message(self, *a):  # sessiz
             pass
 
-    port = int(urllib.parse.urlparse(redirect).port or 3137)
-    srv = http.server.HTTPServer(("0.0.0.0", port), H)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    url = TT_AUTH + "?" + urllib.parse.urlencode({"client_key": env["TIKTOK_CLIENT_KEY"], "scope": TT_SCOPES, "response_type": "code",
+    srv = None
+    if not use_host:
+        port = int(urllib.parse.urlparse(redirect).port or 3137)
+        srv = http.server.HTTPServer(("0.0.0.0", port), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = TT_AUTH + "?" + urllib.parse.urlencode({"client_key": env["TIKTOK_CLIENT_KEY"], "scope": tt_scopes(env), "response_type": "code",
                                                   "redirect_uri": redirect, "state": state})
     print(f"Tarayıcıda açılıyor: {url}", file=sys.stderr)
     webbrowser.open(url)
-    for _ in range(600):  # 5 dk bekle
-        if "code" in got or "error" in got:
-            break
-        time.sleep(0.5)
-    srv.shutdown()
+    if use_host:
+        got.update(hostinger.poll_code(redirect, state, 300))
+    else:
+        for _ in range(600):  # 5 dk bekle
+            if "code" in got or "error" in got:
+                break
+            time.sleep(0.5)
+        srv.shutdown()
     if got.get("error"):
-        raise RuntimeError(f"TikTok reddetti: {got.get('error_description') or got['error']}")
+        err = got.get("error_description") or got["error"]
+        hint = ""
+        if "scope" in str(err).lower():
+            hint = f" — uygulamada şu izinler açık olmalı: {tt_scopes(env)} (developers.tiktok.com → uygulama → Scopes)"
+        elif "redirect" in str(err).lower():
+            hint = f" — Login Kit → Redirect URI olarak AYNEN şunu yazın: {redirect}"
+        raise RuntimeError(f"TikTok reddetti: {err}{hint}")
     if got.get("state") != state or "code" not in got:
-        raise RuntimeError("TikTok geri dönüşü alınamadı (redirect URI uygulamada kayıtlı mı?)")
+        raise RuntimeError(f"TikTok geri dönüşü alınamadı (5 dk içinde onay gelmedi). Login Kit → Redirect URI AYNEN şu olmalı: {redirect}")
     tt_token_request(env, {"grant_type": "authorization_code", "code": got["code"], "redirect_uri": redirect})
 
 
@@ -703,7 +754,8 @@ def status():
                     "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
         "instagram": ig_status(env),
         "tiktok": {"connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
-                   "mode": (env.get("TIKTOK_MODE") or "inbox").lower()},
+                   "mode": (env.get("TIKTOK_MODE") or "inbox").lower(), "redirect": tt_redirect(env), "scopes": tt_scopes(env),
+                   "https": tt_redirect(env).startswith("https://")},
     }
 
 
@@ -712,7 +764,7 @@ def main():
     ap.add_argument("--file")
     ap.add_argument("--platform", choices=["youtube", "instagram", "tiktok"])
     ap.add_argument("--connect", choices=["youtube", "tiktok", "instagram"])
-    ap.add_argument("--disconnect", choices=["youtube"])
+    ap.add_argument("--disconnect", choices=["youtube", "tiktok"])
     ap.add_argument("--status", action="store_true")
     ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
@@ -720,6 +772,8 @@ def main():
         print(json.dumps(status(), ensure_ascii=False)); return
     if a.flush:
         print(json.dumps(flush(), ensure_ascii=False)); return
+    if a.disconnect == "tiktok":
+        print(json.dumps({"ok": True, "removed": tt_disconnect(), "message": "TikTok bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.disconnect == "youtube":
         print(json.dumps({"ok": True, "removed": yt_disconnect(), "message": "YouTube bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.connect == "youtube":

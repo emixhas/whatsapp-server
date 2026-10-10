@@ -715,6 +715,15 @@ app.post("/api/connect/instagram", async (_req, res) => {
   if (j.ok) { push(`◎ Instagram bağlandı: @${j.username || "?"}`); announce(`Instagram bağlandı.`); } else push(`◎ Instagram bağlanamadı: ${j.error}`);
 });
 app.post("/api/hostinger/setup", async (_req, res) => { push("🌐 Hostinger köprüsü kuruluyor"); const r = await runPy(["scripts/hostinger.py", "--setup"], 120000); const lines = (r.stdout + r.stderr).trim().split("\n"); for (const l of lines.slice(-8)) push("  " + l); let j = {}; try { j = JSON.parse(lines.filter((l) => l.startsWith("{")).pop() || "{}"); } catch { /* yok */ } res.json({ ok: !!j.ok, ...j, log: lines.slice(-8).join("\n") }); });
+// TikTok uygulama anahtarları panelden secrets/.env'e yazılır (Client key / secret, mod)
+app.post("/api/tiktok/keys", (req, res) => {
+  const { key, secret, mode } = req.body || {};
+  if (key) { if (!/^[A-Za-z0-9]{8,64}$/.test(String(key).trim())) return res.json({ ok: false, error: "Client key biçimi hatalı (harf ve rakam)." }); writeEnvKey("TIKTOK_CLIENT_KEY", String(key).trim()); }
+  if (secret) { if (!/^[A-Za-z0-9_-]{8,128}$/.test(String(secret).trim())) return res.json({ ok: false, error: "Client secret biçimi hatalı." }); writeEnvKey("TIKTOK_CLIENT_SECRET", String(secret).trim()); }
+  if (mode && ["inbox", "direct"].includes(mode)) writeEnvKey("TIKTOK_MODE", mode);
+  push("♪ TikTok uygulama ayarları kaydedildi"); res.json({ ok: true });
+});
+app.post("/api/disconnect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "tiktok"]); push("♪ TikTok bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/connect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--connect", "tiktok"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [] })));
 app.post("/api/metrics/sync", async (_req, res) => res.json(await execAction({ type: "sync_metrics" })));

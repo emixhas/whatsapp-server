@@ -282,8 +282,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   süresince `out/` için geçici HTTP sunucu + `cloudflared` hızlı tüneli açar ve kapatır (launchd ile
   panel kapalıyken de otomatik yayın). Meta uygulaması Geliştirme modundayken hesap Instagram Testers
   listesinde olmalı. Sonuç `data/metrics.json` → `videos.<ad>.<platform>`.
-- TikTok (`tt_*` fonksiyonları): Login Kit OAuth (yerel geri dönüş sunucusu :3137), Content Posting API
-  FILE_UPLOAD. `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
+- TikTok (`tt_*` fonksiyonları): Login Kit OAuth, Content Posting API FILE_UPLOAD. Geri dönüş `tt_redirect()`:
+  TikTok web girişi HTTPS ister (localhost kabul etmez) → Hostinger köprüsü varsa `https://site/tiktok/callback/`
+  (kod `hostinger.poll_code` ile yoklanır; eski `.env`deki localhost değeri o zaman yok sayılır), yoksa
+  `TIKTOK_REDIRECT_URI`/yerel :3137. İzinler `tt_scopes()` (user.info.basic, user.info.stats, video.list,
+  video.upload; video.publish yalnız `TIKTOK_MODE=direct`; `TIKTOK_SCOPES` ile elle). Hata mesajı eksik izin/adres
+  için ne yazılacağını söyler. Panel TikTok kartı: adım adım kurulum, Login Kit'e yazılacak adres (kopyala), Client
+  key/secret ve mod alanları (`POST /api/tiktok/keys` → secrets/.env), bağlıyken "Yeniden bağla" ve "Bağlantıyı kes"
+  (`--disconnect tiktok`, `/v2/oauth/revoke/`). `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
   `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Token 24 saat,
   refresh otomatik. Metrikler `/v2/video/list/` (view/like/comment/share).
 - `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
