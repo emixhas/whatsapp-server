@@ -452,7 +452,7 @@ async function execAction(a) {
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶|♪)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
@@ -725,6 +725,7 @@ app.post("/api/tiktok/keys", (req, res) => {
   if (mode && ["inbox", "direct"].includes(mode)) writeEnvKey("TIKTOK_MODE", mode);
   push("♪ TikTok uygulama ayarları kaydedildi"); res.json({ ok: true });
 });
+app.post("/api/tiktok/check", async (_req, res) => { const r = await py("publish.py", ["--tt-check"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; for (const it of j.items || []) push(`♪ TikTok ${it.video}: ${it.text}`); if (!j.ok) push(`♪ TikTok durumu sorgulanamadı: ${j.error}`); res.json(j); });
 app.post("/api/disconnect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "tiktok"]); push("♪ TikTok bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 app.post("/api/connect/tiktok", async (_req, res) => {
   // gönderilen geri dönüş adresi hemen loga düşsün (TikTok "redirect_uri" derse Login Kit'tekiyle karşılaştırılır)

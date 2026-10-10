@@ -293,7 +293,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   adresi ister: `hostinger.py --legal` (ve `--setup`) `public_html/uygulama/` altına üç sade TR+EN sayfa yükler
   (index, kosullar.html, gizlilik.html; iletişim `CONTACT_EMAIL`), panel kartında adresler + "Sayfaları oluştur"
   (`POST /api/hostinger/legal`). İnceleme (App review) gerekmez: Sandbox + Target users ile çalışılır. `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
-  `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Token 24 saat,
+  `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Inbox videosu profile değil
+  TikTok uygulamasının Gelen kutusu bildirimlerine düşer. `tt_upload` durumu 5 dk yoklar ve loga "  ♪ TikTok durumu"
+  yazar; işlem bitmediyse "hâlâ işliyor" der. `--tt-check` (`tt_check`) son 5 gönderimin durumunu TikTok'tan sorar
+  (`TT_STATUS_TR`), panel "📨 Son gönderimleri kontrol et" (`POST /api/tiktok/check`). Token 24 saat,
   refresh otomatik. Metrikler `/v2/video/list/` (view/like/comment/share).
 - `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
   Sonunda `scripts/followers.py` abone/takipçi sayılarını çeker: YouTube `channels.list(mine)` subscriberCount

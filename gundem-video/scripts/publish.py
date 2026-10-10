@@ -724,11 +724,47 @@ def tt_upload(path: Path):
         time.sleep(5)
     if status == "FAILED":
         raise RuntimeError(f"TikTok işleme hatası: {st.get('fail_reason')}")
+    print(f"  ♪ TikTok durumu: {status} — {TT_STATUS_TR.get(status, status)}", file=sys.stderr)
     post_ids = st.get("publicaly_available_post_id") or []
     return {"id": post_ids[0] if post_ids else publish_id, "publish_id": publish_id, "mode": mode, "privacy": privacy,
             "status": status, "url": f"https://www.tiktok.com/@me/video/{post_ids[0]}" if post_ids else None,
             "publishedAt": now_iso(), "title": title,
-            "note": "Gelen kutusuna gönderildi; TikTok uygulamasında bildirime dokunup yayınlayın." if mode != "direct" else None}
+            "note": (TT_STATUS_TR.get(status) or f"TikTok hâlâ işliyor (durum: {status}); panelden 'Son gönderimleri kontrol et'")
+                    if mode != "direct" else None}
+
+
+# TikTok gönderim durumları (post/publish/status/fetch)
+TT_STATUS_TR = {
+    "PROCESSING_UPLOAD": "TikTok videoyu alıyor/işliyor (birkaç dakika sürebilir)",
+    "PROCESSING_DOWNLOAD": "TikTok videoyu indiriyor/işliyor",
+    "SEND_TO_USER_INBOX": "gelen kutusuna gönderildi: TikTok uygulaması → Gelen kutusu → bildirime dokunup yayınlayın",
+    "PUBLISH_COMPLETE": "yayınlandı",
+    "FAILED": "başarısız",
+}
+
+
+def tt_check(limit=5) -> list:
+    """Son TikTok gönderimlerinin durumunu TikTok'tan sorar, metriklere yazar."""
+    token = tt_access_token()
+    H = {"Authorization": f"Bearer {token}"}
+    m = metrics()
+    items = [(n, v["tiktok"]) for n, v in m["videos"].items() if (v.get("tiktok") or {}).get("publish_id")]
+    items.sort(key=lambda x: x[1].get("publishedAt", ""), reverse=True)
+    out = []
+    for name, t in items[:limit]:
+        try:
+            st = tt_http("POST", f"{TT_API}/post/publish/status/fetch/", {"publish_id": t["publish_id"]}, H)
+            d, err = st.get("data", {}), st.get("error", {})
+            status = d.get("status") or (err.get("code") if err.get("code") not in (None, "ok") else "?")
+            t["status"] = status
+            if d.get("fail_reason"):
+                t["failReason"] = d["fail_reason"]
+            out.append({"video": name, "status": status, "text": TT_STATUS_TR.get(status, status) + (f" ({d['fail_reason']})" if d.get("fail_reason") else ""),
+                        "at": t.get("publishedAt")})
+        except Exception as e:
+            out.append({"video": name, "status": "?", "text": f"sorgulanamadı: {str(e)[:150]}", "at": t.get("publishedAt")})
+    save_metrics(m)
+    return out
 
 
 # ---------------- durum
@@ -771,10 +807,17 @@ def main():
     ap.add_argument("--connect", choices=["youtube", "tiktok", "instagram"])
     ap.add_argument("--disconnect", choices=["youtube", "tiktok"])
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--tt-check", action="store_true", help="son TikTok gönderimlerinin durumunu sor")
     ap.add_argument("--flush", action="store_true")
     a = ap.parse_args()
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
+    if a.tt_check:
+        try:
+            print(json.dumps({"ok": True, "items": tt_check()}, ensure_ascii=False))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)[:300]}, ensure_ascii=False))
+        return
     if a.flush:
         print(json.dumps(flush(), ensure_ascii=False)); return
     if a.disconnect == "tiktok":
