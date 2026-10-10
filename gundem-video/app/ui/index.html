@@ -391,9 +391,12 @@ function renderConn(s){const c=s.connections||{};
       3) <b>Scopes</b>: <code>${esc(tt.scopes||'')}</code><br>
       4) Login Kit → <b>Redirect URI</b> (Web) olarak AYNEN: <code id="ttRedir">${redir}</code> <button class="ghost" id="ttCopy" style="padding:2px 8px;font-size:12px">kopyala</button>
       ${tt.https?'':'<br>⚠️ TikTok web girişi https adres ister; localhost kabul etmez. Önce Ayarlar → Hostinger köprüsünü kurun (Instagram için kurduğunuz köprü), adres kendiliğinden https olur.'}<br>
+      ${hg2.hostinger?`<br>Formdaki zorunlu adresler (önce "Sayfaları oluştur"): Web/Desktop URL <code>${esc(hg2.hostingerUrl)}/uygulama/</code> · Terms of Service <code>${esc(hg2.hostingerUrl)}/uygulama/kosullar.html</code> · Privacy Policy <code>${esc(hg2.hostingerUrl)}/uygulama/gizlilik.html</code> <button class="ghost" id="ttLegal" style="padding:2px 8px;font-size:12px">Sayfaları oluştur</button>
+      <br>"App review" bölümünü (açıklama, demo video) DOLDURMAYIN, "Submit for review"a basmayın: sayfanın üstünden <b>Sandbox</b>'a geçip orada çalışın.`:''}<br>
       5) Uygulama sayfasındaki <b>Client key</b> ve <b>Client secret</b>'ı aşağıya yapıştırıp "Anahtarları kaydet"; sonra "TikTok'u bağla". Uygulamayı "Submit for review"a göndermeniz gerekmez: Sandbox'ta kendi hesabınızı <b>Target users</b>'a ekleyin.<br>
       ${tt.appKeys?'Anahtarlar kayıtlı ✔':'Anahtarlar henüz yok.'}`;
   $('#ttKeys').style.display=tt.connected?'none':'grid';
+  const lg=$('#ttLegal');if(lg)lg.onclick=async()=>{lg.disabled=true;const r=await post('/api/hostinger/legal');lg.disabled=false;toast(r.ok?'Sayfalar yüklendi ✓':'Yüklenemedi: '+(r.error||''),!r.ok);if(r.ok)window.open(r.site,'_blank');};
   const cp=$('#ttCopy');if(cp)cp.onclick=()=>{navigator.clipboard?.writeText(tt.redirect||'').then(()=>toast('Kopyalandı ✓'));};
   const w=s.whatsapp||{},ws=s.settings?.whatsapp||{};$('#cWa').className=w.status==='connected'?'ok':'';
   $('#waInfo').innerHTML=w.status==='connected'?`✅ Bağlı: +${w.phone}. Sahip: +${w.owner||'?'}. ${w.pending?'⏳ Onay bekleyen: '+w.pending.video+' → '+w.pending.platforms.join(', '):''}<br>WhatsApp'tan yazabilirsiniz: "onay", "iptal", "60 saniyelik video üret", "durum", "rapor", "son videoyu gönder".`:w.status==='qr'?'📱 Telefonda WhatsApp → Bağlı Cihazlar → Cihaz Bağla → bu QR\'ı okutun.':w.status==='connecting'?'⏳ Bağlanıyor…':`${w.error?'❌ '+w.error+'<br>':''}Bağlı değil. "WhatsApp\'ı bağla" deyip QR okutun. Oturum <code>secrets/wa-auth</code> içinde saklanır, bir kez okutmak yeter.`;

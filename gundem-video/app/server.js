@@ -714,6 +714,8 @@ app.post("/api/connect/instagram", async (_req, res) => {
   let j = {}; try { j = JSON.parse(out.trim().split("\n").pop()); } catch { j = { ok: false, error: (err || out).trim().slice(-300) }; }
   if (j.ok) { push(`◎ Instagram bağlandı: @${j.username || "?"}`); announce(`Instagram bağlandı.`); } else push(`◎ Instagram bağlanamadı: ${j.error}`);
 });
+// TikTok/Meta formları için Web sitesi + Kullanım Şartları + Gizlilik sayfaları (public_html/uygulama/)
+app.post("/api/hostinger/legal", async (_req, res) => { const r = await runPy(["scripts/hostinger.py", "--legal"], 90000); let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* düz metin */ } push(j?.ok ? `🌐 Uygulama sayfaları yüklendi: ${j.site}` : `🌐 Uygulama sayfaları yüklenemedi: ${(r.stderr || r.stdout || "").slice(-200)}`); res.json(j || { ok: false, error: (r.stderr || r.stdout || "").slice(-300) }); });
 app.post("/api/hostinger/setup", async (_req, res) => { push("🌐 Hostinger köprüsü kuruluyor"); const r = await runPy(["scripts/hostinger.py", "--setup"], 120000); const lines = (r.stdout + r.stderr).trim().split("\n"); for (const l of lines.slice(-8)) push("  " + l); let j = {}; try { j = JSON.parse(lines.filter((l) => l.startsWith("{")).pop() || "{}"); } catch { /* yok */ } res.json({ ok: !!j.ok, ...j, log: lines.slice(-8).join("\n") }); });
 // TikTok uygulama anahtarları panelden secrets/.env'e yazılır (Client key / secret, mod)
 app.post("/api/tiktok/keys", (req, res) => {

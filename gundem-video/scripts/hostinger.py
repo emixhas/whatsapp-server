@@ -51,6 +51,61 @@ header('Content-Type: text/html; charset=utf-8');
 echo '<!doctype html><meta name="viewport" content="width=device-width"><body style="font-family:-apple-system,Arial;background:#0B0F1A;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="text-align:center"><h1 style="color:#E30A17">Türkiye Gündemi</h1><h2>Hesap bağlandı.</h2><p>Bu pencereyi kapatıp panele dönebilirsiniz.</p></div></body>';
 """
 
+# TikTok/Meta geliştirici formları Web sitesi, Kullanım Şartları ve Gizlilik Politikası adresi ister: web alanına
+# public_html/uygulama/ altında üç sade sayfa (TR + EN) yüklenir. Kanal adı settings'ten, iletişim CONTACT_EMAIL'den.
+LEGAL_CSS = "body{font-family:-apple-system,Segoe UI,Arial,sans-serif;max-width:760px;margin:40px auto;padding:0 18px;line-height:1.6;color:#1b1f2a}h1{color:#E30A17}h2{margin-top:28px}small{color:#667}"
+
+
+def legal_pages(channel: str, site: str, contact: str) -> dict:
+    c = f"<p>İletişim / Contact: <a href=\"mailto:{contact}\">{contact}</a></p>" if contact else ""
+    head = lambda t: f"<!doctype html><html lang=tr><meta charset=utf-8><meta name=viewport content='width=device-width'><title>{t} · {channel}</title><style>{LEGAL_CSS}</style><body>"  # noqa: E731
+    nav = f"<p><a href='{site}/uygulama/'>Uygulama</a> · <a href='{site}/uygulama/kosullar.html'>Kullanım Şartları</a> · <a href='{site}/uygulama/gizlilik.html'>Gizlilik</a></p>"
+    index = head(channel) + f"""<h1>{channel}</h1>{nav}
+<p>{channel}, Türkiye gündemini kısa dikey videolarla özetleyen bağımsız bir haber kanalıdır. Bu sayfa, kanal sahibinin
+kendi bilgisayarında çalışan kişisel yayın panelini tanıtır. Panel; videoları kanal sahibinin kendi YouTube, Instagram ve
+TikTok hesaplarına, sahibinin izniyle yükler ve bu hesapların izlenme ve takipçi istatistiklerini sahibine gösterir.</p>
+<p><i>{channel} is an independent news channel summarising Turkey's agenda in short vertical videos. This page describes the
+owner's personal publishing panel, which runs on the owner's own computer and uploads the owner's videos to the owner's own
+YouTube, Instagram and TikTok accounts with the owner's authorization, and shows those accounts' view and follower statistics.</i></p>
+<h2>TikTok</h2><p>Login Kit ile kanal sahibi kendi TikTok hesabına giriş yapar. Content Posting API ile üretilen video hesabın
+gelen kutusuna taslak olarak gönderilir; yayın kararını sahibi TikTok uygulamasında verir. user.info.basic/user.info.stats ile
+hesap adı ve takipçi sayısı, video.list ile yüklenen videoların izlenme sayıları panelde gösterilir.</p>{c}</body></html>"""
+    terms = head("Kullanım Şartları") + f"""<h1>Kullanım Şartları / Terms of Service</h1>{nav}<small>Son güncelleme: 2026</small>
+<p>Bu panel yalnızca {channel} kanal sahibinin kişisel kullanımı içindir; üçüncü kişilere hizmet olarak sunulmaz. Panel,
+yalnızca sahibinin bağladığı hesaplarda ve sahibinin verdiği izinler kapsamında işlem yapar. Yayınlanan içerikten kanal
+sahibi sorumludur; içerikler ilgili platformların topluluk kurallarına uygun olmalıdır. Bağlantı istendiği an panelden
+kesilebilir ve verilen izinler platformun ayarlarından geri alınabilir.</p>
+<p><i>This panel is for the personal use of the {channel} channel owner only and is not offered as a service to third parties.
+It acts only on accounts the owner connects and within the permissions the owner grants. The owner is responsible for published
+content, which must follow each platform's community guidelines. Connections can be removed at any time from the panel, and
+permissions can be revoked from the platform's settings.</i></p>{c}</body></html>"""
+    privacy = head("Gizlilik Politikası") + f"""<h1>Gizlilik Politikası / Privacy Policy</h1>{nav}<small>Son güncelleme: 2026</small>
+<h2>Toplanan veriler</h2><p>Bağlanan hesapların erişim anahtarları, hesap adı, takipçi sayısı ve panel üzerinden yüklenen
+videoların izlenme/beğeni sayıları. Başka kullanıcıların kişisel verisi toplanmaz.</p>
+<h2>Kullanım ve saklama</h2><p>Veriler yalnızca videoları sahibinin kendi hesaplarına yüklemek ve istatistikleri sahibine
+göstermek için kullanılır; kanal sahibinin kendi bilgisayarında saklanır, satılmaz, üçüncü kişilerle paylaşılmaz, reklam
+için kullanılmaz. Bağlantı kesildiğinde erişim anahtarı silinir.</p>
+<p><i>Collected: access tokens of connected accounts, account name, follower count and view/like counts of videos uploaded by
+the panel. No personal data of other users is collected. Data is used only to upload the owner's videos to the owner's own
+accounts and to show statistics to the owner; it is stored on the owner's own computer and is never sold, shared with third
+parties or used for advertising. Disconnecting deletes the access token.</i></p>{c}</body></html>"""
+    return {"uygulama/index.html": index, "uygulama/kosullar.html": terms, "uygulama/gizlilik.html": privacy}
+
+
+def upload_legal(f=None):
+    """Yasal sayfaları yükler; adresleri döndürür."""
+    from common import settings
+    own = f is None
+    f = f or connect()
+    base = site_url()
+    mkdirs(f, "uygulama")
+    for rel, html in legal_pages(settings().get("channelName", "Türkiye Gündemi"), base, load_env().get("CONTACT_EMAIL", "")).items():
+        put_bytes(f, rel, html.encode("utf-8"))
+    if own:
+        f.quit()
+    return {"site": f"{base}/uygulama/", "terms": f"{base}/uygulama/kosullar.html", "privacy": f"{base}/uygulama/gizlilik.html"}
+
+
 VIDEOS_HTACCESS = "Options -Indexes\n<FilesMatch \"\\.(mp4|jpg)$\">\n  Header set Access-Control-Allow-Origin \"*\"\n</FilesMatch>\n"
 
 
@@ -183,6 +238,7 @@ def setup():
     mkdirs(f, "videos")
     put_bytes(f, "videos/.htaccess", VIDEOS_HTACCESS.encode())
     put_bytes(f, "videos/test.txt", b"ok")
+    legal = upload_legal(f)
     f.quit()
     base = site_url()
     ok_v = reachable(base + "/videos/test.txt")
@@ -192,6 +248,7 @@ def setup():
     print(f"Video adresi: {base}/videos/  → {v_msg}")
     print(f"Instagram geri dönüş: {base}/instagram/callback/  → {'çalışıyor ✔' if ok_cb else 'ERİŞİLEMEDİ'}")
     print(f"TikTok geri dönüş:    {base}/tiktok/callback/")
+    print(f"Uygulama sayfaları:   site {legal['site']} · şartlar {legal['terms']} · gizlilik {legal['privacy']}")
     print("Meta → Facebook Login for Business → Ayarlar → Valid OAuth Redirect URIs alanına bir kez yazın:")
     print(f"  {base}/instagram/callback/")
     print(json.dumps({"ok": ok_v and ok_cb, "videos": ok_v, "callback": ok_cb}))
@@ -203,7 +260,10 @@ if __name__ == "__main__":
     ap.add_argument("--setup", action="store_true")
     ap.add_argument("--upload")
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--legal", action="store_true", help="yalnız Web sitesi / Kullanım Şartları / Gizlilik sayfalarını yükle")
     a = ap.parse_args()
+    if a.legal:
+        print(json.dumps({"ok": True, **upload_legal()}, ensure_ascii=False)); sys.exit(0)
     if a.check:
         base = site_url()
         print(json.dumps({"configured": configured(), "site": base, "callback": bool(base) and reachable(base + "/instagram/callback/")}))

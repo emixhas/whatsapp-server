@@ -289,7 +289,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   video.upload; video.publish yalnız `TIKTOK_MODE=direct`; `TIKTOK_SCOPES` ile elle). Hata mesajı eksik izin/adres
   için ne yazılacağını söyler. Panel TikTok kartı: adım adım kurulum, Login Kit'e yazılacak adres (kopyala), Client
   key/secret ve mod alanları (`POST /api/tiktok/keys` → secrets/.env), bağlıyken "Yeniden bağla" ve "Bağlantıyı kes"
-  (`--disconnect tiktok`, `/v2/oauth/revoke/`). `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
+  (`--disconnect tiktok`, `/v2/oauth/revoke/`). TikTok uygulama formu Web sitesi / Terms of Service / Privacy Policy
+  adresi ister: `hostinger.py --legal` (ve `--setup`) `public_html/uygulama/` altına üç sade TR+EN sayfa yükler
+  (index, kosullar.html, gizlilik.html; iletişim `CONTACT_EMAIL`), panel kartında adresler + "Sayfaları oluştur"
+  (`POST /api/hostinger/legal`). İnceleme (App review) gerekmez: Sandbox + Target users ile çalışılır. `TIKTOK_MODE=inbox` → gelen kutusu taslağı (onaysız uygulamada çalışır);
   `direct` → doğrudan yayın (privacy creator_info'dan; onaysız uygulamada SELF_ONLY). Token 24 saat,
   refresh otomatik. Metrikler `/v2/video/list/` (view/like/comment/share).
 - `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
