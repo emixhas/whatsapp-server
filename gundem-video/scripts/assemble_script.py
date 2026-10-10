@@ -109,8 +109,11 @@ def expand_abbr(text: str) -> str:
 def extract_json(text: str):
     m = re.search(r"\{.*\}", text, re.S)  # Claude kod bloğu eklerse içinden JSON'u al
     if not m:
-        sys.exit("Claude çıktısında JSON bulunamadı")
-    return json.loads(m.group(0))
+        sys.exit("Claude çıktısında JSON bulunamadı. Claude'un yanıtı: " + (text.strip()[:300] or "(boş)"))
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError as e:
+        sys.exit(f"Claude'un JSON'u bozuk ya da yarım ({e.msg}, {len(text)} karakter); yanıt kesilmiş olabilir")
 
 
 def _norm_words(t: str):

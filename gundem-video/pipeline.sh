@@ -98,10 +98,18 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
     PROMPT_FILE="prompts/senaryo.md"
   fi
-  { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" "$PROMPT_FILE"; cat work/news_prompt.json; } \
-    | (cd "$CLAUDE_CWD" && "$CLAUDE" -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --effort "${CLAUDE_EFFORT:-medium}" --output-format json \
-        --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence) > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
-  $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo
+  # Claude bazen JSON yerine düz metin/yarım yanıt döndürür: bir kez daha, "yalnız JSON" hatırlatmasıyla denenir.
+  # Kullanım sınırı/oturum hatasında (claude_result çıkış 2) tekrar denenmez.
+  for TRY in 1 2; do
+    { sed -e "s/__SURE__/$DURATION/g" -e "s/__KELIME__/$WORDS/g" -e "s/__HABER__/$HABER/g" -e "s|__IPUCU__|$HINT|g" -e "s|__FORMAT_ADI__|$FORMAT_LABEL|g" -e "s|__FORMAT_INTRO__|$FORMAT_INTRO|g" -e "s|__FORMAT_TON__|$FORMAT_TONE|g" "$PROMPT_FILE"; cat work/news_prompt.json
+      if [ "$TRY" = "2" ]; then printf '\n\nÖNEMLİ: Önceki denemede geçerli JSON gelmedi. Yanıtın YALNIZCA şemadaki JSON nesnesi olsun: açıklama, soru, kod bloğu yok; { ile başla } ile bitir.\n'; fi; } \
+      | (cd "$CLAUDE_CWD" && "$CLAUDE" -p ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} --effort "${CLAUDE_EFFORT:-medium}" --output-format json \
+          --tools "" --strict-mcp-config --disable-slash-commands --no-session-persistence) > work/claude_raw.json 2> work/claude_stderr.log || { echo "  ! senaryo adımı hata verdi (Claude):"; tail -n 5 work/claude_stderr.log; $PY -c "import json;print('  ',json.load(open('work/claude_raw.json')).get('result',''))" 2>/dev/null; echo "  Claude oturumu kapalıysa terminalde 'claude' yazıp /login yapın."; exit 1; }
+    RC=0; $PY scripts/claude_result.py work/claude_raw.json work/claude_out.json senaryo || RC=$?
+    if [ "$RC" = "0" ] && $PY -c "import json,re,sys;t=open('work/claude_out.json',encoding='utf-8').read();m=re.search(r'\{.*\}',t,re.S);json.loads(m.group(0))" 2>/dev/null; then break; fi
+    if [ "$RC" = "2" ]; then echo "HATA: Claude kullanım sınırı ya da oturum sorunu; senaryo yazılamadı."; exit 1; fi
+    if [ "$TRY" = "1" ]; then echo "  ! Claude geçerli senaryo döndürmedi, bir kez daha deneniyor"; else echo "HATA: Claude iki denemede de geçerli senaryo döndürmedi."; exit 1; fi
+  done
 fi
 $PY scripts/assemble_script.py work/claude_out.json work/script.json
 # Bölüm adını hemen rezerve et: aynı anda başlayan ikinci üretim aynı numarayı alamaz

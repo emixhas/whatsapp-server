@@ -12,6 +12,11 @@ Tek dış bağımlılık haber RSS kaynakları ve senaryoyu yazan Claude'dur.
 4. `scripts/tts.py` → segment başına wav + süre (`public/episode.json`)
 5. `npx remotion render` → `out/YYYY-MM-DD-N.mp4` (N = günün kaçıncı videosu)
 
+Senaryo adımı JSON garantisi: `claude_result.py` çıkış kodu 0 = tamam, 2 = kullanım sınırı/oturum (tekrar
+denenmez, "HATA: Claude kullanım sınırı…"), 3 = JSON yok/hata (Claude'un yanıtının ilk 300 karakteri loga yazılır);
+pipeline 3'te bir kez daha "YALNIZCA JSON" hatırlatmasıyla dener, yine olmazsa durur. `assemble_script.extract_json`
+yanıtı ve bozuk/yarım JSON'u ayrıca söyler. (Bash: `set -e`+`pipefail` altında `{ …; [ x ] && …; }` grubu son komut
+yanlışsa boru hattını düşürür; `if … fi` kullan.)
 `pipeline.sh` bu adımları sırayla çalıştırır; launchd 5 saatte bir tetikler. `DURATION=60 bash pipeline.sh`
 süreyi belirler: kelime bütçesi = süre × 2.4, haber sayısı = süre / 8 (2-12 arası). Prompt'taki
 `__SURE__`, `__KELIME__`, `__HABER__` yer tutucuları pipeline tarafından doldurulur.
