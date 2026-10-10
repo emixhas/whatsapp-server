@@ -452,7 +452,7 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
   Güvenlik ağı: 03-06 arası 12 saatten uzun açık ve boştaysa ya da JS belleği 600 MB'ı geçerse sayfa kendini yeniler.
   Yeni ses/DOM kodu eklerken oluşturduğunu bırak.
 - UI'da tarayıcının `confirm()`/`alert()`'i KULLANILMAZ: Chrome "bu sayfanın ek iletişim kutularını engelle" işaretlenince
-  confirm sessizce false döner ve yayın/sil düğmeleri hiçbir şey yapmıyor görünür (kullanıcı bunu yaşadı). Onay için
+  confirm sessizce false döner ve yayın/sil düğmeleri hiçbir şey yapmıyor görünür (video penceresi düğmeleri "çalışmıyor" şikâyetinin en olası nedeni). Onay için
   sayfa içi `await ask(metin)` (Enter evet, Esc vazgeç), bildirim için `toast()`. `window` error/unhandledrejection
   dinleyicileri JS hatalarını sohbete ve toast'a yazar.
 - Önizleme: `npm run studio`. Sessiz hızlı test: `TTS_ENGINE=silent bash pipeline.sh`.
