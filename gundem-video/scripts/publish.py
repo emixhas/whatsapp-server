@@ -649,6 +649,7 @@ def tt_connect():
     url = TT_AUTH + "?" + urllib.parse.urlencode({"client_key": env["TIKTOK_CLIENT_KEY"], "scope": tt_scopes(env), "response_type": "code",
                                                   "redirect_uri": redirect, "state": state})
     print(f"Tarayıcıda açılıyor: {url}", file=sys.stderr)
+    print(f"TT_REDIRECT {redirect}", file=sys.stderr, flush=True)  # panel loga yazar (Login Kit'teki adresle karşılaştırma)
     webbrowser.open(url)
     if use_host:
         got.update(hostinger.poll_code(redirect, state, 300))
@@ -665,7 +666,7 @@ def tt_connect():
             hint = " — giriş yapılan TikTok hesabı Sandbox → Target users listesinde değil: oraya ekleyin (aynı hesapla giriş yapın)"
         elif "scope" in str(err).lower():
             hint = f" — uygulamada şu izinler açık olmalı: {tt_scopes(env)} (developers.tiktok.com → uygulama → Scopes)"
-        elif "redirect" in str(err).lower():
+        elif "redirect" in str(err).lower() or "redirect_uri" in str(got):
             hint = f" — Login Kit → Redirect URI olarak AYNEN şunu yazın: {redirect}"
         raise RuntimeError(f"TikTok reddetti: {err}{hint}")
     if got.get("state") != state or "code" not in got:

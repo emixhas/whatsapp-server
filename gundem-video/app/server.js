@@ -726,7 +726,11 @@ app.post("/api/tiktok/keys", (req, res) => {
   push("♪ TikTok uygulama ayarları kaydedildi"); res.json({ ok: true });
 });
 app.post("/api/disconnect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "tiktok"]); push("♪ TikTok bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
-app.post("/api/connect/tiktok", async (_req, res) => { const r = await py("publish.py", ["--connect", "tiktok"]); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
+app.post("/api/connect/tiktok", async (_req, res) => {
+  // gönderilen geri dönüş adresi hemen loga düşsün (TikTok "redirect_uri" derse Login Kit'tekiyle karşılaştırılır)
+  try { const st = await py("publish.py", ["--status"]); if (st.json?.tiktok?.redirect) push(`♪ TikTok: gönderilen Redirect URI → ${st.json.tiktok.redirect} (Sandbox → Login Kit → Web'de AYNEN bu olmalı)`); } catch { /* yok */ }
+  const r = await py("publish.py", ["--connect", "tiktok"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) };
+  push(`${j.ok ? "✔" : "✖"} TikTok: ${j.ok ? "bağlandı" : j.error}`); res.json(j); });
 app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [] })));
 app.post("/api/metrics/sync", async (_req, res) => res.json(await execAction({ type: "sync_metrics" })));
 app.get("/api/insights", (_req, res) => res.json(readJson(path.join(DATA, "insights.json"), null)));
