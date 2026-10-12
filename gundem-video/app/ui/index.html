@@ -187,6 +187,7 @@
       <h2 style="margin-top:14px">KATEGORİYE GÖRE ORTALAMA İZLENME</h2><div class="bars" id="byCat"></div>
       <h2 style="margin-top:14px">SÜREYE GÖRE</h2><div class="bars" id="byDur"></div>
       <h2 style="margin-top:14px">SAATE GÖRE</h2><div class="bars" id="byHour"></div>
+      <h2 style="margin-top:14px">EN İYİ YAYIN SAATİ</h2><div class="conninfo" id="bestHours">Veri bekleniyor…</div>
       <h2 style="margin-top:14px">EN İYİ VİDEOLAR</h2><div id="top"></div>
       <h2 style="margin-top:14px">SENARYOYA GİDEN İPUCU</h2><div class="md" id="hint" style="color:var(--mut)"></div>
     </div>
@@ -609,12 +610,22 @@ function renderFollowers(f){
   $('#folAxis').innerHTML=`<span>${fmtD(days[0].date)}</span><span>${fmtD(days[days.length-1].date)} (bugün)</span>`;
   document.querySelectorAll('#folChart .c').forEach(c=>{c.onmousemove=e=>{const t=$('#gtip');t.innerHTML=c.dataset.tip;t.style.display='block';t.style.left=Math.min(e.clientX+12,innerWidth-180)+'px';t.style.top=(e.clientY+12)+'px';};c.onmouseleave=()=>{$('#gtip').style.display='none';};});
 }
+// en iyi yayın saati (analyze.best_hours): platform başına en iyi 3 saat + slot kaydırma önerisi ve "Uygula"
+function renderBestHours(b){const el=$('#bestHours');if(!b){el.textContent='Veri bekleniyor…';return;}
+  const hh=h=>String(h).padStart(2,'0')+':00';const rows=Object.entries(b.platforms||{}).filter(([,v])=>v.length).map(([k,v])=>`<div>${ptag(k)} ${v.map(x=>`<b>${hh(x.hour)}</b> (ort. ${x.avg.toLocaleString('tr-TR')}, ${x.n} video)`).join(' · ')}</div>`).join('');
+  const off=status.settings?.scheduleOffset||0;
+  el.innerHTML=(rows||'<div>Platform başına saat ortalaması için her saatte en az 2 izlenmeli video gerekir.</div>')
+    +`<div style="margin-top:6px">Şu anki üretim saatleri: ${(b.slots||[]).map(hh).join(', ')}${off?` (varsayılandan ${off>0?'+':''}${off} saat)`:''}</div>`
+    +(b.suggestion?`<div style="margin-top:6px;color:var(--green)">💡 ${esc(b.suggestion.text)}</div><div class="acts"><button class="ghost ok" id="bhApply">Saatleri kaydır</button>${off?'<button class="ghost" id="bhReset">Varsayılana dön</button>':''}</div>`
+      :`<div style="margin-top:6px;color:var(--mut)">${esc(b.note||'Şimdiki saatler iyi görünüyor; belirgin daha iyi bir saat yok.')}</div>${off?'<div class="acts"><button class="ghost" id="bhReset">Varsayılana dön</button></div>':''}`);
+  const ap=$('#bhApply');if(ap)ap.onclick=async()=>{if(!await ask(b.suggestion.text+'\n\nÜretim saatleri değiştirilsin mi?'))return;const r=await post('/api/schedule/offset',{offset:b.suggestion.offset});toast(r.ok?'Üretim saatleri kaydırıldı ✓':(r.error||'Değiştirilemedi'),!r.ok);refreshStatus();loadInsights();};
+  const rs=$('#bhReset');if(rs)rs.onclick=async()=>{const r=await post('/api/schedule/offset',{reset:true});toast(r.ok?'Varsayılan saatlere dönüldü':(r.error||'Değiştirilemedi'),!r.ok);refreshStatus();loadInsights();};}
 async function loadInsights(){const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
   $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
   const bp=i.byPlatform||{};
   bars('#byPlat',Object.fromEntries(Object.entries(bp).filter(([,v])=>v.total).map(([k,v])=>[`${PLAT[k].n} (${v.videos} video, ort. ${v.avg.toLocaleString('tr-TR')})`,v.total])));
   $('#platTop').innerHTML=Object.entries(bp).map(([k,v])=>`<div class="pc" style="border-color:${PLAT[k].c}55"><h3 style="color:${PLAT[k].c}">${PLAT[k].n}</h3><div class="s">toplam ▶ ${v.total.toLocaleString('tr-TR')} · ${v.videos} video · ortalama ${v.avg.toLocaleString('tr-TR')}</div>${(v.top||[]).map((t,n)=>`<div style="margin:4px 0">${n+1}. ${t.url?`<a href="${t.url}" target="_blank">${esc(t.title||t.name)}</a>`:esc(t.title||t.name)} · <b>▶ ${t.views.toLocaleString('tr-TR')}</b></div>`).join('')||'<span class="empty">henüz veri yok</span>'}</div>`).join('');
-  bars('#byCat',i.byCategory);bars('#byDur',Object.fromEntries(Object.entries(i.byDuration||{}).map(([k,v])=>[k+' sn',v])));bars('#byHour',Object.fromEntries(Object.entries(i.byHour||{}).map(([k,v])=>[k+':00',v])));
+  bars('#byCat',i.byCategory);bars('#byDur',Object.fromEntries(Object.entries(i.byDuration||{}).map(([k,v])=>[k+' sn',v])));bars('#byHour',Object.fromEntries(Object.entries(i.byHour||{}).map(([k,v])=>[k+':00',v])));renderBestHours(i.bestHours);
   $('#top').innerHTML=(i.top||[]).map((r,k)=>{const per=[['youtube',r.yt_views],['instagram',r.ig_views],['tiktok',r.tt_views]].filter(([,v])=>v).map(([p,v])=>`${PLAT[p].n} ${v.toLocaleString('tr-TR')}`).join(' · ');
     return `<div style="margin:8px 0">${k+1}. <b>${esc(r.firstTitle??r.name)}</b> · ▶ ${r.views.toLocaleString('tr-TR')} ${r.bestPlatform?'· en çok '+ptag(r.bestPlatform):''}<br><span style="color:var(--mut);font-size:12px">${per}${per?' · ':''}${r.targetDuration??'?'} sn · ${(r.categories||[]).join(', ')}</span></div>`;}).join('')||'<span class="empty">henüz izlenme verisi yok</span>';$('#hint').textContent=i.hint||'';}
 $('#syncBtn').onclick=async()=>{$('#syncBtn').disabled=true;const r=await post('/api/metrics/sync');$('#syncBtn').disabled=false;addMsg('j',r.ok?`İzlenmeler güncellendi (YouTube ${r.youtube??0}, Instagram ${r.instagram??0}).`:'Güncellenemedi: '+(r.errors||[]).join('; '));loadInsights();loadVideos();};

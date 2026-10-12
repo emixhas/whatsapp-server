@@ -99,6 +99,13 @@ def main():
         low = min((p for p in plats if plats[p]), key=lambda p: plats[p])
         if plats[low] < plats[lead[0]] * 0.25:
             tips.append(f"{PLAT[low][0]} geride kalıyor; kapak ve ilk 2 saniyeyi o platformda kontrol et.")
+    try:  # en iyi yayın saati önerisi (analyze.best_hours)
+        from analyze import best_hours
+        bh = best_hours(rows)
+        if bh.get("suggestion"):
+            tips.append(bh["suggestion"]["text"] + " Panel → Analitik → En iyi yayın saati → \"Saatleri kaydır\".")
+    except Exception:
+        pass
     unpublished = [r for r in week if not any(r["published"].values())]
     if unpublished:
         tips.append(f"{len(unpublished)} video hiçbir platformda yayınlanmadı; yayın bağlantılarını kontrol et.")

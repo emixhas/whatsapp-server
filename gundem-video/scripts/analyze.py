@@ -43,6 +43,58 @@ def avg(xs):
     return round(sum(xs) / len(xs)) if xs else None
 
 
+LONG = ("gunluk", "haftalik")  # yatay uzun videolar saat analizine girmez (yayın saatleri sabit)
+
+
+def best_hours(rows: list) -> dict:
+    """En iyi yayın saati: platform başına saat ortalaması (en az 2 video) ve 5 saatlik slotları kaydırma önerisi.
+    Öneri yalnızca yeterli veri (15+ izlenmeli düzenli video) ve en az %15 kazanç varsa verilir; komşu saatler
+    yumuşatılır (tek videonun şansı öneriyi belirlemesin)."""
+    regular = [r for r in rows if r["hour"] is not None and r.get("format") not in LONG]
+    per = {}
+    for pl, key in (("youtube", "yt_views"), ("instagram", "ig_views"), ("tiktok", "tt_views")):
+        by = defaultdict(list)
+        for r in regular:
+            if r.get(key):
+                by[r["hour"]].append(r[key])
+        per[pl] = sorted(({"hour": h, "avg": avg(v), "n": len(v)} for h, v in by.items() if len(v) >= 2), key=lambda x: -x["avg"])[:3]
+    by = defaultdict(list)
+    for r in regular:
+        if r["views"]:
+            by[r["hour"]].append(r["views"])
+    n = sum(len(v) for v in by.values())
+    out = {"platforms": per, "videos": n, "suggestion": None}
+    sch = load_json(DATA / "schedule.json", {})
+    hours = int(sch.get("hours") or 5)
+    slots = sch.get("slots") or list(range(0, 24, hours))
+    out["slots"] = slots
+    if n < 15:
+        out["note"] = f"Öneri için en az 15 izlenme verili video gerekir (şu an {n})."
+        return out
+    mean = {h: sum(v) / len(v) for h, v in by.items()}
+
+    def smooth(h):
+        vals = [mean[x % 24] for x in (h - 1, h, h + 1) if x % 24 in mean]
+        return sum(vals) / len(vals) if vals else None
+
+    def score(off):
+        vals = [smooth((s + off) % 24) for s in slots]
+        vals = [v for v in vals if v is not None]
+        return sum(vals) / len(vals) if len(vals) >= max(2, len(slots) - 1) else None  # verisi olmayan saat "iyi" sayılmasın
+
+    cur = score(0)
+    cands = [(off, score(off)) for off in range(-(hours // 2), hours // 2 + 1) if off]
+    cands = [(o, sc) for o, sc in cands if sc is not None]
+    if cur and cands:
+        off, sc = max(cands, key=lambda x: x[1])
+        gain = round((sc - cur) / cur * 100)
+        if gain >= 15:
+            out["suggestion"] = {"offset": off, "slots": sorted((s + off) % 24 for s in slots), "gainPct": gain,
+                                 "text": f"Üretim saatlerini {abs(off)} saat {'ileri' if off > 0 else 'geri'} almak izlenmeyi ~%{gain} artırabilir "
+                                         f"({', '.join(f'{h:02d}:00' for h in sorted((s + off) % 24 for s in slots))})."}
+    return out
+
+
 def main():
     rows = video_rows()
     with_data = [r for r in rows if r["views"] > 0]
@@ -103,7 +155,7 @@ def main():
         "byCategory": cat_avg, "byDuration": dur_avg, "byHour": hour_avg, "byTitleVariant": var_avg, "byFormat": fmt_avg,
         "breakingAvg": breaking_avg, "normalAvg": normal_avg,
         "top": [{k: r.get(k) for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "bestPlatform", "categories", "targetDuration", "urls")} for r in top],
-        "byPlatform": by_platform, "leadingPlatform": leader,
+        "byPlatform": by_platform, "leadingPlatform": leader, "bestHours": best_hours(rows),
         "hint": hint_text, "rows": rows,
     }
     try:  # abone/takipçi: güncel, bugün, 7 gün, 30 gün, günlük seri (scripts/followers.py)

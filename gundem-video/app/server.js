@@ -434,7 +434,8 @@ const PLIST = path.join(process.env.HOME || "", "Library/LaunchAgents/com.gundem
 const SCHED_FILE = path.join(DATA, "schedule.json");
 const readSched = () => { try { return JSON.parse(readFileSync(SCHED_FILE, "utf8")); } catch { return {}; } };
 // Üretim saatleri sabittir: 24 saat "hours" aralığıyla bölünür (5 → 00,05,10,15,20). Dakika settings.scheduleMinute.
-const slotsFor = (hours) => { const out = []; for (let h = 0; h < 24; h += Math.max(1, Math.round(hours))) out.push(h); return out; };
+// settings.scheduleOffset: "en iyi yayın saati" önerisiyle kaydırma (ör. +2 → 02,07,12,17,22)
+const slotsFor = (hours) => { const off = Number(settings().scheduleOffset) || 0, out = []; for (let h = 0; h < 24; h += Math.max(1, Math.round(hours))) out.push(((h + off) % 24 + 24) % 24); return out.sort((a, b) => a - b); };
 async function getSchedule() {
   const enabled = existsSync(PLIST);
   const sch = readSched();
@@ -789,6 +790,16 @@ async function setAutoMode(on) {
 app.post("/api/automode", async (req, res) => res.json(await setAutoMode(req.body?.enabled !== false)));
 app.get("/api/schedule", async (_req, res) => res.json(await getSchedule()));
 // Otomatik üretim anahtarı: açıkken videolar bağlı TÜM hesaplara onaysız yayınlanır (kullanıcı isteği), kapanınca eski hâl
+// En iyi yayın saati önerisini uygula (analyze.best_hours → insights.bestHours.suggestion.offset) ya da sıfırla
+app.post("/api/schedule/offset", async (req, res) => {
+  const off = Math.max(-12, Math.min(12, Math.round(Number(req.body?.offset) || 0)));
+  const total = ((Number(settings().scheduleOffset) || 0) + (req.body?.reset ? -(Number(settings().scheduleOffset) || 0) : off));
+  patchSettings({ scheduleOffset: ((total % 24) + 24) % 24 > 12 ? ((total % 24) + 24) % 24 - 24 : ((total % 24) + 24) % 24 });
+  const sch = await getSchedule();
+  const r = sch.enabled ? await setSchedule(true, sch.hours || 5) : { ok: true, slots: slotsFor(sch.hours || Number(settings().scheduleHours) || 5) };
+  push(`🕐 yayın saatleri ${req.body?.reset ? "varsayılana döndü" : "en iyi saate göre kaydırıldı"}: ${(r.slots || []).map((h) => String(h).padStart(2, "0") + ":00").join(", ")}`);
+  res.json({ ...r, offset: settings().scheduleOffset });
+});
 app.post("/api/schedule", async (req, res) => {
   const on = !!req.body.enabled; const r = await setSchedule(on, Number(req.body.hours) || 5);
   if (r.ok) { patchSettings({ autoMode: on }); push(on ? "🤖 otomatik üretim açık: videolar bağlı tüm hesaplara onaysız yayınlanacak" : "⏸ otomatik üretim kapalı"); }
