@@ -12,7 +12,20 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
   const digits = (s) => String(s || "").replace(/\D/g, "");
   const ownerDigits = () => { let d = digits(settings().whatsapp?.owner); if (d.startsWith("0")) d = "90" + d.slice(1); return d; };
   const ownerJid = () => `${ownerDigits()}@s.whatsapp.net`;
-  const isOwner = (jid) => { const d = digits(jid); const o = ownerDigits(); return !!o && (d === o || d.endsWith(o.slice(-10))); };
+  const isOwner = (jid) => { if (!jid || String(jid).endsWith("@lid")) return false; const d = digits(jid); const o = ownerDigits(); return !!o && d.length >= 10 && (d === o || d.endsWith(o.slice(-10))); };
+  // WhatsApp yeni "LID" kimliği: 1'e 1 sohbette remoteJid "…@lid" gelir, telefon numarası key.senderPn'dedir. Sahibin
+  // LID'i ilk eşleşmede öğrenilir (settings.whatsapp.ownerLid değil, bellekte + data'ya yazılmaz; her açılışta yeniden).
+  const knownOwnerLids = new Set();
+  const lidKey = (j) => digits(String(j || "").split("@")[0].split(":")[0]);
+  const sentIds = new Set(); // kendi gönderdiğimiz mesajlar: kendine-mesaj sohbetinde komut sanılmasın (döngü engeli)
+  const selfPhone = () => digits(sock?.user?.id?.split(":")[0]);
+  const selfLid = () => digits(sock?.user?.lid?.split(":")[0]);
+  const isSelfChat = (jid) => { const d = digits(String(jid || "").split("@")[0].split(":")[0]); return !!d && (d === selfPhone() || (!!selfLid() && d === selfLid())); };
+  let lastIgnoredLog = 0, ownerLidFor = "";
+  async function learnOwnerLid() { // sahibin telefon numarasından LID'i (WhatsApp sorgusu); sahip değişirse yeniden
+    const o = ownerDigits(); if (!o || !sock || ownerLidFor === o) return;
+    try { const r = await sock.onWhatsApp(ownerJid()); const l = digits(String(r?.[0]?.lid || "").split("@")[0].split(":")[0]); if (l) { knownOwnerLids.add(l); ownerLidFor = o; } } catch { /* sorgu başarısız: senderPn ile öğrenilir */ }
+  }
 
   async function start() {
     if (sock || stopping) return status();
@@ -27,7 +40,7 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     sock.ev.on("creds.update", saveCreds);
     sock.ev.on("connection.update", async (u) => {
       if (u.qr) { st.qr = u.qr; st.qrSvg = await QRCode.toString(u.qr, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }); st.status = "qr"; push("💬 WhatsApp: QR hazır, panelden telefonunuzla okutun"); }
-      if (u.connection === "open") { st.status = "connected"; st.qr = st.qrSvg = null; st.retries = 0; st.phone = digits(sock.user?.id?.split(":")[0]); push(`💬 WhatsApp bağlandı: +${st.phone}`); announce("WhatsApp bağlandı."); }
+      if (u.connection === "open") { st.status = "connected"; st.qr = st.qrSvg = null; st.retries = 0; st.phone = digits(sock.user?.id?.split(":")[0]); push(`💬 WhatsApp bağlandı: +${st.phone}`); announce("WhatsApp bağlandı."); setTimeout(() => learnOwnerLid(), 3000); }
       if (u.connection === "close") {
         const code = u.lastDisconnect?.error?.output?.statusCode;
         sock = null; st.status = "disconnected";
@@ -36,17 +49,37 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
       }
     });
     sock.ev.on("messages.upsert", async ({ messages, type }) => {
-      if (type !== "notify") return;
       for (const m of messages) {
-        if (!m.message || m.key.fromMe) continue;
-        const from = m.key.remoteJid || ""; const participant = m.key.participant || "";
-        if (from.endsWith("@g.us")) continue;                       // gruplar yok sayılır
-        if (!isOwner(from) && !isOwner(participant)) continue;      // yalnızca sahip
+        if (!m.message || sentIds.has(m.key.id)) continue;
+        const from = m.key.remoteJid || ""; const k = m.key;
+        if (from.endsWith("@g.us") || from.endsWith("@broadcast") || from.endsWith("@newsletter")) continue; // gruplar, durumlar
+        const selfChat = isSelfChat(from);
+        // bağlı numaranın başka sohbetlere yazdıkları komut değildir; kendine-mesaj sohbetinde yazılanlar komuttur
+        if (k.fromMe && !selfChat) continue;
+        // telefondan kendine yazılan mesaj "append" gelebilir; eski geçmiş (5 dk'dan eski) işlenmez
+        if (type !== "notify" && !(k.fromMe && selfChat)) continue;
+        const ts = Number(m.messageTimestamp || 0) * 1000; if (ts && Date.now() - ts > 5 * 60000) continue;
+        const pnCands = [from, k.participant, k.senderPn, k.participantPn].filter(Boolean);
+        const lid = [from, k.senderLid, k.participantLid].find((j) => String(j || "").endsWith("@lid"));
+        if (lid && !knownOwnerLids.has(lidKey(lid))) await learnOwnerLid();
+        let owner = selfChat || pnCands.some(isOwner) || (!!lid && knownOwnerLids.has(lidKey(lid)));
+        if (owner && lid && !selfChat) knownOwnerLids.add(lidKey(lid));
         const text = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").trim();
+        if (!owner) {
+          if (text && Date.now() - lastIgnoredLog > 60000) {
+            lastIgnoredLog = Date.now();
+            const who = digits(k.senderPn || k.participantPn || from); const o = ownerDigits();
+            push(`💬 WhatsApp: sahip olmayan göndericiden mesaj yok sayıldı (…${who.slice(-4)}${from.endsWith("@lid") && !k.senderPn ? ", numara gizli (LID)" : ""}); sahip numarası ${o ? "…" + o.slice(-4) : "AYARLANMAMIŞ"} — yanlışsa Ayarlar → WhatsApp → sahip numarası`);
+            st.lastIgnored = { at: Date.now(), from: "…" + who.slice(-4), lid: !!lid && !k.senderPn };
+          }
+          continue;
+        }
         if (!text) continue;
         st.lastMsgAt = Date.now();
+        // yanıt: kendine-mesajsa kendi numaramıza, değilse sahibin telefon numarasına (LID adresine değil)
+        const replyTo = selfChat ? `${selfPhone()}@s.whatsapp.net` : (pnCands.find(isOwner) && !String(pnCands.find(isOwner)).endsWith("@lid") ? `${digits(pnCands.find(isOwner))}@s.whatsapp.net` : ownerJid());
         push(`💬 WhatsApp'tan: ${text.slice(0, 80)}`);
-        try { await onOwnerMessage(from, text); } catch (e) { push(`✖ WhatsApp komutu: ${e.message}`); await send(from, `Hata: ${e.message}`); }
+        try { await onOwnerMessage(replyTo, text); } catch (e) { push(`✖ WhatsApp komutu: ${e.message}`); try { await send(replyTo, `Hata: ${e.message}`); } catch { /* bağlantı yok */ } }
       }
     });
     return status();
@@ -75,16 +108,17 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     await send(jid, reply);
   }
 
-  async function send(jid, text) { if (!sock || st.status !== "connected") throw new Error("WhatsApp bağlı değil"); await sock.sendMessage(jid, { text }); }
+  const remember = (r) => { if (r?.key?.id) { sentIds.add(r.key.id); if (sentIds.size > 500) sentIds.delete(sentIds.values().next().value); } return r; };
+  async function send(jid, text) { if (!sock || st.status !== "connected") throw new Error("WhatsApp bağlı değil"); remember(await sock.sendMessage(jid, { text })); }
   async function sendLink(jid, url, title, description, thumb) {
     try {
-      await sock.sendMessage(jid, { text: `${title}\n${url}`, linkPreview: { "canonical-url": url, "matched-text": url, title, description, ...(thumb ? { jpegThumbnail: thumb } : {}) } });
+      remember(await sock.sendMessage(jid, { text: `${title}\n${url}`, linkPreview: { "canonical-url": url, "matched-text": url, title, description, ...(thumb ? { jpegThumbnail: thumb } : {}) } }));
     } catch (e) { push(`💬 link gönderilemedi (${e.message}); düz metin deneniyor`); await send(jid, `${title}\n${url}`); }
   }
   async function sendVideo(jid, file, caption) {
     const size = statSync(file).size;
     if (size > 60 * 1024 * 1024) { await send(jid, `${caption}\n(Video 60 MB'den büyük, dosya gönderilmedi; linkten izleyin.)`); return false; }
-    await sock.sendMessage(jid, { video: readFileSync(file), caption, mimetype: "video/mp4" });
+    remember(await sock.sendMessage(jid, { video: readFileSync(file), caption, mimetype: "video/mp4" }));
     return true;
   }
 
@@ -129,7 +163,7 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
 
   async function stop() { stopping = true; try { sock?.end?.(); } catch { /* yok */ } sock = null; st.status = "disconnected"; stopping = false; return status(); }
   async function logout() { try { await sock?.logout?.(); } catch { /* yok */ } await stop(); rmSync(AUTH_DIR, { recursive: true, force: true }); st.phone = null; return status(); }
-  const status = () => ({ status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
+  const status = () => ({ lastIgnored: st.lastIgnored || null, selfPhone: selfPhone() ? "…" + selfPhone().slice(-4) : null, status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
   const clearPending = (video) => { if (st.pending && (!video || st.pending.video === video)) st.pending = null; };
   return { start, stop, logout, status, send: (t) => send(ownerJid(), t), notifyVideo, clearPending };
 }

@@ -332,6 +332,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Wi-Fi linki, tünel açıksa dış link, ayar açıksa video dosyasının kendisi; bağlı platform varsa
   "onay" ister. "onay/evet/yayınla" → bağlı platformlara yayın; "iptal" → yayınlanmaz.
 - Diğer mesajlar `handleCommand()` üzerinden aynı kural+beyin yoluna gider; yanıt düz metin döner.
+- Gönderen tanıma (komutlar sessizce kaybolmasın): WhatsApp'ın yeni LID kimliğinde 1'e 1 sohbet `…@lid` gelir, numara
+  `key.senderPn`'dedir; `isOwner` LID'i telefon sanmaz. Sahip: senderPn/participantPn/remoteJid telefonu eşleşen,
+  ya da bilinen sahip LID'i (`learnOwnerLid`: bağlanınca `sock.onWhatsApp(ownerJid)` ile öğrenilir, senderPn ile
+  eşleşince de eklenir), ya da bağlı numaranın KENDİNE-MESAJ sohbeti (fromMe + kendi numara/LID; telefondan "append"
+  gelebilir). Bağlı numaranın başka sohbetlere yazdıkları ve 5 dk'dan eski mesajlar işlenmez. Gönderdiğimiz her mesajın
+  kimliği `sentIds`te (kendine-mesajda yanıt döngüsü olmasın). Yanıt her zaman telefon jid'ine (LID'e değil). Sahip
+  olmayan göndericiden gelen mesaj dakikada bir loga "💬 WhatsApp: sahip olmayan göndericiden mesaj yok sayıldı (…son 4
+  hane / numara gizli)" yazar; `status().lastIgnored`.
 - Video dosyası 60 MB üstündeyse gönderilmez, link kalır. WhatsApp bağlı değilken bildirim loga düşer.
 - libsignal oturum açıp kapatırken oturumun tamamını (özel anahtarlar dahil) `console.info/warn` ile basar; `server.js`
   başındaki `SIGNAL_NOISE` filtresi bu satırları susturur (terminal ve work/panel.log'a gizli anahtar düşmesin). Kaldırma.
