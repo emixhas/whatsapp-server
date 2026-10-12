@@ -427,6 +427,22 @@ setInterval(() => {
   if (readJson(DAILY_FILE, {}).day === today() || pipelineBusy() || resting()) return;
   startDaily();
 }, 60000);
+// ---------- viral alarmı (scripts/viral_watch.py): her izlenme senkronundan sonra. 24 saatten genç video son videoların
+// ortancasının settings.viral.ratio (3) katını geçerse WhatsApp + log + ses; konuyla ilgili YENİ haber varsa devam videosu
+// değerli haber toplayıcısıyla üretilir (dinlenmedeyse uyandırır).
+async function viralCheck() {
+  const r = await py("viral_watch.py", []);
+  for (const v of r.json?.viral || []) {
+    const plat = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" }[v.platform] || "";
+    push(`🔥 VİRAL: "${v.title}" ${v.ageHours} saatte ${v.views.toLocaleString("tr-TR")} izlenme (ortalamanın ${v.ratio} katı${plat ? `, en çok ${plat}` : ""})`);
+    const follow = v.followUp ? `\n\n➡️ Yeni gelişme var: "${v.followUp.title}" (${v.followUp.source}). Devam videosu üretiliyor.` : "\n\nŞu an konuyla ilgili yeni gelişme yok; gelişme düşerse 🎬 Video üret ile devam videosu yapabilirsiniz.";
+    try { await wa.send(`🔥 *Video viral oluyor*\n${v.title}\n${v.ageHours} saatte ${v.views.toLocaleString("tr-TR")} izlenme, normalin ${v.ratio} katı.${v.url ? `\n${v.url}` : ""}${follow}`); } catch { /* WhatsApp bağlı değil */ }
+    if (v.followUp) queueValuable({ title: v.followUp.title, text: v.followUp.text, source: v.followUp.source || "Türkiye Gündemi", url: v.followUp.url, sourceCount: 1, duration: 30,
+      onStarted: async (res) => { if (res.ok && !res.merged) await pyJson(["scripts/breaking_watch.py", "--mark", v.followUp.title]).catch(() => {}); } });
+  }
+  return r.json;
+}
+app.post("/api/viral/check", async (_req, res) => res.json(await viralCheck()));
 // ---------- disk temizliği (scripts/cleanup.py): her gece 04:10, settings.cleanup {enabled, days 30}; dinlenmede de (hafif)
 const CLEAN_FILE = path.join(DATA, "cleanup_last.json");
 async function runCleanup({ manual = false } = {}) {
@@ -608,7 +624,7 @@ async function execAction(a) {
     case "breaking_news": return startAnlik(a.topic, a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
-    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
+    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
     case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram, tiktok: !!a.tiktok } }); return { ok: true };
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
@@ -1039,6 +1055,7 @@ const STAGE_VOICE = [
   [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
   [/^📰 Mynet: yeni manşet/, "Mynet manşetine yeni bir haber girdi, video hazırlanıyor."],
   [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
+  [/^🔥 VİRAL/, "Bir video viral oluyor. Ayrıntıyı WhatsApp'a gönderdim."],
   [/^⏸ SİSTEM DURDURULDU/, "Sistem durduruldu. Bilgisayarınız ısınmasın diye tüm modeller kapatıldı. Bir sonraki planlı üretime ya da sizin talimatınıza kadar hiçbir şey başlamayacak."],
   [/^▶ SİSTEM YENİDEN ÇALIŞIYOR/, "Sistem yeniden çalışıyor."],
 ];
