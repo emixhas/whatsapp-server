@@ -347,7 +347,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
 - Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg).
 - Paylaşım: QR ile telefona yerel link (aynı Wi-Fi); Finder'da göster; indir; YouTube/Instagram'a yükle.
-- Zamanlayıcı: panel launchd plist'ini yazar/siler (`~/Library/LaunchAgents/com.gundem.video.plist`).
+- Zamanlayıcı: panel launchd plist'ini yazar/siler (`~/Library/LaunchAgents/com.gundem.video.plist`). Kök neden (12 Ekim,
+  5 slot kaçtı): yeni macOS'ta `unload` ardından `load` sessizce başarısız olup 0 döndürebiliyor, iş launchd'den düşüyor ama
+  plist durduğu için panel zamanlayıcıyı açık sanıyordu. Artık `unloadAgent` (bootout) / `loadAgent` (bootstrap, olmazsa
+  `load -w`, `launchctl print gui/UID/…` ile doğrulama, 3 deneme); `ensureScheduleLoaded()` panel açılışında ve her 10 dk
+  `healthCheck` başında plist var ama iş yüklü değilse yeniden yükler ("⏰ zamanlayıcı launchd'den düşmüştü…"), olmazsa
+  sağlık uyarısı. `basla.sh`/`durdur.sh` panel servisi için de bootstrap/bootout kullanır. Panel launchd'den başlatılmamışsa
+  (servis yüklenemedi) basla.sh paneli o terminalde açar: pencere kapanırsa panel de kapanır.
 - Yeni sesli komut: `app/commands.js` içine kural, `server.js` içindeki switch'e eylem. Kural
   regex'lerinde kelime sınırı kullan ("niye" ↔ "saniyelik" tuzağı).
 

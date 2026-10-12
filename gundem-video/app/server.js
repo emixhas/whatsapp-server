@@ -617,18 +617,51 @@ async function getSchedule() {
   }
   return { enabled, hours, slots, minute, isMac, nextRunAt, nextEpisode, lastRunAt, running: state.running, awake: !!caffeine };
 }
+// launchd işleri (kök neden, 12 Ekim: zamanlayıcı yeniden yüklenirken launchd'den düşmüş, 5 slot boyunca üretim olmadı):
+// yeni macOS'ta "unload" hemen ardından "load" sessizce başarısız olabiliyor ve load yine 0 döndürüyor. Bu yüzden
+// bootout/bootstrap kullanılır, her yüklemeden sonra `launchctl print` ile gerçekten yüklendiği doğrulanır, olmazsa
+// 3 kez denenir. healthCheck her 10 dk'da ve panel açılışında plist var ama iş yüklü değilse yeniden yükler.
+const LA_DOMAIN = `gui/${process.getuid?.() ?? 501}`;
+const VIDEO_JOB = "com.gundem.video";
+const jobLoaded = (label = VIDEO_JOB) => isMac && spawnSync("launchctl", ["print", `${LA_DOMAIN}/${label}`], { encoding: "utf8" }).status === 0;
+async function loadAgent(plist, label = VIDEO_JOB) {
+  let err = "";
+  for (let i = 0; i < 3; i++) {
+    const b = await run("launchctl", ["bootstrap", LA_DOMAIN, plist]);
+    if (jobLoaded(label)) return { ok: true };
+    const l = await run("launchctl", ["load", "-w", plist]);
+    if (jobLoaded(label)) return { ok: true };
+    err = String(b.stderr || l.stderr || "").trim().slice(0, 200);
+    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+  }
+  return { ok: false, error: err || "launchd işi yüklenemedi" };
+}
+async function unloadAgent(plist, label = VIDEO_JOB) {
+  await run("launchctl", ["bootout", `${LA_DOMAIN}/${label}`]);
+  if (jobLoaded(label)) await run("launchctl", ["unload", plist]);
+  for (let i = 0; i < 10 && jobLoaded(label); i++) await new Promise((r) => setTimeout(r, 300)); // kapanması sürebilir
+}
+async function ensureScheduleLoaded(why) {
+  if (!isMac || !existsSync(PLIST) || jobLoaded()) return null;
+  const r = await loadAgent(PLIST);
+  push(r.ok ? `⏰ zamanlayıcı launchd'den düşmüştü (${why}); yeniden yüklendi, planlı üretimler sürecek` : `⏰ zamanlayıcı launchd'de yüklü değil ve yüklenemedi: ${r.error}`);
+  if (!r.ok) healthAlert("sched-load", `5 saatlik zamanlayıcı yüklenemedi (${r.error}). Panelde Otomatik üretim anahtarını kapatıp açın.`, { everyH: 6 });
+  return r;
+}
+
 async function setSchedule(enabled, hours) {
   if (!isMac) return { ok: false, error: "launchd sadece macOS'ta" };
-  if (existsSync(PLIST)) await run("launchctl", ["unload", PLIST]);
+  if (existsSync(PLIST)) await unloadAgent(PLIST);
   if (!enabled) { if (existsSync(PLIST)) unlinkSync(PLIST); keepAwake(false); return { ok: true }; }
   const minute = Number(settings().scheduleMinute) || 0;
   const slots = slotsFor(hours);
   const cal = slots.map((h) => `    <dict><key>Hour</key><integer>${h}</integer><key>Minute</key><integer>${minute}</integer></dict>`).join("\n");
   writeFileSync(PLIST, readFileSync(path.join(ROOT, "launchd/com.gundem.video.plist"), "utf8").replace(/__PROJE_YOLU__/g, ROOT).replace(/__HOME__/g, process.env.HOME || "").replace("__CALENDAR__", cal));
   patchSettings({ scheduleHours: hours });
-  const r = await run("launchctl", ["load", PLIST]);
+  const r = await loadAgent(PLIST);
   if (r.ok) { writeFileSync(SCHED_FILE, JSON.stringify({ loadedAt: Date.now(), hours, slots, minute })); keepAwake(true); push(`⏰ üretim saatleri: her gün ${slots.map((h) => String(h).padStart(2, "0") + ":" + String(minute).padStart(2, "0")).join(", ")}`); }
-  return r.ok ? { ok: true, slots } : { ok: false, error: r.stderr || "launchctl load başarısız" };
+  if (!r.ok) push(`⏰ zamanlayıcı yüklenemedi: ${r.error}`);
+  return r.ok ? { ok: true, slots } : { ok: false, error: r.error || "launchctl yükleme başarısız" };
 }
 
 // Zamanlayıcıdan (launchd) çalışan üretimin logunu canlı loga akıt: work/launchd.out.log büyüdükçe yeni satırlar push edilir
@@ -888,6 +921,7 @@ setTimeout(async () => { try {
     keepAwake(true);
     // Eski aralık tabanlı plist'i sabit saatlere taşı (bir kez)
     if (!/StartCalendarInterval/.test(readFileSync(PLIST, "utf8"))) { push("⏰ zamanlayıcı sabit saatlere taşınıyor"); await setSchedule(true, sch.hours || 5); }
+    else await ensureScheduleLoaded("panel açılışında fark edildi");
   }
 } catch { /* yok */ } }, 3000);
 // ---------- Sistem kontrolü: her açılışta ve istekle; her satır loga, özet sesli + WhatsApp'a
@@ -1260,7 +1294,9 @@ function publishFailed(line) {
   healthAlert(none ? "pub-none" : `pub-${Math.floor(Date.now() / 600000)}`, `${what}\n${line.replace(/^📤 /, "")}${errs.length ? "\n" + errs.join("\n") : ""}${ig}\nPanelden videoyu açıp tekrar yükleyebilir ya da Ayarlar → Instagram → "🩺 Instagram'ı sına" ile nedeni görebilirsiniz.`, { everyH: none ? 12 : 0.15, whatsapp: !(waDigest() && digestPending) }); // tek mesaj modunda hata özete girer
 }
 async function healthCheck() {
-  const s = settings(); if (s.health?.enabled === false) return;
+  const s = settings();
+  try { if ((await getSchedule()).enabled) await ensureScheduleLoaded("10 dakikalık kontrol"); } catch { /* yok */ }
+  if (s.health?.enabled === false) return;
   // 1) kaçan üretim: zamanlayıcı açık, son videodan beri aralık + 40 dk geçti, üretim de sürmüyor
   try {
     const sch = await getSchedule();
@@ -1272,7 +1308,7 @@ async function healthCheck() {
       // neden: launchd işi yüklü mü, son çıkış kodu, kilit, son log satırları; yüklü değilse yeniden yüklenir
       const diag = [];
       const lc = spawnSync("launchctl", ["list", "com.gundem.video"], { encoding: "utf8" });
-      if (lc.status !== 0) { diag.push("zamanlayıcı launchd'de yüklü değildi → yeniden yüklendi"); spawnSync("launchctl", ["load", PLIST]); }
+      if (lc.status !== 0) { const r = await ensureScheduleLoaded("kaçan üretim kontrolü"); diag.push(`zamanlayıcı launchd'de yüklü değildi → ${r?.ok ? "yeniden yüklendi" : "YÜKLENEMEDİ"}`); }
       else { const ex = (lc.stdout.match(/"LastExitStatus"\s*=\s*(-?\d+)/) || [])[1]; if (ex && ex !== "0") diag.push(`son zamanlanmış çalışmanın çıkış kodu ${ex}${ex === "3" ? " (başka üretim sürüyordu)" : ex === "256" ? " (hata ile bitti)" : ""}`); }
       const lockPid = path.join(WORK, "pipeline.lock", "pid");
       if (existsSync(lockPid)) diag.push("üretim kilidi duruyor (takılmış üretim olabilir; bekçi 50 dk'da temizler)");
