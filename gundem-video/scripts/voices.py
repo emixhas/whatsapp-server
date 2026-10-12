@@ -189,13 +189,18 @@ _PARTY_CTX = re.compile(r"\b(AK|DEM|İYİ|TİP)\b(?=\s+(?:Parti|PARTİ|parti))|\
 
 # Okunuş sözlüğü: yabancı kökenli marka/adların Türkçe okunuşu (yalnız seslendirmede; ekranda yazım değişmez).
 # Ekler korunur: "Mynet'in" → "Maynet'in". settings.pronunciations {"Kelime": "Okunuş"} ile genişletilir.
-PRONOUNCE = {"Mynet": "Maynet"}
+PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka"}
 
 
 def _pronounce(t: str) -> str:
     words = {**PRONOUNCE, **(settings().get("pronunciations") or {})}
     for w, say in words.items():
-        if w and say:
+        if not (w and say):
+            continue
+        if w.isupper() and len(w) <= 6:  # kısaltma (PKK): bitişik küçük ek de olabilir ("PKKlı" → "Pekakalı")
+            t = re.sub(rf"(?<![\wçğıöşüÇĞİÖŞÜ]){re.escape(w)}(?![A-ZÇĞİÖŞÜ0-9])", say, t)
+            t = re.sub(rf"(?<![\wçğıöşüÇĞİÖŞÜ]){re.escape(w.lower())}(?![\wçğıöşüÇĞİÖŞÜ])", say.lower(), t)
+        else:
             t = re.sub(rf"(?<![\wçğıöşüÇĞİÖŞÜ]){re.escape(w)}(?![\wçğıöşüÇĞİÖŞÜ])", say, t, flags=re.IGNORECASE)
     return t
 

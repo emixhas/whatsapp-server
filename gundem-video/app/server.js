@@ -1072,7 +1072,7 @@ app.post("/api/command", async (req, res) => res.json(await handleCommand(req.bo
 // ---------- Emixhas'ın sesi: üretilen ses diske önbelleklenir (aynı cümle + aynı ses ayarı = anında çalar)
 const SPEAK_CACHE = path.join(WORK, "speak-cache");
 // PRON_VER: scripts/voices.py okunuş kuralları (PRONOUNCE, parti adları) değişince artır; eski okunuşlu önbellek kullanılmasın
-const PRON_VER = 2;
+const PRON_VER = 3;
 const speakKey = (text) => createHash("sha1").update(JSON.stringify([text, settings().voice || {}, PRON_VER, settings().pronunciations || {}])).digest("hex");
 const speakInflight = new Map();
 function synthSpeech(text, { low = false } = {}) {
