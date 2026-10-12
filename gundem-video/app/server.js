@@ -242,7 +242,57 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
   return { ...startPipeline(duration, env, { auto: !!opts.auto }), anlik: true };
 }
-setInterval(() => { if (anlikQueue.length && !pipelineBusy()) { const q = anlikQueue.shift(); push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {}); } }, 10000);
+// Aynı anda düşen 2-3 değerli manşet tek videoda: work/anlik_items.json [{source, url, title, text}] + ANLIK_MULTI=n.
+// Süre 30 + 15 sn/ek haber (2 → 45, 3 → 60). Prompt her habere segment ayırır, assemble her segmente kendi sayfasını verir.
+function startAnlikMulti(items, { auto = true } = {}) {
+  items = items.slice(0, 3);
+  const duration = Math.min(60, 30 + 15 * (items.length - 1));
+  const topic = items.map((it, i) => `${i + 1}) [${it.source}] ${it.title}`).join("\n");
+  if (pipelineBusy()) {
+    anlikQueue.push({ topic, duration, multi: items, opts: { auto }, at: Date.now() });
+    push(`⚡ ${items.length} son dakika haberi tek video için sıraya alındı (${anlikQueue.length}. sırada): ${items.map((x) => x.title.slice(0, 40)).join(" | ")}`);
+    return { ok: true, queued: true, position: anlikQueue.length, duration, multi: items.length };
+  }
+  if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; restEnd("elle anlık haber talimatı"); }
+  mkdirSync(WORK, { recursive: true });
+  writeFileSync(path.join(WORK, "anlik_topic.txt"), items.map((it, i) => `${i + 1}) [${it.source}] ${it.title}. ${String(it.text || "").slice(0, 400)}`).join("\n") + "\n");
+  writeJson(path.join(WORK, "anlik_items.json"), items.map(({ source, url, title, text }) => ({ source, url, title, text: String(text || "").slice(0, 1500) })));
+  push(`⚡ ${items.length} değerli son dakika haberi TEK videoda (${duration} sn): ${items.map((x) => `${x.title.slice(0, 50)} (${x.source})`).join(" | ")}`);
+  const env = { ANLIK: "1", ANLIK_MULTI: String(items.length), ANLIK_SOURCE_COUNT: String(Math.max(...items.map((x) => x.sourceCount || 1))) };
+  return { ...startPipeline(duration, env, { auto }), anlik: true, multi: items.length };
+}
+setInterval(() => {
+  if (!anlikQueue.length || pipelineBusy()) return;
+  const q = anlikQueue.shift();
+  if (q.multi) { startAnlikMulti(q.multi, q.opts || {}); return; }
+  push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {});
+}, 10000);
+
+// ---------- Değerli manşet toplayıcı: Mynet ve son dakika taramalarından gelen DEĞERLİ haberler 20 sn biriktirilir.
+// Tek haber → tek konulu anlık video; 2-3 haber → tek birleşik video (startAnlikMulti). Sistem dinlenmedeyse değerli
+// haber onu uyandırır (kullanıcı kararı: değerli manşet beklemeden üretilir). Fazlası bir sonraki partiye kalır.
+const VALUE_BATCH_MS = 20000;
+let valueBatch = [], valueTimer = null;
+const eventStems = (t) => new Set(String(t || "").toLocaleLowerCase("tr").match(/[\p{L}\d]{5,}/gu)?.map((w) => w.slice(0, 5)) || []);
+const sameEvent = (a, b) => { const x = eventStems(a), y = eventStems(b); let n = 0; for (const w of x) if (y.has(w)) n++; return n >= 3 || (n >= 2 && n / Math.max(1, Math.min(x.size, y.size)) >= 0.5); };
+function queueValuable(item) { // {title, text, source, url, sourceCount, duration, onStarted(r)}
+  const twin = valueBatch.find((x) => sameEvent(x.title, item.title));
+  if (twin) { twin.sourceCount = Math.max(twin.sourceCount || 1, (item.sourceCount || 1) + 1); push(`⭐ aynı olay iki kaynakta: "${item.title.slice(0, 60)}" (${item.source}) tek haber sayıldı`); item.onStarted?.({ ok: true, merged: true }); return; }
+  valueBatch.push(item);
+  push(`⭐ değerli haber yakalandı: ${item.title.slice(0, 80)} (${item.source}) → ${Math.round(VALUE_BATCH_MS / 1000)} sn içinde düşen diğerleriyle birlikte üretilecek`);
+  if (!valueTimer) valueTimer = setTimeout(() => flushValuable().catch((e) => push(`⭐ değerli haber üretimi: ${e.message}`)), VALUE_BATCH_MS);
+}
+async function flushValuable() {
+  valueTimer = null;
+  const items = valueBatch.splice(0, 3);
+  if (valueBatch.length) valueTimer = setTimeout(() => flushValuable().catch(() => {}), VALUE_BATCH_MS);
+  if (!items.length) return;
+  if (resting()) restEnd(`değerli haber düştü: ${items[0].title.slice(0, 60)}${items.length > 1 ? ` ve ${items.length - 1} haber daha` : ""}`);
+  const r = items.length === 1
+    ? startAnlik([items[0].title, items[0].text].filter(Boolean).join(". ").slice(0, 1500), items[0].duration, { source: items[0].source, url: items[0].url, sourceCount: items[0].sourceCount || 1, auto: true })
+    : startAnlikMulti(items);
+  for (const it of items) { try { await it.onStarted?.(r); } catch { /* kayıt */ } }
+}
 app.post("/api/anlik", (req, res) => res.json(startAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
 
@@ -261,10 +311,17 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   const cap = item?.valuable ? Number(c.valuableMaxPerDay) : Number(c.maxPerDay);
   if (!manual && list.length >= cap) { push(`📰 Mynet: günlük sınır (${cap}) doldu, ${item?.valuable ? "değerli" : "sıradan"} manşet atlandı: ${(item?.title || "").slice(0, 70)}`); return { ok: false, error: "günlük sınır doldu" }; }
   if (!manual && item?.dup) { push(`📰 Mynet: "${(item.title || "").slice(0, 70)}" için son 12 saatte zaten video üretildi, atlandı`); return { ok: false, error: "aynı olay zaten üretildi" }; }
+  if (!manual && !item?.valuable && resting()) { push(`⏸ sistem durduruldu: sıradan Mynet manşeti için video üretilmedi (${(item?.title || "").slice(0, 70)}); değerli haber gelirse sistem kendiliğinden başlar`); return { ok: false, resting: true, error: "dinlenmede" }; }
   if (item?.valuable) push(`⭐ Mynet: değerli manşet (${item.valueReason}) — video YouTube'a da gidecek`);
   const a = await pyJson(["scripts/mynet_watch.py", "--article", url]);
   if (!a || a.ok === false || !a.title) { push(`📰 Mynet: haber okunamadı (${a?.error || "başlık yok"})`); return { ok: false, error: a?.error || "haber okunamadı" }; }
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
+  const markDone = () => { const d = mynetDone(); d[day] = [...(d[day] || []), url]; for (const k of Object.keys(d)) if (k < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete d[k]; writeFileSync(MYNET_DONE, JSON.stringify(d, null, 2)); };
+  if (!manual && item?.valuable) { // değerli otomatik manşet: aynı anda düşenlerle birleşebilsin diye toplayıcıya
+    queueValuable({ title: a.title, text: [a.description, a.body].filter(Boolean).join(". ").slice(0, 1400), source: "Mynet", url, sourceCount: item?.sources?.length || 1, duration: mynetCfg().duration,
+      onStarted: async (r) => { if (r.ok) { if (!r.merged) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {}); markDone(); } } });
+    return { ok: true, batched: true, title: a.title };
+  }
   push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
   const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1, auto: !manual });
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {});
@@ -282,7 +339,7 @@ async function mynetCheck({ manual = false } = {}) {
   for (const it of [...(r.new || [])].sort((a, b) => (b.valuable ? 1 : 0) - (a.valuable ? 1 : 0))) await mynetProduce(it.url, { item: it });
   return r;
 }
-setInterval(() => { const c = mynetCfg(); if (resting()) return; if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
+setInterval(() => { const c = mynetCfg(); if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
 app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, mynetLast + Number(mynetCfg().intervalMin || 30) * 60000 - Date.now()) : null }); });
 app.post("/api/mynet/check", async (_req, res) => res.json(await mynetCheck({ manual: true })));
 app.post("/api/mynet/produce", async (req, res) => res.json(await mynetProduce(String(req.body?.url || ""), { manual: true })));
@@ -305,13 +362,20 @@ async function breakingCheck({ manual = false } = {}) {
     const a = c.url ? await pyJson(["scripts/mynet_watch.py", "--article", c.url]) : null;
     const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
     push(`${c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.valueReason}) → video üretiliyor`);
-    if (resting()) { push(`⏸ sistem durduruldu: "${c.title.slice(0, 70)}" için video üretilmedi (kartta 🎬 Video üret ile elle üretebilirsiniz)`); continue; }
+    if (c.valuable) { // değerli: toplayıcıya (aynı anda düşen Mynet/son dakika haberleriyle tek video, dinlenmeyi bozar)
+      list.push(c.title);
+      queueValuable({ title: c.title, text: [a?.ok !== false && a?.description, (a?.ok !== false && a?.body) || c.summary].filter(Boolean).join(". ").slice(0, 1400), source: c.source, url: c.url, sourceCount: c.count, duration: breakingCfg().duration,
+        onStarted: async (r) => { if (r.ok && !r.merged) await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); } });
+      done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10))));
+      continue;
+    }
+    if (resting()) { push(`⏸ sistem durduruldu: "${c.title.slice(0, 70)}" için video üretilmedi (değerli değil; kartta 🎬 Video üret ile elle üretebilirsiniz)`); continue; }
     const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count, auto: true });
     if (res.ok) { await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); list.push(c.title); done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)))); }
   }
   return r;
 }
-setInterval(() => { const c = breakingCfg(); if (resting()) return; if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
+setInterval(() => { const c = breakingCfg(); if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
 app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, breakingLast + Number(breakingCfg().intervalMin || 15) * 60000 - Date.now()) : null }); });
 app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
 // Paneldeki "🎬 Video üret": son haberlerden seçilen için otomatik adayla aynı yol (haber sayfası okunur, anlık video,

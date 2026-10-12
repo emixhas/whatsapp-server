@@ -163,7 +163,9 @@ def build_caption(video_name: str, max_len: int = 2000):
         if h.get("source"):
             lines.append(f"Kaynak: {h['source']}")
         lines.append("")
-    if meta.get("sourceUrl"):
+    if meta.get("sources"):  # çoklu son dakika: her haberin kaynağı
+        lines += ["Haber kaynakları:"] + [f"• {x.get('name') or 'kaynak'} · {x.get('url')}" for x in meta["sources"] if x.get("url")] + [""]
+    elif meta.get("sourceUrl"):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
     tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])

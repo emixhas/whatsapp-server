@@ -127,6 +127,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   aynı `startAnlik` yolu (anlikAutoPublish ile bağlı hesaplara yayın, YouTube değer kuralı geçerli), `--mark` yazar.
   Elle üretim günlük sınırı tüketmez ve ona takılmaz; aynı olay 12 saat içinde üretildiyse düğme "✓ Üretildi" olur,
   basılırsa onay sorup `force` ile yine üretir.
+- Değerli manşet toplayıcı (kullanıcı kararı: değerli manşet beklemeden, sistem dinlenmede olsa da üretilir): Mynet ve
+  son dakika taramaları dinlenmede de çalışır (hafif). Otomatik DEĞERLİ haber (`item.valuable` / `c.valuable`) doğrudan
+  üretilmez, `queueValuable()` ile 20 sn (`VALUE_BATCH_MS`) biriktirilir; aynı olay iki kaynaktan gelirse `sameEvent()`
+  (5 harflik kökler, ≥3 ortak ya da ≥2 ve %50) tek haber sayılır. `flushValuable()`: dinlenmedeyse `restEnd("değerli haber
+  düştü…")`, 1 haber → tek konulu `startAnlik`, 2-3 haber → `startAnlikMulti()` tek video (süre 30 + 15/ek haber: 2 → 45 sn,
+  3 → 60 sn; fazlası sonraki partiye). Çoklu: `work/anlik_items.json` [{source, url, title, text}] + `ANLIK_MULTI=n`;
+  `topic_news` prompt'a `coklu_haberler` koyar, `prompts/anlik.md` "ÇOKLU SON DAKİKA" kuralı her habere segment ve
+  `item` numarası yazdırır, pipeline HABER ≥ n (≤ 6), `assemble` her hook/haber segmentine kendi haberinin sayfasını
+  (`articleUrl`) ve kaynağını verir (`item` yoksa başlık kelimeleriyle eşler), meta `sources`, açıklamada "Haber
+  kaynakları:" listesi, her haber `mark_produced`. Kuyrukta `{multi}` girdisi. Dinlenmede SIRADAN manşet/aday üretilmez
+  (logda "⏸ … değerli haber gelirse sistem kendiliğinden başlar").
 - Günün özeti (yatay uzun video, YouTube): `GUNLUK=1 bash pipeline.sh` → `scripts/daily_news.py` bugünkü videoların
   haberleri (out/<bugün>-N.json) + günün RSS'i, aynı olay birleşir (`same_event`), sıra: değerli/son dakika →
   bugün videoda işlenmiş → kaynak sayısı → RSS önemi; haber sayfası adresleri work/news.json'a eklenir (fotoğraf/video).
@@ -220,7 +231,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Mynet ve son dakika taraması/üretimi (`opts.auto` → reddedilir, logda "⏸ … video üretilmedi"), günün özeti, izlenme
   senkronu, YouTube sırası, günlük rapor, ses ön ısıtması, eksik kapak. Elle talimat (`startPipeline`/`startAnlik`
   `auto` olmadan: panel, WhatsApp, sesli komut, 🎬 Video üret) `restEnd()` ile uyandırır; `until` gelince ya da launchd
-  üretimi başlayınca kendiliğinden biter. Her üretimin sonu `finishProduction()` (panel çocuğu kapanınca, zamanlayıcı
+  üretimi başlayınca ya da değerli manşet düşünce (`flushValuable`) kendiliğinden biter. Her üretimin sonu `finishProduction()` (panel çocuğu kapanınca, zamanlayıcı
   üretiminin son JSON satırında; 30 sn tekrar engeli): sırada anlık iş yoksa ve `settings.restAfterProduction` (varsayılan
   açık, Ayarlar → Otomasyon) ise dinlenmeye geçer. Log "⏸ SİSTEM DURDURULDU (neden): …" / "▶ SİSTEM YENİDEN ÇALIŞIYOR:"
   + `STAGE_VOICE` sesli cümleleri; komut yanıtı zaten söylüyorsa `stageMute` aşama cümlesini 3 sn susturur. Panelde sarı

@@ -50,6 +50,14 @@ def main():
     src = os.environ.get("ANLIK_SOURCE", "").strip()
     out = {"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
            "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel}
+    items_file = os.path.join(os.path.dirname(os.path.abspath(topic_file)), "anlik_items.json")
+    if os.environ.get("ANLIK_MULTI") and os.path.exists(items_file):  # aynı anda düşen 2-3 değerli manşet: tek video
+        multi = json.load(open(items_file, encoding="utf-8"))
+        out["coklu_haberler"] = [{"no": i + 1, "kaynak": m.get("source") or "", "baslik": m.get("title") or "",
+                                  "metin": (m.get("text") or "")[:900]} for i, m in enumerate(multi)]
+        out["aciklama"] += (" coklu_haberler = aynı anda düşen birden fazla son dakika haberi (no=sıra, kaynak=haber sitesi,"
+                            " metin=o sitenin haber metni); video hepsini birlikte anlatır.")
+        src = ""  # her haberin kaynağı kendi kaydında
     if src:  # konu bir haber sitesinin manşetinden geldi (ör. Mynet): doğrulanmış haber metni
         out["kaynak"] = src
         out["aciklama"] += f" kaynak = 'konu' metninin geldiği haber sitesi ({src})."

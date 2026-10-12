@@ -239,6 +239,9 @@ def news_value(data: dict, segs: list) -> dict:
     try:  # çoklu son dakika takibi aynı olay için ikinci video üretmesin
         from breaking_watch import mark_produced
         mark_produced(" ".join([data.get("titles", {}).get("A") or "", *(s.get("title", "") for s in segs if s.get("kind") == "haber")][:3]))
+        if os.environ.get("ANLIK_MULTI"):  # çoklu videoda her haber ayrı olay olarak kaydedilir
+            for m in load_json(DATA.parent / "work" / "anlik_items.json", []):
+                mark_produced(m.get("title") or "")
     except Exception as e:
         print(f"  ! üretilen haber kaydı yazılamadı: {e}")
     if data.get("importanceReason"):
@@ -343,6 +346,29 @@ def main(src: str, dst: str):
         sys.exit(f"Toplam {words} kelime, üst sınır {MAX_WORDS_TOTAL}. Senaryo {DURATION} saniyeye sığmaz.")
 
     matched = attach_images(segs)
+    multi = load_json(DATA.parent / "work" / "anlik_items.json", []) if ANLIK and os.environ.get("ANLIK_MULTI") else []
+    if multi:  # çoklu son dakika: her segment kendi haberinin sayfasından fotoğraf/video alır, kendi kaynağını gösterir
+        def which(s, k):
+            try:
+                i = int(s.get("item") or 0)
+            except (TypeError, ValueError):
+                i = 0
+            if 1 <= i <= len(multi):
+                return i - 1
+            words = {w[:5] for w in re.findall(r"\w{5,}", f"{s.get('title', '')} {s.get('narration', '')}".lower())}
+            best = max(range(len(multi)), key=lambda j: len(words & {w[:5] for w in re.findall(r"\w{5,}", (multi[j].get("title") or "").lower())}))
+            return best if words else min(k, len(multi) - 1)
+        for k, s in enumerate(x for x in segs if x.get("kind") in ("hook", "haber")):
+            m = multi[which(s, max(0, k - 1))]
+            s["item"] = multi.index(m) + 1
+            if m.get("url"):
+                s["articleUrl"] = m["url"]
+                s.pop("imageUrl", None)
+            if m.get("source"):
+                s["source"] = m["source"]
+        src_name = " · ".join(dict.fromkeys(m.get("source") or "" for m in multi if m.get("source"))) or src_name
+        src_url = ""
+        print(f"  çoklu son dakika: {len(multi)} haber tek videoda ({src_name})")
     if ANLIK and src_url:  # haber sitesinden gelen anlık haber: fotoğraf/video o haberin sayfasından
         for s in segs:
             if s.get("kind") in ("hook", "haber"):
@@ -384,6 +410,7 @@ def main(src: str, dst: str):
         "hashtags": topic_hashtags(data),
         "sourceName": src_name or None,
         "sourceUrl": src_url or None,
+        "sources": [{"name": m.get("source"), "url": m.get("url"), "title": m.get("title")} for m in multi] or None,
         "scheduleHours": hours,
         "timeLabel": now.strftime("%H:%M"),
         "targetDuration": DURATION,

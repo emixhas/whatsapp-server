@@ -29,6 +29,8 @@ HABER=$(( DURATION / 8 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 12 ] &&
 if [ "${ANLIK:-0}" = "1" ]; then
   [ -s work/anlik_topic.txt ] || { echo "HATA: anlık haber konusu boş (work/anlik_topic.txt)"; exit 1; }
   HABER=$(( DURATION / 10 )); [ "$HABER" -lt 2 ] && HABER=2; [ "$HABER" -gt 4 ] && HABER=4
+  # aynı anda düşen 2-3 değerli manşet tek videoda (ANLIK_MULTI = haber sayısı): her habere en az bir segment
+  if [ -n "${ANLIK_MULTI:-}" ]; then HABER=$(( DURATION / 10 )); [ "$HABER" -lt "$ANLIK_MULTI" ] && HABER="$ANLIK_MULTI"; [ "$HABER" -gt 6 ] && HABER=6; fi
   FORMAT="anlik"; FORMAT_LABEL="Son Dakika"
 fi
 # Günlük uzun özet: bugünkü videoların haberleri + günün RSS'i, yatay video (Remotion GunlukOzet)

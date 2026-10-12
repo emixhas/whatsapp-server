@@ -30,6 +30,12 @@ KURALLAR
 - "category" şu listeden TAM OLARAK biri: finans, siyaset, parti, spor, hava, toplum, egitim, teknoloji,
   saglik, dunya, asayis, genel. Şehit, saldırı, terör, patlama, cinayet, kaza, yangın, çökme, polis
   olayı → asayis. Deprem, sel, afet → hava. Yurt dışı → dunya. Tüm segmentlerde aynı kategori olabilir.
+- ÇOKLU SON DAKİKA: veride "coklu_haberler" varsa video bu haberlerin HEPSİNİ birlikte verir ve "tek konu" kuralı
+  geçmez. Kanca en önemli haberden. "haber" segmentlerini haberlere paylaştır (önemliden başla, her habere en az bir
+  segment); her "hook" ve "haber" segmentine anlattığı haberin "no" değerini "item" alanına yaz (ör. "item": 2) ve
+  "source" alanına o haberin "kaynak"ını yaz. Bilgi yalnızca o haberin "metin"inden; haberleri birbirine karıştırma.
+  Haberler arasında kısa geçiş kullan ("Bir diğer son dakika gelişmesi…"). "breaking": true yalnızca ilk haberde.
+  "titles" ve "cover" en önemli haberi öne çıkarsın.
 - Can kaybı varsa saygılı ve kuru ol; grafik ifade kullanma. Resmi, sakin, profesyonel ton.
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA (AKP → AK Parti, TBMM → Meclis, ABD → Amerika,
   AFAD → Afet ve Acil Durum Yönetimi Başkanlığı, TL → lira, % → yüzde). Parantez ve tire kullanma.
