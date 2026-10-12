@@ -362,7 +362,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (varsayılan low) ile düşünür; rapor ve plan `brain` (high). Prompt sesli yanıtı ≤ 2 kısa cümle ister.
 - Yanıtlar `scripts/speak.py` ile seslendirilir (EMA ya da Yelda; yoksa tarayıcı sesi).
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
-- Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg).
+- Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg). Video araması (kullanıcı isteği):
+  `listVideos()` her videoya `search` metni koyar (yayın başlığı, A/B başlık, gün, slot, format, kaynak, hashtag, her
+  segmentin başlık + seslendirme + kaynağı; Türkçe küçük harf); panel Videolar sekmesinde arama kutusu (tüm kelimeler
+  geçmeli), sıralama (en yeni / en çok izlenen) ve süzgeç (YouTube/Instagram/TikTok'ta, yayınlanmamış, 🔁 yeniden
+  yayınlar); sayaç "(eşleşen / toplam)". Süzme tarayıcıda (`shownVideos`/`renderVideos`).
 - Paylaşım: QR ile telefona yerel link (aynı Wi-Fi); Finder'da göster; indir; YouTube/Instagram'a yükle.
 - Zamanlayıcı: panel launchd plist'ini yazar/siler (`~/Library/LaunchAgents/com.gundem.video.plist`). Kök neden (12 Ekim,
   5 slot kaçtı): yeni macOS'ta `unload` ardından `load` sessizce başarısız olup 0 döndürebiliyor, iş launchd'den düşüyor ama

@@ -77,6 +77,7 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
   .vid{background:#0b1020;border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.15s;position:relative}.vid:hover{border-color:var(--c);transform:translateY(-2px)}
   .vid img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
+  .vsearch{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}.vsearch input{flex:1 1 260px;min-width:0;background:#0b1020;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:9px 12px;font-size:14px}.vsearch input:focus{outline:none;border-color:var(--c)}.vsearch select{background:#0b1020;border:1px solid var(--line);border-radius:10px;color:var(--txt);padding:8px}
   .vid .remk{position:absolute;top:8px;left:8px;background:rgba(10,14,30,.85);border:1px solid var(--line);color:#fff;border-radius:10px;padding:4px 8px;font-size:12px;cursor:pointer;z-index:2}.vid .remk:hover{border-color:var(--c)}
   .vid .m{padding:9px;font-size:12px}.vid .m b{display:block;font-size:13px}.vid .m span{color:var(--mut)}
   .views{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border-radius:8px;padding:3px 8px;font-size:12px;font-weight:700}
@@ -180,7 +181,11 @@
         <span style="margin-left:auto;display:flex;gap:6px"><button class="ghost" id="logPause" title="otomatik kaydırmayı durdur">⏸</button><button class="ghost" id="logClear">temizle</button><button class="ghost" id="logSize">▤</button></span></h2>
       <div class="log" id="log" style="height:230px"></div>
     </div>
-    <div class="card tab on" id="tab-videos"><h2>VİDEOLAR <span id="count" style="color:var(--txt)"></span></h2><div class="grid" id="grid"></div><div class="empty" id="empty" style="display:none">Henüz video yok. "Şimdi üret" ile başlayın.</div></div>
+    <div class="card tab on" id="tab-videos"><h2>VİDEOLAR <span id="count" style="color:var(--txt)"></span></h2>
+      <div class="vsearch"><input id="vq" type="search" placeholder="🔎 Videolarda ara: haber, kişi, yer, kaynak, tarih (ör. deprem, asgari ücret, 12 Ekim)" autocomplete="off">
+        <select id="vsort" title="Sıralama"><option value="new">En yeni</option><option value="views">En çok izlenen</option></select>
+        <select id="vplat" title="Platform"><option value="">Tüm videolar</option><option value="youtube">YouTube'da</option><option value="instagram">Instagram'da</option><option value="tiktok">TikTok'ta</option><option value="none">Yayınlanmamış</option><option value="remake">🔁 Yeniden yayınlar</option></select></div>
+      <div class="grid" id="grid"></div><div class="empty" id="empty" style="display:none">Henüz video yok. "Şimdi üret" ile başlayın.</div></div>
     <div class="card tab" id="tab-analytics">
       <h2>ANALİTİK <button class="ghost" id="syncBtn" style="float:right">⟳ İzlenmeleri güncelle</button></h2>
       <h2>ABONE VE TAKİPÇİ</h2><div class="fol" id="fol"></div>
@@ -385,10 +390,21 @@ es.addEventListener('jarvis',e=>{const d=JSON.parse(e.data);addMsg('j',d.reply);
 
 // ================= videolar
 const tagHtml=h=>`<span class="tag ${h.breaking?'brk':''}">${h.breaking?'SON DAKİKA':(h.category||'').toUpperCase()}</span>`;
-async function loadVideos(){videos=await api('/api/videos');$('#count').textContent=videos.length?`(${videos.length})`:'';$('#empty').style.display=videos.length?'none':'block';
-  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${/^demo/.test(v.name)?'':`<button class="remk" data-remake="${v.name}" title="Aynı haberi farklı senaryo ve farklı görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button>`}${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.remakeOf?'<span class="tag">🔁 yeniden</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
+// Video araması: tüm kelimeler (Türkçe küçük harf) başlık/seslendirme/kaynak/tarih metninde geçmeli; sıralama ve platform süzgeci
+const trLow=t=>String(t||'').toLocaleLowerCase('tr-TR');
+function shownVideos(){const q=trLow($('#vq')?.value).split(/\s+/).filter(Boolean),pl=$('#vplat')?.value||'',sort=$('#vsort')?.value||'new';
+  let list=videos.filter(v=>q.every(w=>(v.search||trLow(v.name)).includes(w)||trLow(v.date).includes(w)||trLow(v.name).includes(w)));
+  if(pl==='none')list=list.filter(v=>!v.youtube&&!v.instagram&&!v.tiktok);else if(pl==='remake')list=list.filter(v=>v.remakeOf);else if(pl)list=list.filter(v=>v[pl]);
+  if(sort==='views')list=[...list].sort((a,b)=>(b.views||0)-(a.views||0));
+  return list;}
+async function loadVideos(){videos=await api('/api/videos');renderVideos();}
+function renderVideos(){const list=shownVideos(),filtered=list.length!==videos.length;
+  $('#count').textContent=videos.length?(filtered?`(${list.length} / ${videos.length})`:`(${videos.length})`):'';
+  $('#empty').style.display=list.length?'none':'block';$('#empty').textContent=videos.length?'Aramaya uyan video yok.':'Henüz video yok. "Şimdi üret" ile başlayın.';
+  $('#grid').innerHTML=list.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${/^demo/.test(v.name)?'':`<button class="remk" data-remake="${v.name}" title="Aynı haberi farklı senaryo ve farklı görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button>`}${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.remakeOf?'<span class="tag">🔁 yeniden</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
   document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));
   document.querySelectorAll('[data-remake]').forEach(b=>b.onclick=e=>{e.stopPropagation();remake(b.dataset.remake,b);});}
+let vqTimer=null;$('#vq').oninput=()=>{clearTimeout(vqTimer);vqTimer=setTimeout(renderVideos,150);};$('#vsort').onchange=renderVideos;$('#vplat').onchange=renderVideos;
 // Tutan videoyu yeniden yayınla: aynı haber, farklı senaryo + farklı görseller (POST /api/videos/:name/remake)
 async function remake(name,btn){const v=videos.find(x=>x.name===name)||{};
   if(!await ask(`"${(v.headlines?.[0]?.title)||name}" haberi farklı senaryo ve farklı görsellerle yeniden üretilip bağlı hesaplarda yayınlansın mı?${v.views?` (Bu video ${v.views.toLocaleString('tr-TR')} izlendi.)`:''}`))return;
