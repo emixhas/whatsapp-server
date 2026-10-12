@@ -54,7 +54,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 },
-  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true }, scheduleHours: 5 };
+  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true, digest: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
 const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
@@ -84,16 +84,30 @@ const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
   // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
-  if (/^\{"autopublish"/.test(line)) setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000);
+  if (/^\{"autopublish"/.test(line)) { setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000); setTimeout(() => sendDigest("yayın bitti"), 4000); }
   if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
-  if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500); };
+  if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500);
+  if (/^✖ üretim hata/.test(line) && digestPending) digestPending = null; }; // hata uyarısı ayrı gider; yarım özet kalmasın
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
+// Tek mesaj modu (settings.whatsapp.digest, varsayılan açık; kullanıcı isteği: her adım için ayrı mesaj gelmesin):
+// aşama satırları WhatsApp'a gitmez; video çıkınca beklenir, yayın bitince (post_pipeline'ın son JSON satırı) video
+// dosyası + başlıklar + platform sonuçları + linkler + varsa onay TEK mesajda gider (wa.notifyVideo {summary}).
+// Yayın adımı hiç bitmezse 20 dk sonra yine gönderilir. Kapalıysa eski davranış: aşamalar + ayrı video mesajları.
+const waDigest = () => settings().whatsapp?.digest !== false;
+let digestPending = null; // {mp4, at, logFrom}
+async function sendDigest(why) {
+  const d = digestPending; if (!d) return;
+  digestPending = null;
+  const summary = state.log.slice(Math.max(0, state.log.length - 200)).filter((l) => /^📤 /.test(l) && !/tekrar denenecek/.test(l));
+  try { const r = await wa.notifyVideo(d.mp4, { ask: true, summary }); if (!r.ok) push(`💬 WhatsApp özeti gönderilemedi: ${r.error}`); } catch (e) { push(`💬 WhatsApp özeti gönderilemedi: ${e.message}`); }
+  if (why !== "yayın bitti") push(`💬 WhatsApp özeti ${why} gönderildi`);
+}
 function notifyStage(line) {
   try {
     const w = settings().whatsapp || {};
-    if (!w.notifyStages || !STAGE.test(line)) return;
+    if (!w.notifyStages || waDigest() || !STAGE.test(line)) return;
     stageQueue.push(line.replace(/^== |^-- /, "").trim());
     clearTimeout(stageTimer);
     stageTimer = setTimeout(async () => { const batch = stageQueue.splice(0); if (!batch.length) return; try { await wa.send("🛠 " + batch.join("\n")); } catch { /* bağlı değil */ } }, 2500);
@@ -795,7 +809,16 @@ if (settings().whatsapp?.enabled && settings().whatsapp?.autoStart) setTimeout((
 
 // Yeni video (panelden veya launchd'den) → WhatsApp bildirimi. out/ klasörü izlenir, bilinen dosyalar atlanır.
 const knownVideos = new Set(readdirSync(OUT).filter((f) => f.endsWith(".mp4")));
-try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) { const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
+try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) {
+  if (waDigest()) { // tek mesaj: yayın bitince gönderilir (yayın adımı zaten bittiyse hemen)
+    if (digestPending && digestPending.mp4 !== mp4) await sendDigest("yeni video çıktığı için");
+    digestPending = { mp4, at: Date.now() };
+    const since = state.log.slice(-300); const startIdx = since.findLastIndex((l) => /üretim başladı/.test(l));
+    if (startIdx >= 0 && since.slice(startIdx).some((l) => /^\{"autopublish"/.test(l))) sendDigest("yayın bitti");
+    else setTimeout(() => { if (digestPending?.mp4 === mp4) sendDigest("yayın adımı 20 dk'da bitmediği için"); }, 20 * 60000);
+    return;
+  }
+  const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
 
 // ---------- API: durum
 app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status(), rest: restInfo(), watch: { lastAt: watchLast || null, nextAt: (mynetCfg().enabled || breakingCfg().enabled) ? (watchLast || Date.now()) + watchMin() * 60000 : null, everyMin: watchMin(), scanning: watchScanning } }));
@@ -1211,12 +1234,12 @@ setTimeout(async () => { for (const t of QUICK_PHRASES) { if (pipelineBusy() || 
 // ---------- sağlık uyarıları: üretim hatası, kaçan üretim, disk, yayın bağlantısının süresi → WhatsApp + sesli
 // Her uyarı anahtarıyla data/health_alerts.json'a yazılır, aynı uyarı `everyH` saat dolmadan tekrar gönderilmez.
 const HEALTH_FILE = path.join(DATA, "health_alerts.json");
-async function healthAlert(key, text, { everyH = 12 } = {}) {
+async function healthAlert(key, text, { everyH = 12, whatsapp = true } = {}) {
   const seen = readJson(HEALTH_FILE, {});
   if (seen[key] && Date.now() - seen[key] < everyH * 3600000) return false;
   seen[key] = Date.now(); writeJson(HEALTH_FILE, seen);
   push(`⚠️ sağlık: ${text}`);
-  if (settings().health?.whatsapp !== false) { try { await wa.send(`⚠️ *Emixhas sağlık uyarısı*\n${text}`); } catch { /* WhatsApp bağlı değil: log + ses yeter */ } }
+  if (whatsapp && settings().health?.whatsapp !== false) { try { await wa.send(`⚠️ *Emixhas sağlık uyarısı*\n${text}`); } catch { /* WhatsApp bağlı değil: log + ses yeter */ } }
   return true;
 }
 const healthClear = (key) => { const seen = readJson(HEALTH_FILE, {}); if (seen[key]) { delete seen[key]; writeJson(HEALTH_FILE, seen); } };
@@ -1232,7 +1255,7 @@ function publishFailed(line) {
   const last = readJson(path.join(DATA, "publish_last_error.json"), {});
   const ig = !none && /instagram/.test(line + errs.join(" ")) && last.instagram ? `\nInstagram son hata: ${String(last.instagram.error).slice(0, 400)}` : "";
   const what = none ? "Video otomatik yayınlanmadı." : "Video otomatik yayınlanamadı.";
-  healthAlert(none ? "pub-none" : `pub-${Math.floor(Date.now() / 600000)}`, `${what}\n${line.replace(/^📤 /, "")}${errs.length ? "\n" + errs.join("\n") : ""}${ig}\nPanelden videoyu açıp tekrar yükleyebilir ya da Ayarlar → Instagram → "🩺 Instagram'ı sına" ile nedeni görebilirsiniz.`, { everyH: none ? 12 : 0.15 });
+  healthAlert(none ? "pub-none" : `pub-${Math.floor(Date.now() / 600000)}`, `${what}\n${line.replace(/^📤 /, "")}${errs.length ? "\n" + errs.join("\n") : ""}${ig}\nPanelden videoyu açıp tekrar yükleyebilir ya da Ayarlar → Instagram → "🩺 Instagram'ı sına" ile nedeni görebilirsiniz.`, { everyH: none ? 12 : 0.15, whatsapp: !(waDigest() && digestPending) }); // tek mesaj modunda hata özete girer
 }
 async function healthCheck() {
   const s = settings(); if (s.health?.enabled === false) return;

@@ -297,7 +297,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sırayla okur, Emixhas konuşurken/dinlerken bekler. Panel kapalıysa Mac'te `afplay` (sessiz saatler
   `stageVoice.quietFrom/quietTo`, varsayılan 23-08). Cümleler sabit; `QUICK_PHRASES` ile açılışta önbelleğe girer.
   Ayarlar → WhatsApp grubunda iki anahtar (`stageVoice.enabled`, `stageVoice.macSpeaker`).
-- Aşama bildirimleri: `push()` içindeki `notifyStage()` STAGE kalıbına uyan log satırlarını 2,5 sn'de
+- WhatsApp tek mesaj (kullanıcı isteği: her adım için ayrı mesaj gelmesin; `settings.whatsapp.digest`, varsayılan açık,
+  Ayarlar → Otomasyon anahtarı): aşama satırları WhatsApp'a gitmez; `out/` izleyicisi yeni videoyu `digestPending`e koyar,
+  post_pipeline'ın son JSON satırı (`{"autopublish"…}`) gelince `sendDigest()` → `wa.notifyVideo(mp4, {summary})`: video
+  dosyası + başlıklar + platform başına son durum (`publishLines`: ✅ link / ⏳ sınır / ⏭ atlandı / ❌ hata; 90 sn tekrarının
+  sonucu geçerli) + izleme linki + gerekiyorsa onay TEK mesajda (en çok 1000 karakter; dosya gönderilemezse metin). Yayın
+  adımı 20 dk'da bitmezse yine gönderilir. Bu modda `publishFailed` WhatsApp'a ayrıca yazmaz (hata özettedir); üretim hatası
+  ve diğer sağlık uyarıları ayrı gider. "son videoyu gönder" eski ayrıntılı biçimi (seslendirme metni) kullanır.
+- Aşama bildirimleri (yalnız tek mesaj kapalıyken): `push()` içindeki `notifyStage()` STAGE kalıbına uyan log satırlarını 2,5 sn'de
   toplayıp WhatsApp'a gönderir (`settings.whatsapp.notifyStages`). Hostinger yükleme/silme satırları
   `publish.py` stderr'inden gelir (🌐). Panelde ayar kaydeden her istek sağ altta "Kaydedildi ✓" gösterir.
 - Ayarlar sekmesi `<details class="grp">` gruplarıdır: Otomasyon, Yayın hesapları, WhatsApp, Sesler,

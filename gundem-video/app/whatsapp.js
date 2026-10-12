@@ -117,13 +117,32 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
   }
   async function sendVideo(jid, file, caption) {
     const size = statSync(file).size;
-    if (size > 60 * 1024 * 1024) { await send(jid, `${caption}\n(Video 60 MB'den büyük, dosya gönderilmedi; linkten izleyin.)`); return false; }
+    if (size > 60 * 1024 * 1024) { await send(jid, `${caption}\n(Video 60 MB'den büyük, dosya gönderilmedi; linkten izleyin.)`); return null; } // null: metin olarak gitti
     remember(await sock.sendMessage(jid, { video: readFileSync(file), caption, mimetype: "video/mp4" }));
     return true;
   }
 
   /** Üretim bitince sahibine metin + linkler (+ dosya) gönderir ve onay bekler. */
-  async function notifyVideo(name, { ask = true } = {}) {
+  // Tek mesaj modunun yayın satırları (post_pipeline "📤 platform: …") → platform başına son durum, kısa
+  const PL = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" };
+  function publishLines(summary) {
+    const last = {}; const notes = [];
+    for (const l of summary || []) {
+      const m = l.match(/^📤 (youtube|instagram|tiktok): (.*)$/);
+      if (m) { if (!/hesap bağlı değil/.test(m[2])) last[m[1]] = m[2]; continue; }
+      if (/^📤 otomatik yayın yapılmadı/.test(l)) notes.push("ℹ️ " + l.replace(/^📤 /, "").replace(/ WhatsApp'tan.*$/, ""));
+    }
+    const out = Object.entries(last).map(([pl, r]) => {
+      const name = PL[pl];
+      if (/^(tamam|zaten yayında)/.test(r)) { const url = (r.match(/https?:\/\/\S+/) || [""])[0]; return `✅ ${name}${/^zaten/.test(r) ? " (zaten yayında)" : ""}${url ? ": " + url : ""}`; }
+      if (/^sınır doldu/.test(r)) return `⏳ ${name}: ${r.replace(/^sınır doldu\s*—?\s*/, "sınır doldu, sıraya alındı — ").slice(0, 160)}`;
+      if (/^atlandı/.test(r)) return `⏭ ${name}: ${r.replace(/;.*$/, "").slice(0, 120)}`;
+      return `❌ ${name}: ${r.replace(/^hata\s*/, "").slice(0, 160)}`;
+    });
+    return [...out, ...notes];
+  }
+
+  async function notifyVideo(name, { ask = true, summary = null } = {}) {
     const w = settings().whatsapp || {};
     if (!w.enabled || st.status !== "connected") return { ok: false, error: "WhatsApp bağlı değil" };
     const v = videoInfo(name); if (!v) return { ok: false, error: "video bulunamadı" };
@@ -148,8 +167,22 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     const askLine = (ask && w.requireApproval !== false && platforms.length)
       ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*`
       : (!autoPl.length && !L.platforms.length ? "\n\n(Yayın için bağlı platform yok; panelden hesap bağlayın.)" : "");
-    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${autoLine}${askLine}`;
     const jid = ownerJid();
+    if (summary) { // tek mesaj: video dosyası + kısa özet aynı mesajda (dosya gönderilmezse düz metin)
+      const titles = v.segments.filter((s) => s.kind === "haber").slice(0, 5).map((s) => `• ${s.breaking ? "🔴 " : ""}${s.title}`).join("\n");
+      const pub = publishLines(summary);
+      const pending = (ask && w.requireApproval !== false && platforms.length) ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")} · ❌ *iptal*` : "";
+      const watchLine = `\n\n▶ ${L.tunnel || L.lan}`;
+      let msg = `${head}\n\n${titles}${pub.length ? "\n\n📤 *Yayın*\n" + pub.join("\n") : ""}${pending}${watchLine}`;
+      if (msg.length > 1000) msg = msg.slice(0, 990) + "…";
+      let fileSent = false;
+      if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, msg); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
+      if (fileSent === false) await send(jid, msg);
+      if (pending) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
+      push(`💬 WhatsApp'a tek mesaj gönderildi: ${v.label}${fileSent ? " (+video)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
+      return { ok: true, fileSent, awaitingApproval: !!pending };
+    }
+    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${autoLine}${askLine}`;
     let fileSent = false;
     if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, head); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
     await send(jid, text);
