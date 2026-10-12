@@ -426,6 +426,18 @@ setInterval(() => {
   if (readJson(DAILY_FILE, {}).day === today() || pipelineBusy() || resting()) return;
   startDaily();
 }, 60000);
+// ---------- disk temizliği (scripts/cleanup.py): her gece 04:10, settings.cleanup {enabled, days 30}; dinlenmede de (hafif)
+const CLEAN_FILE = path.join(DATA, "cleanup_last.json");
+async function runCleanup({ manual = false } = {}) {
+  const r = await py("cleanup.py", []);
+  const j = r.json || {};
+  writeJson(CLEAN_FILE, { day: today(), at: Date.now(), deleted: (j.deleted || []).length, freedMb: j.freedMb || 0 });
+  if ((j.deleted || []).length) push(`🧹 disk temizliği: ${(j.deleted || []).length} eski videonun Mac'teki kopyası silindi, ${(j.freedMb / 1024).toFixed(1)} GB boşaldı (kayıtlar, kapaklar ve platformdaki videolar duruyor)`);
+  else if (manual) push("🧹 disk temizliği: silinecek eski video yok");
+  return j;
+}
+setInterval(() => { const n = new Date(); if (n.getHours() === 4 && n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).day !== today() && !pipelineBusy() && (settings().cleanup?.enabled !== false)) runCleanup().catch((e) => push(`🧹 disk temizliği: ${e.message}`)); }, 60000);
+app.post("/api/cleanup", async (req, res) => res.json(req.body?.dryRun ? (await py("cleanup.py", ["--dry-run"])).json || {} : await runCleanup({ manual: true })));
 app.get("/api/daily", (_req, res) => res.json({ ...dailyCfg(), last: readJson(DAILY_FILE, {}) }));
 app.post("/api/daily/run", (_req, res) => res.json(startDaily({ manual: true })));
 

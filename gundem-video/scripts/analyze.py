@@ -13,7 +13,9 @@ from common import load_json, DATA, OUT, episode_meta, metrics, now_iso, save_js
 def video_rows():
     m = metrics()
     rows = []
-    for p in sorted(OUT.glob("*.mp4")):
+    # mp4'ü disk temizliğinde silinmiş (arşivlenmiş) videolar da analize girer: kaydı (json) kalır
+    names = {p.name for p in OUT.glob("*.mp4")} | {f.stem + ".mp4" for f in OUT.glob("*.json") if (load_json(f, {}) or {}).get("archived")}
+    for p in sorted(OUT / n for n in names):
         meta = episode_meta(p.name) or {}
         mv = m["videos"].get(p.name, {})
         yt, ig, tt = mv.get("youtube", {}), mv.get("instagram", {}), mv.get("tiktok", {})
