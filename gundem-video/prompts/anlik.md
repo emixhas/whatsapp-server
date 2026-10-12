@@ -40,6 +40,11 @@ KURALLAR
   "source" alanına o haberin "kaynak"ını yaz. Bilgi yalnızca o haberin "metin"inden; haberleri birbirine karıştırma.
   Haberler arasında kısa geçiş kullan ("Bir diğer son dakika gelişmesi…"). "breaking": true yalnızca ilk haberde.
   "titles" ve "cover" en önemli haberi öne çıkarsın.
+- YENİDEN YAYIN: veride "onceki_senaryo" varsa bu haberin videosu daha önce yayınlandı ve ilgi gördü; aynı haberi
+  YENİ bir videoyla tekrar veriyoruz. Bilgiler aynı kalır (yeni haberlerde güncel gelişme varsa onu öne çıkar), ama
+  anlatım tamamen farklı olmalı: farklı kanca cümlesi ve farklı kanca başlığı (eski "baslik"ları KULLANMA), farklı
+  "titles" A/B ve "cover", farklı cümle yapısı ve sıralama (ör. eskisi olayla başladıysa yenisi en çarpıcı rakamla ya da
+  son durumla başlasın). Eski segment metinlerinden 4 kelimeden uzun ifadeyi aynen tekrar etme. Bilgi uydurma.
 - Can kaybı varsa saygılı ve kuru ol; grafik ifade kullanma. Resmi, sakin, profesyonel ton.
 - Seslendirme için yazıyorsun: KISALTMA KULLANMA (AKP → AK Parti, TBMM → Meclis, ABD → Amerika,
   AFAD → Afet ve Acil Durum Yönetimi Başkanlığı, TL → lira, % → yüzde). Parantez ve tire kullanma.

@@ -460,6 +460,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yumuşatılmış) veri ve ≥ %15 kazanç şart (verisi olmayan saat "iyi" sayılmaz). Panel Analitik "EN İYİ YAYIN SAATİ" +
   "Saatleri kaydır" → `POST /api/schedule/offset {offset|reset}` → `settings.scheduleOffset`; `slotsFor()` kaydırır,
   zamanlayıcı açıksa plist yeniden yazılır. Haftalık rapor önerisine de girer.
+- Yeniden yayın (kullanıcı isteği: tutan haberi hafif değiştirip tekrar yayınla): panelde her video kartında ve video
+  penceresinde "🔁 Yeniden yayınla" (onay `ask()`), komut "en çok izlenen / son videoyu yeniden yayınla" (`remake` eylemi),
+  `POST /api/videos/:name/remake` → `remakeVideo()`: anlık videoda tüm konu, çok haberlide kanca + ilk (manşet) haber tek
+  konulu son dakika videosu olur; haber `news_lookup --topic` ile yeniden aranır (güncel bilgi + başka sayfalar, eski
+  sayfalar hariç), `startAnlik(..., {remake})` → `work/remake.json` {of, oldScript, oldTitles, avoid} + `REMAKE=1`,
+  `REMAKE_OF`. `topic_news` prompt'a `onceki_senaryo` koyar, `prompts/anlik.md` YENİDEN YAYIN kuralı farklı kanca/başlık/
+  kapak/cümle ister (eski ifadeler tekrar edilmez, bilgi aynı). `fetch_images` REMAKE'te `avoid` listesindeki eski haber
+  sayfalarını, video ve fotoğraf adreslerini kullanmaz (fotoğrafta önce aynı haberin diğer sayfaları); her segmente
+  `videoSrc`/`imageSrc` yazılır ki sonraki yeniden yayın da farklı görsel seçsin. Meta `remakeOf` (listede "🔁 yeniden"
+  etiketi), `post_pipeline.youtube_allowed` yeniden yayını değer kuralına takmaz; yayın anlık videoyla aynı (bağlı tüm hesaplar).
 - Viral alarmı (`scripts/viral_watch.py`, her izlenme senkronundan sonra `viralCheck()`): 24 saatten genç video, son 20
   eski videonun ortanca toplam izlenmesinin `settings.viral.ratio` (3) katı ve ≥ `minViews` (200) → bir kez (data/viral.json)
   log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa

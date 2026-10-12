@@ -58,6 +58,12 @@ OUT = ROOT / "public" / "images"
 MEDIA = {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True, "youtubeSearch": True, "videoSearchSeconds": 420,
          **(settings().get("media") or {})}
 T0 = time.time()
+# Yeniden yayın (REMAKE=1, panel "🔁 Yeniden yayınla"): eski videonun haber sayfaları ve görsel kaynakları kullanılmaz
+REMAKE = os.environ.get("REMAKE") == "1"
+try:
+    AVOID = set(json.loads((ROOT / "work" / "remake.json").read_text(encoding="utf-8")).get("avoid") or []) if REMAKE else set()
+except Exception:
+    AVOID = set()
 
 
 def get(url: str, limit: int, referer: str = "", timeout: int = 20) -> bytes:
@@ -287,7 +293,7 @@ def same_story_pages(seg: dict, own: str) -> list:
         if s >= max(2, int(len(kw) * 0.35)):
             out.append((s, link))
     out.sort(key=lambda x: -x[0])
-    return list(dict.fromkeys(l for _, l in out))[:4]
+    return [l for l in dict.fromkeys(l for _, l in out) if l not in AVOID][:4]
 
 
 def searched_pages(query: str) -> list:
@@ -297,7 +303,7 @@ def searched_pages(query: str) -> list:
         q = urllib.parse.quote(query[:120])
         xml = get(f"https://www.bing.com/news/search?q={q}&format=rss&setlang=tr&cc=TR", 2 * 1024 * 1024, timeout=15).decode("utf-8", "replace")
         kw = _stems(query)
-        return [x["url"] for x in parse_bing(xml) if len(kw & _stems(x["title"] + " " + x["summary"])) >= max(2, int(len(kw) * 0.5))][:3]
+        return [x["url"] for x in parse_bing(xml) if x["url"] not in AVOID and len(kw & _stems(x["title"] + " " + x["summary"])) >= max(2, int(len(kw) * 0.5))][:3]
     except Exception as e:
         print(f"  ! haber araması yapılamadı: {str(e)[:80]}", file=sys.stderr)
         return []
@@ -324,6 +330,8 @@ def youtube_search(query: str, dst: Path, w: int, h: int, secs: float) -> tuple[
         if not vid or len(kw & _stems(title)) < need or not (5 <= dur_s <= 1800):
             continue
         url = f"https://www.youtube.com/watch?v={vid}"
+        if url in AVOID:  # yeniden yayında eski videonun klibi alınmaz
+            continue
         d = fetch_video_ytdlp(url, dst, w, h, secs)
         if d:
             return d, url
@@ -380,11 +388,11 @@ def main():
             hit = found_src.get(art) if art else None
             # aynı haberin başka segmentinde (kanca ↔ ilk kart) bulunan video kaynağı; farklı haber aynı sayfaya
             # eşlenmişse kullanılmaz (kök uyumu ya da anlık haber şart)
-            if hit and (os.environ.get("ANLIK") == "1" or len(seg_kw & hit["kw"]) >= 2):
+            if hit and hit["src"] not in AVOID and (os.environ.get("ANLIK") == "1" or len(seg_kw & hit["kw"]) >= 2):
                 src = hit["src"]
                 d = fetch_video_ytdlp(src, dst, vw, vh, secs) if "youtube.com/watch" in src else video_from_page(src, pages, dst, vw, vh, secs)
                 via = "aynı haberin videosu" if d else ""
-            if not d and art:
+            if not d and art and art not in AVOID:  # yeniden yayında eski haber sayfası atlanır
                 d = video_from_page(art, pages, dst, vw, vh, secs)
                 src, via = art, "haber sayfası"
             if not d and in_budget():
@@ -408,13 +416,24 @@ def main():
                 via = "YouTube araması" if d else ""
             if d:
                 seg["video"], seg["videoDuration"] = f"images/{dst.name}", round(d, 2)
+                seg["videoSrc"] = src  # kaynak adres (sonraki yeniden yayında aynı görüntü kullanılmasın)
                 n_vid += 1
                 if art and src:
                     found_src.setdefault(art, {"src": src, "kw": seg_kw})
                 print(f"  🎞 video {seg.get('title', '')[:40]}: {d:.1f} sn ({via})")
             else:
                 print(f"  📷 video bulunamadı, fotoğraf kullanılacak: {seg.get('title', '')[:50]}")
-        best = best_image(cands, art or "", OUT / f"seg-{i:02d}.tmp") if cands else None
+        best = None
+        if REMAKE:  # önce eski videoda kullanılmamış kaynaklar: aynı haberin diğer sayfalarının fotoğrafları
+            fresh = []
+            for alt in same_story_pages(seg, art or "")[:2]:
+                if alt not in pages:
+                    pages[alt] = page_media(alt)
+                fresh += pages[alt][0][:2]
+            fresh = [c for c in dict.fromkeys(fresh + cands) if c not in AVOID and not (set(hd_variants(c)) & AVOID)]
+            best = best_image(fresh, art or "", OUT / f"seg-{i:02d}.tmp") if fresh else None
+        if not best:
+            best = best_image(cands, art or "", OUT / f"seg-{i:02d}.tmp") if cands else None
         if not best:
             if cands:
                 print(f"  ! görsel alınamadı: {seg.get('title', '')[:50]}", file=sys.stderr)
@@ -430,6 +449,7 @@ def main():
         if ok2:
             seg["imageTall"] = f"images/{tall_f.name}"
         seg["imageSize"] = f"{w}x{h}"
+        seg["imageSrc"] = u
         print(f"  🖼 {w}x{h} {seg.get('title', '')[:40]}")
     for f in OUT.glob("*.raw"):
         f.unlink()

@@ -74,7 +74,7 @@ function listVideos() {
     return { name: f, size: st.size, mtime: st.mtimeMs, duration: dur ? Math.round(dur) : null, targetDuration: meta?.targetDuration ?? null,
       date: meta?.dateLabel ?? null, time: meta?.timeLabel ?? null, episodeOfDay: meta?.episodeOfDay ?? null,
       headlines: meta ? meta.segments.filter((s) => s.kind === "haber").map((s) => ({ title: s.title, category: s.category, breaking: !!s.breaking })) : [],
-      youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, views: (m.youtube?.views || 0) + (m.instagram?.views || 0) + (m.tiktok?.views || 0) };
+      youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, remakeOf: meta?.remakeOf || null, views: (m.youtube?.views || 0) + (m.instagram?.views || 0) + (m.tiktok?.views || 0) };
   }).sort((a, b) => b.mtime - a.mtime);
 }
 
@@ -257,7 +257,9 @@ function startAnlik(topic, duration, opts = {}) {
   // (assemble her kartı başka sitenin sayfasına bağlar); her başlangıçta yazılır ki önceki işten kalmasın.
   writeJson(path.join(WORK, "anlik_related.json"), Array.isArray(opts.related) ? opts.related.slice(0, 8) : []);
   writeJson(path.join(WORK, "anlik_pages.json"), Array.isArray(opts.pages) ? opts.pages.slice(0, 4) : []);
+  writeJson(path.join(WORK, "remake.json"), opts.remake || {}); // yeniden yayın: eski senaryo + kaçınılacak görsel kaynakları
   const env = { ANLIK: "1" };
+  if (opts.remake?.of) { env.REMAKE = "1"; env.REMAKE_OF = String(opts.remake.of); }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
@@ -277,7 +279,7 @@ function startAnlikMulti(items, { auto = true } = {}) {
   if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; restEnd("elle anlık haber talimatı"); }
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), items.map((it, i) => `${i + 1}) [${it.source}] ${it.title}. ${String(it.text || "").slice(0, 400)}`).join("\n") + "\n");
-  writeJson(path.join(WORK, "anlik_related.json"), []); writeJson(path.join(WORK, "anlik_pages.json"), []); // önceki tek konulu işten kalmasın
+  writeJson(path.join(WORK, "anlik_related.json"), []); writeJson(path.join(WORK, "anlik_pages.json"), []); writeJson(path.join(WORK, "remake.json"), {}); // önceki tek konulu işten kalmasın
   writeJson(path.join(WORK, "anlik_items.json"), items.map(({ source, url, title, text }) => ({ source, url, title, text: String(text || "").slice(0, 1500) })));
   push(`⚡ ${items.length} değerli son dakika haberi TEK videoda (${duration} sn): ${items.map((x) => `${x.title.slice(0, 50)} (${x.source})`).join(" | ")}`);
   const env = { ANLIK: "1", ANLIK_MULTI: String(items.length), ANLIK_SOURCE_COUNT: String(Math.max(...items.map((x) => x.sourceCount || 1))) };
@@ -349,6 +351,34 @@ async function prepareAnlik(input, duration, opts = {}) {
   push("🔎 sitelerde bulunamadı; yalnızca yazdığınız bilgiyle üretiliyor (temkinli dil)");
   return startAnlik(input, duration, { ...opts, related: f?.related || [] });
 }
+// Tutan videoyu yeniden yayınla (kullanıcı isteği): aynı haber, FARKLI senaryo (yeni kanca/başlık/cümleler) ve eski
+// videodakinden FARKLI görsellerle. Anlık videoda tüm konu, çok haberli videoda kanca (manşet) haberi tek konulu son dakika
+// videosu olur. Haber sitelerde yeniden aranır (güncel bilgi + başka sayfalar); eski haber sayfaları ve eski videonun
+// görsel kaynakları work/remake.json "avoid" listesine girer, fetch_images önce başka kaynaklara bakar.
+async function remakeVideo(name) {
+  name = path.basename(String(name || "")).replace(/\.json$/, "").replace(/\.mp4$/, "") + ".mp4";
+  const meta = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), null);
+  if (!meta?.segments?.length) return { ok: false, error: "Videonun bilgileri bulunamadı." };
+  const segs = meta.segments.filter((x) => x.kind === "hook" || x.kind === "haber");
+  const firstHaber = segs.find((x) => x.kind === "haber") || segs[0];
+  const story = meta.anlik ? segs : segs.filter((x) => x.kind === "hook" || x === firstHaber);
+  const title = firstHaber?.title || meta.titles?.A || "";
+  const avoid = [...new Set([meta.sourceUrl, ...story.flatMap((x) => [x.articleUrl, x.videoSrc, x.imageSrc])].filter(Boolean))];
+  const facts = story.map((x) => [x.title, x.narration].filter(Boolean).join(": ")).join(" ");
+  push(`🔁 yeniden yayın hazırlanıyor: ${title.slice(0, 80)} (${name}) — haber sitelerde yeniden aranıyor, farklı görseller seçilecek`);
+  const f = await pyJson(["scripts/news_lookup.py", "--topic", title], 120000).catch(() => null);
+  const pages = (f?.pages || []).filter((p) => !avoid.includes(p.url));
+  const fresh = f?.found && f.best && !avoid.includes(f.best.url) ? [f.best.title, f.best.description, f.best.body].filter(Boolean).join(". ") : "";
+  const topic = [facts, fresh].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 1500);
+  const source = pages[0]?.source || meta.sourceName || firstHaber?.source || "";
+  const r = startAnlik(topic, Math.min(60, Math.max(20, Number(meta.targetDuration) || 30)), {
+    source, url: pages[0]?.url, related: (f?.related || []).filter((x) => x.b !== title), pages,
+    remake: { of: name, oldScript: segs.map((x) => ({ kind: x.kind, title: x.title, narration: x.narration })), oldTitles: meta.titles || {}, avoid },
+  });
+  if (r.ok) push(`🔁 ${name} farklı senaryo ve görsellerle yeniden üretiliyor${r.queued ? ` (${r.position}. sırada)` : ""}; bitince bağlı hesaplarda yayınlanacak`);
+  return { ...r, title };
+}
+app.post("/api/videos/:name/remake", async (req, res) => res.json(await remakeVideo(req.params.name)));
 app.post("/api/anlik", async (req, res) => res.json(await prepareAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
 
@@ -1144,6 +1174,14 @@ async function handleCommand(text) {
     case "share": if (!videos.length) { reply = "Paylaşacak video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = "Paylaşım paneli açıldı. Telefonunuzla QR kodu okutun."; } break;
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
+    case "remake": {
+      const vids = listVideos().filter((v) => !/^demo/.test(v.name));
+      const pick = cmd.which === "top" ? [...vids].sort((a, b) => (b.views || 0) - (a.views || 0))[0] : vids[0];
+      if (!pick) { reply = "Yeniden yayınlanacak video yok."; action = "none"; break; }
+      const r = await remakeVideo(pick.name);
+      reply = r.ok ? `${cmd.which === "top" ? "En çok izlenen" : "Son"} video (${r.title.slice(0, 70)}${pick.views ? `, ${pick.views} izlenme` : ""}) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error;
+      if (!r.ok) action = "none"; break;
+    }
     case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
     case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }

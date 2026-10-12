@@ -62,6 +62,12 @@ def main():
         rel = [r for r in extra if low(r.get("b") or "")[:60] not in have][:8] + rel
         rel = rel[:(6 if SAVER else 12)]
     src = os.environ.get("ANLIK_SOURCE", "").strip()
+    remake = {}
+    if os.environ.get("REMAKE") == "1":  # tutan videonun yeniden yayını: eski senaryo farklı anlatılsın diye verilir
+        try:
+            remake = json.load(open(os.path.join(os.path.dirname(os.path.abspath(topic_file)), "remake.json"), encoding="utf-8"))
+        except Exception:
+            remake = {}
     out = {"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
            "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel}
     items_file = os.path.join(os.path.dirname(os.path.abspath(topic_file)), "anlik_items.json")
@@ -72,6 +78,11 @@ def main():
         out["aciklama"] += (" coklu_haberler = aynı anda düşen birden fazla son dakika haberi (no=sıra, kaynak=haber sitesi,"
                             " metin=o sitenin haber metni); video hepsini birlikte anlatır.")
         src = ""  # her haberin kaynağı kendi kaydında
+    if remake.get("oldScript"):
+        out["onceki_senaryo"] = {"basliklar": remake.get("oldTitles") or {},
+                                 "segmentler": [{"tur": x.get("kind"), "baslik": x.get("title"), "metin": x.get("narration")} for x in remake["oldScript"]]}
+        out["aciklama"] += (" onceki_senaryo = bu haberin daha önce yayınlanıp ilgi gören videosunun senaryosu; YENİ video aynı bilgiyi"
+                            " FARKLI anlatır (anlik.md YENİDEN YAYIN kuralı).")
     if src:  # konu bir haber sitesinin manşetinden geldi (ör. Mynet): doğrulanmış haber metni
         out["kaynak"] = src
         out["aciklama"] += f" kaynak = 'konu' metninin geldiği haber sitesi ({src})."

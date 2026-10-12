@@ -77,6 +77,7 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
   .vid{background:#0b1020;border:1px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:.15s;position:relative}.vid:hover{border-color:var(--c);transform:translateY(-2px)}
   .vid img{width:100%;aspect-ratio:9/16;object-fit:cover;display:block;background:#000}
+  .vid .remk{position:absolute;top:8px;left:8px;background:rgba(10,14,30,.85);border:1px solid var(--line);color:#fff;border-radius:10px;padding:4px 8px;font-size:12px;cursor:pointer;z-index:2}.vid .remk:hover{border-color:var(--c)}
   .vid .m{padding:9px;font-size:12px}.vid .m b{display:block;font-size:13px}.vid .m span{color:var(--mut)}
   .views{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.65);border-radius:8px;padding:3px 8px;font-size:12px;font-weight:700}
   .tag{display:inline-block;font-size:9px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 3px 0 0}.tag.brk{background:var(--red);color:#fff}.tag.yt{background:#3a0d12;color:#ff6b6b}.tag.ig{background:#3a1030;color:#ff8ad8}.tag.tt{background:#0f2a2e;color:#69f0e6}
@@ -289,7 +290,7 @@
 <div class="modal" id="modal"><div class="box">
   <div><video id="player" controls playsinline></video></div>
   <div><h3 id="mTitle" style="margin:0 0 6px"></h3><div id="mMeta" style="color:var(--mut);margin-bottom:8px"></div><div id="mStats" style="margin-bottom:8px"></div><div id="mHead"></div>
-    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
+    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost ok" id="aRemake" title="Aynı haberi farklı senaryo ve görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
     <div class="qr" id="qr" style="display:none"></div></div>
 </div></div>
 <div class="askbg" id="askBg"><div class="askbox"><div id="askTxt"></div><div class="acts"><button class="ghost" id="askNo">Vazgeç</button><button class="ghost ok" id="askYes">Evet</button></div></div></div>
@@ -385,8 +386,17 @@ es.addEventListener('jarvis',e=>{const d=JSON.parse(e.data);addMsg('j',d.reply);
 // ================= videolar
 const tagHtml=h=>`<span class="tag ${h.breaking?'brk':''}">${h.breaking?'SON DAKİKA':(h.category||'').toUpperCase()}</span>`;
 async function loadVideos(){videos=await api('/api/videos');$('#count').textContent=videos.length?`(${videos.length})`:'';$('#empty').style.display=videos.length?'none':'block';
-  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
-  document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));}
+  $('#grid').innerHTML=videos.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${/^demo/.test(v.name)?'':`<button class="remk" data-remake="${v.name}" title="Aynı haberi farklı senaryo ve farklı görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button>`}${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.remakeOf?'<span class="tag">🔁 yeniden</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
+  document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));
+  document.querySelectorAll('[data-remake]').forEach(b=>b.onclick=e=>{e.stopPropagation();remake(b.dataset.remake,b);});}
+// Tutan videoyu yeniden yayınla: aynı haber, farklı senaryo + farklı görseller (POST /api/videos/:name/remake)
+async function remake(name,btn){const v=videos.find(x=>x.name===name)||{};
+  if(!await ask(`"${(v.headlines?.[0]?.title)||name}" haberi farklı senaryo ve farklı görsellerle yeniden üretilip bağlı hesaplarda yayınlansın mı?${v.views?` (Bu video ${v.views.toLocaleString('tr-TR')} izlendi.)`:''}`))return;
+  if(btn){btn.disabled=true;btn.textContent='⏳ Hazırlanıyor…';}
+  try{const r=await post(`/api/videos/${encodeURIComponent(name)}/remake`,{});
+    if(!r.ok){toast(r.error||'Başlatılamadı',true);addMsg('j','Yeniden yayın başlatılamadı: '+(r.error||''));return;}
+    toast(r.queued?'Sıraya alındı ⏳':'Yeniden üretiliyor 🔁');addMsg('j',`"${r.title}" farklı senaryo ve görsellerle yeniden üretiliyor${r.queued?` (${r.position}. sırada)`:''}. Bitince bağlı hesaplarda yayınlanacak.`);refreshStatus();
+  }catch(e){toast('Sunucuya ulaşılamadı',true);}finally{if(btn){btn.disabled=false;btn.textContent='🔁 Yeniden yayınla';}}}
 function openVideo(name){current=videos.find(v=>v.name===name);if(!current)return;$('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}`;
   const st=[];if(current.youtube)st.push(`<a href="${current.youtube.url}" target="_blank" class="tag yt">YouTube ▶ ${current.youtube.views??'?'} · ♥ ${current.youtube.likes??'?'}</a>`);if(current.instagram)st.push(`<a href="${current.instagram.url}" target="_blank" class="tag ig">Instagram ▶ ${current.instagram.views??'?'} · ♥ ${current.instagram.likes??'?'} · ↗ ${current.instagram.shares??'?'}</a>`);if(current.tiktok)st.push(`<a href="${current.tiktok.url||'#'}" target="_blank" class="tag tt">TikTok ${current.tiktok.status==='SEND_TO_USER_INBOX'?'gelen kutusunda':'▶ '+(current.tiktok.views??'?')+' · ♥ '+(current.tiktok.likes??'?')}</a>`);$('#mStats').innerHTML=st.join(' ');
   $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';for(const [id,p,lbl] of [['aPubYt','youtube',"▶ YouTube'a yükle"],['aPubIg','instagram',"◎ Instagram'a yükle"],['aPubTt','tiktok',"♪ TikTok'a gönder"]]){const b=$('#'+id);const done=!!current[p];const conn=!!status.connections?.[p]?.connected;
@@ -420,6 +430,7 @@ async function publish(name,platforms){
   const msgs=Object.entries(r.results||{}).map(([p,x])=>x.ok?`✅ ${PLAT[p]?.n||p}: ${x.skipped?'zaten yayında':'yayınlandı'}${x.url?' → '+x.url:x.note?' — '+x.note:''}`:`❌ ${PLAT[p]?.n||p}: ${x.error||'bilinmeyen hata'}`);
   addMsg('j',msgs.join('\n')||('Yayın yanıtı alınamadı: '+(r.error||'')));toast(r.ok?'Yayınlandı ✓':'Yayında sorun oldu, ayrıntı sohbette',!r.ok);
   speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
+$('#aRemake').onclick=()=>remake(current.name,$('#aRemake'));
 $('#aPubYt').onclick=async()=>{const n=current.name;if(await ask("YouTube'a yüklensin mi?"))publish(n,['youtube']);};$('#aPubIg').onclick=async()=>{const n=current.name;if(await ask("Instagram'a yüklensin mi?"))publish(n,['instagram']);};$('#aPubTt').onclick=async()=>{const n=current.name;if(await ask("TikTok'a gönderilsin mi?"))publish(n,['tiktok']);};
 
 // ================= üretim ve ayarlar

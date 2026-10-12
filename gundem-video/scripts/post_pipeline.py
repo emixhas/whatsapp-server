@@ -46,6 +46,9 @@ def youtube_allowed(video: str, meta: dict, s: dict) -> bool:
     pol = s.get("youtubePolicy") or {}
     if not pol.get("onlyValuable", True):
         return True
+    if meta.get("remakeOf"):  # kullanıcının elle seçtiği tutan haber: değer kuralına takılmaz
+        print(f"⭐ yeniden yayın ({meta['remakeOf']} tuttu) — YouTube'a da gidiyor")
+        return True
     v = meta.get("value")
     if not v:  # eski video: değeri şimdi hesapla
         from news_value import score
