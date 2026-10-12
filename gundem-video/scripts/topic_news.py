@@ -3,6 +3,8 @@
 
 Kullanım: topic_news.py work/news.json work/anlik_topic.txt work/news_prompt.json
 Çıktı: {"konu": <kullanıcının yazdığı bilgi>, "ilgili_haberler": [{k,b,o,s,u}]}
+Elle verilen konuda panel haberi sitelerde arar (news_lookup.py) ve bulduklarını work/anlik_related.json'a
+yazar; bunlar ilgili_haberler listesinin başına girer.
 Eşleşme: konu metnindeki anlamlı kelimelerin ilk 4 harfi (Türkçe ekler kesilsin diye) haber başlığı ve
 özetindeki kelimelerin ilk 4 harfiyle karşılaştırılır. Uyan kelime sayısı = puan. Konuya iki ve daha
 fazla kelimeyle uyan en az 3 haber varsa tek kelimelik uyanlar elenir (ilgisiz haber karışmasın).
@@ -47,6 +49,15 @@ def main():
         rel.append({"k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:300], "s": (it.get("published") or "")[11:16], "u": s})
         if len(rel) >= 12:
             break
+    extra_file = os.path.join(os.path.dirname(os.path.abspath(topic_file)), "anlik_related.json")
+    if os.path.exists(extra_file):  # panelin haber sitelerinde bulduğu (news_lookup) aynı olayın diğer haberleri öne
+        try:
+            extra = json.load(open(extra_file, encoding="utf-8"))
+        except Exception:
+            extra = []
+        have = {low(r.get("b") or "")[:60] for r in rel}
+        rel = [r for r in extra if low(r.get("b") or "")[:60] not in have][:8] + rel
+        rel = rel[:12]
     src = os.environ.get("ANLIK_SOURCE", "").strip()
     out = {"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
            "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel}

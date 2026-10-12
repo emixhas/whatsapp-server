@@ -17,6 +17,7 @@ import html
 import json
 import re
 import ssl
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -41,11 +42,29 @@ ARTICLE = re.compile(r"-\d{8,}(?:/|\.html?)?(?:[?#].*)?$")
 
 
 def get(url: str) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "tr-TR,tr;q=0.9"})
-    with urllib.request.urlopen(req, timeout=20, context=CTX) as r:
-        raw = r.read(4 * 1024 * 1024)
-        cs = r.headers.get_content_charset() or "utf-8"
-    return raw.decode(cs, "replace")
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "tr-TR,tr;q=0.9",
+                                               "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"})
+    try:
+        with urllib.request.urlopen(req, timeout=20, context=CTX) as r:
+            raw = r.read(4 * 1024 * 1024)
+            cs = r.headers.get_content_charset() or ""
+    except Exception as e:  # bazı siteler Python istemcisini reddeder (403/429, TLS); curl ile bir kez daha dene
+        try:
+            out = subprocess.run(["curl", "-sSL", "--compressed", "-m", "25", "-A", UA, "-H", "Accept-Language: tr-TR,tr;q=0.9",
+                                  "-w", "\n%{http_code}", url], capture_output=True, timeout=30)
+        except Exception:
+            raise e
+        body, _, code = out.stdout.rpartition(b"\n")
+        if out.returncode != 0 or not code.strip().startswith(b"2") or not body:
+            raise e
+        raw, cs = body, ""
+    if not cs:  # charset başlıkta yoksa sayfanın meta etiketinden (Türkçe sitelerde windows-1254 / iso-8859-9 görülür)
+        m = re.search(rb'<meta[^>]+charset=["\']?([\w-]+)', raw[:4096], re.I)
+        cs = m.group(1).decode() if m else "utf-8"
+    try:
+        return raw.decode(cs, "replace")
+    except LookupError:
+        return raw.decode("utf-8", "replace")
 
 
 class Links(HTMLParser):
@@ -132,27 +151,56 @@ def _meta(page: str, *names) -> str:
     return ""
 
 
-def article(url: str) -> dict:
-    page = get(url)
-    body = ""
+def _clean(t: str) -> str:
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", t or ""))).strip()
+
+
+def _ld_items(page: str):
     for blob in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', page, re.S | re.I):
         try:
             data = json.loads(blob.strip())
         except Exception:
             continue
         for d in (data if isinstance(data, list) else data.get("@graph", [data]) if isinstance(data, dict) else []):
-            if isinstance(d, dict) and d.get("articleBody"):
-                body = html.unescape(re.sub(r"<[^>]+>", " ", str(d["articleBody"])))
-                break
-        if body:
-            break
-    if not body:
-        paras = [re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", p))).strip() for p in re.findall(r"<p\b[^>]*>(.*?)</p>", page, re.S | re.I)]
-        body = " ".join(p for p in paras if len(p) > 50)[:3000]
-    title = _meta(page, "og:title", "twitter:title") or (re.search(r"<title>(.*?)</title>", page, re.S | re.I) or [None, ""])[1]
-    desc = _meta(page, "og:description", "description", "twitter:description")
+            if isinstance(d, dict):
+                yield d
+
+
+def _paragraphs(page: str) -> str:
+    """Makale gövdesi: itemprop=articleBody / article etiketi içindeki paragraflar; yoksa sayfadaki uzun paragraflar."""
+    page = re.sub(r"<(script|style|noscript|figure|aside|nav|footer)\b.*?</\1>", " ", page, flags=re.S | re.I)
+    m = re.search(r'<(div|section|article)\b[^>]*itemprop=["\']articleBody["\'][^>]*>', page, re.I) \
+        or re.search(r'<(div|section)\b[^>]*class=["\'][^"\']*(?:article[-_]?(?:body|content|text|detail)|news[-_]?(?:body|content|text|detail)|haber[-_]?(?:detay|metin|icerik)|content[-_]?(?:body|text)|post[-_]?content|entry[-_]?content|detail[-_]?(?:body|content|text))[^"\']*["\'][^>]*>', page, re.I) \
+        or re.search(r"<article\b[^>]*>", page, re.I)
+    scopes = [page[m.start():m.start() + 60000]] if m else []
+    scopes.append(page)
+    for scope in scopes:
+        paras = [_clean(p) for p in re.findall(r"<p\b[^>]*>(.*?)</p>", scope, re.S | re.I)]
+        text = " ".join(p for p in paras if len(p) > 50 and not re.search(r"(çerez|cookie|abone ol|tüm hakları|copyright|whatsapp kanal|google news)", p, re.I))
+        if len(text) > 200:
+            return text
+    return ""
+
+
+def article(url: str) -> dict:
+    page = get(url)
+    body = headline = desc_ld = site = ""
+    for d in _ld_items(page):
+        if not body and d.get("articleBody"):
+            body = _clean(str(d["articleBody"]))
+        if not headline and d.get("headline") and re.search(r"(Article|Posting|Report)", str(d.get("@type", ""))):
+            headline = _clean(str(d["headline"]))
+            desc_ld = _clean(str(d.get("description") or ""))
+        pub = d.get("publisher")
+        if not site and isinstance(pub, dict) and pub.get("name"):
+            site = _clean(str(pub["name"]))
+    if len(body) < 200:
+        body = _paragraphs(page) or body
+    title = _meta(page, "og:title", "twitter:title") or headline or _clean((re.search(r"<title>(.*?)</title>", page, re.S | re.I) or [None, ""])[1])
+    desc = _meta(page, "og:description", "description", "twitter:description") or desc_ld
+    site = _meta(page, "og:site_name") or site
     return {"url": url, "title": html.unescape(title).strip(), "description": desc, "body": re.sub(r"\s+", " ", body).strip()[:3000],
-            "image": _meta(page, "og:image", "twitter:image")}
+            "image": _meta(page, "og:image", "twitter:image"), "site": site}
 
 
 def check() -> dict:

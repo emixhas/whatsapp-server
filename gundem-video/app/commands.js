@@ -43,6 +43,23 @@ export function parseCommand(raw) {
   // İki nokta (ya da tire) zorunlu: "son dakika haberleri neler" gibi sorular tetiklemesin.
   const an = String(raw).trim().match(/^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)(?: videosu)?(?: (?:üret|yap|hazırla|çek))?\s*[:\-–]\s*([\s\S]{8,})$/i);
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
+  // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)
+  const link = String(raw).match(/https?:\/\/[^\s<>"']+/i);
+  if (link) {
+    if (/(^|\s)(aç|göster)(\s|$)/.test(t)) return { action: "open_url", target: link[0], reply: "" };
+    return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, reply: "" };
+  }
+  // İki noktasız: "son dakika Eşref Tek geri dönüyor", "son dakika X ile haber üret", "X hakkında son dakika videosu yap".
+  // Soru cümleleri ("son dakika haberleri neler", "son dakika var mı") tetiklemez; konu haber sitelerinde aranır.
+  const trimCmd = (x) => x.replace(/\s*\d{2,3}\s*(?:saniye|sn)(?:lik)?/gi, "").replace(/\s+(?:ile ilgili|ile|hakkında|konulu|konusunda|için)?\s*(?:son ?dakika\s+)?(?:bir\s+)?(?:haber(?:i|ini|leri)?|video(?:su|sunu|yu)?)?\s*(?:üret|yap|hazırla|çek|paylaş|yayınla)\w*\s*$/i, "").replace(/\s+(?:ile|hakkında|konulu|konusunda|için)\s*$/i, "").trim();
+  const question = /\?\s*$/.test(String(raw).trim()) || /(^|\s)(neler|nedir|ne var|ne oldu|var mı|varmı|kaç|hangi|mı|mi|mu|mü)(\s|$)/.test(t);
+  const an2 = String(raw).trim().match(/^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)\s+([\s\S]{6,})$/i);
+  if (an2 && !question && !/^(?:haber(?:ler)?(?:i|ini)?|video(?:su)?)(?:\s|$)/i.test(an2[1])) {
+    const topic = trimCmd(an2[1]);
+    if (topic.length >= 6) return { action: "anlik", topic, duration: extractSeconds(t) || 30, reply: "" };
+  }
+  const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
+  if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
   // Ağır süreçleri ve üretimi durdur (ısınma): "her şeyi durdur", "modelleri kapat", "üretimi durdur"
   if (/(her şeyi|hepsini|tüm modelleri|modelleri|bütün işlemleri|arka plan|üretimi|sistemi|tüm sistemi) (durdur|kapat|bitir|dinlendir)/.test(t)) return { action: "stopall", reply: "" };
   // Dinlenmeden çık: "sistemi başlat", "sistemi uyandır", "sisteme devam"

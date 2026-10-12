@@ -92,7 +92,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,
   illüstrasyon `Sequence from={-40}` ile oturmuş haliyle) ve açıklama (`build_caption`: her haberin başlığı + metni + kaynağı) bunları gösterir.
 - Anlık haber (tek konulu son dakika): panel "⚡ ANLIK HABER" kartı → `POST /api/anlik {topic, duration 20-60}`,
-  WhatsApp/ses "son dakika: <konu>" ya da "anlık haber: <konu>" (iki nokta zorunlu), beyin eylemi `breaking_news`.
+  WhatsApp/ses "son dakika: <konu>", "son dakika <konu>", haber linki ya da "anlık haber: <konu>", beyin eylemi `breaking_news`
+  (hepsi `prepareAnlik` ile önce haberi bulur, aşağıya bakın).
   Konu `work/anlik_topic.txt`, `ANLIK=1 bash pipeline.sh`: `scripts/topic_news.py` RSS'ten konuya uyan haberleri
   süzer (4 harflik kök eşleşmesi), `prompts/anlik.md` tek konu ve 2-4 segment yazdırır, RSS çekilemezse yalnızca
   editörün bilgisiyle devam eder. `assemble`: ilk haber `breaking`, outro `OUTRO_ANLIK`, `slotLabel` "ANLIK HABER",
@@ -102,6 +103,20 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `autopublish` anahtarlarından bağımsız olarak bağlı TÜM hesaplara onaysız yükler; WhatsApp bildirimi de
   bu platformlar için onay istemez (`videoInfo().anlik`). Yayın yapılmazsa neden loga "📤 otomatik yayın
   yapılmadı: …" olarak yazılır (hesap yok / anahtar kapalı).
+- Elle anlık haber önce haberin kendisini bulur (kullanıcı şikâyeti: link atınca "ayrıntılar bulunamadı", kısa konuda
+  uydurma): `server.js prepareAnlik()` panel kartı, `/api/anlik`, WhatsApp/sesli komut ve beyin `breaking_news` için ortak.
+  Mesajda link varsa (`commands.js`: linkli her mesaj anlık haber; "aç/göster" derse tarayıcıda açar) `news_lookup.py --url`
+  sayfayı okur (`mynet_watch.article`: JSON-LD articleBody → itemprop/article/haber-detay gövdesindeki paragraflar → sayfa
+  paragrafları; og:site_name ya da alan adı = kaynak; Python reddedilirse curl ile tekrar; meta charset). Kısa konu
+  ("son dakika Eşref Tek geri dönüyor" — iki nokta artık şart değil, "X ile haber üret", "X hakkında son dakika videosu yap";
+  soru cümleleri tetiklemez) `news_lookup.py --topic`: work/news.json + son dakika siteleri/Mynet + Bing Haberler RSS
+  (doğrudan link) + Google Haberler RSS (yalnız başlık) içinde 4 harflik köklerin ≥%60'ı eşleşen, 7 günden yeni haberler;
+  en iyi 4 doğrudan sayfa paralel okunur. Ana haber konu metni + kaynak (ANLIK_SOURCE/URL) olur, diğerleri
+  `work/anlik_related.json` (topic_news ilgili haberlerin başına koyar), okunan sayfalar `work/anlik_pages.json`
+  (assemble kanca + ilk kartı ana haberden, sonraki kartları sırayla diğer sitelerin sayfasından; fotoğraf/video oradan).
+  İkisi her `startAnlik` başlangıcında yeniden yazılır. Bulunamazsa ve konu 15 kelimeden kısaysa video ÜRETİLMEZ, link ya da
+  ayrıntı istenir; uzunsa yalnız yazılanla üretilir. `prompts/anlik.md` "ayrıntılar bulunamadı" türü cümleleri ve genel
+  bilgiyi yasaklar; `emixhas.md` yalnız manşet cümlesi yazılırsa breaking_news kullandırır.
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =

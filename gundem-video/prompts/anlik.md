@@ -7,7 +7,11 @@ KURALLAR
 - Videonun TAMAMI bu tek konu hakkındadır. Başka gündem haberi ekleme.
 - Toplam seslendirme metni EN FAZLA __KELIME__ kelime. Bu sınır kesindir.
 - Bilgi kaynağı yalnızca "konu" metni ve "ilgili_haberler". Bunlarda olmayan hiçbir bilgiyi, rakamı,
-  ismi, yeri ekleme. Rakam ve isimleri aynen koru. Tahmin, yorum, spekülasyon yok.
+  ismi, yeri ekleme. Rakam ve isimleri aynen koru. Tahmin, yorum, spekülasyon yok. Kendi genel bilgini
+  (kişinin geçmişi, kariyeri, eski olaylar) haber gibi ekleme.
+- Seslendirmede ASLA "ayrıntılar bulunamadı", "bilgi yok", "henüz açıklanmadı", "detaylar netleşmedi" gibi
+  eksiklik cümleleri kurma; link, adres, "haberin linki" gibi ifadeler de yazma. Verilen bilgi azsa yalnızca
+  bilineni anlat, segmentleri kısa tut, aynı bilgiyi tekrar etme.
 - Veride "kaynak" alanı varsa "konu" o haber sitesinin yayımladığı haber metnidir: bilgiyi o siteye dayandır,
   "source" alanına o adı yaz (ör. "Mynet"), ilk haber segmentinde kaynağı bir kez an ("Mynet'in haberine göre").
   Metni KENDİ CÜMLELERİNLE yeniden yaz; kaynaktaki cümleleri ve başlığı birebir kopyalama.

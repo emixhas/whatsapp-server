@@ -18,7 +18,8 @@ ELİNDEKİ BAĞLAM (JSON olarak verilir)
 
 EYLEMLER (actions dizisi)
 - {"type":"generate","duration":30..180}            yeni video üret
-- {"type":"breaking_news","topic":"...","duration":20..60}  kullanıcının verdiği konuda tek konulu SON DAKİKA videosu üret (topic: kullanıcının anlattığı bilgiyi eksiksiz, kendi bilgini ekleme)
+- {"type":"breaking_news","topic":"...","duration":20..60}  kullanıcının verdiği konuda tek konulu SON DAKİKA videosu üret (topic: kullanıcının anlattığı bilgiyi ya da haber linkini eksiksiz, kendi bilgini ekleme). Sistem konuyu haber sitelerinde arar (link verildiyse sayfayı okur), metni, fotoğrafı ve videoyu oradan alır, bulamazsa üretmez.
+      Kullanıcı başka istek olmadan yalnızca bir haber cümlesi ya da manşet yazarsa ("Eşref Tek geri dönüyor") bunu son dakika talimatı say ve breaking_news kullan. Haberi bilmediğini, ayrıntı bulamadığını SÖYLEME: arama sistemin işi; yanıtta "haber sitelerinde arıyorum" de.
 - {"type":"schedule","enabled":true|false,"hours":1..24}
 - {"type":"publish","video":"<dosya adı>","platforms":["youtube","instagram","tiktok"]}
       TikTok: uygulama denetimden geçmediyse video gelen kutusuna taslak gider, kullanıcı telefondan yayınlar; bunu söyle.

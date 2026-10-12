@@ -239,6 +239,10 @@ function startAnlik(topic, duration, opts = {}) {
   }
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), topic + "\n");
+  // Elle verilen konuda sitelerde bulunan diğer haberler (topic_news ilgili haberlerin başına koyar) ve görüntü sayfaları
+  // (assemble her kartı başka sitenin sayfasına bağlar); her başlangıçta yazılır ki önceki işten kalmasın.
+  writeJson(path.join(WORK, "anlik_related.json"), Array.isArray(opts.related) ? opts.related.slice(0, 8) : []);
+  writeJson(path.join(WORK, "anlik_pages.json"), Array.isArray(opts.pages) ? opts.pages.slice(0, 4) : []);
   const env = { ANLIK: "1" };
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
@@ -297,7 +301,40 @@ async function flushValuable() {
     : startAnlikMulti(items);
   for (const it of items) { try { await it.onStarted?.(r); } catch { /* kayıt */ } }
 }
-app.post("/api/anlik", (req, res) => res.json(startAnlik(req.body?.topic, req.body?.duration)));
+// Elle anlık haber (panel kartı, WhatsApp, sesli komut, beyin): Claude bilgi uydurmasın diye önce haberin kendisi bulunur.
+// Link verildiyse sayfa okunur (başlık, özet, metin, site adı); kısa konu verildiyse news_lookup.py haberi Bing/Google
+// Haberler, son dakika siteleri ve son RSS'te arar, en iyi eşleşen sayfaları okur (fotoğraf/video da oralardan gelir).
+// Bulunamazsa ve editör yalnız kısa bir konu yazdıysa video ÜRETİLMEZ, link ya da ayrıntı istenir.
+const URL_RE = /https?:\/\/[^\s<>"']+/i;
+async function prepareAnlik(input, duration, opts = {}) {
+  input = String(input || "").replace(/\s+/g, " ").trim();
+  const link = (input.match(URL_RE) || [""])[0].replace(/[).,;!?]+$/, "");
+  if (link) {
+    push(`🔗 haber linki okunuyor: ${link.slice(0, 120)}`);
+    const a = await pyJson(["scripts/news_lookup.py", "--url", link], 90000);
+    if (!a?.ok) { push(`🔗 haber sayfası okunamadı: ${a?.error || "yanıt yok"}`); return { ok: false, error: `Haber sayfasını okuyamadım (${a?.error || "yanıt yok"}). Haberi birkaç cümleyle yazarsanız ondan üretirim.` }; }
+    push(`🔗 ${a.site}: ${a.title.slice(0, 100)} → son dakika videosu üretiliyor`);
+    const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".");
+    return { ...startAnlik(topic, duration, { ...opts, source: a.site, url: link, pages: [{ url: link, source: a.site }] }), title: a.title, source: a.site, viaLink: true };
+  }
+  if (input.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın ya da haberin linkini gönderin." };
+  push(`🔎 "${input.slice(0, 90)}" haber sitelerinde aranıyor…`);
+  const f = await pyJson(["scripts/news_lookup.py", "--topic", input], 120000);
+  if (f?.errors?.length) push(`🔎 arama uyarısı: ${f.errors.join(" · ")}`);
+  if (f?.found && f.best) {
+    const b = f.best;
+    push(`🔎 bulundu: ${b.title.slice(0, 100)} (${b.site}) · ${f.matched} haberde geçiyor, görüntüler ${Math.max(1, (f.pages || []).length)} sayfadan`);
+    const topic = [b.title, b.description, b.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".");
+    return { ...startAnlik(topic, duration, { ...opts, source: b.site, url: b.url || undefined, related: f.related || [], pages: f.pages || [] }), title: b.title, source: b.site, found: true, count: f.matched };
+  }
+  if (input.split(" ").length < 15) {
+    push(`🔎 "${input.slice(0, 80)}" için güncel haber bulunamadı; uydurmamak için video üretilmedi`);
+    return { ok: false, notFound: true, error: `"${input.slice(0, 80)}" hakkında haber sitelerinde güncel bir haber bulamadım; bilgi uydurmamak için video üretmedim. Haberin linkini gönderin ya da ne olduğunu birkaç cümleyle yazın.` };
+  }
+  push("🔎 sitelerde bulunamadı; yalnızca yazdığınız bilgiyle üretiliyor (temkinli dil)");
+  return startAnlik(input, duration, { ...opts, related: f?.related || [] });
+}
+app.post("/api/anlik", async (req, res) => res.json(await prepareAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
 
 // ---------- Mynet manşet takibi: her N dakikada manşet alanı (6 haber) kontrol edilir; yeni giren haber için
@@ -702,7 +739,7 @@ const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
-    case "breaking_news": return startAnlik(a.topic, a.duration);
+    case "breaking_news": return prepareAnlik(a.topic, a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
     case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
@@ -1034,7 +1071,12 @@ async function handleCommand(text) {
   switch (cmd.action) {
     case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
-    case "anlik": { const r = startAnlik(cmd.topic, cmd.duration); reply = !r.ok ? r.error : r.queued ? `Anlık haber ${r.position}. sıraya alındı. Süren üretim bitince başlayacak.` : `Son dakika videosu üretiliyor: ${String(cmd.topic).slice(0, 60)}. Bitince haber vereceğim.`; if (!r.ok) action = "none"; break; }
+    case "anlik": {
+      const r = await prepareAnlik(cmd.topic, cmd.duration);
+      const what = r.title ? `"${r.title.slice(0, 90)}" (${r.source}${r.count > 1 ? `, ${r.count} haberde geçiyor` : ""})` : String(cmd.topic).slice(0, 60);
+      reply = !r.ok ? r.error : `${r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}`;
+      if (!r.ok) action = "none"; break;
+    }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
     case "play_latest": if (!videos.length) { reply = "Henüz üretilmiş video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = `Son video açılıyor: ${label(videos[0])}.`; } break;
     case "status": reply = await statusText(); break;

@@ -397,6 +397,15 @@ def main(src: str, dst: str):
                 s.pop("imageUrl", None)
                 if src_name and s.get("source") in (None, "", "Türkiye Gündemi"):
                     s["source"] = src_name
+        pages = load_json(DATA.parent / "work" / "anlik_pages.json", []) if not multi else []
+        rest = [p for p in pages if p.get("url") and p["url"] != src_url]
+        if rest:  # elle verilen konu sitelerde arandı: sonraki kartlar fotoğraf/videoyu diğer sitelerin sayfasından alır
+            for k, s in enumerate(haber[1:]):
+                p = rest[k % len(rest)]
+                s["articleUrl"] = p["url"]
+                if p.get("source") and s.get("source") in (None, "", "Türkiye Gündemi", src_name):
+                    s["source"] = p["source"]
+            print(f"  görüntüler {1 + len(rest)} haber sayfasından alınacak")
         if src_name:  # kanca ve ilk haber kartı her zaman asıl kaynağı gösterir
             segs[0]["source"] = src_name
             if haber:
