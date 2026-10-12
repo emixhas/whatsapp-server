@@ -82,6 +82,26 @@ def enqueue(video, plat):
         save_json(QUEUE_FILE, q)
 
 
+def queue_info(plat: str) -> dict:
+    """Bir platformun sınır sırası: bekleyen videolar (eskiden yeniye), duraklatma bitişi ve nedeni."""
+    q = [x for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == plat]
+    until = hold_until(plat)
+    reason = ((load_json(HOLD_FILE, {}) or {}).get(plat) or {}).get("reason", "") if until else ""
+    return {"count": len(q), "videos": [x.get("video") for x in sorted(q, key=lambda x: x.get("at", ""))],
+            "holdUntil": until.isoformat() if until else None, "reason": reason}
+
+
+def queue_line(plat: str) -> str:
+    """Loga yazılan tek satır: "📤 tiktok sırası: 3 video bekliyor (…) · gönderim 15:20'ye kadar duraklatıldı (…)"."""
+    qi = queue_info(plat)
+    if not qi["count"] and not qi["holdUntil"]:
+        return f"📤 {plat} sırası: boş"
+    names = ", ".join(Path(v).stem for v in qi["videos"][-4:]) + (" …" if qi["count"] > 4 else "")
+    why = (TT_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "tiktok" else qi["reason"]
+    hold = f" · gönderim {local_hhmm(_parse(qi['holdUntil']))}'e kadar duraklatıldı ({str(why).split(" (")[0][:80]})" if qi["holdUntil"] else " · duraklatma yok, sıradaki gönderimde yüklenecek"
+    return f"📤 {plat} sırası: {qi['count']} video bekliyor" + (f" ({names})" if qi["count"] else "") + hold
+
+
 def local_hhmm(dt):
     return dt.astimezone().strftime("%H:%M")
 
@@ -964,7 +984,7 @@ def status():
                     "playlists": bool(set(load_json(SECRETS / "youtube_token.json", {}).get("scopes") or []) & YT_MANAGE),
                     "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
         "instagram": ig_status(env),
-        "tiktok": {"connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
+        "tiktok": {"queue": queue_info("tiktok"), "connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
                    "mode": (env.get("TIKTOK_MODE") or "inbox").lower(), "redirect": tt_redirect(env), "scopes": tt_scopes(env),
                    "https": tt_redirect(env).startswith("https://")},
     }
@@ -981,6 +1001,7 @@ def main():
     ap.add_argument("--ig-diagnose", action="store_true", help="Instagram yayın zincirini sına")
     ap.add_argument("--delete-remote", help="videoyu yüklendiği platformlardan sil (dosya adı)")
     ap.add_argument("--flush", action="store_true")
+    ap.add_argument("--queue", action="store_true", help="sınır sıraları (YouTube, TikTok): bekleyen videolar ve duraklatma")
     a = ap.parse_args()
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
@@ -997,6 +1018,10 @@ def main():
         return
     if a.flush:
         print(json.dumps(flush(), ensure_ascii=False)); return
+    if a.queue:
+        for plat in ("tiktok", "youtube"):
+            print(queue_line(plat))
+        print(json.dumps({"ok": True, "tiktok": queue_info("tiktok"), "youtube": queue_info("youtube")}, ensure_ascii=False)); return
     if a.disconnect == "tiktok":
         print(json.dumps({"ok": True, "removed": tt_disconnect(), "message": "TikTok bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.disconnect == "youtube":
@@ -1106,6 +1131,8 @@ def flush() -> dict:
     seen = {(x.get("video"), x.get("platform")) for x in q}
     added = [x for x in (load_json(QUEUE_FILE, []) or []) if (x.get("video"), x.get("platform")) not in seen]
     save_json(QUEUE_FILE, keep + added)
+    for plat in sorted({x.get("platform") for x in keep + added if x.get("platform")}):
+        print(queue_line(plat), flush=True)
     return {"ok": True, "uploaded": done, "queued": len(keep)}
 
 

@@ -139,8 +139,16 @@ def publish(plat: str) -> bool:
 failed = [p for p in plats if not publish(p)]
 # sınır yüzünden bekleyen eski videolar (sınır açıldıysa; yeni video önce gider)
 fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush"], capture_output=True, text=True)
+shown = set()
 for line in fl.stdout.strip().splitlines()[:-1]:
     print(line, flush=True)
+    if " sırası: " in line:
+        shown.add(line.split()[1])
+# sıra boş değilse ya da gönderim duraklatıldıysa her üretimde sıranın durumu loga (TikTok taslak sınırı görünür olsun)
+qs = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--queue"], capture_output=True, text=True)
+for line in qs.stdout.strip().splitlines()[:-1]:
+    if line.split()[1:2] and line.split()[1] not in shown and not line.endswith("sırası: boş"):
+        print(line, flush=True)
 if failed:
     # geçici hatalar (Instagram "medya hazır değil", ağ kopması) için 90 sn sonra bir kez daha denenir
     print(f"📤 tekrar denenecek (90 sn sonra): {', '.join(failed)}", flush=True)

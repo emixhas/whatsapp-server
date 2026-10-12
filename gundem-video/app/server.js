@@ -1144,6 +1144,7 @@ async function handleCommand(text) {
     case "share": if (!videos.length) { reply = "Paylaşacak video yok."; action = "none"; } else { payload = { name: videos[0].name }; reply = "Paylaşım paneli açıldı. Telefonunuzla QR kodu okutun."; } break;
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
+    case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
     case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }
     case "weekly_summary": { const r = startWeekly({ manual: true }); reply = r.ok ? "Haftanın özeti videosu üretiliyor. Yatay, yaklaşık beş dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
@@ -1370,6 +1371,7 @@ setInterval(async () => {
   const due = !m.lastSync || Date.now() - Date.parse(m.lastSync) > s.metricsSyncMinutes * 60000;
   if (anyConnected && due && !state.running) { await execAction({ type: "sync_metrics" }); push("· izlenmeler güncellendi"); }
   // günlük yükleme sınırı yüzünden sıraya alınan videolar: saatte bir, üretim yokken dene
+  if (Date.now() - lastQueueLog > 2 * 3600000) { lastQueueLog = Date.now(); logQueues().catch(() => {}); } // TikTok/YouTube sırası 2 saatte bir loga
   if (rest) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
   if (anyConnected && !state.running && Date.now() - lastFlush > 60 * 60000 && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
     lastFlush = Date.now();
@@ -1381,4 +1383,13 @@ setInterval(async () => {
   if (now.getHours() === Number(s.dailyReportHour) && lastReportDay !== day && !state.running) { lastReportDay = day; const r = await think("günlük rapor", "report"); announce(r.reply, { report: r.report, reportFile: r.reportFile }); push(`· günlük rapor hazır: ${r.reportFile}`); }
 }, 60000);
 
+// Sınır sıraları (TikTok taslak sınırı, YouTube günlük sınırı) logda görünür: açılışta, 2 saatte bir, "tiktok sırası" komutu
+let lastQueueLog = Date.now() - 2 * 3600000 + 60000; // açılıştan 1 dk sonra ilk kez
+async function logQueues({ all = false } = {}) {
+  const r = await py("publish.py", ["--queue"]);
+  const lines = String(r.stdout || "").trim().split("\n").slice(0, -1).filter((l) => l.startsWith("📤") && (all || !/sırası: boş$/.test(l)));
+  for (const l of lines) push(l);
+  return { lines, ...(r.json || {}) };
+}
+app.get("/api/queue", async (_req, res) => res.json(await logQueues({ all: true })));
 app.listen(PORT, "0.0.0.0", () => console.log(`EMIXHAS paneli: http://localhost:${PORT}   (telefon: http://${lanIp()}:${PORT})`));

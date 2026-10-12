@@ -133,7 +133,7 @@ def main():
     slim = []
     for cl in chosen:
         it = cl["item"]
-        row = {"p": cl["p"], "c": len(cl["sources"]), "k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:160], "s": (it.get("published") or "")[11:16]}
+        row = {"p": cl["p"], "c": len(cl["sources"]), "k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:(100 if os.environ.get("TOKEN_SAVER") == "1" else 160)], "s": (it.get("published") or "")[11:16]}
         if cl.get("m"):
             row["m"] = 1
         if cl.get("old"):

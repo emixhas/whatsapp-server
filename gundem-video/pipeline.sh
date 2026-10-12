@@ -59,7 +59,12 @@ export DURATION WORDS HABER FORMAT FORMAT_LABEL
 CLAUDE_MODEL="${CLAUDE_MODEL-$($PY -c "import json;print(json.load(open('data/settings.json')).get('claudeModel','opus') or '')" 2>/dev/null || echo opus)}"
 MODEL_ARGS=(); [ -n "$CLAUDE_MODEL" ] && MODEL_ARGS=(--model "$CLAUDE_MODEL")
 CLAUDE_EFFORT="${CLAUDE_EFFORT:-$($PY -c "import json;e=json.load(open('data/settings.json')).get('claudeEffort','medium');print(e.get('script','medium') if isinstance(e,dict) else e)" 2>/dev/null || echo medium)}"
-export CLAUDE_EFFORT
+# Az token modu (settings.tokenSaver, varsayılan açık; kullanıcı isteği: üretimde Claude en az kullanılsın):
+# senaryo effort "low" (düşünme tokenı en büyük kalem), Claude'a giden haber sayısı haber × 3 (en az 12),
+# özetler kısaltılır, performans ipucu 300 karakterle sınırlanır. Kapatmak: panel Ayarlar → Gelişmiş.
+TOKEN_SAVER="$($PY -c "import json;print('1' if json.load(open('data/settings.json')).get('tokenSaver', True) else '0')" 2>/dev/null || echo 1)"
+if [ "$TOKEN_SAVER" = "1" ] && [ -z "${CLAUDE_EFFORT_FIXED:-}" ]; then CLAUDE_EFFORT="low"; fi
+export CLAUDE_EFFORT TOKEN_SAVER
 # Claude proje dışında boş klasörde ve araçsız çalışır: proje CLAUDE.md'si okunmaz, dosya gezmez (hızlı, az token)
 CLAUDE_CWD="${TMPDIR:-/tmp}/emixhas-claude"; mkdir -p "$CLAUDE_CWD"
 mkdir -p work out public/audio
@@ -95,7 +100,11 @@ fi
 
 echo "-- 2/4 senaryo (Claude)"
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
-  HINT="Henüz performans verisi yok."; [ -f data/prompt_hint.txt ] && HINT=$(tr '\n' ' ' < data/prompt_hint.txt | sed 's/[&/\]/\\&/g')
+  HINT="Henüz performans verisi yok."
+  if [ -f data/prompt_hint.txt ]; then
+    HINT_MAX=100000; if [ "$TOKEN_SAVER" = "1" ]; then HINT_MAX=300; fi
+    HINT=$($PY -c "import sys;t=open('data/prompt_hint.txt',encoding='utf-8').read().replace(chr(10),' ');print(t[:int(sys.argv[1])])" "$HINT_MAX" | sed 's/[&/\]/\\&/g')
+  fi
   # Claude'a yalnızca gerekli alanlar gider: en yeni NEWS_MAX haber, kısa özet, link yok (token tasarrufu)
   if [ "$ANLIK" = "1" ]; then
     # Tek konu: RSS'ten konuyla ilgili haberler + editörün yazdığı bilgi, ayrı senaryo kuralları
@@ -109,7 +118,9 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     PROMPT_FILE="prompts/gunluk.md"
   else
     $PY scripts/trends.py >/dev/null 2>&1 || true  # Google Trends Türkiye önbelleği (30 dk; erişilemezse eski liste)
-    $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
+    NEWS_N="${NEWS_MAX:-50}"
+    if [ "$TOKEN_SAVER" = "1" ] && [ -z "${NEWS_MAX:-}" ]; then NEWS_N=$(( HABER * 3 )); if [ "$NEWS_N" -lt 12 ]; then NEWS_N=12; fi; fi
+    $PY scripts/slim_news.py work/news.json work/news_prompt.json "$NEWS_N"
     PROMPT_FILE="prompts/senaryo.md"
   fi
   # Claude bazen JSON yerine düz metin/yarım yanıt döndürür: bir kez daha, "yalnız JSON" hatırlatmasıyla denenir.

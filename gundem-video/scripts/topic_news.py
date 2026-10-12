@@ -19,6 +19,9 @@ STOP = {"için", "ile", "olan", "olarak", "sonra", "daha", "göre", "yeni", "old
         "kadar", "gibi", "çok", "bir", "iki", "ama", "fakat", "veya", "şu", "bu", "da", "de", "mi", "ne", "nasıl"}
 
 
+SAVER = os.environ.get("TOKEN_SAVER") == "1"  # az token modu (pipeline.sh): daha az ve daha kısa ilgili haber
+
+
 def low(t: str) -> str:
     return (t or "").replace("I", "ı").replace("İ", "i").lower()
 
@@ -46,8 +49,8 @@ def main():
         if key in seen:
             continue
         seen.add(key)
-        rel.append({"k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:300], "s": (it.get("published") or "")[11:16], "u": s})
-        if len(rel) >= 12:
+        rel.append({"k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:(180 if SAVER else 300)], "s": (it.get("published") or "")[11:16], "u": s})
+        if len(rel) >= (6 if SAVER else 12):
             break
     extra_file = os.path.join(os.path.dirname(os.path.abspath(topic_file)), "anlik_related.json")
     if os.path.exists(extra_file):  # panelin haber sitelerinde bulduğu (news_lookup) aynı olayın diğer haberleri öne
@@ -57,7 +60,7 @@ def main():
             extra = []
         have = {low(r.get("b") or "")[:60] for r in rel}
         rel = [r for r in extra if low(r.get("b") or "")[:60] not in have][:8] + rel
-        rel = rel[:12]
+        rel = rel[:(6 if SAVER else 12)]
     src = os.environ.get("ANLIK_SOURCE", "").strip()
     out = {"aciklama": "konu = kullanıcının (kanal editörünün) verdiği bilgi. ilgili_haberler = RSS'te bu konuya uyan haberler; "
            "k=kaynak b=başlık o=özet s=saat(UTC) u=konuyla uyum puanı.", "konu": topic, "ilgili_haberler": rel}

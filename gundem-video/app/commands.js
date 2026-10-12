@@ -60,6 +60,8 @@ export function parseCommand(raw) {
   }
   const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
   if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
+  // Yayın sırası: "tiktok sırası", "sırada ne var", "bekleyen videolar"
+  if (/(tiktok|youtube|yayın|yükleme)? ?sıra(sı|da ne var|daki videolar)|bekleyen (video|yükleme)/.test(t) && !/sıraya al/.test(t)) return { action: "queue", reply: "" };
   // Ağır süreçleri ve üretimi durdur (ısınma): "her şeyi durdur", "modelleri kapat", "üretimi durdur"
   if (/(her şeyi|hepsini|tüm modelleri|modelleri|bütün işlemleri|arka plan|üretimi|sistemi|tüm sistemi) (durdur|kapat|bitir|dinlendir)/.test(t)) return { action: "stopall", reply: "" };
   // Dinlenmeden çık: "sistemi başlat", "sistemi uyandır", "sisteme devam"

@@ -24,6 +24,11 @@ Token: Claude'a `scripts/slim_news.py` ile küçültülmüş set gider (en yeni 
 karakter özet, link yok). Ölçüm (60 sn): ~45k girdi (çoğu Claude Code'un kendi yükü, önbellekli),
 ~2k çıktı. Haber setini büyütmek seçimi iyileştirmez, token artırır. Kullanıcı isteğiyle token/maliyet
 bilgisi logda ve panelde GÖSTERİLMEZ; `data/usage.json` sessizce tutulur (effort seçimi panelde kalır).
+Az token modu (kullanıcı isteği: üretimde Claude en az kullanılsın; `settings.tokenSaver`, varsayılan açık, Ayarlar →
+Gelişmiş anahtarı): `pipeline.sh` senaryo effort'unu "low" yapar (`CLAUDE_EFFORT_FIXED=1` env ile elle seçilen korunur),
+düzenli videoda Claude'a giden haber sayısı `HABER × 3` (en az 12; `NEWS_MAX` env verilirse o), `slim_news` özetleri 100
+karakter, anlıkta `topic_news` en çok 6 ilgili haber / 180 karakter, performans ipucu 300 karakter. Üretim başına tek
+Claude çağrısı (geçersiz JSON'da bir tekrar) değişmedi.
 Effort: `settings.claudeEffort` {script: "medium", brain: "high"} → `claude -p --effort`. Ölçüm: medium
 2,3k çıktı, high ~4k, xhigh 2-3k (değişken); haber/kategori seçimi üçünde aynı. Her çağrı
 `--output-format json` ile çalışır; `scripts/claude_result.py` (pipeline) ve `brain.js` kullanımı
@@ -424,6 +429,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `content_publishing_limit` günlük kotası, Meta'nın videoyu çekebilmesi (son videonun herkese açık adresine
   facebookexternalhit User-Agent ve Range ile istek: HTTP 200/206 + video içerik türü) ve son hata. Panel
   "🩺 Instagram'ı sına" → `POST /api/instagram/diagnose`, adımlar ✅/❌ olarak sohbete ve loga (🩺).
+- Sınır sıraları logda (kullanıcı isteği: TikTok sırası görünsün): `publish.py --queue` (`queue_info`/`queue_line`):
+  "📤 tiktok sırası: N video bekliyor (adlar) · gönderim HH:MM'e kadar duraklatıldı (neden)"; `--status` tiktok.queue;
+  `--flush` sonunda kalan sıralar; `post_pipeline` her yayından sonra boş olmayan/duraklatılmış sırayı yazar; panel
+  açılıştan 1 dk sonra ve 2 saatte bir `logQueues()`; komut "tiktok sırası / sırada ne var / bekleyen videolar"
+  (`queue` eylemi), `GET /api/queue`; TikTok kartında "⏳ Sıra: …".
 - TikTok sınırı: gelen kutusu modunda paylaşılmamış taslak birikince `spam_risk_too_many_pending_share` (doğrudan yayında
   `spam_risk_too_many_posts`) → `TT_LIMIT_REASONS` LimitReached gibi: 3 saat bekleme, video sıraya, Türkçe açıklama
   `TT_LIMIT_TR` ("taslakları paylaşın ya da silin"), log "📤 tiktok: sınır doldu" + sesli uyarı.
