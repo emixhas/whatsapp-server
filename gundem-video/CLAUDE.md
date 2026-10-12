@@ -63,7 +63,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`c` = kaynak sayısı, "en çok konuşulan" ölçüsü), `data/used_news.json` içindeki son 48 saatte videoya
   girmiş haberleri eler (yeterli yeni haber yoksa `e:1` ile geri ekler), p → c → yenilik sırasıyla en iyi
   `NEWS_MAX`=50 haberi Claude'a verir. `assemble_script.record_used_news()` kullanılanları yazar.
-  Prompt p=3 haberleri zorunlu kılar ve kancayı oradan seçtirir. Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
+  Prompt p=3 haberleri zorunlu kılar ve kancayı oradan seçtirir. Manşet (kullanıcı kararı: kancaya ve manşetlik
+  habere ağırlık): `slim_news` şu an Mynet manşetinde/son dakika sitelerinde olan (`breaking_watch.recent_items` +
+  `same_event`), `news_value` ile değerli ya da p=3 (e=1 değil) kümeye `m:1` koyar, sıralama p → m → trend → c;
+  `prompts/senaryo.md` kancayı m=1'den seçtirir (m içinde p, sonra c), kanca haberi 1. kart olarak 20-28 kelime anlatılır
+  (diğerleri 12-18; fazlası önemsiz haberlerden kısılır), m=1 ve p≥2 kanca haberine "breaking". Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
   konut") önlemek için fiil/bağlam içeren kalıplar kullan.
 - Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
   (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
@@ -86,7 +90,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   YouTube için yt-dlp `--js-runtimes node:<yol>` (Node, Remotion için zaten kurulu) ve yt-dlp-ejs bileşeni
   (`yt-dlp[default]`, yoksa `--remote-components ejs:github`) kullanır. `settings.media` {video,
   maxVideoSeconds 20, allowYoutubeEmbeds}; panel Gelişmiş'te iki anahtar. `yt-dlp[default]` pipeline'da
-  haftada bir güncellenir. Remotion `MediaBg.tsx`: video varsa `Loop` + `OffthreadVideo` (sessiz), yoksa Ken Burns
+  haftada bir güncellenir. VİDEO ÖNCE (kullanıcı kararı: "önceliğimiz video, video yoksa mecbur kalırsak foto"):
+  her kanca/haber için video sırayla aranır: kendi sayfası (`video_from_page`: yt-dlp → sayfadaki mp4/m3u8 → gömülü
+  oynatıcı) → aynı olayı veren diğer sitelerin sayfaları (`same_story_pages`: work/news.json'da 4 harflik köklerin
+  ≥%35'i uyan, anlıkta work/anlik_pages.json önce) → Bing Haberler araması (`searched_pages`) → YouTube'da en yeni
+  videolar (`youtube_search`: `ytsearchdate10:`, başlık kökleri ≥%50 uyan, 5 sn-30 dk; `media.youtubeSearch`, ayrıca
+  `allowYoutubeEmbeds` açık olmalı). Ek aramalar `media.videoSearchSeconds` (420) ile sınırlı; kanca, "breaking" ve ilk
+  haber her zaman tam aranır. Bulunan kaynak `found_src` ile aynı haberin diğer segmentinde önce denenir (kök uyumu ≥2
+  ya da anlık). Log: "🎞 video … (haber sayfası / aynı haber, site / haber araması / YouTube araması)" ya da "📷 video
+  bulunamadı, fotoğraf kullanılacak". Fotoğraf her durumda indirilir (kapak, yedek). Remotion `MediaBg.tsx`: video varsa `Loop` + `OffthreadVideo` (sessiz), yoksa Ken Burns
   fotoğraf; kartta "VİDEO:"/"FOTOĞRAF: kaynak" yazısı.
 - Bölüm meta: `dayLabel` ("9 Ekim Cuma"), `slotLabel` ("2. 5 SAAT"), `timeRange` ("09:00–14:00"),
   `scheduleHours` (settings.scheduleHours, panel zamanlayıcıyı yazınca güncellenir). Kapak (`Thumb.tsx`,

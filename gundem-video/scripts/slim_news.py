@@ -107,12 +107,35 @@ def main():
     for cl in chosen:
         hits = match(f"{cl['item'].get('title', '')} {(cl['item'].get('summary') or '')[:200]}", tr) if tr else []
         cl["trend"] = hits[0] if hits else None
-    chosen.sort(key=lambda cl: (cl["p"], bool(cl.get("trend")), len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
+    # Manşet (m=1): şu an Mynet manşetinde ya da son dakika sitelerinde olan, ya da halk için değerli (news_value) olay.
+    # Kullanıcı kararı: kanca her zaman manşetlik haberden, manşet haberi videoda daha fazla yer alır.
+    try:
+        from breaking_watch import recent_items, same_event
+        heads = [i.get("title", "") for i in recent_items()]
+    except Exception:
+        heads, same_event = [], None
+    try:
+        from news_value import score as value_score
+    except Exception:
+        value_score = None
+    for cl in chosen:
+        t = cl["item"].get("title", "")
+        on_front = bool(same_event) and any(same_event(t, h) for h in heads if h)
+        valuable = False
+        if value_score:
+            try:
+                valuable = bool(value_score(f"{t} {(cl['item'].get('summary') or '')[:200]}").get("valuable"))
+            except Exception:
+                valuable = False
+        cl["m"] = 1 if (on_front or valuable or cl["p"] == 3) and not cl.get("old") else 0
+    chosen.sort(key=lambda cl: (cl["p"], cl["m"], bool(cl.get("trend")), len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
     chosen = chosen[:n]
     slim = []
     for cl in chosen:
         it = cl["item"]
         row = {"p": cl["p"], "c": len(cl["sources"]), "k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:160], "s": (it.get("published") or "")[11:16]}
+        if cl.get("m"):
+            row["m"] = 1
         if cl.get("old"):
             row["e"] = 1
         if cl.get("trend"):
@@ -122,7 +145,8 @@ def main():
     multi = sum(1 for r in slim if r["c"] > 1)
     json.dump({"aciklama": "p=önem (3 sert haber, 2 önemli karar, 1 diğer) c=aynı olayı veren kaynak sayısı (yüksek c = en çok konuşulan) "
                "k=kaynak b=başlık o=özet s=saat(UTC) e=1 önceki videoda kullanılmış (yalnızca yeni haber yoksa). "
-               "t=1 Türkiye'de şu an Google'da çok aranan konu (tr=aranan ifade)." + note, "haberler": slim},
+               "t=1 Türkiye'de şu an Google'da çok aranan konu (tr=aranan ifade). m=1 manşetlik haber (sitelerin manşetinde/son dakikasında "
+               "ya da halk için değerli; kanca bunlardan seçilir)." + note, "haberler": slim},
               open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"{len(slim)} haber Claude'a gidiyor (önem 3: {counts[3]}, önem 2: {counts[2]}, önem 1: {counts[1]}; çok kaynaklı: {multi}; "
           f"önceki videolardan elenen: {len(old)}; toplam {len(items)})")

@@ -8,7 +8,12 @@ KURALLAR
   haberinin TEK cümlesidir: en fazla 8 kelime, somut, doğrudan, rakam veya yer adı içerir.
   Örnekler: "İzmir'de zincirleme kaza: 3 kişi hayatını kaybetti." / "Merkez Bankası faizi değiştirmedi."
   / "Ankara'da bakanlık binasına saldırı." Soru biçimi de olabilir ama dürüst olmalı.
-  Kanca haberi, listedeki önem puanı en yüksek (p=3) haberden seçilir; p=3 yoksa p=2'den.
+  KANCA = MANŞET (kullanıcı kararı, en önemli kural): kanca her zaman "m":1 işaretli manşetlik haberden seçilir
+  (sitelerin manşetinde/son dakikasında olan ya da halkı doğrudan etkileyen olay); m=1 içinde p, sonra c en yüksek
+  olan. m=1 yoksa p=3, o da yoksa p=2'den. Kanca haberi videonun yıldızıdır: 1. haber segmenti olarak da kalır ve
+  diğer haberlerden DAHA UZUN anlatılır (2 cümle, 20-28 kelime: ne oldu + en önemli ayrıntı/rakam/son durum);
+  bu fazladan kelimeyi en önemsiz haberlerden kıs. Kanca cümlesi merak uyandırsın ama dürüst olsun; en çarpıcı
+  somut bilgiyi (sayı, yer, kim) öne koy.
   Kanca için ayrıca 2-4 kelimelik ekran başlığı ("title") yaz: "3 ÖLÜ", "FAİZ SABİT" gibi. En fazla 24
   karakter ve kendi başına anlamı tamam olmalı ("KIZINA MÜEBBET" doğru, "KIZINA AĞIRLAŞTIRILMIŞ" yarım).
   Can kaybı içeren kancada saygılı ve kuru ol; kan, ceset gibi grafik ifade kullanma.
@@ -25,7 +30,7 @@ KURALLAR
 - Tam olarak __HABER__ haber seç. Kanca haberi aynı zamanda 1. haber olarak kalır (tam metniyle).
   Haber sayısı kadar "haber" segmenti yaz; şemadaki örnek 4 haber içindir, sayıyı __HABER__ yap.
 - Her haber için: kısa ekran başlığı ("title", en fazla 8 kelime) ve 1-2 cümlelik tarafsız
-  seslendirme metni ("narration", 12-18 kelime). Yorum, sıfat yığını, tıklama tuzağı yok.
+  seslendirme metni ("narration", 12-18 kelime; manşet/kanca haberi 20-28). Yorum, sıfat yığını, tıklama tuzağı yok.
 - Kaynak haberde olmayan hiçbir bilgiyi ekleme. Rakam ve isimleri aynen koru.
 - "source" alanına haberin geldiği kaynak adını yaz.
 - "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, parti, spor, hava,
@@ -51,7 +56,8 @@ KURALLAR
   THY → Türk Hava Yolları; TL → lira; km → kilometre; yüzde işareti yerine "yüzde" yaz (% 30 → yüzde 30).
   Rakamları rakamla yaz ama okunabilir tut (1.250.000 → 1 milyon 250 bin), parantez ve tire kullanma.
 - Günün açık ara en büyük haberi varsa SADECE o habere "breaking": true ekle; o haber ilk sırada
-  olsun. Her videoda zorunlu değil; sıradan bir günde hiçbirine verme.
+  olsun. Kanca haberi m=1 ve p≥2 ise ona "breaking": true ver (manşet kartı). Sıradan bir günde hiçbirine verme.
+- Diğer m=1 haberleri de p=1 haberlerinden önce seç ve ilk sıralara koy.
 - Resmi, sakin, profesyonel ton. Sansasyon yok.
 
 PERFORMANS İPUCU (kanalın kendi verisinden; kurallarla çelişirse kurallar önce gelir)

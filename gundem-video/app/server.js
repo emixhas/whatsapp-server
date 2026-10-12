@@ -277,6 +277,7 @@ function startAnlikMulti(items, { auto = true } = {}) {
   if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; restEnd("elle anlık haber talimatı"); }
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), items.map((it, i) => `${i + 1}) [${it.source}] ${it.title}. ${String(it.text || "").slice(0, 400)}`).join("\n") + "\n");
+  writeJson(path.join(WORK, "anlik_related.json"), []); writeJson(path.join(WORK, "anlik_pages.json"), []); // önceki tek konulu işten kalmasın
   writeJson(path.join(WORK, "anlik_items.json"), items.map(({ source, url, title, text }) => ({ source, url, title, text: String(text || "").slice(0, 1500) })));
   push(`⚡ ${items.length} değerli son dakika haberi TEK videoda (${duration} sn): ${items.map((x) => `${x.title.slice(0, 50)} (${x.source})`).join(" | ")}`);
   const env = { ANLIK: "1", ANLIK_MULTI: String(items.length), ANLIK_SOURCE_COUNT: String(Math.max(...items.map((x) => x.sourceCount || 1))) };

@@ -3,6 +3,17 @@
 
 Kullanım: python3 scripts/fetch_images.py public/episode.json
 
+ÖNCELİK VİDEO (kullanıcı kararı: "her zaman önceliğimiz video; video yoksa mecbur kalırsak foto"). Her kanca/haber
+için video sırayla aranır, ilk bulunan kullanılır:
+  a) haberin kendi sayfası (aşağıdaki 1. madde),
+  b) aynı olayı veren DİĞER sitelerin sayfaları (work/news.json'da başlık+metin kökleri uyan haberler, anlık haberde
+     work/anlik_pages.json),
+  c) Bing Haberler'de başlıkla arama → bulunan haber sayfaları,
+  d) YouTube'da EN YENİ videolar arasında başlıkla arama (ytsearchdate; başlığı haberle uyuşan, ≤ 30 dk video).
+b-d ek arama süresi `settings.media.videoSearchSeconds` (420 sn) ile sınırlıdır; kanca ve ilk (manşet) haber bu
+sınırdan bağımsız hep tam aranır. Bir sayfada bulunan video aynı haberin diğer segmentinde önce denenir.
+Fotoğraf yine indirilir (kapak ve video bulunamazsa arka plan için).
+
 Kaynak sırası (segment başına):
   1. Haberin kendi sayfası (articleUrl): og:image, twitter:image, image_src → yayıncının tam boy fotoğrafı.
      Video: önce yt-dlp (açık kaynak, binlerce siteyi tanır; sayfaya gömülü oynatıcıdaki videoyu bulur,
@@ -22,11 +33,13 @@ Kaynak sırası (segment başına):
 """
 import html
 import json
+import os
 import re
 import shutil
 import ssl
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -42,7 +55,9 @@ except ImportError:
 
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
 OUT = ROOT / "public" / "images"
-MEDIA = {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True, **(settings().get("media") or {})}
+MEDIA = {"video": True, "maxVideoSeconds": 20, "allowYoutubeEmbeds": True, "youtubeSearch": True, "videoSearchSeconds": 420,
+         **(settings().get("media") or {})}
+T0 = time.time()
 
 
 def get(url: str, limit: int, referer: str = "", timeout: int = 20) -> bytes:
@@ -234,6 +249,104 @@ def fetch_video(urls: list, referer: str, dst: Path, w: int, h: int, seconds: fl
     return 0.0
 
 
+# ---------- Video arama: kendi sayfası yoksa aynı haberin diğer sayfaları, haber araması, YouTube ----------
+def _stems(t: str) -> set:
+    try:
+        from topic_news import stems
+        return stems(t)
+    except Exception:
+        return {w[:4] for w in re.findall(r"\w{3,}", (t or "").lower())}
+
+
+_NEWS = None
+
+
+def same_story_pages(seg: dict, own: str) -> list:
+    """Aynı olayı veren diğer sitelerin haber sayfaları (en uyumlu 4)."""
+    global _NEWS
+    if _NEWS is None:
+        try:
+            _NEWS = json.loads((ROOT / "work" / "news.json").read_text(encoding="utf-8")).get("items", [])
+        except Exception:
+            _NEWS = []
+        try:  # anlık haber: panelin sitelerde bulduğu sayfalar
+            _NEWS = [{"title": "", "summary": "", "link": p.get("url"), "anlik": True}
+                     for p in json.loads((ROOT / "work" / "anlik_pages.json").read_text(encoding="utf-8"))] + _NEWS
+        except Exception:
+            pass
+    kw = _stems(f"{seg.get('title', '')} {seg.get('narration', '')}")
+    out = []
+    for it in _NEWS:
+        link = it.get("link") or ""
+        if not link.startswith("http") or link == own:
+            continue
+        if it.get("anlik") and (os.environ.get("ANLIK") == "1"):
+            out.append((99, link))
+            continue
+        s = len(kw & _stems(f"{it.get('title', '')} {(it.get('summary') or '')[:300]}"))
+        if s >= max(2, int(len(kw) * 0.35)):
+            out.append((s, link))
+    out.sort(key=lambda x: -x[0])
+    return list(dict.fromkeys(l for _, l in out))[:4]
+
+
+def searched_pages(query: str) -> list:
+    """Bing Haberler'de başlıkla arama: doğrudan haber sayfası linkleri."""
+    try:
+        from news_lookup import parse_bing
+        q = urllib.parse.quote(query[:120])
+        xml = get(f"https://www.bing.com/news/search?q={q}&format=rss&setlang=tr&cc=TR", 2 * 1024 * 1024, timeout=15).decode("utf-8", "replace")
+        kw = _stems(query)
+        return [x["url"] for x in parse_bing(xml) if len(kw & _stems(x["title"] + " " + x["summary"])) >= max(2, int(len(kw) * 0.5))][:3]
+    except Exception as e:
+        print(f"  ! haber araması yapılamadı: {str(e)[:80]}", file=sys.stderr)
+        return []
+
+
+def youtube_search(query: str, dst: Path, w: int, h: int, secs: float) -> tuple[float, str]:
+    """YouTube'da en yeni videolar arasında haber başlığıyla arar; başlığı uyuşan ilk videonun ilk saniyelerini alır."""
+    cmd = ytdlp_cmd()
+    if not cmd or not MEDIA.get("allowYoutubeEmbeds") or not MEDIA.get("youtubeSearch"):
+        return 0.0, ""
+    try:
+        r = subprocess.run([*cmd, "--flat-playlist", "--quiet", "--no-warnings", "--print", "%(id)s\t%(duration)s\t%(title)s",
+                            f"ytsearchdate10:{query[:100]}"], capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return 0.0, ""
+    kw = _stems(query)
+    need = max(2, int(len(kw) * 0.5 + 0.5))
+    for line in r.stdout.splitlines():
+        vid, dur, title = (line.split("\t", 2) + ["", "", ""])[:3]
+        try:
+            dur_s = float(dur)
+        except ValueError:
+            dur_s = 0.0
+        if not vid or len(kw & _stems(title)) < need or not (5 <= dur_s <= 1800):
+            continue
+        url = f"https://www.youtube.com/watch?v={vid}"
+        d = fetch_video_ytdlp(url, dst, w, h, secs)
+        if d:
+            return d, url
+    return 0.0, ""
+
+
+def video_from_page(page: str, pages: dict, dst: Path, w: int, h: int, secs: float) -> float:
+    """Bir haber sayfasından video: yt-dlp, sayfadaki video dosyaları, gömülü oynatıcılar."""
+    d = fetch_video_ytdlp(page, dst, w, h, secs)
+    if d:
+        return d
+    if page not in pages:
+        pages[page] = page_media(page)
+    _, vids, embeds = pages[page]
+    d = fetch_video(vids, page, dst, w, h, secs) if vids else 0.0
+    if not d and MEDIA.get("allowYoutubeEmbeds"):
+        for emb in embeds[:2]:
+            d = fetch_video_ytdlp(emb, dst, w, h, secs)
+            if d:
+                break
+    return d
+
+
 def main():
     ep_path = Path(sys.argv[1])
     ep = json.loads(ep_path.read_text(encoding="utf-8"))
@@ -241,33 +354,66 @@ def main():
     for f in list(OUT.glob("seg-*")) + list(OUT.glob("vid-*")):
         f.unlink()
     pages: dict = {}
+    found_src: dict = {}  # haber sayfası → videonun bulunduğu kaynak (aynı haberin kanca + kart segmentleri)
+    first_haber = next((k for k, x in enumerate(ep["segments"]) if x.get("kind") == "haber"), -1)
     n_img = n_vid = n_hd = 0
     for i, seg in enumerate(ep["segments"]):
         if seg.get("kind") not in ("hook", "haber"):
             continue
         art, rss = seg.get("articleUrl"), seg.get("imageUrl")
-        if not art and not rss:
+        if not art and not rss and not MEDIA.get("video"):
             continue
         if art and art not in pages:
             pages[art] = page_media(art)
         p_imgs, p_vids, p_embeds = pages.get(art, ([], [], [])) if art else ([], [], [])
         cands = list(dict.fromkeys(p_imgs + ([rss] if rss else [])))
         tall = seg["kind"] == "hook"
-        # video: kanca dikey tam ekran, haber kartı 1280x780 (kart oranı 920x560)
-        if MEDIA.get("video") and art:
+        # video ÖNCE: kanca dikey tam ekran, haber kartı 1280x780 (kart oranı 920x560)
+        if MEDIA.get("video"):
             dst = OUT / f"vid-{i:02d}.mp4"
             secs = min(float(MEDIA.get("maxVideoSeconds") or 20), max(6.0, float(seg.get("duration") or 8) + 1))
             vw, vh = (1080, 1920) if tall else (1280, 780)
-            d = fetch_video_ytdlp(art, dst, vw, vh, secs) or (fetch_video(p_vids, art, dst, vw, vh, secs) if p_vids else 0.0)
-            if not d and MEDIA.get("allowYoutubeEmbeds"):
-                for emb in p_embeds[:2]:  # sayfaya gömülü YouTube/Dailymotion/Vimeo oynatıcısı
-                    d = fetch_video_ytdlp(emb, dst, vw, vh, secs)
+            star = tall or seg.get("breaking") or first_haber == i  # kanca ve manşet: süre sınırı yok
+            in_budget = lambda: star or time.time() - T0 < float(MEDIA.get("videoSearchSeconds") or 420)
+            d, via = 0.0, ""
+            seg_kw = _stems(f"{seg.get('title', '')} {seg.get('narration', '')}")
+            hit = found_src.get(art) if art else None
+            # aynı haberin başka segmentinde (kanca ↔ ilk kart) bulunan video kaynağı; farklı haber aynı sayfaya
+            # eşlenmişse kullanılmaz (kök uyumu ya da anlık haber şart)
+            if hit and (os.environ.get("ANLIK") == "1" or len(seg_kw & hit["kw"]) >= 2):
+                src = hit["src"]
+                d = fetch_video_ytdlp(src, dst, vw, vh, secs) if "youtube.com/watch" in src else video_from_page(src, pages, dst, vw, vh, secs)
+                via = "aynı haberin videosu" if d else ""
+            if not d and art:
+                d = video_from_page(art, pages, dst, vw, vh, secs)
+                src, via = art, "haber sayfası"
+            if not d and in_budget():
+                for alt in same_story_pages(seg, art or ""):
+                    d = video_from_page(alt, pages, dst, vw, vh, secs)
                     if d:
+                        src, via = alt, f"aynı haber, {urllib.parse.urlparse(alt).netloc.replace('www.', '')}"
                         break
+                    if not in_budget():
+                        break
+            query = seg.get("title") if seg.get("kind") == "haber" else (next((x.get("title") for x in ep["segments"] if x.get("kind") == "haber"), "") or seg.get("title"))
+            query = f"{query or ''} {' '.join((seg.get('narration') or '').split()[:6])}".strip()
+            if not d and in_budget():
+                for alt in searched_pages(query):
+                    d = video_from_page(alt, pages, dst, vw, vh, secs)
+                    if d:
+                        src, via = alt, f"haber araması, {urllib.parse.urlparse(alt).netloc.replace('www.', '')}"
+                        break
+            if not d and in_budget():
+                d, src = youtube_search(query, dst, vw, vh, secs)
+                via = "YouTube araması" if d else ""
             if d:
                 seg["video"], seg["videoDuration"] = f"images/{dst.name}", round(d, 2)
                 n_vid += 1
-                print(f"  🎞 video {seg.get('title', '')[:40]}: {d:.1f} sn")
+                if art and src:
+                    found_src.setdefault(art, {"src": src, "kw": seg_kw})
+                print(f"  🎞 video {seg.get('title', '')[:40]}: {d:.1f} sn ({via})")
+            else:
+                print(f"  📷 video bulunamadı, fotoğraf kullanılacak: {seg.get('title', '')[:50]}")
         best = best_image(cands, art or "", OUT / f"seg-{i:02d}.tmp") if cands else None
         if not best:
             if cands:
