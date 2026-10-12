@@ -284,6 +284,7 @@ function queueValuable(item) { // {title, text, source, url, sourceCount, durati
 }
 async function flushValuable() {
   valueTimer = null;
+  if (watchScanning) { valueTimer = setTimeout(() => flushValuable().catch(() => {}), 3000); return; } // diğer kaynak da taransın
   const items = valueBatch.splice(0, 3);
   if (valueBatch.length) valueTimer = setTimeout(() => flushValuable().catch(() => {}), VALUE_BATCH_MS);
   if (!items.length) return;
@@ -299,7 +300,10 @@ app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: stat
 // ---------- Mynet manşet takibi: her N dakikada manşet alanı (6 haber) kontrol edilir; yeni giren haber için
 // kaynak gösterilerek, kendi cümlelerimizle anlık (son dakika) video üretilir. Günlük üst sınır var (YouTube kotası).
 const MYNET_DONE = path.join(DATA, "mynet_produced.json");
-const mynetCfg = () => ({ enabled: true, intervalMin: 30, maxPerDay: 3, valuableMaxPerDay: 6, duration: 30, ...(settings().mynet || {}) });
+// Mynet ve son dakika siteleri AYNI aralıkla, AYNI taramada kontrol edilir (settings.watchIntervalMin, varsayılan 10 dk):
+// aynı anda düşen değerli haberler tek partide toplanıp birleşik videoya girer (queueValuable).
+const watchMin = () => Math.min(60, Math.max(5, Number(settings().watchIntervalMin) || 10));
+const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 6, duration: 30, ...(settings().mynet || {}), intervalMin: watchMin() });
 const today = () => new Date().toISOString().slice(0, 10);
 const mynetDone = () => readJson(MYNET_DONE, {});
 const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
@@ -339,8 +343,7 @@ async function mynetCheck({ manual = false } = {}) {
   for (const it of [...(r.new || [])].sort((a, b) => (b.valuable ? 1 : 0) - (a.valuable ? 1 : 0))) await mynetProduce(it.url, { item: it });
   return r;
 }
-setInterval(() => { const c = mynetCfg(); if (c.enabled && Date.now() - mynetLast >= Number(c.intervalMin || 30) * 60000) mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`)); }, 60000);
-app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, mynetLast + Number(mynetCfg().intervalMin || 30) * 60000 - Date.now()) : null }); });
+app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, watchLast + watchMin() * 60000 - Date.now()) : null }); });
 app.post("/api/mynet/check", async (_req, res) => res.json(await mynetCheck({ manual: true })));
 app.post("/api/mynet/produce", async (req, res) => res.json(await mynetProduce(String(req.body?.url || ""), { manual: true })));
 app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); const out = []; for (const it of st.items || []) out.push(await mynetProduce(it.url, { manual: true })); res.json({ ok: true, results: out }); });
@@ -348,7 +351,7 @@ app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(pa
 // ---------- çoklu son dakika takibi (scripts/breaking_watch.py): Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışları.
 // Değerli ya da 3+ sitede çıkan YENİ olay → anlık video (kaynak: ilk veren site). Günlük sınır breaking.maxPerDay.
 const BREAKING_DONE = path.join(DATA, "breaking_daily.json");
-const breakingCfg = () => ({ enabled: true, intervalMin: 15, maxPerDay: 4, duration: 30, ...(settings().breaking || {}) });
+const breakingCfg = () => ({ enabled: true, maxPerDay: 4, duration: 30, ...(settings().breaking || {}), intervalMin: watchMin() });
 let breakingLast = 0;
 async function breakingCheck({ manual = false } = {}) {
   breakingLast = Date.now();
@@ -375,8 +378,17 @@ async function breakingCheck({ manual = false } = {}) {
   }
   return r;
 }
-setInterval(() => { const c = breakingCfg(); if (c.enabled && Date.now() - breakingLast >= Number(c.intervalMin || 15) * 60000) breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`)); }, 60000);
-app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, breakingLast + Number(breakingCfg().intervalMin || 15) * 60000 - Date.now()) : null }); });
+// Ortak tarama: önce Mynet, hemen ardından son dakika siteleri; tarama sürerken toplayıcı bekler (flushValuable)
+let watchScanning = false, watchLast = 0;
+async function watchScan() {
+  if (watchScanning) return; watchScanning = true; watchLast = Date.now();
+  try {
+    if (mynetCfg().enabled) await mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`));
+    if (breakingCfg().enabled) await breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`));
+  } finally { watchScanning = false; }
+}
+setInterval(() => { if ((mynetCfg().enabled || breakingCfg().enabled) && Date.now() - watchLast >= watchMin() * 60000) watchScan(); }, 60000);
+app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, watchLast + watchMin() * 60000 - Date.now()) : null }); });
 app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
 // Paneldeki "🎬 Video üret": son haberlerden seçilen için otomatik adayla aynı yol (haber sayfası okunur, anlık video,
 // bağlı hesaplara anlikAutoPublish kuralıyla yayın). Elle üretim günlük sınıra takılmaz; aynı olay 12 saatte bir kez

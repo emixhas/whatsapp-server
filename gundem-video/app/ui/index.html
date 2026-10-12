@@ -139,14 +139,14 @@
     </div>
     <div class="card mynet">
       <h2>📰 MYNET MANŞET TAKİBİ</h2>
-      <label class="row"><span class="sw" id="mynetOn"></span><span>30 dakikada bir kontrol et; manşete yeni haber girerse kaynak göstererek video üret ve paylaş</span></label>
+      <label class="row"><span class="sw" id="mynetOn"></span><span><b class="watchEvery">10</b> dakikada bir kontrol et (son dakika siteleriyle aynı anda); manşete yeni haber girerse kaynak göstererek video üret ve paylaş; aynı anda düşen değerli haberler tek videoda birleşir</span></label>
       <div class="next" id="mynetInfo">Yükleniyor…</div>
       <div id="mynetList" style="display:grid;gap:6px;margin-top:8px"></div>
       <div class="acts" style="margin-top:8px;gap:8px;flex-wrap:wrap"><button class="ghost" id="mynetCheck">Şimdi kontrol et</button><button class="ghost" id="mynetAll">Manşetteki 6 haberin hepsi için video üret</button></div>
     </div>
     <div class="card mynet">
       <h2>🗞 SON DAKİKA KAYNAKLARI</h2>
-      <label class="row"><span class="sw" id="brkOn"></span><span>Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışlarını <b id="brkEvery">15</b> dakikada bir tara; değerli ya da 3+ sitede çıkan yeni olay için tek video üret (aynı olay tekrar üretilmez)</span></label>
+      <label class="row"><span class="sw" id="brkOn"></span><span>Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışlarını <b id="brkEvery">10</b> dakikada bir (Mynet ile aynı anda) tara; değerli ya da 3+ sitede çıkan yeni olay için tek video üret (aynı olay tekrar üretilmez)</span></label>
       <div class="next" id="brkInfo">Yükleniyor…</div>
       <div id="brkSrc" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
       <div id="brkList" style="display:grid;gap:4px;margin-top:8px;font-size:13px"></div>
@@ -539,7 +539,7 @@ async function loadDaily(){try{const d=await api('/api/daily');$('#dailyOn').cla
 $('#dailyOn').onclick=async()=>{const on=!$('#dailyOn').classList.contains('on');await post('/api/settings',{daily:{enabled:on}});loadDaily();};
 $('#dailyTime').onchange=async()=>{const [h,m]=($('#dailyTime').value||'21:30').split(':').map(Number);await post('/api/settings',{daily:{hour:h,minute:m}});loadDaily();};
 $('#dailyRun').onclick=async()=>{const r=await post('/api/daily/run');toast(r.ok?'Günün özeti üretiliyor 📺':(r.error||'Başlatılamadı'),!r.ok);loadDaily();};
-async function loadBreaking(){try{const b=await api('/api/breaking');$('#brkOn').classList.toggle('on',b.enabled!==false);$('#brkEvery').textContent=b.intervalMin||15;
+async function loadBreaking(){try{const b=await api('/api/breaking');$('#brkOn').classList.toggle('on',b.enabled!==false);$('#brkEvery').textContent=b.intervalMin||10;document.querySelectorAll('.watchEvery').forEach(x=>x.textContent=b.intervalMin||10);
   const last=b.lastCheck?new Date(b.lastCheck*1000).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):'henüz yok';const next=b.nextCheckIn!=null?Math.ceil(b.nextCheckIn/60000)+' dk sonra':'kapalı';
   $('#brkInfo').innerHTML=`Son kontrol: <b style="font-size:14px">${last}</b> · sonraki: ${next} · bugün üretilen: ${(b.producedToday||[]).length}/${b.maxPerDay}`;
   $('#brkSrc').innerHTML=Object.entries(b.sources||{}).map(([k,v])=>`<span class="pill" title="${String(v.error||'').replace(/"/g,'&quot;')}" style="padding:3px 8px;border-radius:99px;border:1px solid var(--line);font-size:12px">${v.ok?'✅':'❌'} ${k}${v.ok?' · '+v.count:''}</span>`).join('');

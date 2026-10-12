@@ -127,6 +127,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   aynı `startAnlik` yolu (anlikAutoPublish ile bağlı hesaplara yayın, YouTube değer kuralı geçerli), `--mark` yazar.
   Elle üretim günlük sınırı tüketmez ve ona takılmaz; aynı olay 12 saat içinde üretildiyse düğme "✓ Üretildi" olur,
   basılırsa onay sorup `force` ile yine üretir.
+- Ortak tarama (kullanıcı kararı: iki kaynak eşit aralıkla): `watchScan()` her `settings.watchIntervalMin` (varsayılan 10,
+  5-60) dakikada önce Mynet'i, hemen ardından son dakika sitelerini tarar; `mynet.intervalMin`/`breaking.intervalMin`
+  artık kullanılmaz (cfg'de `watchMin()` döner, kartlarda aynı sayı). Tarama sürerken `flushValuable` 3 sn'de bir bekler,
+  böylece iki kaynaktan aynı anda düşen değerli haberler aynı partiye girer.
 - Değerli manşet toplayıcı (kullanıcı kararı: değerli manşet beklemeden, sistem dinlenmede olsa da üretilir): Mynet ve
   son dakika taramaları dinlenmede de çalışır (hafif). Otomatik DEĞERLİ haber (`item.valuable` / `c.valuable`) doğrudan
   üretilmez, `queueValuable()` ile 20 sn (`VALUE_BATCH_MS`) biriktirilir; aynı olay iki kaynaktan gelirse `sameEvent()`
