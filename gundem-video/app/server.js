@@ -445,6 +445,30 @@ async function viralCheck() {
   return r.json;
 }
 app.post("/api/viral/check", async (_req, res) => res.json(await viralCheck()));
+// ---------- yorum özeti (scripts/comments.py + prompts/yorumlar.md): her akşam settings.comments {enabled, hour 20,
+// minute 0}; YouTube/Instagram'daki yeni yorumlar Claude ile özetlenir → WhatsApp + data/reports/yorumlar-<gün>.md.
+// Yorumlara otomatik yanıt verilmez. Dinlenmede de çalışır (yerel model açmaz).
+const commentsCfg = () => ({ enabled: true, hour: 20, minute: 0, ...(settings().comments || {}) });
+const COMMENTS_FILE = path.join(DATA, "comments_last.json");
+async function commentsDigest({ manual = false } = {}) {
+  writeJson(COMMENTS_FILE, { day: today(), at: Date.now() });
+  const r = await py("comments.py", []);
+  const list = r.json?.comments || [], errs = Object.entries(r.json?.errors || {});
+  const errTxt = errs.map(([k, e]) => `${k === "youtube" ? "YouTube" : "Instagram"}: ${e}`).join("\n");
+  if (!list.length) { push(`💬 yorum özeti: yeni yorum yok${errTxt ? ` (${errTxt.replace(/\n/g, " · ")})` : ""}`); return { ok: true, count: 0, text: "Yeni yorum yok.", errors: r.json?.errors }; }
+  push(`💬 yorum özeti hazırlanıyor: ${list.length} yeni yorum`);
+  const slim = list.slice(-150).map((c) => ({ p: c.platform, v: String(c.title || "").slice(0, 80), y: String(c.text || "").slice(0, 300), b: c.likes || 0 }));
+  let text;
+  try { text = (await brain.complete(`${readFileSync(path.join(ROOT, "prompts/yorumlar.md"), "utf8")}\n${JSON.stringify(slim)}`)).trim(); }
+  catch (e) { push(`💬 yorum özeti yazılamadı: ${claudeError(e.message)}`); return { ok: false, error: claudeError(e.message) }; }
+  const msg = `💬 *Günün yorum özeti* (${list.length} yorum)\n\n${text}${errTxt ? `\n\n⚠ ${errTxt}` : ""}`;
+  mkdirSync(path.join(DATA, "reports"), { recursive: true });
+  writeFileSync(path.join(DATA, "reports", `yorumlar-${today()}.md`), msg + "\n");
+  try { await wa.send(msg); push(`💬 yorum özeti WhatsApp'a gönderildi (${list.length} yorum)`); } catch { push(`💬 yorum özeti hazır (WhatsApp bağlı değil): data/reports/yorumlar-${today()}.md`); }
+  return { ok: true, count: list.length, text: msg };
+}
+setInterval(() => { const c = commentsCfg(); const n = new Date(); if (!c.enabled || n.getHours() * 60 + n.getMinutes() < Number(c.hour) * 60 + Number(c.minute) || readJson(COMMENTS_FILE, {}).day === today()) return; commentsDigest().catch((e) => push(`💬 yorum özeti: ${e.message}`)); }, 60000);
+app.post("/api/comments/digest", async (_req, res) => res.json(await commentsDigest({ manual: true })));
 // ---------- disk temizliği (scripts/cleanup.py): her gece 04:10, settings.cleanup {enabled, days 30}; dinlenmede de (hafif)
 const CLEAN_FILE = path.join(DATA, "cleanup_last.json");
 async function runCleanup({ manual = false } = {}) {
@@ -984,6 +1008,7 @@ async function handleCommand(text) {
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
+    case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }
     case "weekly_summary": { const r = startWeekly({ manual: true }); reply = r.ok ? "Haftanın özeti videosu üretiliyor. Yatay, yaklaşık beş dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
     case "daily_summary": { const r = startDaily({ manual: true }); reply = r.ok ? "Günün özeti videosu üretiliyor. Yatay, yaklaşık dört dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
     case "weekly_report": { const r = await weeklyReport({ send: true }); reply = r.ok ? r.summary : `Haftalık rapor hazırlanamadı: ${r.error}`; break; }

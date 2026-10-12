@@ -154,6 +154,21 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   #Shorts yok, oynatma listesi "Günün Özeti (uzun)". Panel `settings.daily` {enabled, hour 21, minute 30, duration,
   stories, autoPublish} saatinde başlatır (meşgulse gün bitene kadar her dakika dener, `data/daily_last.json`),
   kart "📺 GÜNÜN ÖZETİ", `POST /api/daily/run`, komut "günün özetini üret".
+- Haftanın özeti (yatay, YouTube): `GUNLUK=1 HAFTALIK=1 bash pipeline.sh` → `scripts/weekly_news.py` (son 7 günün
+  out/*.json haber segmentleri, `same_event` ile birleşir, en son hali anlatılır; sıra değerli/son dakika → kaç videoda
+  işlendi `c` → izlenme `i`; `g` gün adı) + `prompts/haftalik.md` (gün belirtir, gelişen olayı tek haberde toplar).
+  `assemble` HAFTALIK: intro/outro haftalık, slotLabel "HAFTANIN ÖZETİ", timeRange `week_range()` ("6–12 Ekim"),
+  format "haftalik". `GunlukOzet.tsx` etikete göre yazar (`isWeekly`/`longLabel`), Thumb alt yazısı "HER PAZAR HAFTANIN
+  ÖZETİ". Uzun formatlar ("gunluk", "haftalik") her yerde birlikte ele alınır: yalnız YouTube, `watch?v=`, bölümlü
+  açıklama, #Shorts yok, oynatma listesi "Haftanın Özeti (uzun)", 5 saatlik sayım/sağlık/analiz saatlerine girmez.
+  Panel `settings.weeklySummary` {enabled, weekday 0 pazar, hour 20, minute 30, duration 300, stories 10, autoPublish}
+  (`data/weekly_video_last.json`, `nextPlanned` dinlenmeyi o saatte bitirir), Günün Özeti kartında anahtar + saat +
+  "Haftanın özetini şimdi üret", `POST /api/weekly-video/run`, komut "haftanın özetini üret".
+- Google Trends Türkiye (`scripts/trends.py`, https://trends.google.com/trending/rss?geo=TR, 30 dk önbellek
+  `data/trends.json`, ad alanı ht: etiket sonekiyle okunur): her ortak taramada ve pipeline'da yenilenir. `match()`
+  aranan ifadenin tüm anlamlı kelimeleri (5 harflik kök) metinde geçmeli. `slim_news` uyan habere `t:1, tr:<ifade>`
+  koyar ve p'den sonra öne alır; `prompts/senaryo.md` eşit önemde t=1'i seçtirir; `assemble.topic_hashtags` videoda
+  geçen aranan ifadeyi hashtag yapar (en çok 2). Son dakika kartında "📈 Türkiye'de şu an aranan" listesi.
 - Kategori öğrenme: prompt uygun kategori yoksa `categorySuggestion` yazdırır; `assemble` sayar
   (`data/category_suggestions.json`), 3 tekrarda geliştirme kuyruğuna görev yazar; `analyze` insights'a koyar.
 - A/B başlık ve kapak: prompt `titles {A: haberci, B: merak, cover}` üretir; `assemble` bölüm
@@ -369,6 +384,27 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kalmasın), YouTube sırası ve günlük rapor uyanınca; panel Analitik'in başında "ABONE VE TAKİPÇİ" kartları
   (toplam + platform) ve günlük kazanım sütun grafiği (fareyle platform kırılımı); haftalık rapor 👥 satırları;
   komut "kaç abonemiz var / bugün kaç takipçi kazandık" (`followers` eylemi, 30 dk'da bir canlı çeker).
+- En iyi yayın saati (`analyze.best_hours` → insights `bestHours`): düzenli (uzun olmayan) videolarda platform başına
+  saat ortalaması (en az 2 video) ve slot kaydırma önerisi: 15+ izlenmeli video, slotların en az n-1'inde (komşu saatle
+  yumuşatılmış) veri ve ≥ %15 kazanç şart (verisi olmayan saat "iyi" sayılmaz). Panel Analitik "EN İYİ YAYIN SAATİ" +
+  "Saatleri kaydır" → `POST /api/schedule/offset {offset|reset}` → `settings.scheduleOffset`; `slotsFor()` kaydırır,
+  zamanlayıcı açıksa plist yeniden yazılır. Haftalık rapor önerisine de girer.
+- Viral alarmı (`scripts/viral_watch.py`, her izlenme senkronundan sonra `viralCheck()`): 24 saatten genç video, son 20
+  eski videonun ortanca toplam izlenmesinin `settings.viral.ratio` (3) katı ve ≥ `minViews` (200) → bir kez (data/viral.json)
+  log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa
+  (`breaking_watch.recent_items`) devam videosu `queueValuable` ile üretilir (dinlenmeyi bozar); yeni bilgi yoksa üretilmez.
+  `POST /api/viral/check`.
+- Yorum özeti (`scripts/comments.py` + `prompts/yorumlar.md`, her akşam `settings.comments` {enabled, hour 20}):
+  son 7 günde yayınlanan videoların YENİ yorumları (YouTube commentThreads; Instagram /{media}/comments —
+  IG_SCOPES'a instagram_business_manage_comments, FB_SCOPES'a instagram_manage_comments eklendi, eski bağlantıda
+  yeniden bağlamak gerekir), görülenler `data/comments_state.json`. `brain.complete()` (düşük effort) ile özet →
+  WhatsApp + `data/reports/yorumlar-<gün>.md`; yorumlara otomatik yanıt YOK, yazar adları özete girmez. Yeni yorum
+  yoksa yalnız log. `POST /api/comments/digest`, komut "yorumları özetle", Ayarlar → Otomasyon anahtar + "şimdi özetle".
+- Disk temizliği (`scripts/cleanup.py`, her gece 04:10, `settings.cleanup` {enabled, days 30}): `days`'ten eski ve en az
+  bir platformda yayınlanmış (yayınlanmamışsa 2×days) videonun yalnız mp4'ü silinir; json'a `archived` yazılır, kapak,
+  metrik ve platformdaki video kalır. Demo/test (adı rakamla başlamayan) ve YouTube sırasındaki videolar silinmez.
+  `analyze.video_rows` arşivlenmiş videoları da sayar (panel listesinde mp4 olmadığı için görünmezler). Ayarlar →
+  Otomasyon anahtar + "🧹 Şimdi temizle" (önce `--dry-run` ile ne silineceğini sorar), `POST /api/cleanup {dryRun}`.
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 10 (her biri için `bestPlatform`), platform analizi
   `byPlatform` {youtube|instagram|tiktok: total, videos, avg, best, top3} ve `leadingPlatform`, manşet etkisi → `data/insights.json`
   ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:

@@ -230,14 +230,14 @@ def yt_add_to_playlists(yt, vid: str, meta: dict) -> list:
 
 # ---------------- Instagram (Instagram API with Instagram Login; eski Facebook Graph token'ı da desteklenir)
 IG_TOKEN_FILE = SECRETS / "instagram_token.json"
-IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights"
+IG_SCOPES = "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights,instagram_business_manage_comments"
 IG_API = "https://graph.instagram.com/v21.0"
 FB_API = "https://graph.facebook.com/v21.0"
 IG_CALLBACK_PORT = 3138
 # Facebook Login yolu izinleri. Her biri Meta uygulamasında Kullanım senaryosu → "Permissions and features" listesinde
 # "Add" ile eklenmiş olmalı; eklenmemiş izin "Invalid Scopes" hatası verir. İş portföyüne bağlı sayfalar için
 # .env'de IG_EXTRA_SCOPES=business_management eklenebilir.
-FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,pages_read_engagement"
+FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,instagram_manage_comments,pages_show_list,pages_read_engagement"
 
 
 def fb_finish(env, redirect, code):

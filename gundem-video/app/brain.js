@@ -128,5 +128,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
     return name;
   }
 
-  return { ask, addNote, addExchange, memory, settings, connections, context, saveReport, usageToday };
+  /** Serbest metin tamamlama (yorum özeti gibi): düşük düşünme seviyesiyle, düz metin döner */
+  const complete = async (prompt) => (await runClaude(prompt, "chat")).text;
+  return { ask, complete, addNote, addExchange, memory, settings, connections, context, saveReport, usageToday };
 }
