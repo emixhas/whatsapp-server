@@ -1123,13 +1123,14 @@ app.post("/api/weekly-report", async (_req, res) => res.json(await weeklyReport(
 let lastReportDay = null, lastFlush = 0;
 setInterval(async () => {
   const s = settings();
-  if (resting()) return; // sistem durduruldu: izlenme senkronu, YouTube sırası ve günlük rapor uyanınca
+  const rest = resting(); // dinlenmede yalnız hafif izlenme/abone senkronu sürer (grafikte gün boşluğu kalmasın)
   const conn = await brain.connections();
   const anyConnected = conn.youtube?.connected || conn.instagram?.connected || conn.tiktok?.connected;
   const m = readJson(path.join(DATA, "metrics.json"), { lastSync: null });
   const due = !m.lastSync || Date.now() - Date.parse(m.lastSync) > s.metricsSyncMinutes * 60000;
   if (anyConnected && due && !state.running) { await execAction({ type: "sync_metrics" }); push("· izlenmeler güncellendi"); }
   // günlük yükleme sınırı yüzünden sıraya alınan videolar: saatte bir, üretim yokken dene
+  if (rest) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
   if (anyConnected && !state.running && Date.now() - lastFlush > 60 * 60000 && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
     lastFlush = Date.now();
     const r = await py("publish.py", ["--flush"]);

@@ -77,7 +77,8 @@ def local_hhmm(dt):
 # "youtube" kapsamı oynatma listesi yönetimi için; eski bağlantılar (yalnız upload+readonly) yeniden bağlanana kadar
 # listesiz yükler. Token dosyadaki kendi kapsamlarıyla okunur (yeni kapsamla yenilemek invalid_scope verir).
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly",
-             "https://www.googleapis.com/auth/youtube"]
+             "https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/yt-analytics.readonly"]
+YT_ANALYTICS = "https://www.googleapis.com/auth/yt-analytics.readonly"  # günlük abone kazanımı geçmişi (followers.py)
 YT_MANAGE = {"https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl"}
 PLAYLIST_FILE = DATA / "youtube_playlists.json"  # {liste adı: playlistId}
 # kategori → liste adı (kanal adı önek olarak eklenir); format listeleri: anlık → Son Dakika, düzenli → 5 saatlik özet
@@ -119,7 +120,7 @@ def yt_disconnect():
     return True
 
 
-def yt_service(interactive=False):
+def yt_service(interactive=False, api=("youtube", "v3")):
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
@@ -140,7 +141,10 @@ def yt_service(interactive=False):
         from google_auth_oauthlib.flow import InstalledAppFlow
         creds = InstalledAppFlow.from_client_secrets_file(str(client), YT_SCOPES).run_local_server(port=0)
         token.write_text(creds.to_json())
-    return build("youtube", "v3", credentials=creds, cache_discovery=False)
+    if api[0] == "youtubeAnalytics" and YT_ANALYTICS not in set(creds.scopes or json.loads(token.read_text()).get("scopes") or []):
+        raise RuntimeError("YouTube abone geçmişi için izin yok: Ayarlar → YouTube → 🔄 Yeniden bağla (Google Cloud'da "
+                           "\"YouTube Analytics API\" da etkin olmalı)")
+    return build(api[0], api[1], credentials=creds, cache_discovery=False)
 
 
 def yt_upload(path: Path):

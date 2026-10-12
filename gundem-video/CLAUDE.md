@@ -232,8 +232,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`/api/stopall` ve komut "sistemi/her şeyi durdur" da aynı), "sistemi başlat" komutu/düğmesi ile çıkış. `restStart()`
   üretimi, anlık sırasını ve modelleri kapatır, `data/rest.json` {on, since, reason, until, untilWhat} yazar; `until` =
   `nextPlanned()` (sıradaki launchd slotu ya da bugünkü günün özeti saati). Dinlenmedeyken OTOMATİK hiçbir şey başlamaz:
-  Mynet ve son dakika taraması/üretimi (`opts.auto` → reddedilir, logda "⏸ … video üretilmedi"), günün özeti, izlenme
-  senkronu, YouTube sırası, günlük rapor, ses ön ısıtması, eksik kapak. Elle talimat (`startPipeline`/`startAnlik`
+  sıradan Mynet/son dakika üretimi (`opts.auto` → reddedilir, logda "⏸ … video üretilmedi"; tarama ve değerli haber
+  sürer), günün özeti, YouTube sırası, günlük rapor, ses ön ısıtması, eksik kapak (izlenme/abone senkronu sürer). Elle talimat (`startPipeline`/`startAnlik`
   `auto` olmadan: panel, WhatsApp, sesli komut, 🎬 Video üret) `restEnd()` ile uyandırır; `until` gelince ya da launchd
   üretimi başlayınca ya da değerli manşet düşünce (`flushValuable`) kendiliğinden biter. Her üretimin sonu `finishProduction()` (panel çocuğu kapanınca, zamanlayıcı
   üretiminin son JSON satırında; 30 sn tekrar engeli): sırada anlık iş yoksa ve `settings.restAfterProduction` (varsayılan
@@ -359,7 +359,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kazanımı (`partial`: kayıt dönemden yeniyse ilk kayda göre) ve son 14 günün günlük kazanım serisi (kayıt olmayan
   gün `null`; gün başında kayıt yoksa — takibin başladığı gün — o günün ilk kaydına göre, `partial`). Grafikte
   kayıt yok = kesikli çizgi, 0 = ince çizgi, kısmi gün = soluk sütun; altında veri birikimini anlatan not. `analyze.py`
-  insights'a `followers` koyar (beyin bağlamı da görür); panel Analitik'in başında "ABONE VE TAKİPÇİ" kartları
+  insights'a `followers` koyar (beyin bağlamı da görür); geçmiş doldurma `backfill()` (6 saatte bir, `--backfill` hemen):
+  YouTube Analytics `reports.query` subscribersGained − subscribersLost (`yt-analytics.readonly`, YT_SCOPES'a eklendi →
+  eski token'da "Yeniden bağla" + Google Cloud'da YouTube Analytics API etkin; `yt_service(api=("youtubeAnalytics","v2"))`)
+  ve Instagram `follower_count` içgörüsü (son 30 gün, end_time bir önceki güne yazılır) → `data/followers.json`
+  `history` {platform: {gün: net}}; kaydı olmayan ya da kısmi (bugün hariç) günler buradan dolar (`src: "platform"`,
+  ipucunda "platformun kendi geçmiş verisi"), 7/30 gün toplamı tam günler varsa seriden hesaplanır; hatalar
+  `historyErrors` → grafik notu. TikTok geçmiş vermez. İzlenme/abone senkronu dinlenmede de sürer (hafif; gün boşluğu
+  kalmasın), YouTube sırası ve günlük rapor uyanınca; panel Analitik'in başında "ABONE VE TAKİPÇİ" kartları
   (toplam + platform) ve günlük kazanım sütun grafiği (fareyle platform kırılımı); haftalık rapor 👥 satırları;
   komut "kaç abonemiz var / bugün kaç takipçi kazandık" (`followers` eylemi, 30 dk'da bir canlı çeker).
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 10 (her biri için `bestPlatform`), platform analizi

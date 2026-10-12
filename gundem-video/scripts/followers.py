@@ -3,10 +3,15 @@
 anlık sayı data/followers.json'a yazılır (saatte en çok bir kayıt, 400 gün); bugün / bu hafta (7 gün) / 30 günde
 kazanılan bu kayıtların farkından hesaplanır, günlük kazanım serisi son 14 gün için çıkar.
 
+Takipten önceki ya da kaydın eksik kaldığı günler platformların kendi geçmişinden doldurulur: YouTube Analytics
+(subscribersGained − subscribersLost, "yt-analytics.readonly" izni, 2-3 gün gecikmeli) ve Instagram follower_count
+içgörüsü (son 30 gün). TikTok geçmiş vermez; onun günleri yalnızca kayıttan gelir.
+
 Notlar: YouTube abone sayısını 1000'in üstünde yuvarlar (ör. 12.345 → 12.300), küçük günlük değişimler görünmeyebilir.
 TikTok sayısı "user.info.stats" izni ister: eski bağlantıda yoksa yeniden bağlanmalı (hata mesajı bunu söyler).
 
-  python3 scripts/followers.py --sync   # sayıları çek, kaydet, özeti yaz
+  python3 scripts/followers.py --sync   # sayıları çek, kaydet, özeti yaz (6 saatte bir platform geçmişini de çeker)
+  python3 scripts/followers.py --sync --backfill   # platform geçmişini hemen çek (YouTube Analytics, Instagram içgörüsü)
   python3 scripts/followers.py          # yalnızca kayıtlı veriden özet
 """
 import json
@@ -58,6 +63,48 @@ def fetch_tiktok() -> dict:
             "name": u.get("display_name")}
 
 
+def history_youtube(days=30) -> dict:
+    """YouTube Analytics: günlük net abone (kazanılan − kaybedilen). Veri 2-3 gün gecikmeli gelir."""
+    from publish import yt_service
+    end = datetime.now().date() - timedelta(days=1)
+    r = yt_service(api=("youtubeAnalytics", "v2")).reports().query(
+        ids="channel==MINE", startDate=(end - timedelta(days=days)).isoformat(), endDate=end.isoformat(),
+        metrics="subscribersGained,subscribersLost", dimensions="day", sort="day").execute()
+    return {row[0]: int(row[1]) - int(row[2]) for row in r.get("rows") or []}
+
+
+def history_instagram(days=30) -> dict:
+    """Instagram follower_count içgörüsü: son 30 günün günlük yeni takipçisi (bugün hariç; 100+ takipçili hesaplarda)."""
+    import time
+    from publish import ig_call, ig_creds
+    creds = ig_creds()
+    until = int(time.time())
+    d = ig_call("GET", f"{creds[0]}/insights", {"metric": "follower_count", "period": "day", "since": until - days * 86400, "until": until}, creds)
+    out = {}
+    for m in d.get("data", []):
+        for v in m.get("values", []):
+            # end_time günün bitişidir (ertesi gün 07:00 UTC): değer bir önceki güne aittir
+            day = (datetime.fromisoformat(v["end_time"].replace("+0000", "+00:00")) - timedelta(days=1)).date().isoformat()
+            out[day] = int(v.get("value") or 0)
+    return out
+
+
+def backfill(data: dict, conn: dict, force=False) -> None:
+    """Takipten önceki günleri platformların kendi geçmişiyle doldurur (6 saatte bir; TikTok geçmiş vermez)."""
+    last = data.get("historyAt")
+    if not force and last and datetime.now().astimezone() - datetime.fromisoformat(last) < timedelta(hours=6):
+        return
+    hist, errs = data.get("history", {}), {}
+    for p, fn in (("youtube", history_youtube), ("instagram", history_instagram)):
+        if not conn.get(p):
+            continue
+        try:
+            hist[p] = {**hist.get(p, {}), **fn()}
+        except Exception as e:
+            errs[p] = str(e)[:200]
+    data.update({"history": hist, "historyErrors": errs, "historyAt": now_iso()})
+
+
 def connected() -> dict:
     try:
         from publish import status
@@ -87,6 +134,7 @@ def sync() -> dict:
             snaps[-1] = {**snaps[-1], **snap}
         else:
             snaps.append(snap)
+    backfill(data, conn, force="--backfill" in sys.argv)
     cutoff = (datetime.now().astimezone() - timedelta(days=400)).isoformat()
     data.update({"snapshots": [s for s in snaps if s["at"] >= cutoff], "info": info, "errors": errors, "lastSync": now_iso()})
     save_json(FILE, data)
@@ -124,24 +172,38 @@ def summary(data=None) -> dict:
             return (cur - base, False) if base is not None else (cur - first[p], True)  # True: kayıt bu dönemden yeni
 
         today, tp = gain(midnight)
-        week, wp = gain(now - timedelta(days=7))
-        month, mp = gain(now - timedelta(days=30))
-        # son 14 günün günlük kazanımı (gün sonu değerleri farkı)
+        hist = (data.get("history") or {}).get(p, {})
+        # son 30 günün günlük kazanımı (gün sonu değerleri farkı); kaydın olmadığı ya da kısmi kalan gün platformun
+        # kendi geçmişinden (YouTube Analytics / Instagram içgörüsü) doldurulur
         daily = []
-        for k in range(13, -1, -1):
+        for k in range(29, -1, -1):
             d0 = midnight - timedelta(days=k)
             d1 = d0 + timedelta(days=1)
+            iso = d0.date().isoformat()
             inday = [s for s in have if d0 <= _local(s["at"]) < d1]
-            if not inday:  # o gün hiç kayıt yok (takip başlamadı ya da Mac kapalıydı)
-                daily.append({"date": d0.date().isoformat(), "gain": None})
+            start = _value_at(have, p, d0 - timedelta(seconds=1)) if inday else None
+            if k and iso in hist and (not inday or start is None):  # bugün değil, kayıt yok/kısmi: platform verisi
+                daily.append({"date": iso, "gain": hist[iso], "src": "platform"})
                 continue
-            start = _value_at(have, p, d0 - timedelta(seconds=1))
+            if not inday:  # o gün hiç kayıt yok (takip başlamadı ya da Mac kapalıydı)
+                daily.append({"date": iso, "gain": None})
+                continue
             partial = start is None  # gün başında kayıt yok: takibin başladığı gün, ilk kayda göre
             if partial:
                 start = inday[0][p]
-            daily.append({"date": d0.date().isoformat(), "gain": inday[-1][p] - start, "partial": partial})
+            daily.append({"date": iso, "gain": inday[-1][p] - start, "partial": partial})
+
+        def span(n, fallback):  # son n günün toplamı (bugün dahil); eksik gün varsa kayıtlardan hesaplanan değer
+            part = daily[-n:]
+            if all(d["gain"] is not None and not d.get("partial") for d in part[:-1]):
+                return sum(d["gain"] for d in part[:-1]) + today, False
+            return fallback
+
+        week, wp = span(7, gain(now - timedelta(days=7)))
+        month, mp = span(30, gain(now - timedelta(days=30)))
         out["platforms"][p] = {"current": cur, "today": today, "week": week, "month": month,
-                               "partial": {"today": tp, "week": wp, "month": mp}, "since": since.isoformat(), "daily": daily}
+                               "partial": {"today": tp, "week": wp, "month": mp}, "since": since.isoformat(), "daily": daily[-14:]}
+    out["historyErrors"] = data.get("historyErrors", {})
     ps = out["platforms"].values()
     out["total"] = {k: sum(v[k] for v in ps) for k in ("current", "today", "week", "month")} if out["platforms"] else None
     return out
