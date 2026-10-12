@@ -219,7 +219,16 @@ def topic_hashtags(data: dict) -> list:
         c = clean(expand_abbr(str(t).lstrip("#")))
         if c and c not in out and c not in ("#haber", "#gündem", "#türkiye", "#sondakika", "#shorts"):
             out.append(c)
-    return out[:5]
+    try:  # videoda geçen Google Trends aranan ifadesi hashtag olur (scripts/trends.py)
+        from trends import current, match
+        text = " ".join(f"{s.get('title', '')} {s.get('narration', '')}" for s in data.get("segments", []) if s.get("kind") in ("hook", "haber"))
+        for term in match(text, current())[:2]:
+            c = clean(term.replace(" ", ""))
+            if c and c not in out:
+                out.insert(0, c)
+    except Exception:
+        pass
+    return out[:6]
 
 
 def news_value(data: dict, segs: list) -> dict:

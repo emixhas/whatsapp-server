@@ -99,7 +99,15 @@ def main():
             cl["p"] = max(1, cl["p"] - 1)
         chosen = fresh + old
         note = f" Yeterli yeni haber yok: {len(old)} eski haber e=1 ile geri eklendi; önce yeni olanları seç."
-    chosen.sort(key=lambda cl: (cl["p"], len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
+    try:  # Google Trends Türkiye: şu an çok aranan konuya uyan haber öne (scripts/trends.py önbelleği)
+        from trends import current, match
+        tr = current()
+    except Exception:
+        tr = []
+    for cl in chosen:
+        hits = match(f"{cl['item'].get('title', '')} {(cl['item'].get('summary') or '')[:200]}", tr) if tr else []
+        cl["trend"] = hits[0] if hits else None
+    chosen.sort(key=lambda cl: (cl["p"], bool(cl.get("trend")), len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
     chosen = chosen[:n]
     slim = []
     for cl in chosen:
@@ -107,11 +115,14 @@ def main():
         row = {"p": cl["p"], "c": len(cl["sources"]), "k": it.get("source"), "b": it.get("title"), "o": (it.get("summary") or "")[:160], "s": (it.get("published") or "")[11:16]}
         if cl.get("old"):
             row["e"] = 1
+        if cl.get("trend"):
+            row["t"], row["tr"] = 1, cl["trend"]
         slim.append(row)
     counts = {k: sum(1 for r in slim if r["p"] == k) for k in (3, 2, 1)}
     multi = sum(1 for r in slim if r["c"] > 1)
     json.dump({"aciklama": "p=önem (3 sert haber, 2 önemli karar, 1 diğer) c=aynı olayı veren kaynak sayısı (yüksek c = en çok konuşulan) "
-               "k=kaynak b=başlık o=özet s=saat(UTC) e=1 önceki videoda kullanılmış (yalnızca yeni haber yoksa)." + note, "haberler": slim},
+               "k=kaynak b=başlık o=özet s=saat(UTC) e=1 önceki videoda kullanılmış (yalnızca yeni haber yoksa). "
+               "t=1 Türkiye'de şu an Google'da çok aranan konu (tr=aranan ifade)." + note, "haberler": slim},
               open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"{len(slim)} haber Claude'a gidiyor (önem 3: {counts[3]}, önem 2: {counts[2]}, önem 1: {counts[1]}; çok kaynaklı: {multi}; "
           f"önceki videolardan elenen: {len(old)}; toplam {len(items)})")

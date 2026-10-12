@@ -97,6 +97,7 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     $PY scripts/daily_news.py work/news.json work/news_prompt.json "$HABER"
     PROMPT_FILE="prompts/gunluk.md"
   else
+    $PY scripts/trends.py >/dev/null 2>&1 || true  # Google Trends Türkiye önbelleği (30 dk; erişilemezse eski liste)
     $PY scripts/slim_news.py work/news.json work/news_prompt.json "${NEWS_MAX:-50}"
     PROMPT_FILE="prompts/senaryo.md"
   fi

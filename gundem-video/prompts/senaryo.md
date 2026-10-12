@@ -17,6 +17,8 @@ KURALLAR
   için (spor, hava, teknoloji). Aynı olayın iki haberini seçme; en yeni sürümünü al.
 - "c" alanı aynı olayı kaç kaynağın verdiğini gösterir: yüksek c = herkesin konuştuğu, en çok merak
   edilen haber. Eşit önemde c yüksek olanı seç; kanca için p ve c birlikte en yüksek haber idealdir.
+- "t":1 işaretli haberler Türkiye'de ŞU AN Google'da çok aranan konudur ("tr" aranan ifade): eşit önemde bunları
+  seç; videoya giren aranan ifadeyi hashtag'lere de ekle (ör. "tr": "asgari ücret" → "#asgariücret").
 - "e":1 işaretli haberler önceki videoda kullanıldı. p=3 ve e=1 ise (gelişen büyük olay) yalnızca
   YENİ bir gelişme varsa (artan can kaybı, yeni karar, gözaltı) o gelişmeyi anlatarak seç; aynı
   bilgiyi tekrar etme. Diğer e=1 haberleri yalnızca yeterli yeni haber yoksa en sonda kullan.
