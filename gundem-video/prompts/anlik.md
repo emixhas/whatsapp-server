@@ -48,7 +48,10 @@ KURALLAR
   cebine dokunan karar; bayram tatili, resmi tatil, idari izin, okul tatili kararı.
 - 4: sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; sosyal yardım, evde bakım, KYK burs/kredi,
   TOKİ, kredi/kredi kartı düzenlemesi; dolar/altın rekoru, borsada çöküş; salgın, gıda zehirlenmesi, ilaç toplatma,
-  hileli ürün listesi; milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
+  hileli ürün listesi; kayıp çocuk/kişi ve arama; elektrik/su/doğalgaz kesintisi, yol kapanması, uçuş/sefer iptali,
+  grev; turuncu/kırmızı kod hava uyarısı, orman yangını; yürürlüğe giren yeni düzenleme, ceza, başvuru tarihi;
+  erken seçim, kabine, görevden alma, kayyum; savaş, ateşkes, Türkiye'yi ilgilendiren dış gelişme; iflas, işten
+  çıkarma, kira/konut/araç fiyatı, indirim; öğretmen ataması, okul takvimi; milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
   ülke çapında ses getiren gelişme.
 - 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, kulüp maçı
   sonucu, transfer.

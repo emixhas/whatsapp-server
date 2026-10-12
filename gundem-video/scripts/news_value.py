@@ -43,6 +43,39 @@ GROUPS = [
                           r"darp", r"dövdü", r"dövülerek", r"işkence", r"kadına şiddet", r"çocuğa şiddet", r"şiddet uygula",
                           r"istismar", r"kaçırıldı", r"kaçırılan", r"kurşunla", r"silahla vur", r"pompalı", r"av tüfeğiyle",
                           r"tutuklandı.{0,40}(?:öldür|cinayet)", r"gözaltı.{0,40}(?:öldür|cinayet)", r"cinayet"]),
+    # kullanıcı kararı: halkı ilgilendiren hiçbir haber kaçmasın — aşağıdaki gruplar da tek başına değerli
+    ("kayıp ve arama", 3, [r"kayıp (?:çocuk|kız|kadın|genç|öğrenci|adam|dağcı|balıkçı|pilot|kişi)", r"kayıp olarak aran",
+                           r"kayıptan haber", r"kayıplara karıştı", r"izine rastlan", r"arama kurtarma", r"arama çalışma",
+                           r"cesedi bulun", r"cansız bedeni"]),
+    ("kesinti ve ulaşım", 3, [r"elektrik kesinti", r"su kesinti", r"doğal ?gaz kesinti", r"kesinti yapılacak", r"elektrikler kesil",
+                              r"sular kesil", r"(?:yol|köprü|tünel|otoyol)\w* (?:trafiğe )?kapat", r"trafiğe kapandı", r"ulaşıma kapandı",
+                              r"uçuş\w* iptal", r"sefer\w* iptal", r"seferler durdu", r"havalimanı kapan", r"grev", r"metro seferleri",
+                              r"marmaray", r"feribot seferleri", r"köprü geçiş", r"otoyol ücret", r"toplu taşıma"]),
+    ("hava ve doğa uyarısı", 3, [r"turuncu kod", r"kırmızı kod", r"sarı kod", r"meteoroloji\w* uyar", r"afad\w* uyar",
+                                 r"kar yağışı", r"sağanak", r"kuvvetli yağış", r"şiddetli (?:yağış|yağmur|rüzgar|fırtına|kar)",
+                                 r"yağış uyarı", r"fırtına uyarı", r"(?:hava|meteorolojik) uyarı", r"dolu yağ", r"sıcak hava dalga", r"aşırı sıcak",
+                                 r"orman yangın", r"kuraklık", r"baraj doluluk", r"toz taşınımı", r"hava kirliliği", r"tsunami",
+                                 r"yanardağ", r"buzlanma", r"don olayı", r"lodos"]),
+    ("yeni düzenleme", 3, [r"zorunlu (?:oldu|hale|olacak|uygulama)", r"yürürlüğe gir", r"yeni dönem başl", r"trafik ceza",
+                           r"ehliyet", r"pasaport", r"kimlik kart", r"e-devlet", r"mhrs", r"yönetmelik", r"kanun teklifi",
+                           r"meclis'?ten geçti", r"kabul edildi", r"yasalaştı", r"ceza(?:sı)? (?:artırıldı|geliyor|kesilecek)",
+                           r"yeni düzenleme", r"başvurular? başla", r"son başvuru", r"son gün"]),
+    ("büyük siyaset", 3, [r"erken seçim", r"seçim tarihi", r"referandum", r"kabine", r"bakan(?:lığa)? (?:atandı|görevden)",
+                          r"görevden alındı", r"istifa etti", r"kayyum", r"dokunulmazlı", r"parti kapatma",
+                          r"(?:belediye başkanı|milletvekili|bakan|vali|kaymakam)\w*[^.]{0,40}(?:gözaltı|tutuklandı|görevden)",
+                          r"cumhurbaşkanı\w*[^.]{0,30}(?:müjde|açıkladı|duyurdu|imzaladı)", r"kararname"]),
+    ("dünya ve savaş", 3, [r"savaş(?!çı)", r"ateşkes", r"nükleer", r"füze", r"hava saldırı", r"işgal", r"darbe", r"soykırım",
+                           r"nato", r"türkiye'?ye (?:tehdit|yaptırım|saldırı)", r"sınır ötesi", r"tahliye edil", r"sığınmacı",
+                           r"göçmen", r"büyükelçi"]),
+    ("iş ve geçim", 3, [r"iflas", r"konkordato", r"işten çıkar", r"işçi çıkar", r"fabrika\w* kapan", r"maaşlar\w* ödenmedi",
+                        r"kira(?:cı|lar| fiyat| artışı| zammı)", r"ev sahibi", r"konut fiyat", r"otomobil fiyat", r"araç fiyat",
+                        r"ekmek fiyat", r"indirim (?:geldi|yapıldı)", r"(?:benzin|motorin|akaryakıt)\w* indirim", r"fiyatı düştü",
+                        r"kredi (?:faiz|çekmek|kartı borç)", r"borç yapılandırma", r"vergi affı", r"prim affı", r"emeklilikte yaşa takılan|eyt"]),
+    ("eğitim duyurusu", 3, [r"öğretmen atama", r"okullar ne zaman", r"okullar açıl", r"eğitim öğretim yılı", r"ders saat",
+                            r"servis ücret", r"kyk yurt", r"üniversite harç", r"tercih (?:sonuç|dönemi)", r"sınav sonuç"]),
+    # adli olay: tek başına yetmez (her gün çok sayıda), başka bir grupla ya da modelin 4-5 önemiyle değerli olur
+    ("adli olay", 2, [r"operasyon", r"gözaltı", r"tutuklandı", r"uyuşturucu", r"çete", r"kaçakçılık", r"yolsuzluk", r"rüşvet",
+                      r"skandal", r"iddianame", r"hapis cezası", r"müebbet", r"firari"]),
     # "burs" Bursa'yı, "kura" kuralı yakalamasın diye ekler açık yazıldı; piyasa haberi yalnız rekor/çöküşle değerli
     ("para ve destek", 3, [r"sosyal yardım", r"kira yardım", r"doğum yardım", r"evde bakım", r"aile destek", r"engelli maaş",
                            r"engelli aylı", r"yaşlı aylı", r"65 yaş aylı", r"işsizlik maaş", r"işsizlik ödene", r"kısa çalışma ödene",
@@ -62,7 +95,7 @@ GROUPS = [
 
 
 # magazin/spor: anahtar kelime tek başına yetmez ("ünlü oyuncu tatilde"); model 4-5 derse değerli
-SOFT = [r"ünlü", r"oyuncu", r"şarkıcı", r"magazin", r"dizi", r"sevgili", r"evlen", r"boşan", r"futbolcu", r"teknik direktör"]
+SOFT = [r"ünlü (?:oyuncu|şarkıcı|sunucu|isim|çift|manken|model|futbolcu|yönetmen)", r"oyuncu", r"şarkıcı", r"magazin", r"dizi", r"sevgili", r"evlen", r"boşan", r"futbolcu", r"teknik direktör"]
 
 
 def score(text: str, extra_keywords=None, importance=None) -> dict:
@@ -85,7 +118,7 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     except (TypeError, ValueError):
         imp = None
     # model 1-2 dediyse (magazin: "ünlünün annesi vefat etti") anahtar kelime tek başına yetmez
-    soft = "can kaybı" not in hits and "milli başarı" not in hits and "suç ve vahşet" not in hits and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
+    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
     valuable = (imp is not None and imp >= 4) or (total >= 3 and not soft and (imp is None or imp >= 3))
     if soft and total >= 3 and not valuable:
         hits.append("magazin/spor")

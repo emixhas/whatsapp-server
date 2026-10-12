@@ -304,8 +304,8 @@ app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: stat
 const MYNET_DONE = path.join(DATA, "mynet_produced.json");
 // Mynet ve son dakika siteleri AYNI aralıkla, AYNI taramada kontrol edilir (settings.watchIntervalMin, varsayılan 10 dk):
 // aynı anda düşen değerli haberler tek partide toplanıp birleşik videoya girer (queueValuable).
-const watchMin = () => Math.min(60, Math.max(5, Number(settings().watchIntervalMin) || 10));
-const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 6, duration: 30, ...(settings().mynet || {}), intervalMin: watchMin() });
+const watchMin = () => Math.min(60, Math.max(3, Number(settings().watchIntervalMin) || 5)); // değerli haber kaçmasın: 5 dk
+const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 15, duration: 30, ...(settings().mynet || {}), intervalMin: watchMin() });
 const today = () => new Date().toISOString().slice(0, 10);
 const mynetDone = () => readJson(MYNET_DONE, {});
 const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
@@ -353,7 +353,7 @@ app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(pa
 // ---------- çoklu son dakika takibi (scripts/breaking_watch.py): Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışları.
 // Değerli ya da 3+ sitede çıkan YENİ olay → anlık video (kaynak: ilk veren site). Günlük sınır breaking.maxPerDay.
 const BREAKING_DONE = path.join(DATA, "breaking_daily.json");
-const breakingCfg = () => ({ enabled: true, maxPerDay: 4, duration: 30, ...(settings().breaking || {}), intervalMin: watchMin() });
+const breakingCfg = () => ({ enabled: true, maxPerDay: 4, valuableMaxPerDay: 15, duration: 30, ...(settings().breaking || {}), intervalMin: watchMin() });
 let breakingLast = 0;
 async function breakingCheck({ manual = false } = {}) {
   breakingLast = Date.now();
@@ -363,7 +363,9 @@ async function breakingCheck({ manual = false } = {}) {
   if (manual || r.candidates?.length || bad.length) push(`🗞 son dakika kaynakları kontrol edildi: ${r.fresh} yeni haber, ${r.candidates.length} video adayı${bad.length ? ` · ulaşılamayan: ${bad.join(", ")}` : ""}`);
   const done = readJson(BREAKING_DONE, {}); const day = today(); const list = done[day] || [];
   for (const c of r.candidates || []) {
-    if (list.length >= Number(breakingCfg().maxPerDay)) { push(`🗞 günlük son dakika sınırı (${breakingCfg().maxPerDay}) doldu: "${c.title.slice(0, 70)}" atlandı`); break; }
+    // sıradan (çok kaynaklı) adaylar günde maxPerDay (4); değerli haberler ayrı ve yüksek sınır (15): değerli haber kaçmasın
+    const cap = c.valuable ? Number(breakingCfg().valuableMaxPerDay) : Number(breakingCfg().maxPerDay);
+    if (list.length >= cap) { push(`🗞 günlük ${c.valuable ? "değerli " : ""}son dakika sınırı (${cap}) doldu: "${c.title.slice(0, 70)}" atlandı`); continue; }
     const a = c.url ? await pyJson(["scripts/mynet_watch.py", "--article", c.url]) : null;
     const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
     push(`${c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.valueReason}) → video üretiliyor`);
@@ -1126,6 +1128,7 @@ const STAGE_VOICE = [
   [/^📤 youtube: hata/, "YouTube'a yüklenemedi."],
   [/^⭐ değerli haber/, "Değerli haber, YouTube'a da yükleniyor."],
   [/^📤 instagram: hata/, "Instagram'a yüklenemedi."],
+  [/^📤 tiktok: sınır doldu/, "TikTok gelen kutusunda paylaşılmamış taslak birikti. Telefondan taslakları paylaşın ya da silin."],
   [/^📤 tiktok: hata/, "TikTok'a yüklenemedi."],
   [/^📤 tekrar denenecek/, "Yüklenemeyen platform birazdan tekrar denenecek."],
   [/^📤 otomatik yayın yapılmadı/, "Otomatik yayın yapılmadı, ayrıntı logda."],

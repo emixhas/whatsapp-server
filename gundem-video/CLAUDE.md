@@ -109,7 +109,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `--article` (JSON-LD articleBody → paragraflar → og:description) → `startAnlik(metin, {source: "Mynet", url})`
   → `ANLIK_SOURCE/ANLIK_URL`: prompt kaynağa dayandırır ve KENDİ cümleleriyle yazar, kanca + ilk kart kaynağı
   Mynet, fotoğraf/video o haber sayfasından, açıklamada "Haber kaynağı: Mynet · link". Günlük otomatik sınır
-  `maxPerDay` (YouTube kotası günde ~6 yükleme); elle "Video üret" sınırsız ama aynı haber günde bir kez.
+  `maxPerDay` (sıradan manşet 3; değerli `valuableMaxPerDay` 15, son dakika adaylarında da değerli ayrı sınır 15, sıradan 4);
+  elle "Video üret" sınırsız ama aynı haber günde bir kez.
   Durum `data/mynet_state.json` (görülenler 7 gün), üretilenler `data/mynet_produced.json`. Panel kartı:
   6 manşet, her biri için "🎬 Video üret", "hepsi için üret", "şimdi kontrol et", aç/kapat.
 - Çoklu son dakika takibi (`scripts/breaking_watch.py`, `settings.breaking` {enabled, intervalMin 15, perSource 8,
@@ -127,8 +128,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   aynı `startAnlik` yolu (anlikAutoPublish ile bağlı hesaplara yayın, YouTube değer kuralı geçerli), `--mark` yazar.
   Elle üretim günlük sınırı tüketmez ve ona takılmaz; aynı olay 12 saat içinde üretildiyse düğme "✓ Üretildi" olur,
   basılırsa onay sorup `force` ile yine üretir.
-- Ortak tarama (kullanıcı kararı: iki kaynak eşit aralıkla): `watchScan()` her `settings.watchIntervalMin` (varsayılan 10,
-  5-60) dakikada önce Mynet'i, hemen ardından son dakika sitelerini tarar; `mynet.intervalMin`/`breaking.intervalMin`
+- Ortak tarama (kullanıcı kararı: iki kaynak eşit aralıkla): `watchScan()` her `settings.watchIntervalMin` (varsayılan 5,
+  3-60) dakikada önce Mynet'i, hemen ardından son dakika sitelerini tarar; `mynet.intervalMin`/`breaking.intervalMin`
   artık kullanılmaz (cfg'de `watchMin()` döner, kartlarda aynı sayı). Tarama sürerken `flushValuable` 3 sn'de bir bekler,
   böylece iki kaynaktan aynı anda düşen değerli haberler aynı partiye girer.
 - Değerli manşet toplayıcı (kullanıcı kararı: değerli manşet beklemeden, sistem dinlenmede olsa da üretilir): Mynet ve
@@ -380,6 +381,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `content_publishing_limit` günlük kotası, Meta'nın videoyu çekebilmesi (son videonun herkese açık adresine
   facebookexternalhit User-Agent ve Range ile istek: HTTP 200/206 + video içerik türü) ve son hata. Panel
   "🩺 Instagram'ı sına" → `POST /api/instagram/diagnose`, adımlar ✅/❌ olarak sohbete ve loga (🩺).
+- TikTok sınırı: gelen kutusu modunda paylaşılmamış taslak birikince `spam_risk_too_many_pending_share` (doğrudan yayında
+  `spam_risk_too_many_posts`) → `TT_LIMIT_REASONS` LimitReached gibi: 3 saat bekleme, video sıraya, Türkçe açıklama
+  `TT_LIMIT_TR` ("taslakları paylaşın ya da silin"), log "📤 tiktok: sınır doldu" + sesli uyarı.
 - `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
   Sonunda `scripts/followers.py` abone/takipçi sayılarını çeker: YouTube `channels.list(mine)` subscriberCount
   (1000 üstünde yuvarlanır), Instagram `followers_count`, TikTok `user/info` follower_count (`user.info.stats` izni:
@@ -463,7 +467,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sınav/yasak, güvenlik, para ve destek: sosyal yardım/evde bakım/KYK burs/TOKİ/kredi kartı/dolar-altın rekoru/borsa
   çöküşü, sağlık ve gıda: salgın/zehirlenme/ilaç toplatma/hileli ürün, milli başarı: milli takım ve milli sporcu
   galibiyet/final/madalya, suç ve vahşet: cani/katil/vahşet/dehşet/boğdu/kaynar su/bıçakladı/darp/işkence/kadına-çocuğa
-  şiddet/istismar/kaçırıldı/pompalı (kullanıcı kararı: bu tür haber hemen üretilir) — ikisi de SOFT korumasından muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
+  şiddet/istismar/kaçırıldı/pompalı (kullanıcı kararı: bu tür haber hemen üretilir), kayıp ve arama, kesinti ve ulaşım
+  (elektrik/su/doğalgaz kesintisi, yol kapanması, uçuş/sefer iptali, grev), hava ve doğa uyarısı (turuncu/kırmızı kod,
+  şiddetli yağış/rüzgar, orman yangını, sağanak), yeni düzenleme (yürürlüğe girdi, ceza, ehliyet/pasaport, başvuru
+  tarihi), büyük siyaset (erken seçim, kabine, görevden alma, kayyum, yetkili gözaltısı), dünya ve savaş, iş ve geçim
+  (iflas, işten çıkarma, kira/konut/araç fiyatı, indirim), eğitim duyurusu; "adli olay" (operasyon/gözaltı/uyuşturucu…)
+  ağırlık 2: tek başına yetmez, başka grupla değerli olur. Kullanıcı kararı: değerli haber kaçmasın. SOFT (magazin)
+  koruması "ünlü" tek başına değil "ünlü oyuncu/şarkıcı…" kalıbıyla; can kaybı, milli başarı, suç ve vahşet, kayıp ve
+  arama, dünya ve savaş SOFT'tan muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
   piyasa desenleri Bursa'yı ve sıradan kur haberini yakalamayacak şekilde dar) +
   `prompts/anlik.md`in istediği `importance` 1-5 (4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar).
   `assemble_script.news_value()` meta'ya `value` yazar; `post_pipeline.youtube_allowed()` karar verir ("⭐ değerli

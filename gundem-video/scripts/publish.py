@@ -31,6 +31,17 @@ QUEUE_FILE = DATA / "publish_queue.json"  # [{"video": ad, "platform": p, "at": 
 LIMIT_HOURS = 3        # sınır dolunca bu kadar saat sonra yeniden denenir
 QUEUE_MAX_HOURS = 24   # daha eski sıradaki haber videoları yüklenmez (bayat haber)
 LIMIT_REASONS = ("uploadLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded")
+# TikTok gelen kutusu (inbox) modu: paylaşılmamış taslak sayısı TikTok'un sınırını aşınca (24 saatte birkaç bekleyen
+# gönderim) "spam_risk_too_many_pending_share"; doğrudan yayında da "spam_risk_too_many_posts". İkisi de sınır sayılır.
+TT_LIMIT_REASONS = ("spam_risk_too_many_pending_share", "spam_risk_too_many_posts", "spam_risk_user_banned_from_posting", "rate_limit_exceeded")
+TT_LIMIT_TR = {
+    "spam_risk_too_many_pending_share": "TikTok gelen kutunuzda paylaşılmamış çok taslak birikti (TikTok onaysız uygulamada 24 saatte yalnızca "
+                                        "birkaç bekleyen taslağa izin verir). TikTok uygulaması → Gelen kutusu / bildirimlerdeki taslakları "
+                                        "paylaşın ya da silin",
+    "spam_risk_too_many_posts": "TikTok bugünkü gönderi sınırı doldu",
+    "spam_risk_user_banned_from_posting": "TikTok bu hesabın API ile gönderimini geçici olarak durdurdu",
+    "rate_limit_exceeded": "TikTok çok sık istek nedeniyle geçici olarak sınırladı",
+}
 
 
 class LimitReached(RuntimeError):
@@ -794,8 +805,17 @@ def tt_upload(path: Path):
                         "source_info": source}, H)
     else:
         privacy = None
-        init = tt_http("POST", f"{TT_API}/post/publish/inbox/video/init/", {"source_info": source}, H)
-    if init.get("error", {}).get("code") not in (None, "ok"):
+        try:
+            init = tt_http("POST", f"{TT_API}/post/publish/inbox/video/init/", {"source_info": source}, H)
+        except RuntimeError as e:
+            reason = next((r for r in TT_LIMIT_REASONS if r in str(e)), None)
+            if reason:
+                raise LimitReached(reason) from e
+            raise
+    code = init.get("error", {}).get("code")
+    if code in TT_LIMIT_REASONS:
+        raise LimitReached(code)
+    if code not in (None, "ok"):
         raise RuntimeError(f"TikTok init hatası: {init['error']}")
     data = init["data"]
     publish_id, upload_url = data["publish_id"], data["upload_url"]
@@ -1031,10 +1051,18 @@ def upload(path: Path, plat: str) -> dict:
     except LimitReached as e:
         until = set_hold(plat, str(e))
         enqueue(path.name, plat)
+        why = TT_LIMIT_TR.get(str(e)) if plat == "tiktok" else None
         return {"ok": False, "limit": True, "queued": True,
-                "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
+                "error": (f"{why}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı (taslaklar azalınca otomatik gönderilir)"
+                          if why else f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek")}
     except Exception as e:  # hatayı JSON olarak döndür, panel okur
         msg = str(e)
+        tt_reason = next((r for r in TT_LIMIT_REASONS if r in msg), None) if plat == "tiktok" else None
+        if tt_reason:  # doğrudan yayın modunda da aynı sınır: duraklat ve sıraya al
+            until = set_hold(plat, tt_reason)
+            enqueue(path.name, plat)
+            return {"ok": False, "limit": True, "queued": True,
+                    "error": f"{TT_LIMIT_TR[tt_reason]}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
         err = msg + (ig_hint(msg) if plat == "instagram" else "")
         last = load_json(LAST_ERR, {}) or {}
         last[plat] = {"at": now_iso(), "video": path.name, "error": err[:500]}
