@@ -138,9 +138,13 @@ def build_caption(video_name: str, max_len: int = 2000):
     rng = meta.get("timeRange") or ""
     stamp = " · ".join(x for x in (day, slot.title() if slot else "", rng) if x)
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
+    if meta.get("format") == "haftalik":  # haftanın özeti (yatay, YouTube): günlükle aynı bölümlü açıklama
+        title = f"Haftanın Özeti {rng}: {first} | {s['channelName']}"
+        lines = [f"📺 HAFTANIN ÖZETİ · {s['channelName']} · {rng}", f"Bu haftanın en önemli {len(haber)} haberi tek videoda.", ""]
     if meta.get("format") == "gunluk":  # günlük uzun özet (yatay, YouTube; Shorts değil)
         title = f"Günün Özeti {day}: {first} | {s['channelName']}"
         lines = [f"📺 GÜNÜN ÖZETİ · {s['channelName']} · {day}", f"Bugünün en önemli {len(haber)} haberi tek videoda.", ""]
+    if meta.get("format") in ("gunluk", "haftalik"):
         # YouTube bölümleri: açıklamada 00:00 ile başlayan zaman damgaları videoyu bölümlere ayırır
         t, chapters = 0.0, []
         for seg in meta.get("segments", []):
@@ -156,7 +160,7 @@ def build_caption(video_name: str, max_len: int = 2000):
         title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
         lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
     for i, h in enumerate(haber, 1):
-        head = h["title"] if anlik else f"{i}. {h['title']}" if meta.get("format") == "gunluk" else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
+        head = h["title"] if anlik else f"{i}. {h['title']}" if meta.get("format") in ("gunluk", "haftalik") else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
         lines.append(head)
         if h.get("narration"):
             lines.append(h["narration"].strip())
@@ -170,6 +174,7 @@ def build_caption(video_name: str, max_len: int = 2000):
     from hashtags import for_meta
     tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
+              else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"
               else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
     tail = "\n" + " ".join(tags)

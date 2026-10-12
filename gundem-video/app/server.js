@@ -169,6 +169,8 @@ async function nextPlanned() {
   try { const sch = await getSchedule(); if (sch.nextRunAt) cands.push({ at: sch.nextRunAt, what: "5 saatlik üretim" }); } catch { /* yok */ }
   const d = dailyCfg();
   if (d.enabled && readJson(DAILY_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(d.hour), Number(d.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "günün özeti" }); }
+  const w = weeklyCfg();
+  if (w.enabled && new Date().getDay() === Number(w.weekday) && readJson(WEEKLY_VIDEO_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(w.hour), Number(w.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "haftanın özeti" }); }
   return cands.sort((a, b) => a.at - b.at)[0] || null;
 }
 async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
@@ -211,7 +213,7 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
   duration = extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
-  push(extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
+  push(extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration), ...extraEnv } });
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
@@ -455,6 +457,26 @@ async function runCleanup({ manual = false } = {}) {
 }
 setInterval(() => { const n = new Date(); if (n.getHours() === 4 && n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).day !== today() && !pipelineBusy() && (settings().cleanup?.enabled !== false)) runCleanup().catch((e) => push(`🧹 disk temizliği: ${e.message}`)); }, 60000);
 app.post("/api/cleanup", async (req, res) => res.json(req.body?.dryRun ? (await py("cleanup.py", ["--dry-run"])).json || {} : await runCleanup({ manual: true })));
+// ---------- haftanın özeti (yatay, YouTube): settings.weeklySummary {enabled, weekday 0 = pazar, hour 20, minute 30,
+// duration 300, stories 10, autoPublish}; GUNLUK=1 + HAFTALIK=1 (aynı GunlukOzet kompozisyonu), data/weekly_video_last.json
+const weeklyCfg = () => ({ enabled: true, weekday: 0, hour: 20, minute: 30, duration: 300, stories: 10, autoPublish: true, ...(settings().weeklySummary || {}) });
+const WEEKLY_VIDEO_FILE = path.join(DATA, "weekly_video_last.json");
+function startWeekly({ manual = false } = {}) {
+  const c = weeklyCfg();
+  if (pipelineBusy()) return { ok: false, error: "Başka bir üretim sürüyor; bitince haftanın özeti başlar." };
+  const r = startPipeline(c.duration, { GUNLUK: "1", HAFTALIK: "1", GUNLUK_DURATION: String(c.duration) }, { auto: !manual });
+  if (r.ok) writeJson(WEEKLY_VIDEO_FILE, { day: today(), at: Date.now(), manual });
+  return r;
+}
+setInterval(() => {
+  const c = weeklyCfg(); if (!c.enabled) return;
+  const now = new Date();
+  if (now.getDay() !== Number(c.weekday) || now.getHours() * 60 + now.getMinutes() < Number(c.hour) * 60 + Number(c.minute)) return;
+  if (readJson(WEEKLY_VIDEO_FILE, {}).day === today() || pipelineBusy() || resting()) return;
+  startWeekly();
+}, 60000);
+app.get("/api/weekly-video", (_req, res) => res.json({ ...weeklyCfg(), last: readJson(WEEKLY_VIDEO_FILE, {}) }));
+app.post("/api/weekly-video/run", (_req, res) => res.json(startWeekly({ manual: true })));
 app.get("/api/daily", (_req, res) => res.json({ ...dailyCfg(), last: readJson(DAILY_FILE, {}) }));
 app.post("/api/daily/run", (_req, res) => res.json(startDaily({ manual: true })));
 
@@ -962,6 +984,7 @@ async function handleCommand(text) {
     case "reveal": if (videos[0] && isMac) { await run("open", ["-R", path.join(OUT, videos[0].name)]); reply = "Finder'da gösteriliyor."; } else { reply = "Gösterilecek video yok."; action = "none"; } break;
     case "schedule_on": case "schedule_off": { const r = await setSchedule(cmd.action === "schedule_on", cmd.hours || 5); reply = r.ok ? (cmd.action === "schedule_on" ? `Otomatik üretim açıldı, her ${cmd.hours || 5} saatte bir.` : "Otomatik üretim kapatıldı.") : `Zamanlayıcı ayarlanamadı: ${r.error}`; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
+    case "weekly_summary": { const r = startWeekly({ manual: true }); reply = r.ok ? "Haftanın özeti videosu üretiliyor. Yatay, yaklaşık beş dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
     case "daily_summary": { const r = startDaily({ manual: true }); reply = r.ok ? "Günün özeti videosu üretiliyor. Yatay, yaklaşık dört dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
     case "weekly_report": { const r = await weeklyReport({ send: true }); reply = r.ok ? r.summary : `Haftalık rapor hazırlanamadı: ${r.error}`; break; }
     case "sync_metrics": { const r = await execAction({ type: "sync_metrics" }); reply = r.ok ? `İzlenmeler güncellendi: YouTube ${r.youtube ?? 0}, Instagram ${r.instagram ?? 0}, TikTok ${r.tiktok ?? 0} video.` : "İzlenmeler güncellenemedi. Bağlantıları kontrol edin."; break; }
@@ -1113,7 +1136,7 @@ async function healthCheck() {
   // 1) kaçan üretim: zamanlayıcı açık, son videodan beri aralık + 40 dk geçti, üretim de sürmüyor
   try {
     const sch = await getSchedule();
-    const regular = listVideos().filter((v) => { const m = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), {}); return !(m.anlik || m.format === "anlik" || m.format === "gunluk"); });
+    const regular = listVideos().filter((v) => { const m = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), {}); return !(m.anlik || m.format === "anlik" || m.format === "gunluk" || m.format === "haftalik"); });
     // zamanlayıcı yeni açıldıysa ondan önceki boşluk sayılmaz
     const last = Math.max(regular[0] ? statSync(path.join(OUT, regular[0].name)).mtimeMs : 0, Number(readSched().loadedAt) || 0) || null;
     const gap = (Number(sch.hours) || 5) * 3600000 + 40 * 60000;

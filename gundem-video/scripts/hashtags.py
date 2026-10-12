@@ -45,7 +45,7 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
         if s.get("kind") == "haber" and s.get("category") in CATEGORY_TAGS:
             add(CATEGORY_TAGS[s["category"]])
     for t in (base or "").split():
-        if t.lower() == "#shorts" and meta.get("format") == "gunluk":  # yatay uzun video Shorts değil
+        if t.lower() == "#shorts" and meta.get("format") in ("gunluk", "haftalik"):  # yatay uzun video Shorts değil
             continue
         add(t)
     return out[:MAX_TAGS]

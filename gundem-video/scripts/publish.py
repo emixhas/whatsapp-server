@@ -176,7 +176,7 @@ def yt_upload(path: Path):
             print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
     meta = episode_meta(path.name) or {}
     lists = yt_add_to_playlists(yt, vid, meta)
-    url = f"https://youtube.com/watch?v={vid}" if meta.get("format") == "gunluk" else f"https://youtube.com/shorts/{vid}"
+    url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") else f"https://youtube.com/shorts/{vid}"
     return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
             "titleVariant": meta.get("titleVariant"), "playlists": lists}
 
@@ -188,6 +188,7 @@ def playlist_names(meta: dict) -> list:
     fmt = meta.get("format")
     names = [f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"
+             else f"{ch} · Haftanın Özeti (uzun)" if fmt == "haftalik"
              else f"{ch} · Her 5 Saatte Gündem"]
     first = next((x for x in meta.get("segments", []) if x.get("kind") in ("haber", "hook") and x.get("category")), {})
     cat = PLAYLIST_BY_CATEGORY.get(first.get("category"))

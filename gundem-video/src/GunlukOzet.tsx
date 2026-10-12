@@ -79,13 +79,17 @@ const WideHook = ({ seg, e, dur }: { seg: Segment; e: Episode; dur: number }) =>
       <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(11,15,26,.35) 0%, rgba(11,15,26,.9) 80%)" }} />
       <AbsoluteFill style={{ background: "#fff", opacity: flash }} />
       <div style={{ position: "absolute", top: 200, left: 0, right: 0, textAlign: "center" }}>
-        <div style={{ display: "inline-block", background: theme.red, padding: "10px 34px", borderRadius: 12, fontSize: 46, fontWeight: 900, letterSpacing: 10 }}>GÜNÜN ÖZETİ</div>
-        <div style={{ marginTop: 18, fontSize: 40, fontWeight: 700, color: theme.muted }}>{e.dayLabel || e.dateLabel}</div>
+        <div style={{ display: "inline-block", background: theme.red, padding: "10px 34px", borderRadius: 12, fontSize: 46, fontWeight: 900, letterSpacing: 10 }}>{longLabel(e)}</div>
+        <div style={{ marginTop: 18, fontSize: 40, fontWeight: 700, color: theme.muted }}>{isWeekly(e) ? e.timeRange : e.dayLabel || e.dateLabel}</div>
       </div>
       <div lang="tr" style={{ position: "absolute", top: 470, left: 160, right: 160, textAlign: "center", fontSize: size, fontWeight: 900, lineHeight: 1.02, transform: `scale(${0.6 + 0.4 * pop})`, textShadow: "0 8px 30px rgba(0,0,0,.8)", WebkitTextStroke: "3px #000" }}>{trUpper(seg.title || "")}</div>
     </AbsoluteFill>
   );
 };
+
+// Haftanın özeti de bu kompozisyonla çizilir (slotLabel "HAFTANIN ÖZETİ"); yazılar etikete göre değişir
+const isWeekly = (e: Episode) => e.slotLabel === "HAFTANIN ÖZETİ";
+const longLabel = (e: Episode) => (isWeekly(e) ? "HAFTANIN ÖZETİ" : "GÜNÜN ÖZETİ");
 
 const WideIntro = ({ e, titles }: { e: Episode; titles: string[] }) => {
   const frame = useCurrentFrame();
@@ -94,9 +98,9 @@ const WideIntro = ({ e, titles }: { e: Episode; titles: string[] }) => {
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white }}>
       <div style={{ position: "absolute", left: 90, top: 170, width: 900 }}>
         <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: 8, color: theme.muted }}>TÜRKİYE GÜNDEMİ</div>
-        <div style={{ fontSize: 110, fontWeight: 900, lineHeight: 1, marginTop: 10 }}>GÜNÜN<br /><span style={{ color: theme.red }}>ÖZETİ</span></div>
-        <div style={{ fontSize: 44, fontWeight: 700, marginTop: 24 }}>{e.dayLabel || e.dateLabel}</div>
-        <div style={{ fontSize: 32, color: theme.muted, marginTop: 8 }}>Bugünün en önemli {titles.length} haberi</div>
+        <div style={{ fontSize: 110, fontWeight: 900, lineHeight: 1, marginTop: 10 }}>{isWeekly(e) ? "HAFTANIN" : "GÜNÜN"}<br /><span style={{ color: theme.red }}>ÖZETİ</span></div>
+        <div style={{ fontSize: 44, fontWeight: 700, marginTop: 24 }}>{isWeekly(e) ? e.timeRange : e.dayLabel || e.dateLabel}</div>
+        <div style={{ fontSize: 32, color: theme.muted, marginTop: 8 }}>{isWeekly(e) ? "Haftanın" : "Bugünün"} en önemli {titles.length} haberi</div>
       </div>
       <div style={{ position: "absolute", right: 90, top: 150, width: 760, display: "grid", gap: 14 }}>
         {titles.slice(0, 8).map((t, i) => {
@@ -150,7 +154,7 @@ const WideNews = ({ seg, index, total, dur }: { seg: Segment; index: number; tot
   );
 };
 
-const WideOutro = () => {
+const WideOutro = ({ weekly = false }: { weekly?: boolean }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const s = spring({ frame: frame - 10, fps, config: { damping: 12, stiffness: 120 } });
@@ -159,7 +163,7 @@ const WideOutro = () => {
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white, alignItems: "center" }}>
       <div style={{ position: "absolute", top: 90, display: "flex", justifyContent: "center", width: "100%" }}><TurkeyMap width={820} /></div>
       <div style={{ position: "absolute", top: 560, width: "100%", textAlign: "center" }}>
-        <div style={{ fontSize: 64, fontWeight: 900 }}>HER 5 SAATTE BİR GÜNDEM · HER AKŞAM GÜNÜN ÖZETİ</div>
+        <div style={{ fontSize: weekly ? 56 : 64, fontWeight: 900 }}>{weekly ? "HER AKŞAM GÜNÜN ÖZETİ · HER PAZAR HAFTANIN ÖZETİ" : "HER 5 SAATTE BİR GÜNDEM · HER AKŞAM GÜNÜN ÖZETİ"}</div>
         <div style={{ display: "inline-block", marginTop: 26, background: theme.red, padding: "12px 44px", borderRadius: 16, fontSize: 70, fontWeight: 900, transform: `scale(${s}) rotate(-2deg)` }}>ABONE OL</div>
         <div style={{ marginTop: 40, display: "flex", justifyContent: "center", gap: 70 }}>
           {icons.map((I, i) => <div key={i} style={{ opacity: interpolate(frame, [30 + i * 8, 44 + i * 8], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}><I size={110} /></div>)}
@@ -192,9 +196,9 @@ export const GunlukOzet = ({ episode }: { episode: Episode }) => {
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.3} /></Sequence> : null}
             {seg.kind === "hook" ? <WideHook seg={seg} e={episode} dur={dur} />
               : seg.kind === "intro" ? <WideIntro e={episode} titles={haberler.map((h) => h.title || "")} />
-              : seg.kind === "outro" ? <WideOutro />
+              : seg.kind === "outro" ? <WideOutro weekly={isWeekly(episode)} />
               : <WideNews seg={seg} index={hi} total={haberler.length} dur={dur} />}
-            {seg.kind === "haber" ? <><TopBar e={episode} label="GÜNÜN ÖZETİ" /><Ticker items={next} /></> : null}
+            {seg.kind === "haber" ? <><TopBar e={episode} label={longLabel(episode)} /><Ticker items={next} /></> : null}
           </Sequence>
         );
       })}
@@ -203,7 +207,7 @@ export const GunlukOzet = ({ episode }: { episode: Episode }) => {
           {/* ThumbWide 1280x720 için çizilir; 1920x1080'e 1,5 kat büyütülür */}
           <div style={{ position: "absolute", left: 0, top: 0, width: 1280, height: 720, transform: "scale(1.5)", transformOrigin: "top left" }}>
             <Thumb wide text={episode.titles?.cover || first?.title || ""} category={first?.category} breaking={false} image={first?.image}
-              variant="A" dayLabel={episode.dayLabel} slotLabel="GÜNÜN ÖZETİ" timeRange={episode.timeRange} />
+              variant="A" dayLabel={episode.dayLabel} slotLabel={longLabel(episode)} timeRange={episode.timeRange} />
           </div>
         </Sequence>
       ) : null}

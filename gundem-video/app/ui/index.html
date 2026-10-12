@@ -158,6 +158,9 @@
       <label class="row"><span class="sw" id="dailyOn"></span><span>Her akşam <input id="dailyTime" type="time" style="width:96px"> saatinde günün en önemli haberlerinden ~<b id="dailyMin">4</b> dakikalık yatay video üret ve YouTube'a yükle (bölümlü açıklama, oynatma listesi)</span></label>
       <div class="next" id="dailyInfo">Yükleniyor…</div>
       <div class="acts" style="margin-top:8px"><button class="ghost" id="dailyRun">Şimdi üret</button></div>
+      <label class="row" style="margin-top:10px"><span class="sw" id="weeklyOn"></span><span>Her pazar <input id="weeklyTime" type="time" style="width:96px"> saatinde haftanın en önemli haberlerinden ~<b id="weeklyMin">5</b> dakikalık "Haftanın Özeti" yatay videosu üret ve YouTube'a yükle</span></label>
+      <div class="next" id="weeklyInfo"></div>
+      <div class="acts" style="margin-top:8px"><button class="ghost" id="weeklyRun">Haftanın özetini şimdi üret</button></div>
     </div>
     <div class="card anlik">
       <h2>⚡ ANLIK HABER · SON DAKİKA</h2>
@@ -542,8 +545,13 @@ async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').cla
   $('#mynetList').innerHTML=(m.items||[]).map((it,i)=>`<div class="mi">${it.image?`<img src="${it.image}" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}<div class="t"><b>${i+1}.</b> ${(it.title||'(başlık sayfadan okunacak)').replace(/</g,'&lt;')}<br><small>${it.valuable?`<b style="color:#F2B705">⭐ değerli · YouTube'a da gider</b> (${String(it.valueReason||'').replace(/</g,'&lt;')}) `:''}${m.producedToday.includes(it.url)?'✅ bugün videosu üretildi':''}</small></div><button class="ghost" data-mu="${it.url}">🎬 Video üret</button></div>`).join('')||'<div class="conninfo">Manşet listesi henüz yok. "Şimdi kontrol et"e basın.</div>';
   document.querySelectorAll('[data-mu]').forEach(b=>b.onclick=async()=>{b.disabled=true;const r=await post('/api/mynet/produce',{url:b.dataset.mu});toast(r.ok?(r.queued?'Sıraya alındı ⏳':'Video üretiliyor ⚡'):(r.error||'Üretilemedi'),!r.ok);loadMynet();});
 }catch{$('#mynetInfo').textContent='Mynet bilgisi alınamadı.';}}
-async function loadDaily(){try{const d=await api('/api/daily');$('#dailyOn').classList.toggle('on',d.enabled!==false);if(document.activeElement!==$('#dailyTime'))$('#dailyTime').value=`${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`;$('#dailyMin').textContent=Math.round((d.duration||240)/60);
+async function loadDaily(){loadWeekly();try{const d=await api('/api/daily');$('#dailyOn').classList.toggle('on',d.enabled!==false);if(document.activeElement!==$('#dailyTime'))$('#dailyTime').value=`${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`;$('#dailyMin').textContent=Math.round((d.duration||240)/60);
   const t=new Date().toISOString().slice(0,10);$('#dailyInfo').textContent=d.last?.day===t?`Bugünün özeti ${new Date(d.last.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}'de başlatıldı.`:d.enabled===false?'Kapalı.':'Bugün henüz üretilmedi.';}catch{$('#dailyInfo').textContent='Bilgi alınamadı.';}}
+async function loadWeekly(){try{const d=await api('/api/weekly-video');$('#weeklyOn').classList.toggle('on',d.enabled!==false);if(document.activeElement!==$('#weeklyTime'))$('#weeklyTime').value=`${String(d.hour).padStart(2,'0')}:${String(d.minute).padStart(2,'0')}`;$('#weeklyMin').textContent=Math.round((d.duration||300)/60);
+  $('#weeklyInfo').textContent=d.enabled===false?'Haftanın özeti kapalı.':d.last?.at?`Son haftanın özeti: ${new Date(d.last.at).toLocaleString('tr-TR',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}.`:'Henüz haftanın özeti üretilmedi.';}catch{$('#weeklyInfo').textContent='';}}
+$('#weeklyOn').onclick=async()=>{const on=!$('#weeklyOn').classList.contains('on');await post('/api/settings',{weeklySummary:{enabled:on}});loadWeekly();};
+$('#weeklyTime').onchange=async()=>{const [h,m]=($('#weeklyTime').value||'20:30').split(':').map(Number);await post('/api/settings',{weeklySummary:{hour:h,minute:m}});loadWeekly();};
+$('#weeklyRun').onclick=async()=>{if(!await ask('Son 7 günün en önemli haberlerinden ~5 dakikalık yatay "Haftanın Özeti" videosu üretilsin mi?'))return;const r=await post('/api/weekly-video/run');toast(r.ok?'Haftanın özeti üretiliyor 📺':(r.error||'Başlatılamadı'),!r.ok);loadWeekly();};
 $('#dailyOn').onclick=async()=>{const on=!$('#dailyOn').classList.contains('on');await post('/api/settings',{daily:{enabled:on}});loadDaily();};
 $('#dailyTime').onchange=async()=>{const [h,m]=($('#dailyTime').value||'21:30').split(':').map(Number);await post('/api/settings',{daily:{hour:h,minute:m}});loadDaily();};
 $('#dailyRun').onclick=async()=>{const r=await post('/api/daily/run');toast(r.ok?'Günün özeti üretiliyor 📺':(r.error||'Başlatılamadı'),!r.ok);loadDaily();};

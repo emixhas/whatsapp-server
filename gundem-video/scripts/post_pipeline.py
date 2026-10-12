@@ -82,7 +82,7 @@ def targets(video: str, s: dict) -> tuple[list, str]:
             print(f"🤖 otomatik mod açık: bağlı tüm hesaplarda paylaşılıyor ({', '.join(chosen + extra)})")
         chosen += extra
     # 5 saatlik (düzenli) video: YouTube'a her zaman sorulmadan gider (kullanıcı kararı; youtubePolicy.regularAuto)
-    regular = not anlik and meta.get("format") != "gunluk"
+    regular = not anlik and meta.get("format") not in ("gunluk", "haftalik")
     if regular and "youtube" in conn and "youtube" not in chosen and (s.get("youtubePolicy") or {}).get("regularAuto", True):
         print("▶ 5 saatlik video: YouTube'a onaysız yükleniyor")
         chosen.append("youtube")
@@ -93,8 +93,9 @@ def targets(video: str, s: dict) -> tuple[list, str]:
         chosen += extra
     if anlik and "youtube" in chosen and "youtube" in conn and not youtube_allowed(video, meta, s):
         chosen = [p for p in chosen if p != "youtube"]
-    if meta.get("format") == "gunluk":  # yatay 4 dk: yalnız YouTube (Reels/TikTok dikey kısa video ister)
-        if "youtube" in conn and "youtube" not in chosen and (auto_all or s.get("daily", {}).get("autoPublish", True)):
+    if meta.get("format") in ("gunluk", "haftalik"):  # yatay uzun video: yalnız YouTube (Reels/TikTok dikey kısa video ister)
+        cfg = s.get("weeklySummary" if meta.get("format") == "haftalik" else "daily", {}) or {}
+        if "youtube" in conn and "youtube" not in chosen and (auto_all or cfg.get("autoPublish", True)):
             chosen.append("youtube")
         dropped = [p for p in chosen if p != "youtube"]
         if dropped:

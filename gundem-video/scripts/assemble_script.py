@@ -31,6 +31,11 @@ OUTRO_ANLIK = "Gelişmeleri takip etmeye devam ediyoruz. Son dakika haberleri i�
 GUNLUK = os.environ.get("GUNLUK") == "1"
 OUTRO_GUNLUK = "Bugünün Türkiye gündemi buydu. Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone olmayı unutma."
 INTRO_GUNLUK = "Günün özeti. Bugün Türkiye'de öne çıkan haberler."
+# Haftanın özeti: GUNLUK=1 + HAFTALIK=1 (aynı yatay kompozisyon), prompts/haftalik.md, scripts/weekly_news.py
+HAFTALIK = GUNLUK and os.environ.get("HAFTALIK") == "1"
+OUTRO_HAFTALIK = ("Bu haftanın Türkiye gündemi buydu. Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, "
+                  "her pazar haftanın özetiyle buradayız. Abone olmayı unutma.")
+INTRO_HAFTALIK = "Haftanın özeti. Bu hafta Türkiye'de öne çıkan haberler."
 
 
 # Seslendirme motorları kısaltmaları yanlış okur; bilinen kısaltmalar açılır (kelime sınırı ile).
@@ -259,6 +264,13 @@ def news_value(data: dict, segs: list) -> dict:
     return v
 
 
+def week_range(now) -> str:
+    """Haftanın özeti için tarih aralığı: "6–12 Ekim" ya da ay değişiyorsa "29 Eylül–5 Ekim"."""
+    from datetime import timedelta
+    a = now - timedelta(days=6)
+    return f"{a.day}–{now.day} {AYLAR[now.month - 1]}" if a.month == now.month else f"{a.day} {AYLAR[a.month - 1]}–{now.day} {AYLAR[now.month - 1]}"
+
+
 def tr_upper(t: str) -> str:
     """Türkçe büyük harf (i → İ, ı → I); Python'un upper() i'yi yanlış olarak I yapar."""
     return (t or "").replace("i", "İ").replace("ı", "I").upper()
@@ -281,7 +293,7 @@ def intro_text() -> str:
     if ANLIK:
         return "Son dakika."
     if GUNLUK:
-        return INTRO_GUNLUK
+        return INTRO_HAFTALIK if HAFTALIK else INTRO_GUNLUK
     hours = int(load_json(DATA / "settings.json", {}).get("scheduleHours") or 5)
     label = os.environ.get("FORMAT_LABEL", "").strip() or "Gündem"
     label = label[:1] + label[1:].replace("I", "ı").replace("İ", "i").lower()  # "Güne Başlarken" → "Güne başlarken"
@@ -292,7 +304,7 @@ def regular_slot_of_day(date: str) -> int:
     """Kaçıncı 5 saatlik video: o günün anlık olmayan videoları + 1 (anlık videolar sayımı kaydırmaz)."""
     n = 0
     for f in (ROOT / "out").glob(f"{date}-*.json"):
-        if re.match(rf"{re.escape(date)}-\d+\.json$", f.name) and load_json(f, {}).get("format") not in ("anlik", "gunluk"):
+        if re.match(rf"{re.escape(date)}-\d+\.json$", f.name) and load_json(f, {}).get("format") not in ("anlik", "gunluk", "haftalik"):
             n += 1
     return n + 1
 
@@ -319,7 +331,7 @@ def main(src: str, dst: str):
     if len(segs) > 1 and segs[1].get("kind") != "intro":
         sys.exit("İkinci segment intro olmalı")
     # Outro her videoda aynı kancalı kapanış: marka tutarlılığı için Claude'un yazdığı metin ezilir
-    segs[-1]["narration"] = OUTRO_ANLIK if ANLIK else OUTRO_GUNLUK if GUNLUK else OUTRO_TEXT
+    segs[-1]["narration"] = OUTRO_ANLIK if ANLIK else OUTRO_HAFTALIK if HAFTALIK else OUTRO_GUNLUK if GUNLUK else OUTRO_TEXT
     # Intro da sabit: "Güne başlarken, son 5 saatin Türkiye gündemi." (anlık haberde "Son dakika.")
     if len(segs) > 1 and segs[1].get("kind") == "intro":
         segs[1]["narration"] = intro_text()
@@ -412,8 +424,8 @@ def main(src: str, dst: str):
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
         "dayLabel": f"{now.day} {AYLAR[now.month - 1]} {GUNLER[now.weekday()]}",
         "episodeOfDay": ep_n,
-        "slotLabel": "ANLIK HABER" if ANLIK else "GÜNÜN ÖZETİ" if GUNLUK else f"{regular_slot_of_day(date)}. {hours} SAAT",
-        "timeRange": now.strftime("%H:%M") if ANLIK else f"00:00–{now.strftime('%H:%M')}" if GUNLUK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
+        "slotLabel": "ANLIK HABER" if ANLIK else "HAFTANIN ÖZETİ" if HAFTALIK else "GÜNÜN ÖZETİ" if GUNLUK else f"{regular_slot_of_day(date)}. {hours} SAAT",
+        "timeRange": now.strftime("%H:%M") if ANLIK else week_range(now) if HAFTALIK else f"00:00–{now.strftime('%H:%M')}" if GUNLUK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
         "value": news_value(data, segs) if ANLIK else None,
         "hashtags": topic_hashtags(data),

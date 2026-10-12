@@ -40,8 +40,16 @@ if [ "${GUNLUK:-0}" = "1" ]; then
   HABER="$($PY -c "import sys;sys.path.insert(0,'scripts');from common import settings;print(min(12,max(4,int((settings().get('daily') or {}).get('stories',10)))))")"
   WORDS=$(( DURATION * 24 / 10 ))
   FORMAT_INTRO="Günün özeti. Bugün Türkiye'de öne çıkan haberler."
+  # Haftanın özeti (HAFTALIK=1, GUNLUK=1 ile birlikte): aynı yatay kompozisyon, son 7 günün videolarından
+  if [ "${HAFTALIK:-0}" = "1" ]; then
+    FORMAT="haftalik"; FORMAT_LABEL="Haftanın Özeti"; FORMAT_TONE="toparlayıcı, akıcı, haftanın en önemli gelişmelerini sıralayan"
+    DURATION="${GUNLUK_DURATION:-$($PY -c "import sys;sys.path.insert(0,'scripts');from common import settings;print((settings().get('weeklySummary') or {}).get('duration',300))")}"
+    HABER="$($PY -c "import sys;sys.path.insert(0,'scripts');from common import settings;print(min(12,max(4,int((settings().get('weeklySummary') or {}).get('stories',10)))))")"
+    WORDS=$(( DURATION * 24 / 10 ))
+    FORMAT_INTRO="Haftanın özeti. Bu hafta Türkiye'de öne çıkan haberler."
+  fi
 fi
-export ANLIK="${ANLIK:-0}" GUNLUK="${GUNLUK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
+export ANLIK="${ANLIK:-0}" GUNLUK="${GUNLUK:-0}" HAFTALIK="${HAFTALIK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
 # Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
 SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
 [ "$ANLIK" = "1" ] || [ "$GUNLUK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."
@@ -93,6 +101,9 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     # Tek konu: RSS'ten konuyla ilgili haberler + editörün yazdığı bilgi, ayrı senaryo kuralları
     $PY scripts/topic_news.py work/news.json work/anlik_topic.txt work/news_prompt.json
     PROMPT_FILE="prompts/anlik.md"
+  elif [ "$HAFTALIK" = "1" ]; then
+    $PY scripts/weekly_news.py work/news.json work/news_prompt.json "$HABER"
+    PROMPT_FILE="prompts/haftalik.md"
   elif [ "$GUNLUK" = "1" ]; then
     $PY scripts/daily_news.py work/news.json work/news_prompt.json "$HABER"
     PROMPT_FILE="prompts/gunluk.md"

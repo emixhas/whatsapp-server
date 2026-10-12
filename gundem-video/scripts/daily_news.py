@@ -22,7 +22,7 @@ def todays_segments(day: str) -> list:
     out = []
     for f in sorted(OUT.glob(f"{day}-*.json")):
         meta = load_json(f, {})
-        if meta.get("format") == "gunluk" or not f.name[len(day) + 1:-5].isdigit():
+        if meta.get("format") in ("gunluk", "haftalik") or not f.name[len(day) + 1:-5].isdigit():
             continue
         for s in meta.get("segments", []):
             if s.get("kind") != "haber" or not s.get("title"):

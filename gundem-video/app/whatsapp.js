@@ -107,7 +107,7 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     const yp = settings().youtubePolicy || {};
     if (v.anlik && yp.onlyValuable !== false && !v.value?.valuable) ap.youtube = false;
     // 5 saatlik (düzenli) video YouTube'a onaysız gider (post_pipeline aynı kuralı uygular)
-    if (!v.anlik && v.format !== "gunluk" && yp.regularAuto !== false && L.platforms.includes("youtube")) ap.youtube = true;
+    if (!v.anlik && !["gunluk", "haftalik"].includes(v.format) && yp.regularAuto !== false && L.platforms.includes("youtube")) ap.youtube = true;
     const autoPl = L.platforms.filter((pl) => ap[pl] && !already[pl]);      // otomatik yayın açık: onay gerekmez
     const platforms = L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
     const autoLine = autoPl.length ? `\n\n🚀 Otomatik yayın: ${autoPl.join(", ")} (onay gerekmez, yüklenince bildirilir)` : "";
