@@ -3,7 +3,7 @@
 # Paneli de kapatmak için: `npm run durdur -- panel`
 cd "$(dirname "$0")/.."
 PORT="${PANEL_PORT:-3131}"; URL="http://localhost:$PORT"
-if curl -s -m 2 "$URL/api/rest" >/dev/null; then
+if curl -sf -m 2 "$URL/api/rest" >/dev/null; then
   curl -s -m 30 -X POST -H 'content-type: application/json' -d '{"on":true}' "$URL/api/rest" | python3 -c 'import json,sys
 d=json.load(sys.stdin); r=d.get("rest") or {}
 import time; u=r.get("until")
