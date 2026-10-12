@@ -43,7 +43,7 @@ KURALLAR
 
 ÖNEM ("importance", 1-5)
 - Haberin halk için değeri. YouTube'a günde sınırlı video yüklenebildiği için yalnızca 4 ve 5 YouTube'a gider.
-- 5: can kaybı, büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli zammı ve aylığı,
+- 5: can kaybı, cinayet ve ağır şiddet (işkence, kadına ya da çocuğa şiddet, vahşet), büyük kaza, deprem/sel/yangın gibi afet, terör saldırısı; asgari ücret, emekli zammı ve aylığı,
   memur maaşı ve zammı, bayram ikramiyesi, akaryakıt/doğal gaz/elektrik zammı, vergi, faiz kararı gibi herkesin
   cebine dokunan karar; bayram tatili, resmi tatil, idari izin, okul tatili kararı.
 - 4: sınav, yasak, genelge gibi geniş kesimi doğrudan etkileyen duyuru; sosyal yardım, evde bakım, KYK burs/kredi,

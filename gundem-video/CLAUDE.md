@@ -462,7 +462,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kaza/afet, emekli/memur maaşı + asgari ücret, zam/fiyat/vergi, tatil/bayram/idari izin, kamu duyurusu:
   sınav/yasak, güvenlik, para ve destek: sosyal yardım/evde bakım/KYK burs/TOKİ/kredi kartı/dolar-altın rekoru/borsa
   çöküşü, sağlık ve gıda: salgın/zehirlenme/ilaç toplatma/hileli ürün, milli başarı: milli takım ve milli sporcu
-  galibiyet/final/madalya — SOFT korumasından muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
+  galibiyet/final/madalya, suç ve vahşet: cani/katil/vahşet/dehşet/boğdu/kaynar su/bıçakladı/darp/işkence/kadına-çocuğa
+  şiddet/istismar/kaçırıldı/pompalı (kullanıcı kararı: bu tür haber hemen üretilir) — ikisi de SOFT korumasından muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
   piyasa desenleri Bursa'yı ve sıradan kur haberini yakalamayacak şekilde dar) +
   `prompts/anlik.md`in istediği `importance` 1-5 (4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar).
   `assemble_script.news_value()` meta'ya `value` yazar; `post_pipeline.youtube_allowed()` karar verir ("⭐ değerli

@@ -36,6 +36,13 @@ GROUPS = [
     ("kamu duyurusu", 3, [r"sınav", r"kpss", r"yks\b", r"lgs\b", r"yasak", r"kısıtlama", r"bedelli", r"askerlik",
                           r"af\b", r"genelge", r"resmi gazete"]),
     ("güvenlik", 3, [r"terör", r"saldırı", r"bomba", r"silahlı", r"rehine"]),
+    # suç ve vahşet (kullanıcı kararı: "kan donduran cani" türü haberler hemen üretilir). "boğaz", "şiddetli yağış",
+    # "katılım" gibi yanlış eşleşmeler olmasın diye ekler açık yazıldı
+    ("suç ve vahşet", 3, [r"cani\b", r"canice", r"katil\b", r"katili\b", r"katilin", r"katiller", r"vahşet", r"dehşet", r"kan donduran",
+                          r"boğ(?:du|muş|arak|ularak|ulmuş)\b", r"boğazını sık", r"kaynar su", r"bıçak(?:la|ladı|landı|lı|layarak)",
+                          r"darp", r"dövdü", r"dövülerek", r"işkence", r"kadına şiddet", r"çocuğa şiddet", r"şiddet uygula",
+                          r"istismar", r"kaçırıldı", r"kaçırılan", r"kurşunla", r"silahla vur", r"pompalı", r"av tüfeğiyle",
+                          r"tutuklandı.{0,40}(?:öldür|cinayet)", r"gözaltı.{0,40}(?:öldür|cinayet)", r"cinayet"]),
     # "burs" Bursa'yı, "kura" kuralı yakalamasın diye ekler açık yazıldı; piyasa haberi yalnız rekor/çöküşle değerli
     ("para ve destek", 3, [r"sosyal yardım", r"kira yardım", r"doğum yardım", r"evde bakım", r"aile destek", r"engelli maaş",
                            r"engelli aylı", r"yaşlı aylı", r"65 yaş aylı", r"işsizlik maaş", r"işsizlik ödene", r"kısa çalışma ödene",
@@ -78,7 +85,7 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     except (TypeError, ValueError):
         imp = None
     # model 1-2 dediyse (magazin: "ünlünün annesi vefat etti") anahtar kelime tek başına yetmez
-    soft = "can kaybı" not in hits and "milli başarı" not in hits and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
+    soft = "can kaybı" not in hits and "milli başarı" not in hits and "suç ve vahşet" not in hits and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
     valuable = (imp is not None and imp >= 4) or (total >= 3 and not soft and (imp is None or imp >= 3))
     if soft and total >= 3 and not valuable:
         hits.append("magazin/spor")
