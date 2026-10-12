@@ -8,7 +8,9 @@
     "render": "remotion render src/index.ts GundemVideo",
     "pipeline": "bash pipeline.sh",
     "typecheck": "tsc",
-    "panel": "bash scripts/panel.sh"
+    "panel": "bash scripts/panel.sh",
+    "basla": "bash scripts/basla.sh",
+    "durdur": "bash scripts/durdur.sh"
   },
   "keywords": [],
   "author": "",

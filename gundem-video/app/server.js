@@ -193,6 +193,8 @@ function finishProduction(reason = "üretim bitti") {
 // planlı zaman geldi: dinlenme biter (launchd üretimi zaten kendiliğinden başlar, günün özeti panel başlatır)
 setInterval(() => { const r = restInfo(); if (r.on && r.until && Date.now() >= r.until) restEnd(`planlı iş zamanı geldi (${r.untilWhat || "üretim"})`); }, 30000);
 app.get("/api/rest", (_req, res) => res.json(restInfo()));
+// panel açılışında hâlâ dinlenmedeyse söyle (durum dosyada kalır; npm run basla ya da ▶ Sistemi başlat ile çıkılır)
+setTimeout(() => { const r = restInfo(); if (r.on) push(`⏸ sistem durdurulmuş durumda (${r.reason || "elle"}): ${r.until ? `sıradaki planlı iş ${hhmm(r.until)}'de kendiliğinden başlar` : "siz başlatana kadar bekler"}. Hemen başlatmak için ▶ Sistemi başlat ya da terminalde npm run basla.`); }, 4000);
 app.post("/api/rest", async (req, res) => res.json(req.body?.on === false ? { ok: true, ended: restEnd("panelden başlatıldı"), rest: restInfo() } : await restStart({ reason: "elle durduruldu" })));
 app.post("/api/stopall", async (_req, res) => res.json(await restStart({ reason: "elle durduruldu" })));
 app.get("/api/procs", (_req, res) => res.json({ busy: pipelineBusy(), procs: heavyProcs().map(({ pid, what, cpu, age }) => ({ pid, what, cpu, age })) }));

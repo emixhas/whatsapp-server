@@ -224,7 +224,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   üretiminin son JSON satırında; 30 sn tekrar engeli): sırada anlık iş yoksa ve `settings.restAfterProduction` (varsayılan
   açık, Ayarlar → Otomasyon) ise dinlenmeye geçer. Log "⏸ SİSTEM DURDURULDU (neden): …" / "▶ SİSTEM YENİDEN ÇALIŞIYOR:"
   + `STAGE_VOICE` sesli cümleleri; komut yanıtı zaten söylüyorsa `stageMute` aşama cümlesini 3 sn susturur. Panelde sarı
-  "SİSTEM DURDURULDU" şeridi (ne zamandan beri, neden, sıradaki planlı iş). caffeinate (uyanık tutma) dinlenmede de sürer. Sesli: `tts.py` sentez bitince "🔊 ses modeli sorunsuz başlatıldı" yazar →
+  "SİSTEM DURDURULDU" şeridi (ne zamandan beri, neden, sıradaki planlı iş). caffeinate (uyanık tutma) dinlenmede de sürer.
+  Terminal: `npm run basla` (`scripts/basla.sh`: panel açıksa `POST /api/rest {on:false}`; kapalıysa data/rest.json'u
+  "çalışıyor" yazar, panel servisi kuruluysa launchctl kickstart, değilse `scripts/panel.sh` ön planda; tarayıcıyı açar),
+  `npm run durdur` (dinlenme; `-- panel` ile panel/servis de kapanır, launchd 5 saatlik zamanlayıcı yine çalışır).
+  `npm run panel` dinlenme durumunu korur; açılışta hâlâ durduruluysa logda "⏸ sistem durdurulmuş durumda" yazar. Sesli: `tts.py` sentez bitince "🔊 ses modeli sorunsuz başlatıldı" yazar →
   "Ses modeli sorunsuz başlatıldı."; her üretimin sonunda (panel çocuğu kapanınca ya da zamanlayıcı üretiminde
   post_pipeline'ın son JSON satırında) `reap({announceIdle})` 🧹 satırı yazar ve "Modeller sorunsuz durduruldu.
   Bilgisayarınız ısınmasın diye kapatıldı." söylenir; "Hepsini durdur" da aynı cümleyi söyler. Panel küresi boştayken saniyede 1 kare çizer; ses ön ısıtması `nice`.
