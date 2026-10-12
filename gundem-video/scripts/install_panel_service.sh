@@ -6,6 +6,8 @@
 set -e
 cd "$(dirname "$0")/.."
 ROOT="$PWD"; PLIST="$HOME/Library/LaunchAgents/com.gundem.panel.plist"
+# launchd kabuk ayarlarını yüklemez: node nvm/başka yerden kuruluysa klasörü PATH'e eklenir (yoksa servis açılmaz)
+NODE_DIR="$(dirname "$(command -v node 2>/dev/null || echo /usr/local/bin/node)")"
 if [ "$1" = "remove" ]; then launchctl unload "$PLIST" 2>/dev/null || true; rm -f "$PLIST"; echo "Panel servisi kaldırıldı."; exit 0; fi
 mkdir -p "$HOME/Library/LaunchAgents" work
 launchctl unload "$PLIST" 2>/dev/null || true
@@ -20,7 +22,7 @@ cat > "$PLIST" <<PL
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>$ROOT/work/panel.log</string>
   <key>StandardErrorPath</key><string>$ROOT/work/panel.log</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$ROOT/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>$HOME</string></dict>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>$ROOT/.venv/bin:$NODE_DIR:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string><key>HOME</key><string>$HOME</string></dict>
 </dict></plist>
 PL
 launchctl load "$PLIST"

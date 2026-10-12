@@ -297,6 +297,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   "onay" ister. "onay/evet/yayınla" → bağlı platformlara yayın; "iptal" → yayınlanmaz.
 - Diğer mesajlar `handleCommand()` üzerinden aynı kural+beyin yoluna gider; yanıt düz metin döner.
 - Video dosyası 60 MB üstündeyse gönderilmez, link kalır. WhatsApp bağlı değilken bildirim loga düşer.
+- libsignal oturum açıp kapatırken oturumun tamamını (özel anahtarlar dahil) `console.info/warn` ile basar; `server.js`
+  başındaki `SIGNAL_NOISE` filtresi bu satırları susturur (terminal ve work/panel.log'a gizli anahtar düşmesin). Kaldırma.
 
 ## Yayın ve analitik
 - `scripts/publish.py`: YouTube (Data API v3, OAuth; `secrets/youtube_client.json` → token) ve

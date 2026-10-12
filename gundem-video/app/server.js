@@ -12,6 +12,11 @@ import { parseCommand } from "./commands.js";
 import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_LEAN, claudeCwd } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
 
+// WhatsApp şifreleme kütüphanesi (libsignal) oturum açılıp kapanırken oturumun TAMAMINI (özel anahtarlar dahil)
+// konsola ve work/panel.log'a basıyor. Gizli bilgi loga ve terminale düşmesin diye bu satırlar susturulur.
+const SIGNAL_NOISE = /^(Closing session|Opening session|Removing old closed session|Session already (closed|open)|Closing open session|Migrating session|Decrypted message with closed session)/;
+for (const k of ["log", "info", "warn"]) { const orig = console[k].bind(console); console[k] = (...a) => { if (typeof a[0] === "string" && SIGNAL_NOISE.test(a[0])) return; orig(...a); }; }
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(ROOT, "out"), WORK = path.join(ROOT, "work"), DATA = path.join(ROOT, "data"), THUMBS = path.join(WORK, "thumbs");
 const PORT = Number(process.env.PANEL_PORT || 3131);

@@ -2,6 +2,7 @@
 # Paneli çalıştırır; çıkış kodu 75 ise (kendini geliştirme / yeniden başlat) tekrar başlatır.
 cd "$(dirname "$0")/.."
 export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+command -v node >/dev/null || { echo "✖ node bulunamadı (PATH: $PATH). Servisi yeniden kurun: bash scripts/install_panel_service.sh"; exit 1; }
 while true; do
   node app/server.js
   code=$?
