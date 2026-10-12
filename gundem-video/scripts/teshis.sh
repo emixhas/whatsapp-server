@@ -22,12 +22,22 @@ fi
 echo; echo "--- 2) launchd (zamanlayıcı ve panel servisi)"
 launchctl list 2>/dev/null | grep -i gundem || echo "launchd'de gundem işi yok (zamanlayıcı kapalı?)"
 ls "$HOME/Library/LaunchAgents/" 2>/dev/null | grep -i gundem
+for J in com.gundem.video com.gundem.panel; do
+  if launchctl print "gui/$(id -u)/$J" >/dev/null 2>&1; then
+    echo "$J: $(launchctl print "gui/$(id -u)/$J" 2>/dev/null | grep -E '^\s*(state|runs|last exit code|last exit reason) =' | sed 's/^[[:space:]]*//' | tr '\n' ' ')"
+  else echo "$J: launchd'de YÜKLÜ DEĞİL"; fi
+done
+PL="$HOME/Library/LaunchAgents/com.gundem.video.plist"
+[ -f "$PL" ] && echo "üretim saatleri (plist): $(grep -oE '<key>Hour</key><integer>[0-9]+' "$PL" | grep -oE '[0-9]+$' | tr '\n' ' ')"
+echo "zamanlayıcının başlattığı son üretimler:"; grep -E "üretim başladı|bu çalıştırma atlandı|✖ üretim" work/launchd.out.log 2>/dev/null | tail -8 | cut -c1-120 || echo "  yok"
+echo "zamanlayıcı hata logu (son 8):"; tail -8 work/launchd.err.log 2>/dev/null | clean || echo "  yok"
+echo "tüm üretim logları (son 8, panel + zamanlayıcı):"; ls -t work/pipeline-*.log 2>/dev/null | head -8 | sed 's/^/  /' 
 echo; echo "--- 3) Son videolar"
 ls -lt out/*.mp4 2>/dev/null | head -3 | awk '{print $6, $7, $8, $9}'
 echo; echo "--- 4) Üretim kilidi"
 if [ -d work/pipeline.lock ]; then P=$(cat work/pipeline.lock/pid 2>/dev/null); if kill -0 "$P" 2>/dev/null; then echo "⚠️ kilit var, süreç ($P) ÇALIŞIYOR, başlama: $(stat -f '%Sm' work/pipeline.lock 2>/dev/null || stat -c '%y' work/pipeline.lock)"; ps -o pid,etime,command -p "$P" | cut -c1-160; else echo "eski kilit var (süreç yok) — sonraki üretim temizler"; fi; else echo "kilit yok (takılı üretim yok)"; fi
 echo; echo "--- 5) Uyku / uyanma (son 10)"
-pmset -g log 2>/dev/null | grep -E " (Sleep|Wake|DarkWake) " | grep -v "Maintenance" | tail -10 | cut -c1-140 || echo "pmset yok"
+pmset -g log 2>/dev/null | grep -E "^[0-9-]+ [0-9:]+ [+-][0-9]{4} (Sleep|Wake|DarkWake)[[:space:]]" | grep -v "Maintenance" | tail -10 | cut -c1-140 || echo "pmset yok"
 pmset -g 2>/dev/null | grep -E "^ (sleep|disksleep|displaysleep|lidwake|powernap)" | head -5
 pmset -g batt 2>/dev/null | head -2
 echo; echo "--- 6) Zamanlayıcı üretim logu (son 20)"

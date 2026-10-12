@@ -13,7 +13,7 @@ else
 fi
 if [ "$1" = "panel" ]; then
   SERVICE="$HOME/Library/LaunchAgents/com.gundem.panel.plist"
-  if [ -f "$SERVICE" ]; then launchctl unload "$SERVICE" 2>/dev/null && echo "■ Panel servisi kapatıldı (yeniden: npm run basla)"; fi
+  if [ -f "$SERVICE" ]; then { launchctl bootout "gui/$(id -u)/com.gundem.panel" 2>/dev/null || launchctl unload "$SERVICE" 2>/dev/null; } && echo "■ Panel servisi kapatıldı (yeniden: npm run basla)"; fi
   pkill -f "node app/server.js" 2>/dev/null && echo "■ Panel kapatıldı" || true
   [ -f "$HOME/Library/LaunchAgents/com.gundem.video.plist" ] && echo "Not: 5 saatlik zamanlayıcı açık; planlı üretim panel kapalıyken de çalışır (kapatmak için panelde zamanlayıcıyı kapatın)."
 fi

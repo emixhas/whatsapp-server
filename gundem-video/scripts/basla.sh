@@ -26,12 +26,17 @@ mkdir -p data work && printf '{"on": false, "endedWhy": "terminalden başlatıld
 wait_up() { for _ in $(seq 1 40); do alive && return 0; sleep 1; done; return 1; }
 if [ -f "$SERVICE" ]; then
   echo "▶ Panel servisi başlatılıyor (log: work/panel.log)"
-  launchctl load "$SERVICE" 2>/dev/null || true
+  # Yeni macOS'ta "unload"dan sonra "load" sessizce başarısız olabiliyor: önce bootstrap, olmazsa load
+  launchctl enable "gui/$(id -u)/com.gundem.panel" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$SERVICE" 2>/dev/null || launchctl load "$SERVICE" 2>/dev/null || true
   launchctl kickstart -k "gui/$(id -u)/com.gundem.panel" 2>/dev/null || true
+  launchctl print "gui/$(id -u)/com.gundem.panel" >/dev/null 2>&1 || echo "! panel servisi launchd'ye yüklenemedi"
   if wait_up; then echo "✔ Panel ve sistem çalışıyor: $URL"; openui; exit 0; fi
   echo "✖ Panel servisi 40 sn'de açılmadı. work/panel.log son satırlar:"; tail -25 work/panel.log 2>/dev/null
   echo "→ Bu terminalde doğrudan açmayı deniyorum:"; launchctl unload "$SERVICE" 2>/dev/null || true
 fi
-echo "▶ Panel bu terminalde açılıyor: $URL  (kapatmak için Ctrl+C; terminali kapatmayın)"
+echo "▶ Panel bu terminalde açılıyor: $URL"
+echo "  ⚠️ Bu pencere AÇIK kalmalı: Ctrl+C ya da pencereyi kapatmak paneli, WhatsApp'ı ve haber takibini kapatır."
+echo "  Başka komut (teşhis vb.) için yeni bir Terminal sekmesi açın (Cmd+T)."
 ( if wait_up; then echo "✔ Panel ve sistem çalışıyor: $URL"; openui; else echo "✖ Panel 40 sn'de açılmadı; yukarıdaki hata satırlarını gönderin."; fi ) &
 exec bash scripts/panel.sh
