@@ -211,10 +211,11 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede); otomatik üretim başlamadı." }; restEnd("elle üretim talimatı"); }
   const lock = path.join(WORK, "pipeline.lock", "pid");
   if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
-  duration = extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
+  const formatDuration = duration === "format"; // zamanlanmış üretimin telafisi: süreyi saate göre format seçer (launchd gibi)
+  duration = formatDuration ? null : extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
-  push(extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
-  const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, DURATION: String(duration), ...extraEnv } });
+  push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
+  const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, ...(formatDuration ? {} : { DURATION: String(duration) }), ...extraEnv } });
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
@@ -1200,8 +1201,19 @@ async function healthCheck() {
     // zamanlayıcı yeni açıldıysa ondan önceki boşluk sayılmaz
     const last = Math.max(regular[0] ? statSync(path.join(OUT, regular[0].name)).mtimeMs : 0, Number(readSched().loadedAt) || 0) || null;
     const gap = (Number(sch.hours) || 5) * 3600000 + 40 * 60000;
-    if (sch.enabled && !state.running && last && Date.now() - last > gap) healthAlert("missed", `Zamanlanmış üretim gecikti: son düzenli video ${Math.round((Date.now() - last) / 3600000)} saat önce. Mac uykuda mı, internet var mı? Panelden "şimdi üret" diyebilirsiniz.`, { everyH: 5 });
-    else healthClear("missed");
+    if (sch.enabled && !state.running && last && Date.now() - last > gap) {
+      // neden: launchd işi yüklü mü, son çıkış kodu, kilit, son log satırları; yüklü değilse yeniden yüklenir
+      const diag = [];
+      const lc = spawnSync("launchctl", ["list", "com.gundem.video"], { encoding: "utf8" });
+      if (lc.status !== 0) { diag.push("zamanlayıcı launchd'de yüklü değildi → yeniden yüklendi"); spawnSync("launchctl", ["load", PLIST]); }
+      else { const ex = (lc.stdout.match(/"LastExitStatus"\s*=\s*(-?\d+)/) || [])[1]; if (ex && ex !== "0") diag.push(`son zamanlanmış çalışmanın çıkış kodu ${ex}${ex === "3" ? " (başka üretim sürüyordu)" : ex === "256" ? " (hata ile bitti)" : ""}`); }
+      const lockPid = path.join(WORK, "pipeline.lock", "pid");
+      if (existsSync(lockPid)) diag.push("üretim kilidi duruyor (takılmış üretim olabilir; bekçi 50 dk'da temizler)");
+      try { const tail = readFileSync(LAUNCHD_LOG, "utf8").trim().split("\n").filter((l) => /HATA|✖|!! |hata/.test(l)).slice(-2); if (tail.length) diag.push("son hata: " + tail.join(" | ").slice(0, 240)); } catch { /* log yok */ }
+      const catchUp = !pipelineBusy() && s.health?.autoCatchUp !== false;
+      const sent = await healthAlert("missed", `Zamanlanmış üretim gecikti: son düzenli video ${Math.round((Date.now() - last) / 3600000)} saat önce.${diag.length ? "\nNeden: " + diag.join("; ") : "\nMac uykuda kalmış olabilir (kapak kapalı/pilde)."}${catchUp ? "\nKaçan üretimi şimdi kendim başlattım." : ""}`, { everyH: 5 });
+      if (sent && catchUp) { if (resting()) restEnd("kaçan zamanlanmış üretim telafi ediliyor"); const r = startPipeline("format"); push(r.ok ? "⏰ kaçan zamanlanmış üretim telafi ediliyor" : `⏰ telafi üretimi başlatılamadı: ${r.error}`); }
+    } else healthClear("missed");
   } catch { /* zamanlayıcı okunamadı */ }
   // 2) disk
   try {
