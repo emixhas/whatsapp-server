@@ -293,6 +293,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Instagram token ≤ 7 gün, bir yayın bağlantısı koptu (`data/health_conn.json`). Otomatik yayın düştü (`publishFailed`: "📤 yayınlanamadı" →
   platform hata satırları + Instagram son hatası, her seferinde; "📤 otomatik yayın yapılmadı" → ayar nedeni, 12 saatte bir). `settings.health` {enabled,
   whatsapp, minFreeGb}. `GET /api/health`.
+- Takılan üretim bekçisi (5 dk'da bir): `work/pipeline.lock` canlı sürece ait ve 50 dk'dan (uzun özetlerde 100 dk) eskiyse
+  süreç ağacı kapatılır, kilit silinir, "⚠️ üretim … takılmış" + sağlık uyarısı (yoksa sonraki tüm zamanlanmış üretimler
+  "başka üretim sürüyor" diye atlanır). Uyku algılama: dakikalık sayaç 5 dk'dan fazla atladıysa "💤 Mac … uykudaydı"
+  log + 45 sn sonra WhatsApp (uykuda launchd, WhatsApp ve tarama çalışmaz; `caffeinate -i -s` kapak kapalıyken ya da
+  pilde uykuyu engelleyemez). Teşhis: `npm run teshis` (`scripts/teshis.sh`: panel/dinlenme/WhatsApp/zamanlayıcı
+  durumu, launchd işleri, son videolar, kilit, `pmset` uyku/uyanma, son loglar; token/anahtar satırları süzülür).
 - Haftalık rapor `scripts/weekly_report.py` (son 7 gün: video sayısı, toplam ve önceki haftaya göre fark, platform
   toplamları ve önde olan, en çok izlenen 5 video + önde olduğu platform + link, en iyi kategori/saat, anlık vs
   düzenli, kurallı öneriler) → `data/reports/hafta-<tarih>.md`. Panel `settings.weeklyReport` {enabled, weekday 1

@@ -10,7 +10,8 @@
     "typecheck": "tsc",
     "panel": "bash scripts/panel.sh",
     "basla": "bash scripts/basla.sh",
-    "durdur": "bash scripts/durdur.sh"
+    "durdur": "bash scripts/durdur.sh",
+    "teshis": "bash scripts/teshis.sh"
   },
   "keywords": [],
   "author": "",

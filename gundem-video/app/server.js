@@ -2,7 +2,7 @@
 // Başlat: npm run panel   → http://localhost:3131
 import express from "express";
 import { spawn, execFile, spawnSync } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, statfsSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statfsSync, statSync, unlinkSync, watch, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -445,6 +445,38 @@ async function viralCheck() {
   return r.json;
 }
 app.post("/api/viral/check", async (_req, res) => res.json(await viralCheck()));
+// ---------- Takılan üretim bekçisi: pipeline kilidi (work/pipeline.lock) canlı bir sürece ait ve 50 dk'dan (uzun özetlerde
+// 100 dk) eskiyse üretim takılmıştır; süreç ağacı kapatılır, kilit kalkar, sağlık uyarısı gider. Yoksa sonraki tüm
+// zamanlanmış üretimler "başka üretim sürüyor" diye atlanır ve sistem saatlerce video üretmez.
+setInterval(() => {
+  try {
+    const lockDir = path.join(WORK, "pipeline.lock"), pidFile = path.join(lockDir, "pid");
+    if (!existsSync(pidFile)) return;
+    const pid = Number(readFileSync(pidFile, "utf8").trim()); try { process.kill(pid, 0); } catch { return; }
+    const ageMin = (Date.now() - statSync(lockDir).mtimeMs) / 60000;
+    const long = (state.log.slice(-200).some((l) => /GÜNÜN ÖZETİ|HAFTANIN ÖZETİ|format gunluk|format haftalik/.test(l)));
+    if (ageMin < (long ? 100 : 50)) return;
+    const n = killTree(pid); if (pipelineProc) { try { killTree(pipelineProc.pid); } catch { /* yok */ } }
+    try { rmSync(lockDir, { recursive: true, force: true }); } catch { /* yok */ }
+    state.running = false; state.scheduled = false;
+    push(`⚠️ üretim ${Math.round(ageMin)} dakikadır bitmedi, takılmış: durduruldu (${n} süreç), kilit kaldırıldı; sıradaki üretim normal başlayacak`);
+    healthAlert(`stuck-${Math.floor(Date.now() / 3600000)}`, `Video üretimi ${Math.round(ageMin)} dakikadır bitmemişti (takıldı). Durdurdum; sıradaki üretim normal başlayacak.\nSon log: ${state.log.slice(-3).join(" | ").slice(0, 300)}`, { everyH: 1 });
+  } catch { /* ps/stat yok */ }
+}, 5 * 60000);
+
+// ---------- Uyku algılama: dakikalık sayaç 5 dk'dan fazla atladıysa Mac uyumuştur (kapak kapalı, pilde ya da uyku
+// ayarı). Uykuda zamanlayıcı, WhatsApp ve taramalar çalışmaz; uyanınca log + WhatsApp ile ne kadar uyuduğu söylenir.
+let lastTick = Date.now();
+setInterval(() => {
+  const now = Date.now(), gap = now - lastTick; lastTick = now;
+  if (gap < 5 * 60000) return;
+  const hm = (t) => new Date(t).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  const h = gap / 3600000, dur = h >= 1 ? `${h.toFixed(1).replace(".", ",")} saat` : `${Math.round(gap / 60000)} dakika`;
+  const msg = `Mac ${dur} uykudaydı (${hm(now - gap)}–${hm(now)}): bu sürede üretim, haber taraması ve WhatsApp çalışmadı. Kapak kapalıyken ya da pildeyken Mac uyur; sürekli çalışması için şarja takılı ve kapağı açık (ya da harici ekranlı) tutun.`;
+  push(`💤 ${msg}`);
+  setTimeout(() => healthAlert(`sleep-${Math.floor(now / 3600000)}`, msg, { everyH: 1 }).catch(() => {}), 45000); // WhatsApp yeniden bağlansın
+}, 60000);
+
 // ---------- yorum özeti (scripts/comments.py + prompts/yorumlar.md): her akşam settings.comments {enabled, hour 20,
 // minute 0}; YouTube/Instagram'daki yeni yorumlar Claude ile özetlenir → WhatsApp + data/reports/yorumlar-<gün>.md.
 // Yorumlara otomatik yanıt verilmez. Dinlenmede de çalışır (yerel model açmaz).
