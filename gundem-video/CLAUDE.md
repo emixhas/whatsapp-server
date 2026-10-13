@@ -639,6 +639,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   der), Instagram `DELETE /{media-id}` (API reddederse "uygulamadan elle silin" + link), TikTok API silme sunmaz
   (elle; inbox taslağı herkese açık değil), Hostinger kopyası, sınır sırası. Silinen platform kaydı metriklerden
   düşer, silinemeyen kalır (link kaybolmasın). Sonra Mac'teki mp4/json/kapaklar silinir; sonuç sohbete ve loga (🗑).
+- Instagram temizliği (kullanıcı isteği: "7 gün içinde Instagram'da 1000 izlenmenin altında olan tümünü sil"; `scripts/ig_cleanup.py`,
+  `server.js igCleanupPlan/igCleanupRun`): komut "instagramda son 7 günde 1000 izlenmenin altındakileri sil" (gün, sayı, "bin",
+  "24 saatten eski" ayrıştırılır; `ig_cleanup` eylemi) önce izlenmeleri tazeler ve LİSTE gönderir (hiçbir şey silinmez; izlenmesi
+  ölçülmemiş video listeye girmez; 1 günden yeniler ⚠️ ile belirtilir); "evet sil" (`ig_cleanup_confirm`, 15 dk geçerli; WhatsApp'ta
+  yayın onayı "evet"iyle karışmaz) siler, "iptal" vazgeçer. Silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır.
+  Yalnız Instagram gönderisi silinir (`publish.ig_delete`; YouTube/TikTok/Mac kopyası kalır), metriklerden IG kaydı düşer; her
+  satır loga "🗑 Instagram: silindi/SİLİNEMEDİ/SİLİNMEDİ …", kayıt `data/ig_cleanup_log.json`, özet WhatsApp'a (komut WhatsApp'tan
+  geldiyse yanıtın kendisi). API reddederse link verilir (uygulamadan elle). Panel Instagram kartı "🗑 Düşük izlenenleri sil"
+  (`POST /api/instagram/cleanup/plan`, `/run`).
+- WhatsApp komut listesi `app/help.js` (`HELP_TEXT`; "yardım", "komutlar"): yeni kural eklerken buraya da yaz. `commands.js` `norm`
+  "ınstagram"ı "instagram"a çevirir (Türkçe küçük harfte I → ı; büyük harfle yazılan Instagram komutları tanınmıyordu).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
 - Günlük yükleme sınırı (YouTube `uploadLimitExceeded` = kanal sınırı, `quotaExceeded` = API kotası):
   `publish.py` platformu 3 saat beklemeye alır (`data/publish_hold.json`), videoyu `data/publish_queue.json`

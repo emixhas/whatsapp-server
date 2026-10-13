@@ -248,7 +248,7 @@
       </details>
       <details class="grp"><summary>📣 Yayın hesapları <span class="sum" id="accSum"></span></summary>
 <h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts" style="gap:8px;flex-wrap:wrap"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button><button class="ghost" id="ytThumbs" title="Kanal doğrulandıktan sonra (youtube.com/verify) reddedilmiş kapakları yeniden yükler">🖼 Kapakları yeniden yükle</button><button class="ghost danger" id="ytDisconnect" style="display:none">Bağlantıyı kes</button></div>
-      <h2>INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button><button class="ghost" id="igDiag">🩺 Instagram'ı sına</button></div>
+      <h2>INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button><button class="ghost" id="igDiag">🩺 Instagram'ı sına</button><button class="ghost danger" id="igClean" title="Son 7 günde 1000 izlenmenin altındaki Instagram gönderilerini listeler; onaylarsanız siler">🗑 Düşük izlenenleri sil</button></div>
       <h2>TIKTOK</h2><div class="conninfo" id="ttInfo"></div>
       <div id="ttKeys" style="display:grid;gap:6px;margin:8px 0">
         <input id="ttKey" placeholder="Client key" autocomplete="off" style="background:#070b16;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:8px 10px">
@@ -603,6 +603,11 @@ $('#cleanOn').onclick=async()=>{const on=!$('#cleanOn').classList.contains('on')
 $('#cleanNow').onclick=async()=>{const d=await post('/api/cleanup',{dryRun:true});const n=(d.deleted||[]).length;if(!n){toast('Silinecek eski video yok');return;}
   const mb=d.deleted.reduce((a,x)=>a+(x.mb||0),0);if(!await ask(`${n} eski videonun Mac'teki kopyası silinecek (~${(mb/1024).toFixed(1)} GB). Kayıtlar, kapaklar, istatistik ve platformlardaki videolar kalır. Devam?`))return;
   const r=await post('/api/cleanup');toast(`${(r.deleted||[]).length} video silindi, ${((r.freedMb||0)/1024).toFixed(1)} GB boşaldı`);loadVideos();};
+// Instagram temizliği: önce liste (silmez), onaylanırsa siler; sonuç loga ve WhatsApp'a
+$('#igClean').onclick=async()=>{toast('Liste hazırlanıyor…');const p=await post('/api/instagram/cleanup/plan',{days:7,max:1000});
+  if(!p.ok||!(p.items||[]).length){toast(p.text||p.error||'Silinecek video yok',!p.ok);return;}
+  if(!await ask(p.text.replace(/\*/g,'').replace(/Silmek için evet sil yazın, vazgeçmek için iptal \(15 dk geçerli\)\./,'Silinsin mi?')))return;
+  toast('Siliniyor…');const r=await post('/api/instagram/cleanup/run',{});toast(r.ok?`${(r.deleted||[]).length} video silindi${(r.failed||[]).length?`, ${r.failed.length} silinemedi`:''}`:(r.error||'Silinemedi'),!r.ok);refreshStatus();};
 $('#syncMin').onchange=async()=>{const v=Math.min(180,Math.max(5,Number($('#syncMin').value)||20));await post('/api/settings',{metricsSyncMinutes:v});refreshStatus();};
 $('#restAfter').onclick=async()=>{const on=!$('#restAfter').classList.contains('on');await post('/api/settings',{restAfterProduction:on});refreshStatus();};
 // Mynet manşet takibi

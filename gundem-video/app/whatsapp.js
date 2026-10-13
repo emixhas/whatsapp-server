@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
+import { HELP_TEXT } from "./help.js";
 
 export async function makeWhatsApp({ autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
@@ -89,7 +90,7 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     const t = text.toLocaleLowerCase("tr-TR").trim();
     if (st.pending && Date.now() - st.pending.at > 6 * 3600 * 1000) { st.pending = null; }  // eski onay isteği düşer
     if (/^(otomatik|tam otomatik)( mod)?u? (aç|başlat|kapat|durdur)/.test(t)) { const on = /(aç|başlat)/.test(t); const r = await automode(on); await send(jid, r.ok ? (on ? `⚡ Tam otomatik mod açık: her ${r.hours} saatte üretim, otomatik yayın → ${r.connected.join(", ") || "bağlı hesap yok"}.` : "⏹ Otomatik üretim ve yayın durduruldu.") : `Olmadı: ${r.error}`); return; }
-    if (st.pending && /^(onay|onayla|evet|yayınla|ok|tamam|paylaş)\b/.test(t)) {
+    if (st.pending && /^(onay|onayla|evet|yayınla|ok|tamam|paylaş)\b/.test(t) && !/(^|\s)sil/.test(t)) {  // "evet sil" = Instagram temizliği onayı
       const p = st.pending; st.pending = null;
       await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${p.platforms.join(", ")}`);
       const r = await publishVideo(p.video, p.platforms);
@@ -98,10 +99,10 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
       return;
     }
     if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)\b/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label} yayınlanmadı.`); return; }
-    if (/^(yardım|help|\?)$/.test(t)) { await send(jid, "Komutlar:\n• onay / iptal — bekleyen yayın\n• 60 saniyelik video üret\n• durum — sıradaki üretim, bağlı hesaplar\n• otomatik aç / otomatik kapat — tam otomatik mod\n• rapor / plan\n• son videoyu gönder\n• izlenmeleri güncelle\n• instagram'a yayınla / tiktok'a yayınla\nDiğer her şey Emixhas'ın beynine gider."); return; }
+    if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
     if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
     if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
-    const r = await handleCommand(text);
+    const r = await handleCommand(text, { source: "whatsapp" });
     let reply = r.reply || "Tamam.";
     if (r.report) reply += "\n\n" + r.report.slice(0, 3500);
     if (r.pending?.length) { reply += "\n\n(Bu eylem panelden onay bekliyor.)"; }

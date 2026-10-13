@@ -1,7 +1,8 @@
 // Türkçe sesli komutları kural tabanlı çözer. LLM yok, token yok.
 const NUM = { "on beş": 15, onbeş: 15, yirmi: 20, otuz: 30, "kırk beş": 45, kırkbeş: 45, kırk: 40, elli: 50, altmış: 60, yetmiş: 70, seksen: 80, doksan: 90, yüz: 100, "yüz yirmi": 120, "bir dakika": 60, "iki dakika": 120, "bir buçuk dakika": 90 };
 
-const norm = (s) => s.toLocaleLowerCase("tr-TR").replace(/[.,!?']/g, " ").replace(/\s+/g, " ").trim();
+// Türkçe küçük harfte "Instagram" → "ınstagram" olur; marka adı düzeltilir ki kurallar yakalasın
+const norm = (s) => s.toLocaleLowerCase("tr-TR").replace(/ınsta/g, "insta").replace(/[.,!?']/g, " ").replace(/\s+/g, " ").trim();
 
 function extractSeconds(t) {
   const m = t.match(/(\d{2,3})\s*(saniye|sn)/);
@@ -60,6 +61,16 @@ export function parseCommand(raw) {
   }
   const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
   if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
+  // Instagram temizliği: "instagramda son 7 günde 1000 izlenmenin altındakileri sil" → önce liste, "evet sil" ile silinir
+  if (/^(evet,? sil|evet sil hepsini|sil onaylıyorum|onaylıyorum sil)$/.test(t)) return { action: "ig_cleanup_confirm", reply: "" };
+  if (/(instagram|insta)/.test(t) && /(^|\s)sil/.test(t) && /(izlenme|görüntülenme|izlenen)/.test(t)) {
+    const days = Number((t.match(/(\d+)\s*gün(?!den eski)/) || [])[1]) || 7;
+    const mx = t.match(/(\d[\d.]*)\s*(?:bin\s*)?(?:izlenme|görüntülenme)/);
+    let max = mx ? Number(mx[1].replace(/\./g, "")) : /bin (izlenme|görüntülenme)/.test(t) ? 1000 : 1000;
+    if (mx && /bin\s*(izlenme|görüntülenme)/.test(t.slice(mx.index))) max *= 1000;
+    const ageH = t.match(/(\d+)\s*saatten eski/) ? Number(t.match(/(\d+)\s*saatten eski/)[1]) : t.match(/(\d+)\s*günden eski/) ? Number(t.match(/(\d+)\s*günden eski/)[1]) * 24 : 0;
+    return { action: "ig_cleanup", days, max, minAgeH: ageH, reply: "" };
+  }
   // Şablon videolar: "depremleri kontrol et", "piyasa videosu üret", "maç sonuçlarını kontrol et", "yarının hatırlatmasını üret"
   if (/deprem(leri)? (kontrol|var m)|son depremler/.test(t)) return { action: "info", kind: "quake", reply: "" };
   if (/(piyasa|döviz|altın) (videosu|kartı)/.test(t) && /(üret|yap|hazırla|çek)/.test(t)) return { action: "info", kind: "market", reply: "" };
@@ -104,6 +115,7 @@ export function parseCommand(raw) {
     return { action: "generate", duration: extractSeconds(t) || 30, reply: "" };
   if (/(üret|oluştur|hazırla|başlat)/.test(t) && extractSeconds(t))
     return { action: "generate", duration: extractSeconds(t), reply: "" };
+  if (/(izlenme|istatistik|metrik).*(güncelle|çek|yenile|tazele)/.test(t) || /(güncelle|tazele).*(izlenme|istatistik)/.test(t)) return { action: "sync_metrics", reply: "" };  // "izlenmeleri güncelle" oynatmaya gitmesin
   if (/(son|en yeni|sonuncu).*(oynat|aç|göster|izle)/.test(t) || /(oynat|izle)/.test(t)) return { action: "play_latest", reply: "" };
   if (/finder/.test(t)) return { action: "reveal", reply: "" };
   if (/(paylaş|gönder|telefon)/.test(t)) return { action: "share", reply: "" };
@@ -111,7 +123,6 @@ export function parseCommand(raw) {
   if (/(durum|ne durumda|nasıl gidiyor|bitti mi|kaç video)/.test(t)) return { action: "status", reply: "" };
   if (/(rapor|özet ver|nasıl gitti|performans)/.test(t)) return { action: "report", reply: "" };
   if (/(plan|strateji|ne yapalım|öneri)/.test(t)) return { action: "plan", reply: "" };
-  if (/(izlenme|istatistik|metrik).*(güncelle|çek|yenile|tazele)/.test(t) || /(güncelle|tazele).*(izlenme|istatistik)/.test(t)) return { action: "sync_metrics", reply: "" };
   if (/(listele|videoları göster|yenile)/.test(t)) return { action: "refresh", reply: "Liste yenilendi." };
   if (/(merhaba|selam|jarvis)/.test(t)) return { action: "none", reply: "Buradayım. Video üret, son videoyu oynat, paylaş veya durum diyebilirsiniz." };
   return { action: "brain", reply: "" };  // kural yok → Jarvis'in beyni düşünsün

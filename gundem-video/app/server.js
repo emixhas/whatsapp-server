@@ -537,6 +537,48 @@ app.post("/api/info/:kind/run", async (req, res) => {
   res.json({ ok: false, error: "bilinmeyen tür" });
 });
 
+// ---------- Instagram temizliği (kullanıcı isteği: "7 gün içinde Instagram'da 1000 izlenmenin altında olan tümünü sil"):
+// önce liste (hiçbir şey silinmez) + "evet sil" onayı (15 dk geçerli). Silmeden hemen önce güncel izlenme tekrar okunur, bu arada
+// sınırı geçen silinmez. Yalnız Instagram gönderisi silinir (YouTube/TikTok/Mac kopyası kalır). Her silme loga (🗑) ve
+// data/ig_cleanup_log.json'a; özet WhatsApp'a (komut WhatsApp'tan geldiyse yanıtın kendisi özettir).
+let igCleanupPending = null;
+const igLine = (x) => `• ${x.title.slice(0, 60)} — ${x.views.toLocaleString("tr-TR")} izlenme, ${x.ageH < 24 ? `${Math.round(x.ageH)} saatlik` : `${Math.round(x.ageH / 24)} günlük`}`;
+async function igCleanupPlan({ days = 7, max = 1000, minAgeH = 0 } = {}) {
+  const m = readJson(path.join(DATA, "metrics.json"), {});
+  if (!m.lastSync || Date.now() - Date.parse(m.lastSync) > 20 * 60000) await execAction({ type: "sync_metrics" }).catch(() => {});
+  const r = await pyJson(["scripts/ig_cleanup.py", "--plan", "--days", String(days), "--max", String(max), "--min-age-hours", String(minAgeH)], 60000).catch(() => null);
+  if (!r?.ok) return { ok: false, text: `Liste çıkarılamadı: ${r?.error || "yanıt yok"}` };
+  const items = r.items || [];
+  push(`🗑 Instagram temizliği planı: son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında ${items.length} video${r.unknown?.length ? ` (${r.unknown.length} videonun izlenmesi henüz ölçülmedi, listeye alınmadı)` : ""}`);
+  if (!items.length) { igCleanupPending = null; return { ok: true, items, text: `Instagram'da son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında video yok. Hiçbir şey silinmedi.` }; }
+  igCleanupPending = { names: items.map((x) => x.name), max, days, at: Date.now() };
+  const young = items.filter((x) => x.ageH < 24).length;
+  const text = `🗑 Instagram'da son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında *${items.length} video* var:\n` +
+    items.slice(0, 25).map(igLine).join("\n") + (items.length > 25 ? `\n… ve ${items.length - 25} video daha` : "") +
+    (young ? `\n\n⚠️ ${young} tanesi 1 günden yeni; izlenmesi henüz birikmemiş olabilir.` : "") +
+    `\n\nYalnız Instagram'dan kalıcı olarak silinir (YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`;
+  return { ok: true, items, unknown: r.unknown, text };
+}
+async function igCleanupRun({ notify = true } = {}) {
+  const p = igCleanupPending;
+  if (!p || Date.now() - p.at > 15 * 60000) { igCleanupPending = null; return { ok: false, error: "Bekleyen Instagram silme listesi yok ya da 15 dakikalık onay süresi doldu. Önce listeyi isteyin (ör. \"instagramda son 7 günde 1000 izlenmenin altındakileri sil\")." }; }
+  igCleanupPending = null;
+  push(`🗑 Instagram temizliği başladı: ${p.names.length} video siliniyor`);
+  const r = await py("ig_cleanup.py", ["--run", "--names", p.names.join(","), "--max", String(p.max)]);
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🗑")) push(l);
+  const j = r.json || {};
+  const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [];
+  const text = `🗑 *Instagram temizliği bitti*: ${del.length} video silindi` + (fail.length ? `, ${fail.length} silinemedi` : "") + (kept.length ? `, ${kept.length} bırakıldı` : "") + "." +
+    (del.length ? "\n\nSilinenler:\n" + del.slice(0, 30).map((x) => `• ${String(x.title).slice(0, 60)} (${x.views ?? "?"} izlenme)`).join("\n") : "") +
+    (fail.length ? "\n\nSilinemeyenler (Instagram uygulamasından elle silin):\n" + fail.slice(0, 15).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n") : "") +
+    (kept.length ? "\n\nBırakılanlar:\n" + kept.slice(0, 10).map((x) => `• ${x.name}: ${x.why}`).join("\n") : "");
+  push(`🗑 Instagram temizliği bitti: ${del.length} silindi, ${fail.length} silinemedi, ${kept.length} bırakıldı`);
+  if (notify) { try { await wa.send(text); } catch { push("💬 Instagram temizliği özeti WhatsApp'a gönderilemedi (bağlı değil)"); } }
+  return { ok: true, deleted: del, failed: fail, kept, text };
+}
+app.post("/api/instagram/cleanup/plan", async (req, res) => res.json(await igCleanupPlan({ days: Number(req.body?.days) || 7, max: Number(req.body?.max) || 1000, minAgeH: Number(req.body?.minAgeH) || 0 })));
+app.post("/api/instagram/cleanup/run", async (_req, res) => res.json(await igCleanupRun({ notify: true })));
+
 // ---------- En çok izlenen saatlerde tekrar (kullanıcı isteği): izlenmenin en yüksek olduğu 3 saatte (scripts/peak_remake.py
 // --plan; az veride 12, 18, 21) son 24 saatin en çok izlenen haberi sırasıyla farklı senaryo ve görsellerle 30 sn yeniden
 // yayınlanır. Üretim saatten leadMin (20) dk önce başlar ki video o saatte yayında olsun; pencere saatin 50. dakikasına
@@ -1390,10 +1432,19 @@ app.post("/api/ask", async (req, res) => { state.busy = "düşünüyor"; try { r
 app.post("/api/actions", async (req, res) => { const out = []; for (const a of req.body?.actions || []) out.push({ ...a, result: await execAction(a) }); res.json(out); });
 
 // ---------- API: sesli komut → kural, kural yoksa beyin
-async function handleCommand(text) {
+async function handleCommand(text, opts = {}) {
   text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
+  if (igCleanupPending && /(iptal|vazgeç|boş ver|silme)/.test(text.toLocaleLowerCase("tr-TR")) && cmd.action !== "ig_cleanup") { igCleanupPending = null; push("🗑 Instagram temizliği iptal edildi"); }
   switch (cmd.action) {
+    case "ig_cleanup": {
+      const r = await igCleanupPlan({ days: cmd.days, max: cmd.max, minAgeH: cmd.minAgeH });
+      reply = r.text; break;
+    }
+    case "ig_cleanup_confirm": {
+      const r = await igCleanupRun({ notify: opts.source !== "whatsapp" });
+      reply = r.text || r.error; break;
+    }
     case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
     case "anlik": {

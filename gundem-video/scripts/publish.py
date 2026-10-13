@@ -1056,6 +1056,23 @@ def tt_check(limit=5) -> list:
 
 
 # ---------------- platformlardan silme (panel "Sil")
+def ig_delete(ig: dict) -> dict:
+    """Instagram gönderisini siler: DELETE /{media-id}. API reddederse elle silmek için link döner."""
+    try:
+        uid, token, base = ig_creds()
+        req = urllib.request.Request(f"{base}/{ig['id']}?" + urllib.parse.urlencode({"access_token": token}), method="DELETE")
+        with urllib.request.urlopen(req, timeout=30) as r:
+            r.read()
+        return {"ok": True, "message": "Instagram'dan silindi"}
+    except urllib.error.HTTPError as e:
+        txt = e.read().decode("utf-8", "replace")[:200]
+        gone = e.code == 404 or "does not exist" in txt
+        return {"ok": gone, "message": "Instagram'da zaten yok" if gone else
+                "Instagram API bu gönderiyi silmeye izin vermedi; Instagram uygulamasından elle silin", "url": ig.get("url"), "detail": txt}
+    except Exception as e:
+        return {"ok": False, "message": f"Instagram silinemedi: {str(e)[:160]}; uygulamadan elle silin", "url": ig.get("url")}
+
+
 def delete_remote(name: str) -> dict:
     """Videoyu yüklendiği platformlardan kaldırır. Sonuç {platform: {ok, message}}; silinenler metriklerden düşülür.
     YouTube: videos.delete ("youtube" izni gerekir). Instagram: DELETE /{media-id} (API izin vermezse elle silinmeli).
@@ -1078,19 +1095,7 @@ def delete_remote(name: str) -> dict:
                 out["youtube"] = {"ok": False, "message": f"YouTube silinemedi: {msg[:160]}", "url": yt.get("url")}
     ig = entry.get("instagram") or {}
     if ig.get("id"):
-        try:
-            uid, token, base = ig_creds()
-            req = urllib.request.Request(f"{base}/{ig['id']}?" + urllib.parse.urlencode({"access_token": token}), method="DELETE")
-            with urllib.request.urlopen(req, timeout=30) as r:
-                r.read()
-            out["instagram"] = {"ok": True, "message": "Instagram'dan silindi"}
-        except urllib.error.HTTPError as e:
-            txt = e.read().decode("utf-8", "replace")[:200]
-            gone = e.code == 404 or "does not exist" in txt
-            out["instagram"] = {"ok": gone, "message": "Instagram'da zaten yok" if gone else
-                                "Instagram API bu gönderiyi silmeye izin vermedi; Instagram uygulamasından elle silin", "url": ig.get("url"), "detail": txt}
-        except Exception as e:
-            out["instagram"] = {"ok": False, "message": f"Instagram silinemedi: {str(e)[:160]}; uygulamadan elle silin", "url": ig.get("url")}
+        out["instagram"] = ig_delete(ig)
     tt = entry.get("tiktok") or {}
     if tt.get("publish_id") or tt.get("id"):
         out["tiktok"] = {"ok": False, "manual": True, "url": tt.get("url"),
