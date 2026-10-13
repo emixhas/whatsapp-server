@@ -6,6 +6,7 @@ import { MediaBg } from "./scenes/MediaBg";
 import { InstagramIcon, TikTokIcon, YouTubeIcon } from "./scenes/Outro";
 import { TurkeyMap } from "./scenes/TurkeyMap";
 import { theme } from "./theme";
+import { currentGroup, Word } from "./captionGroups";
 import { Thumb } from "./Thumb";
 import { Episode, FPS, Segment } from "./types";
 
@@ -14,24 +15,21 @@ import { Episode, FPS, Segment } from "./types";
 export const WIDE_W = 1920;
 export const WIDE_H = 1080;
 const WHOOSH = 17;
-type Word = { w: string; s: number; e: number };
 
-/** Geniş altyazı: 7 kelimelik pencere, konuşulan kelime kategori renginde. */
+/** Geniş altyazı: en çok 3 kelimelik grup (Shorts ile aynı kural), kelimeler söylendikçe eklenir, konuşulan kelime kategori renginde. */
 const WideCaptions = ({ words, accent }: { words?: Word[]; accent: string }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   if (!words?.length) return null;
-  const t = frame / fps;
-  let idx = words.findIndex((w) => t >= w.s && t < w.e);
-  if (idx < 0) idx = t >= words[words.length - 1].e ? words.length - 1 : 0;
-  const N = 7, start = Math.floor(idx / N) * N;
+  const t = frame / fps + 0.06;
+  const { idx, start, end } = currentGroup(words, t);
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", lineHeight: 1.2 }}>
-      {words.slice(start, start + N).map((w, i) => {
-        const gi = start + i, active = gi === idx;
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", lineHeight: 1.2 }}>
+      {words.slice(start, end).map((w, i) => {
+        const gi = start + i, active = gi === idx, shown = gi <= idx;
         return (
-          <span key={gi} lang="tr" style={{ fontSize: 40, fontWeight: 800, whiteSpace: "nowrap", color: active ? "#0B0F1A" : gi < idx ? theme.white : "rgba(255,255,255,.55)",
-            background: active ? accent : "transparent", padding: active ? "0 10px" : 0, borderRadius: 10 }}>{w.w}</span>
+          <span key={gi} lang="tr" style={{ fontSize: 50, fontWeight: 900, whiteSpace: "nowrap", color: active ? "#0B0F1A" : theme.white, opacity: shown ? 1 : 0,
+            background: active ? accent : "transparent", padding: active ? "0 12px" : 0, borderRadius: 10 }}>{w.w}</span>
         );
       })}
     </div>

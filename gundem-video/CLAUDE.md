@@ -106,7 +106,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
   (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
-  `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`; `top` verilirse üstten konumlanır.
+  Altyazı kısa (kullanıcı isteği: "üç kelime üç kelime ekleyerek"; `src/captionGroups.ts`): en çok 3 kelimelik gruplar, noktalama
+  (. , ! ? ; :) grubu erken kapatır; ekranda yalnız konuşulan grup, kelimeler söylendikçe tek tek eklenir (sonrakiler yer tutar,
+  satır kaymaz), konuşulan kelime vurgulu; duraklamada son kelime kalır (başa dönmez). Grup tek satıra `fitFontSize` ile sığar
+  (en az 40 px). `Captions.tsx` (Shorts) ve `GunlukOzet` `WideCaptions` aynı kuralı kullanır; `lang="tr"`; `top` verilirse üstten.
 - Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
   numara + başlık + kaynak onun altında (top 1110).
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
