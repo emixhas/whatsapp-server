@@ -422,6 +422,7 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   return { ...r, title: a.title };
 }
 let mynetLast = 0;
+let lastStandings = "";
 async function mynetCheck({ manual = false } = {}) {
   mynetLast = Date.now();
   const r = await pyJson(["scripts/mynet_watch.py", "--check"]);
@@ -477,6 +478,8 @@ async function watchScan() {
     if (mynetCfg().enabled) await mynetCheck().catch((e) => push(`📰 Mynet: ${e.message}`));
     if (breakingCfg().enabled) await breakingCheck().catch((e) => push(`🗞 son dakika: ${e.message}`));
     await py("trends.py", []).catch(() => {}); // Google Trends Türkiye önbelleği (haber seçimi ve panel)
+    // Süper Lig ilk 5 (12 saatlik önbellek; değişince loga): bu takımların futbol haberleri değerli sayılır
+    py("standings.py", []).then((r) => { const l = String(r.stdout || "").trim().split("\n").pop(); if (l && l !== lastStandings) { lastStandings = l; push(l); } }).catch(() => {});
   } finally { watchScanning = false; }
 }
 setInterval(() => { if ((mynetCfg().enabled || breakingCfg().enabled) && Date.now() - watchLast >= watchMin() * 60000) watchScan(); }, 60000);

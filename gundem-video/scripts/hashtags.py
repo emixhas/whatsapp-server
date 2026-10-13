@@ -45,6 +45,9 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
     for r in (meta.get("value") or {}).get("reasons") or []:
         if r in VALUE_TAGS:
             add(VALUE_TAGS[r])
+        elif r.startswith("ilk 5 takım: "):  # Süper Lig ilk 5 takımı: takımın etiketi + #futbol
+            add(r.split(": ", 1)[1])
+            add("#futbol")
     for s in meta.get("segments", []):
         if s.get("kind") == "haber" and s.get("category") in CATEGORY_TAGS:
             add(CATEGORY_TAGS[s["category"]])

@@ -577,7 +577,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   "15 yaşındaki Murat'ın hayatı karardı" türü: kahreden, yürek yakan, hayatı karardı, kurtulamadı, "N gün sonra doğum günü",
   "N yaşındaki … öldü/yaralandı/kayboldu", toprağa verildi; SOFT'tan muaf), magazin ve ünlüler (kullanıcı kararı: "Ünlü oyuncu
   yeni dizisini tanıttı" türü de değerli: ünlü/oyuncu/şarkıcı/sanatçı/sunucu, dizi, film, albüm, klip, konser, evlilik/boşanma,
-  aşk iddiası, Survivor/MasterChef; `prompts/anlik.md` bunlara en az 3 önem verdirir); "adli olay" (operasyon/gözaltı/uyuşturucu…)
+  aşk iddiası, Survivor/MasterChef; `prompts/anlik.md` bunlara en az 3 önem verdirir), Süper Lig ilk 5 (kullanıcı kararı: ilk 5
+  takımın maç sonucu, transfer, teknik direktör… haberleri değerli; `scripts/standings.py` ESPN puan durumu `tur.1`, 12 saatlik
+  önbellek `data/standings.json`, erişilemezse `settings.sports.topTeams` / büyük kulüpler; `settings.sports.topN` 5; panel ortak
+  taramada ve pipeline'da tazeler, liste değişince log "⚽ Süper Lig ilk 5: …"; `news_value.top_team_hit` takım adı ya da lakabı
+  (Cimbom, Kanarya, sarı-lacivertli, bordo-mavili…) + futbol bağlamı ister — Beşiktaş/Başakşehir ilçe, Galatasaray Lisesi
+  yakalanmasın; SOFT'tan muaf; hashtag takım adı + #futbol); "adli olay" (operasyon/gözaltı/uyuşturucu…)
   ağırlık 2: tek başına yetmez, başka grupla değerli olur. Kullanıcı kararı: değerli haber kaçmasın. SOFT koruması artık
   yalnız sıradan kulüp/spor haberi (futbolcu, teknik direktör, transfer, Süper Lig, maç) için: o kelimeler varsa yalnız
   model 4-5 derse değerli; can kaybı, milli başarı, suç ve vahşet, kayıp ve arama, dünya ve savaş, acı olay, magazin muaf; "burs" ve

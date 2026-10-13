@@ -119,10 +119,42 @@ GROUPS = [
 SOFT = [r"futbolcu", r"teknik direktör", r"transfer", r"süper lig", r"maç(?:ı|ta|tan)?\b"]
 
 
+# Süper Lig'in ilk 5 takımı (kullanıcı kararı: maç sonucu, transfer, teknik direktör… haberleri değerli). Liste
+# standings.py önbelleğinden (ESPN puan durumu, 12 saatte bir); takım adı tek başına yetmez (Beşiktaş/Başakşehir ilçe adı,
+# Galatasaray Lisesi), metinde futbol bağlamı da olmalı. Karşılaştırma Türkçe karaktersiz (fold) yapılır.
+SPORT_CONTEXT = [r"mac", r"gol", r"transfer", r"imza", r"teknik direktor", r"hoca", r"kadro", r"sakat", r"derbi", r"puan",
+                 r"lig", r"kupa", r"yendi", r"kazandi", r"berabere", r"maglup", r"futbol", r"forvet", r"stoper", r"kaleci",
+                 r"orta saha", r"sozlesme", r"bonservis", r"deplasman", r"ilk 11", r"taraftar", r"hakem", r"penalti",
+                 r"skor", r"galibiyet", r"yenilgi", r"antrenman", r"kamp\b", r"kampa", r"kampta", r"tribun", r"kirmizi kart", r"sampiyon"]
+NICK = {"galatasaray": [r"cimbom", r"sari-kirmizili", r"sari kirmizili"], "fenerbahce": [r"kanarya", r"sari-lacivertli", r"sari lacivertli"],
+        "besiktas": [r"siyah-beyazli", r"siyah beyazli", r"kara kartal"], "trabzonspor": [r"bordo-mavili", r"bordo mavili", r"karadeniz firtinasi"]}
+
+
+def top_team_hit(text: str):
+    """İlk 5'teki bir takım + futbol bağlamı varsa takımın adı, yoksa None."""
+    try:
+        from standings import cached_top, fold
+    except Exception:
+        return None
+    f = fold(text)
+    if not any(re.search(r"(?<![a-z0-9])" + p, f) for p in SPORT_CONTEXT):
+        return None
+    for name in cached_top():
+        key = fold(name)
+        pats = [re.escape(key.split()[0] if key != "gaziantep fk" else "gaziantep")] + NICK.get(key, [])
+        if any(re.search(r"(?<![a-z0-9])" + p, f) for p in pats):
+            return name
+    return None
+
+
 def score(text: str, extra_keywords=None, importance=None) -> dict:
     t = tr_lower(text or "")
     hits = []
     total = 0
+    team = top_team_hit(text or "")
+    if team:
+        hits.append(f"ilk 5 takım: {team}")
+        total += 3
     for name, w, pats in GROUPS:
         found = next((p for p in pats if re.search(r"(?<![\wçğıöşü])" + p, t)), None)
         if found:
@@ -139,7 +171,7 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     except (TypeError, ValueError):
         imp = None
     # model 1-2 dediyse (magazin: "ünlünün annesi vefat etti") anahtar kelime tek başına yetmez
-    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay", "magazin ve ünlüler"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
+    soft = not team and not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay", "magazin ve ünlüler"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
     valuable = (imp is not None and imp >= 4) or (total >= 3 and not soft and (imp is None or imp >= 3))
     if soft and total >= 3 and not valuable:
         hits.append("magazin/spor")

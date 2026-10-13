@@ -118,6 +118,7 @@ if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
     PROMPT_FILE="prompts/gunluk.md"
   else
     $PY scripts/trends.py >/dev/null 2>&1 || true  # Google Trends Türkiye önbelleği (30 dk; erişilemezse eski liste)
+    $PY scripts/standings.py >/dev/null 2>&1 || true  # Süper Lig ilk 5 (12 saatlik önbellek; değerli haber için)
     NEWS_N="${NEWS_MAX:-50}"
     if [ "$TOKEN_SAVER" = "1" ] && [ -z "${NEWS_MAX:-}" ]; then NEWS_N=$(( HABER * 3 )); if [ "$NEWS_N" -lt 12 ]; then NEWS_N=12; fi; fi
     $PY scripts/slim_news.py work/news.json work/news_prompt.json "$NEWS_N"
