@@ -450,8 +450,20 @@ def main(src: str, dst: str):
         "music": "music/ogle.mp3" if ANLIK else f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
         "segments": segs,
     }
+    record_used_news(segs, f"{date}-{ep_n}")  # tekrar engeli özgün başlıklarla
+    # Hassas kelimeler (censor.py): ekrandaki başlıklar, kapak ve yayın başlığı yıldızlı yazılır (int*har, s*lah);
+    # seslendirme metni özgün kalır, tts.py o kelimelerin yerine bip koyar ve altyazıyı yıldızlı üretir.
+    try:
+        import censor
+        for s in segs:
+            if s.get("kind") in ("hook", "haber") and s.get("title"):
+                s["title"] = censor.mask(s["title"])
+        out["titles"] = {k: censor.mask(v) for k, v in out["titles"].items()}
+        out["publishTitle"] = censor.mask(out["publishTitle"])
+        out["hashtags"] = censor.clean_tags(out.get("hashtags") or [])
+    except Exception as e:
+        print(f"  ! hassas kelime gizleme atlandı: {e}", file=sys.stderr)
     Path(dst).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-    record_used_news(segs, f"{date}-{ep_n}")
     print(f"{len(haber)} haber, {words} kelime, günün {out['episodeOfDay']}. videosu ({out['slotLabel']}, {out['timeRange']}) -> {dst}")
 
 

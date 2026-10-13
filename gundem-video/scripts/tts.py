@@ -17,6 +17,7 @@ import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import censor  # noqa: E402
 import voices  # noqa: E402
 from common import ROOT  # noqa: E402
 
@@ -77,6 +78,24 @@ def add_pause(path: Path, gain_db: float = 0.0) -> None:
     tmp.replace(path)
 
 
+def beep_wav(path: Path, seconds: float) -> None:
+    """Bip: 1 kHz, yumuşak giriş/çıkış (tık sesi olmasın), önünde ve arkasında 50 ms sessizlik; 44.1 kHz mono."""
+    d = max(0.2, seconds)
+    af = f"afade=t=in:d=0.02,afade=t=out:st={d - 0.02:.3f}:d=0.02,volume=0.35,adelay=50,apad=pad_dur=0.05"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"sine=frequency=1000:duration={d:.3f}:sample_rate=44100",
+                    "-af", af, "-ar", "44100", "-ac", "1", str(path)], check=True)
+
+
+def join_wavs(parts: list, dst: Path) -> None:
+    """Parçaları (farklı örnekleme hızında olabilir) sırayla birleştirir."""
+    args = ["ffmpeg", "-y", "-loglevel", "error"]
+    for p in parts:
+        args += ["-i", str(p)]
+    chain = "".join(f"[{i}:a]aresample=44100,aformat=channel_layouts=mono[a{i}];" for i in range(len(parts)))
+    chain += "".join(f"[a{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1[out]"
+    subprocess.run(args + ["-filter_complex", chain, "-map", "[out]", "-ar", "44100", "-ac", "1", str(dst)], check=True)
+
+
 def main(script_path: str, episode_path: str):
     script = json.loads(Path(script_path).read_text(encoding="utf-8"))
     segs = script["segments"]
@@ -86,9 +105,20 @@ def main(script_path: str, episode_path: str):
         f.unlink()
     outs = [audio_dir / f"seg-{i:02d}.wav" for i in range(len(segs))]
     chosen = voices.assign(len(segs))
+    # Hassas kelimeler (censor.py): segment parçalara bölünür, kelimenin yerine bip girer; parçalar sonra birleştirilir
+    plan = [censor.pieces(seg["narration"]) for seg in segs]
+    part_out = lambda i, k: audio_dir / f"seg-{i:02d}.p{k}.wav"
+    beeped = sum(1 for p in plan for kind, _ in p if kind == "beep")
+    if beeped:
+        print(f"  🔇 {beeped} hassas kelime bipleniyor (ses), yazıda yıldızla gizleniyor", flush=True)
     pending = list(range(len(segs)))
     for attempt in range(6):
-        jobs = [{"voice": chosen[i], "text": segs[i]["narration"], "out": outs[i]} for i in pending]
+        jobs = []
+        for i in pending:
+            if len(plan[i]) == 1 and plan[i][0][0] == "text":
+                jobs.append({"voice": chosen[i], "text": plan[i][0][1], "out": outs[i]})
+            else:
+                jobs += [{"voice": chosen[i], "text": t, "out": part_out(i, k)} for k, (kind, t) in enumerate(plan[i]) if kind == "text"]
         try:
             voices.synthesize(jobs)
             pending = []
@@ -99,13 +129,26 @@ def main(script_path: str, episode_path: str):
             bad = str(e).split(":")[0]
             print(f"  ! ses '{bad}' başarısız ({str(e)[:240]}); yedek sese geçiliyor", file=sys.stderr)
             voices._disabled.add(bad)
-            pending = [i for i in pending if not outs[i].exists() or chosen[i]["id"] == bad]
+            done = lambda i: outs[i].exists() if len(plan[i]) == 1 and plan[i][0][0] == "text" else all(part_out(i, k).exists() for k, (kind, _) in enumerate(plan[i]) if kind == "text")
+            pending = [i for i in pending if not done(i) or chosen[i]["id"] == bad]
             repl = voices.resolve("auto")
             for i in pending:
                 if chosen[i]["id"] == bad:
                     chosen[i] = repl
     if pending:
         sys.exit("Seslendirme tamamlanamadı")
+
+    for i, p in enumerate(plan):  # bipli segmentler: konuşma parçaları + bip sesleri sırayla birleştirilir
+        if len(p) == 1 and p[0][0] == "text":
+            continue
+        files = []
+        for k, (kind, val) in enumerate(p):
+            if kind == "beep":
+                beep_wav(part_out(i, k), float(val))
+            files.append(part_out(i, k))
+        join_wavs(files, outs[i])
+        for f in files:
+            f.unlink(missing_ok=True)
 
     segments = []
     for i, seg in enumerate(segs):
@@ -115,7 +158,8 @@ def main(script_path: str, episode_path: str):
         seg["audio"] = f"audio/{out.name}"
         seg["voice"] = chosen[i]["id"]
         seg["duration"] = round(wav_duration(out), 3)
-        seg["words"] = word_timings(seg["narration"], seg["duration"], PAUSE_SEC)
+        # yanan altyazı: hassas kelime yıldızlı (int*har); kelime sayısı aynı kaldığı için zamanlama değişmez
+        seg["words"] = word_timings(censor.mask(seg["narration"]), seg["duration"], PAUSE_SEC)
         segments.append(seg)
 
     episode = {k: v for k, v in script.items() if k != "segments"}

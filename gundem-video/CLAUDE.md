@@ -74,6 +74,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `prompts/senaryo.md` kancayı m=1'den seçtirir (m içinde p, sonra c), kanca haberi 1. kart olarak 20-28 kelime anlatılır
   (diğerleri 12-18; fazlası önemsiz haberlerden kısılır), m=1 ve p≥2 kanca haberine "breaking". Anahtar kelimeler `slim_news.PRIORITY`; yanlış pozitifleri (ör. "deprem bölgesi
   konut") önlemek için fiil/bağlam içeren kalıplar kullan.
+- Hassas kelime gizleme (kullanıcı isteği: platform denetimi; `scripts/censor.py`, `settings.censor` {enabled true, audio,
+  text, words, extra}; panel Ayarlar → Gelişmiş anahtar + "Ek gizlenecek kelimeler"): kökler `DEFAULT_WORDS` (intihar,
+  öl+ek kalıbı — ölçü/ölçek değil, silah, cinayet, katil/katle, bıçak, kurşun, tecavüz, istismar, taciz, uyuşturucu, ceset,
+  işkence, vahşet, boğ+ek kalıbı — Boğaz değil, tabanca, pompalı, rehin, bomba, terör), Türkçe ekler dahil, `tr_lower`
+  uzunluk korur. SES: `tts.py` segmenti `censor.pieces()` ile parçalar, kelimenin yerine 1 kHz bip (`beep_wav`, 0,32-0,8 sn,
+  yumuşak kenar) koyar, parçaları `join_wavs` ile birleştirir (log "🔇 N hassas kelime bipleniyor"). YAZI: `mask()` bir harfi
+  yıldızlar (int*har, s*lah, ö*üm, c*nayet): `assemble_script` ekrandaki kanca/haber başlıkları, titles A/B/cover ve
+  publishTitle; `tts.py` yanan altyazı (`words`); `common.build_caption` başlık + açıklama; hassas hashtag `clean_tags` ile
+  atılır (build_caption, caption_tags, meta hashtags). `narration` alanı özgün kalır (seslendirme ve tekrar engeli için).
 - Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
   (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",

@@ -177,6 +177,11 @@ def build_caption(video_name: str, max_len: int = 2000):
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"
               else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
+    try:  # hassas kelimeler açıklamada ve başlıkta yıldızlı (int*har, s*lah), hassas hashtag atılır (censor.py)
+        import censor
+        title, lines, tags = censor.mask(title), [censor.mask(x) for x in lines], censor.clean_tags(tags)
+    except Exception:
+        pass
     tail = "\n" + " ".join(tags)
     return title[:100], "\n".join(lines)[:max(0, max_len - len(tail))] + tail
 
@@ -187,4 +192,9 @@ def caption_tags(video_name: str) -> list:
     meta = episode_meta(video_name) or {}
     s = settings()
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    return for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    try:
+        import censor
+        return censor.clean_tags(tags)
+    except Exception:
+        return tags
