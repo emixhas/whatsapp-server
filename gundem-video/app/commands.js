@@ -94,6 +94,12 @@ export function parseCommand(raw) {
   if (/\bsistem(i|e)? (başlat|uyandır|aç|devam|çalıştır)/.test(t)) return { action: "rest_end", reply: "" };
   if (/^(dur|sus|tamam dur|yeter|kes|sessiz ol|teşekkürler|sağ ol)$/.test(t)) return { action: "stop", reply: "" };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
+  // Instagram hikâyesi (günün en çok izlenenleri): "günün hikayesini paylaş", "hikayeye at", "hikaye paylaşımını kapat"
+  if (/(hikaye|hikâye|story|stori)/.test(t) && !/(^| )m[iı]( |$)|m[iı]s[iı]n/.test(t)) {
+    if (/(kapat|durdur|atma|paylaşma)/.test(t)) return { action: "ig_stories", toggle: false, reply: "" };
+    if (/(otomatik|her akşam|her gün).*(aç|başlat|etkinleştir)|(^| )aç( |$)/.test(t)) return { action: "ig_stories", toggle: true, reply: "" };
+    if (/(paylaş|yayınla|yükle|gönder|(^| )at( |$)|ekle)/.test(t)) return { action: "ig_stories", reply: "" };
+  }
   if (/(yayınla|paylaş).*(youtube|instagram|tiktok|tik tok)/.test(t) || /(youtube|instagram|tiktok|tik tok).*(yayınla|paylaş|yükle)/.test(t))
     return { action: "publish", platforms: ["youtube", "instagram", "tiktok"].filter((p) => t.replace("tik tok", "tiktok").includes(p)), reply: "" };
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.

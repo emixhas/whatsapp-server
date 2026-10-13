@@ -800,6 +800,15 @@ async function retitleCheck() {
   for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("📉")) push(l);
   return r.json;
 }
+// ilk yorumu yükleme anında yazılamamış (izin yok, video işleniyor, ağ) son 72 saatin videolarına yorumu sonradan yaz
+async function firstCommentCheck() {
+  const r = await py("publish.py", ["--first-comments"]);
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("💬")) push(l);
+  const igPerm = (r.json?.failed || []).find((x) => x.platform === "instagram" && /permission|izin|\(#10\)|\(#200\)|scope/i.test(x.error || ""));
+  if (igPerm) healthAlert("ig-comment-scope", `Instagram'a ilk yorum yazılamıyor (${String(igPerm.error).slice(0, 120)}). Panel → Ayarlar → Yayın hesapları → Instagram'ı yeniden bağlayın ve yorum iznini onaylayın.`, { everyH: 24 }).catch(() => {});
+  if (r.json?.needScope) healthAlert("yt-comment-scope", "YouTube'a ilk yorum ve yorum yanıtı yazılamıyor: yorum izni yok. Panel → Ayarlar → Yayın hesapları → YouTube → 🔄 Yeniden bağla, açılan Google sayfasında tüm izinleri onaylayın. İzin gelince eksik ilk yorumlar kendiliğinden yazılır.", { everyH: 24 }).catch(() => {});
+  return r.json;
+}
 // ---------- Slot bekçisi: zamanlayıcı açıkken bir üretim saati geçti ve 6 dk içinde hiçbir üretim başlamadıysa (launchd işi
 // başlatamadı — ör. çıkış 78, macOS Masaüstü izni — ya da düştü) panel o slotu kendisi başlatır; 40 dk sonraki "kaçan üretim"
 // uyarısını beklemez. Başladı sayılır: kilit var / panel üretiyor / launchd logunda slottan sonra "üretim başladı" / slottan
@@ -891,7 +900,7 @@ app.post("/api/expire/restore", async (req, res) => res.json(await expireRestore
 // autoReply.intervalMin (5) dk yeni yorumlar toplanır, TEK Claude çağrısıyla (düşük effort) yanıtlar yazılır, yayınlanır.
 // Hakaret/spam/link → yanıt yok (reply null). Günlük sınır: YouTube 20 (kota), Instagram 60. Log 💬, dinlenmede de sürer.
 const replyCfg = () => ({ enabled: true, intervalMin: 5, ...(settings().autoReply || {}) });
-let replyAt = 0, replyBusy = false, replyErrAt = 0;
+let replyAt = 0, replyBusy = false, replyErrAt = 0, replyClaudeErrAt = 0;
 async function replyCheck({ manual = false } = {}) {
   if (replyBusy) return { ok: false, error: "Yorum yanıtlama zaten sürüyor." };
   replyBusy = true;
@@ -900,27 +909,74 @@ async function replyCheck({ manual = false } = {}) {
     const errs = Object.entries(f?.errors || {}).map(([k, v]) => `${k}: ${v}`);
     if (errs.length && (manual || Date.now() - replyErrAt > 6 * 3600000)) { replyErrAt = Date.now(); push(`💬 yorum yanıtı: ${errs.join(" · ")}`); }
     const cs = f?.comments || [];
-    if (!cs.length) return { ok: true, replied: 0, errors: errs };
-    const input = cs.map((c) => ({ id: c.id, video_basligi: c.title, video_ozeti: c.context, yorum: c.text }));
-    let arr = [];
-    try {
-      const txt = await brain.complete(`${readFileSync(path.join(ROOT, "prompts/yanit.md"), "utf8")}\n${JSON.stringify(input)}`);
-      arr = JSON.parse((String(txt).match(/\[[\s\S]*\]/) || ["[]"])[0]);
-    } catch (e) { push(`💬 yorum yanıtı yazılamadı (Claude): ${String(e.message || e).slice(0, 120)}`); return { ok: false, error: "yanıt yazılamadı" }; }
-    const byId = Object.fromEntries((Array.isArray(arr) ? arr : []).map((x) => [String(x.id), x.reply]));
-    // Claude'un atladığı yorum da "görüldü" sayılır (her turda yeniden token harcanmasın)
-    const items = cs.map((c) => ({ id: c.id, platform: c.platform, video: c.video, text: c.text, reply: byId[c.id] ?? null }));
+    if (!cs.length && !f?.retry) return { ok: true, replied: 0, errors: errs };
+    let items = [];
+    if (cs.length) {
+      // ilk yorumumuzun (soru) altına yazılan cevaplarda soru da verilir: Claude izleyicinin neye cevap verdiğini bilsin
+      const input = cs.map((c) => ({ id: c.id, video_basligi: c.title, video_ozeti: c.context, yorum: c.text, ...(c.ourComment ? { kanalin_sorusu: c.ourComment } : {}) }));
+      let arr = [];
+      try {
+        const txt = await brain.complete(`${readFileSync(path.join(ROOT, "prompts/yanit.md"), "utf8")}\n${JSON.stringify(input)}`);
+        arr = JSON.parse((String(txt).match(/\[[\s\S]*\]/) || ["[]"])[0]);
+      } catch (e) {
+        // Claude kullanım sınırı/oturum: yorumlar görülmedi sayılır, sonraki turda yeniden; log saatte bir
+        if (manual || Date.now() - replyClaudeErrAt > 3600000) { replyClaudeErrAt = Date.now(); push(`💬 yorum yanıtı yazılamadı (Claude): ${String(e.message || e).slice(0, 120)} — yorumlar sonraki turda yeniden denenecek`); }
+        return { ok: false, error: "yanıt yazılamadı" };
+      }
+      const byId = Object.fromEntries((Array.isArray(arr) ? arr : []).map((x) => [String(x.id), x.reply]));
+      // Claude'un atladığı yorum da "görüldü" sayılır (her turda yeniden token harcanmasın)
+      items = cs.map((c) => ({ id: c.id, platform: c.platform, parent: c.parent, video: c.video, text: c.text, reply: byId[c.id] ?? null }));
+    }
     const file = path.join(WORK, "replies.json");
     writeJson(file, items);
     const r = await py("comment_reply.py", ["--post", file]);
     for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("💬")) push(l);
     const j = r.json || {};
-    if (j.replied || j.skipped) push(`💬 ${cs.length} yeni yorum: ${j.replied || 0} yanıtlandı, ${j.skipped || 0} yanıtsız bırakıldı (hakaret/spam/anlamsız)`);
+    if (j.replied || j.skipped) push(`💬 ${cs.length} yeni yorum: ${j.replied || 0} yanıtlandı, ${j.skipped || 0} yanıtsız bırakıldı (hakaret/spam/anlamsız)${j.retry ? `, ${j.retry} yanıt yeniden denenecek` : ""}`);
     return { ok: true, ...j };
   } finally { replyBusy = false; }
 }
 setInterval(() => { const c = replyCfg(); if (c.enabled && Date.now() - replyAt >= Number(c.intervalMin) * 60000) { replyAt = Date.now(); replyCheck().catch((e) => push(`💬 yorum yanıtı hatası: ${e.message}`)); } }, 60000);
 app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({ manual: true })));
+
+// ---------- Günün en çok izlenenleri Instagram hikâyesinde (kullanıcı isteği; scripts/ig_stories.py): her akşam
+// settings.igStories {enabled, hour 21, minute 0, count 3} son 24 saatin en çok izlenen videoları (aynı olay bir kez) +
+// sıralama kartı hikâye olarak paylaşılır, özet WhatsApp'a. Saatinden sonraki 3 saat içinde, üretim sürmüyorken, günde bir.
+// Hafif iş (bir kart çizimi + ffmpeg kesimi): dinlenmede de çalışır. Log 📸.
+const storiesCfg = () => ({ enabled: true, hour: 21, minute: 0, count: 3, ...(settings().igStories || {}) });
+let storiesBusy = false, storiesErrDay = "";
+async function storiesRun({ manual = false, force = false, notify = true } = {}) {
+  if (storiesBusy) return { ok: false, error: "Instagram hikâyesi zaten hazırlanıyor." };
+  storiesBusy = true;
+  try {
+    if (!manual) infoMark("igStories", { day: today() });
+    const m = readJson(path.join(DATA, "metrics.json"), {});
+    if (!m.lastSync || Date.now() - Date.parse(m.lastSync) > 30 * 60000) await execAction({ type: "sync_metrics" }).catch(() => {});
+    push("📸 Instagram hikâyesi hazırlanıyor: günün en çok izlenen haberleri");
+    const r = await run(PY, ["scripts/ig_stories.py", "--run", ...(force ? ["--force"] : [])], { timeout: 25 * 60000 });
+    for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("📸")) push(l);
+    let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
+    if (!j?.ok) {
+      const err = j?.error || String(r.stderr || "yanıt yok").slice(-200);
+      push(`📸 Instagram hikâyesi paylaşılmadı: ${err}`);
+      if (!manual && !j?.already && storiesErrDay !== today()) { storiesErrDay = today(); healthAlert(`stories-${today()}`, `Günün Instagram hikâyesi paylaşılamadı: ${err}`, { everyH: 20 }).catch(() => {}); }
+      return { ok: false, error: err, already: !!j?.already };
+    }
+    const top = j.top || [];
+    const text = `📸 *Instagram hikâyesi paylaşıldı*: günün en çok izlenen ${top.length} haberi` + (j.failed ? ` (${j.failed} hikâye paylaşılamadı)` : "") + "\n" +
+      top.map((x, i) => `${i + 1}. ${String(x.title).slice(0, 70)} — ${Number(x.views).toLocaleString("tr-TR")} izlenme`).join("\n");
+    push(`📸 Instagram hikâyesi: ${j.published} hikâye paylaşıldı${j.failed ? `, ${j.failed} paylaşılamadı` : ""}`);
+    if (notify) { try { await wa.send(text); } catch { /* WhatsApp bağlı değil: log yeterli */ } }
+    return { ...j, text };
+  } finally { storiesBusy = false; }
+}
+setInterval(() => {
+  const c = storiesCfg(), n = new Date(), mins = n.getHours() * 60 + n.getMinutes(), start = Number(c.hour) * 60 + Number(c.minute);
+  if (!c.enabled || state.running || storiesBusy || infoState().igStories?.day === today() || mins < start || mins >= start + 180) return;
+  storiesRun().catch((e) => push(`📸 Instagram hikâyesi hatası: ${e.message}`));
+}, 60000);
+app.get("/api/stories", async (_req, res) => res.json({ cfg: storiesCfg(), ...(await pyJson(["scripts/ig_stories.py", "--plan"], 60000).catch(() => ({}))) }));
+app.post("/api/stories/run", async (req, res) => res.json(await storiesRun({ manual: true, force: !!req.body?.force })));
 
 async function commentsDigest({ manual = false } = {}) {
   writeJson(COMMENTS_FILE, { day: today(), at: Date.now() });
@@ -1188,7 +1244,7 @@ async function execAction(a) {
     case "breaking_news": return prepareAnlik(a.topic, a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
-    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); retitleCheck().catch(() => {}); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
+    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); retitleCheck().catch(() => {}).then(() => firstCommentCheck()).catch(() => {}); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
     case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram, tiktok: !!a.tiktok } }); return { ok: true };
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
@@ -1594,6 +1650,12 @@ async function handleCommand(text, opts = {}) {
       if (cmd.restore) { const r = await expireRestore("all"); reply = r.ok ? (r.done?.length ? `${r.done.length} video yeniden herkese açık yapıldı.` : "Liste dışı yaptığım video yok.") : r.error; break; }
       const r = await expireCheck({ manual: true });
       reply = !r.ok ? r.error : r.done?.length ? `${r.done.length} süresi geçen video YouTube'da liste dışı yapıldı: ${r.done.map((x) => x.title.slice(0, 40)).join(", ")}.` : "Süresi geçen video yok.";
+      break;
+    }
+    case "ig_stories": {
+      if (cmd.toggle !== undefined) { patchSettings({ igStories: { enabled: cmd.toggle } }); reply = cmd.toggle ? `Her akşam ${storiesCfg().hour}:${String(storiesCfg().minute).padStart(2, "0")}'de günün en çok izlenenlerini Instagram hikâyesine atacağım.` : "Instagram hikâyesi otomatik paylaşımı kapatıldı."; break; }
+      const r = await storiesRun({ manual: true, force: true, notify: opts.source !== "whatsapp" });
+      reply = r.ok ? (r.text || "Hikâyeler paylaşıldı.") : `Hikâye paylaşılamadı: ${r.error}`;
       break;
     }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }

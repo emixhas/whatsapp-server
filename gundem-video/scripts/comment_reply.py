@@ -59,36 +59,70 @@ def state() -> dict:
     return st
 
 
+def _yt_ready() -> str | None:
+    """YouTube yorumlarına yanıt için hata metni ya da None (bağlı ve youtube.force-ssl izni var)."""
+    from publish import SECRETS, YT_COMMENT, yt_scopes
+    if not (SECRETS / "youtube_token.json").exists():
+        return "bağlı değil"
+    if YT_COMMENT not in yt_scopes():
+        return "yorum izni yok: Ayarlar → YouTube → 🔄 Yeniden bağla (tüm izinleri onaylayın)"
+    return None
+
+
+def _later(ts: str, than: str) -> bool:
+    return _age_h(ts) < _age_h(than)
+
+
 def fetch() -> dict:
     c = cfg()
     st = state()
     m = metrics()["videos"]
     by_yt = {v["youtube"]["id"]: n for n, v in m.items() if (v.get("youtube") or {}).get("id")}
     out, errors = [], {}
-    # YouTube: kanalın tüm yorumları tek istekte
-    if by_yt and st["count"]["youtube"] < c["maxPerDay"]["youtube"]:
+
+    def add(cid, plat, parent, video, text, our_q=None, vid=None):
+        title, ctx = video_context(video) if video else ("", "")
+        out.append({"id": cid, "platform": plat, "parent": parent, "video": video or vid, "title": title, "context": ctx,
+                    "text": (text or "")[:500], **({"ourComment": our_q[:300]} if our_q else {})})
+
+    # YouTube: kanalın tüm yorumları tek istekte (kanalın kendi yüklediği, metrikte olmayan videolar dahil)
+    yt_err = _yt_ready()
+    if yt_err and yt_err != "bağlı değil":
+        errors["youtube"] = yt_err
+    if not yt_err and st["count"]["youtube"] < c["maxPerDay"]["youtube"]:
         try:
             from publish import yt_service
             yt = yt_service()
             if not st.get("channelId"):
                 st["channelId"] = yt.channels().list(part="id", mine=True).execute()["items"][0]["id"]
-            r = yt.commentThreads().list(part="snippet,replies", allThreadsRelatedToChannelId=st["channelId"], order="time", maxResults=50,
+            me = st["channelId"]
+            r = yt.commentThreads().list(part="snippet,replies", allThreadsRelatedToChannelId=me, order="time", maxResults=50,
                                          textFormat="plainText").execute()
             for it in r.get("items", []):
                 sn = it["snippet"]
                 top = sn["topLevelComment"]["snippet"]
-                cid, vid = it["id"], sn.get("videoId")
-                ours = any((x["snippet"].get("authorChannelId") or {}).get("value") == st["channelId"] for x in (it.get("replies") or {}).get("comments", []))
-                if cid in st["seen"] or vid not in by_yt or not sn.get("canReply", True) or ours:
+                tid, vid = it["id"], sn.get("videoId")
+                if not sn.get("canReply", True):
                     continue
-                if (top.get("authorChannelId") or {}).get("value") == st["channelId"] or _age_h(top.get("publishedAt")) > c["maxAgeHours"]:
+                reps = (it.get("replies") or {}).get("comments", [])
+                mine = [x["snippet"] for x in reps if (x["snippet"].get("authorChannelId") or {}).get("value") == me]
+                if (top.get("authorChannelId") or {}).get("value") == me:
+                    # kendi yorumumuz (ilk yorum sorusu): altına cevap yazan izleyicilere, biz o cevaptan sonra yazmadıysak
+                    for x in reps:
+                        rs = x["snippet"]
+                        if x["id"] in st["seen"] or (rs.get("authorChannelId") or {}).get("value") == me or _age_h(rs.get("publishedAt")) > c["maxAgeHours"]:
+                            continue
+                        if any(_later(y.get("publishedAt"), rs.get("publishedAt")) for y in mine):
+                            continue
+                        add(x["id"], "youtube", tid, by_yt.get(vid), rs.get("textDisplay"), our_q=top.get("textDisplay"), vid=vid)
                     continue
-                title, ctx = video_context(by_yt[vid])
-                out.append({"id": cid, "platform": "youtube", "video": by_yt[vid], "title": title, "context": ctx, "text": (top.get("textDisplay") or "")[:500]})
+                if tid in st["seen"] or mine or _age_h(top.get("publishedAt")) > c["maxAgeHours"]:
+                    continue
+                add(tid, "youtube", tid, by_yt.get(vid), top.get("textDisplay"), vid=vid)
         except Exception as e:
             msg = str(e)
-            errors["youtube"] = "yorum izni yok: Ayarlar → YouTube → 🔄 Yeniden bağla" if ("insufficient" in msg.lower() or "403" in msg) else msg[:200]
-    # Instagram: son gönderilerin yorumları
+            errors["youtube"] = "yorum izni yok: Ayarlar → YouTube → 🔄 Yeniden bağla" if "insufficient" in msg.lower() else msg[:200]
+    # Instagram: son gönderilerin yorumları (ve ilk yorumumuzun altına yazılan cevaplar)
     if st["count"]["instagram"] < c["maxPerDay"]["instagram"]:
         recent = sorted(((v["instagram"].get("publishedAt", ""), n, v["instagram"]) for n, v in m.items()
                          if (v.get("instagram") or {}).get("id") and _age_h(v["instagram"].get("publishedAt", "")) <= c["recentHours"]), reverse=True)[:10]
@@ -98,25 +132,36 @@ def fetch() -> dict:
                 creds = ig_creds()
                 if not st.get("igUsername"):
                     st["igUsername"] = ig_call("GET", creds[0], {"fields": "username"}, creds).get("username", "")
+                me = st["igUsername"]
                 for _, name, ig in recent:
-                    d = ig_call("GET", f"{ig['id']}/comments", {"fields": "id,text,username,timestamp,replies{username}", "limit": 50}, creds)
+                    d = ig_call("GET", f"{ig['id']}/comments", {"fields": "id,text,username,timestamp,replies{id,text,username,timestamp}", "limit": 50}, creds)
                     for cm in d.get("data", []):
-                        if cm["id"] in st["seen"] or cm.get("username") == st["igUsername"] or _age_h(cm.get("timestamp")) > c["maxAgeHours"]:
+                        reps = (cm.get("replies") or {}).get("data", [])
+                        mine = [r for r in reps if r.get("username") == me]
+                        if cm.get("username") == me:
+                            for r in reps:
+                                if r["id"] in st["seen"] or r.get("username") == me or _age_h(r.get("timestamp")) > c["maxAgeHours"]:
+                                    continue
+                                if any(_later(y.get("timestamp"), r.get("timestamp")) for y in mine):
+                                    continue
+                                add(r["id"], "instagram", cm["id"], name, r.get("text"), our_q=cm.get("text"))
                             continue
-                        if any(r.get("username") == st["igUsername"] for r in (cm.get("replies") or {}).get("data", [])):
+                        if cm["id"] in st["seen"] or mine or _age_h(cm.get("timestamp")) > c["maxAgeHours"]:
                             continue
-                        title, ctx = video_context(name)
-                        out.append({"id": cm["id"], "platform": "instagram", "video": name, "title": title, "context": ctx, "text": (cm.get("text") or "")[:500]})
+                        add(cm["id"], "instagram", cm["id"], name, cm.get("text"))
             except Exception as e:
                 msg = str(e)
                 errors["instagram"] = "yorum izni yok: Instagram'ı yeniden bağlayın" if ("permission" in msg.lower() or "(#10)" in msg or "(#200)" in msg) else msg[:200]
     save_json(STATE, st)
-    return {"ok": True, "comments": out[:15], "errors": errors}
+    pending = {x["id"] for x in st.get("retry", {}).values()}
+    return {"ok": True, "comments": [x for x in out if x["id"] not in pending][:15], "errors": errors, "retry": len(st.get("retry") or {})}
 
 
 def post(items: list) -> dict:
+    """Yanıtları yayınlar. Yayınlanamayan yanıt (izin, ağ, kota) metniyle saklanır ve sonraki turlarda en çok 3 kez denenir."""
     c = cfg()
     st = state()
+    st.setdefault("retry", {})
     log = load_json(LOG, []) or []
     done, skipped, failed = [], 0, []
     yt = creds = None
@@ -125,7 +170,8 @@ def post(items: list) -> dict:
         mask = censor.mask
     except Exception:
         mask = lambda t: t  # noqa: E731
-    for it in items:
+    queue = list(items) + [x for k, x in st["retry"].items() if k not in {i.get("id") for i in items}]
+    for it in queue:
         cid, plat, reply = it.get("id"), it.get("platform"), str(it.get("reply") or "").strip()
         if not cid or plat not in ("youtube", "instagram"):
             continue
@@ -134,32 +180,39 @@ def post(items: list) -> dict:
             skipped += 1
             continue
         if st["count"][plat] >= c["maxPerDay"][plat]:
-            st["seen"].pop(cid, None)  # sınır doldu: yarın tekrar değerlendirilsin
+            st["retry"][cid] = {**it, "tries": it.get("tries", 0)}  # sınır doldu: yarın yayınlansın
             continue
         reply = mask(reply)[:300]
+        parent = it.get("parent") or cid
         try:
             if plat == "youtube":
                 if yt is None:
                     from publish import yt_service
                     yt = yt_service()
-                yt.comments().insert(part="snippet", body={"snippet": {"parentId": cid, "textOriginal": reply}}).execute()
+                yt.comments().insert(part="snippet", body={"snippet": {"parentId": parent, "textOriginal": reply}}).execute()
             else:
                 if creds is None:
                     from publish import ig_creds
                     creds = ig_creds()
                 from publish import ig_call
-                ig_call("POST", f"{cid}/replies", {"message": reply}, creds)
+                ig_call("POST", f"{parent}/replies", {"message": reply}, creds)
             st["count"][plat] += 1
+            st["retry"].pop(cid, None)
             rec = {"at": now_iso(), "platform": plat, "comment": str(it.get("text", ""))[:200], "reply": reply, "video": it.get("video")}
             log.append(rec)
             done.append(rec)
             print(f"💬 yanıt ({plat}): \"{rec['comment'][:60]}\" → \"{reply[:90]}\"", flush=True)
         except Exception as e:
+            tries = int(it.get("tries", 0)) + 1
+            if tries < 3:
+                st["retry"][cid] = {**it, "reply": reply, "tries": tries}
+            else:
+                st["retry"].pop(cid, None)
             failed.append({"id": cid, "platform": plat, "error": str(e)[:160]})
-            print(f"💬 yanıt yazılamadı ({plat}): {str(e)[:120]}", flush=True)
+            print(f"💬 yanıt yazılamadı ({plat}{', yeniden denenecek' if tries < 3 else ', bırakıldı'}): {str(e)[:120]}", flush=True)
     save_json(STATE, st)
     save_json(LOG, log[-1000:])
-    return {"ok": True, "replied": len(done), "skipped": skipped, "failed": failed, "count": st["count"]}
+    return {"ok": True, "replied": len(done), "skipped": skipped, "failed": failed, "count": st["count"], "retry": len(st["retry"])}
 
 
 if __name__ == "__main__":

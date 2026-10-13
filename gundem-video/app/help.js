@@ -29,6 +29,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • tiktok sırası · sırada ne var
 • kapakları yeniden yükle
 • süresi geçenleri liste dışı yap · liste dışı yapılanları geri aç
+• günün hikayesini paylaş — en çok izlenenler Instagram hikâyesine · hikaye paylaşımını kapat / otomatik hikayeyi aç
 • instagramda son 7 günde 1000 izlenmenin altındakileri sil → önce liste gelir, *evet sil* ile silinir, *iptal* ile vazgeçilir (gün ve izlenme sayısı değiştirilebilir; sona "24 saatten eski" eklenebilir)
 
 📊 *Bilgi ve rapor*

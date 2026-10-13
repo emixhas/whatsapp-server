@@ -216,7 +216,8 @@ def first_comment_text(meta: dict) -> str:
     from common import settings
     if (settings().get("firstComment") or {}).get("enabled") is False:
         return ""
-    return str(meta.get("firstComment") or "").strip()
+    # alanı olmayan (özellikten önce üretilmiş ya da senaryosu yazmamış) videoda genel soru: hiçbir video yorumsuz kalmasın
+    return str(meta.get("firstComment") or "").strip() or "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
 
 
 def yt_scopes() -> set:
@@ -241,6 +242,70 @@ def yt_first_comment(yt, vid: str, meta: dict) -> dict:
     except Exception as e:
         print(f"  ! YouTube ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
         return {"commentError": str(e)[:160]}
+
+
+def fill_first_comments(max_n: int = 6, max_age_h: float = 72) -> dict:
+    """Yayında ilk yorumu olmayan videolara yorumu sonradan yazar (kullanıcı şikâyeti: "ilk yorumu atmadı"). Yükleme anında
+    yazılamayan (izin yok, video henüz işleniyor, ağ) her YouTube/Instagram gönderisi için son 72 saatte en çok 4 deneme,
+    denemeler arası ≥15 dk. İzlenme senkronundan sonra panel çağırır (`--first-comments`). Sonuç metrics firstComment/commentError."""
+    if (settings_get("firstComment") or {}).get("enabled") is False:
+        return {"ok": True, "done": [], "failed": [], "note": "ilk yorum kapalı"}
+    m = metrics()
+    todo = []
+    for name, v in m["videos"].items():
+        for plat in ("youtube", "instagram"):
+            e = v.get(plat) or {}
+            if not e.get("id") or e.get("firstComment") or e.get("commentTries", 0) >= 4 or time.time() - e.get("commentTriedAt", 0) < 900:
+                continue
+            try:
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(str(e.get("publishedAt")).replace("Z", "+00:00"))).total_seconds() / 3600
+            except Exception:
+                continue
+            if 0.05 <= age <= max_age_h:  # yüklemenin kendisi 3 dk içinde zaten dener
+                todo.append((age, name, plat))
+    todo.sort()
+    done, failed, need_scope = [], [], False
+    yt = creds = None
+    for _, name, plat in todo[:max_n]:
+        e = m["videos"][name][plat]
+        text = first_comment_text(episode_meta(name) or {})
+        if plat == "youtube" and YT_COMMENT not in yt_scopes():  # deneme sayılmaz: izin gelince ilk senkronda yazılır
+            need_scope = True
+            e["commentError"] = "yorum izni yok: yeniden bağla"
+            continue
+        e["commentTriedAt"], e["commentTries"] = time.time(), e.get("commentTries", 0) + 1
+        try:
+            if plat == "youtube":
+                yt = yt or yt_service()
+                cid = yt.commentThreads().insert(part="snippet", body={"snippet": {"videoId": e["id"], "topLevelComment": {"snippet": {"textOriginal": text}}}}).execute().get("id")
+            else:
+                creds = creds or ig_creds()
+                cid = ig_call("POST", f"{e['id']}/comments", {"message": text}, creds).get("id")
+            e["firstComment"] = cid
+            e.pop("commentError", None)
+            done.append({"video": name, "platform": plat})
+            print(f"💬 ilk yorum ({plat}, sonradan): {name} — {text[:80]}", flush=True)
+        except Exception as ex:
+            e["commentError"] = str(ex)[:160]
+            failed.append({"video": name, "platform": plat, "error": str(ex)[:160]})
+            print(f"💬 ilk yorum yazılamadı ({plat}): {name} — {str(ex)[:140]}", flush=True)
+    if todo:  # yorum yazılırken başka süreç (yayın, senkron) metrikleri yazmış olabilir: yalnız yorum alanları taze kayda işlenir
+        fresh = metrics()
+        for _, name, plat in todo[:max_n]:
+            src, dst = m["videos"][name][plat], (fresh["videos"].get(name) or {}).get(plat)
+            if dst is not None:
+                for k in ("firstComment", "commentError", "commentTries", "commentTriedAt"):
+                    if k in src:
+                        dst[k] = src[k]
+                    else:
+                        dst.pop(k, None)
+        save_metrics(fresh)
+    return {"ok": True, "done": done, "failed": failed, "needScope": need_scope, "pending": len(todo)}
+
+
+def settings_get(key: str):
+    from common import settings
+    return settings().get(key)
 
 
 VIEWS_AT = DATA / "views_at_check.json"  # başlık kontrolü: {video: {views, ageH, at}} (ortanca bundan)
@@ -503,7 +568,8 @@ def url_reachable(url, timeout=12):
 
 class _PublicVideo:
     """Yayın anında dış adres yoksa (panel kapalı, tünel kapalı) out/ klasörünü geçici bir sunucu +
-    Cloudflare hızlı tüneliyle açar; yayın bitince kapatır. Böylece launchd üretimi de Instagram'a gider."""
+    Cloudflare hızlı tüneliyle açar; yayın bitince kapatır. Böylece launchd üretimi de Instagram'a gider.
+    `ensure_files` out/ dışındaki dosyaları da (Instagram hikâyesi: work/stories/) aynı yolla açar."""
 
     def __init__(self):
         self.proc = None
@@ -511,6 +577,7 @@ class _PublicVideo:
         self.base = None
         self.remote = None
         self.extra = []
+        self.files = {}  # geçici sunucunun verdiği dosyalar: /videos/<ad> → yol
 
     def ensure(self, name: str) -> str:
         env = load_env()
@@ -529,23 +596,50 @@ class _PublicVideo:
         base = (env.get("PUBLIC_BASE_URL") or "").rstrip("/")
         if base and url_reachable(f"{base}/videos/{urllib.parse.quote(name)}"):
             return base
+        self.files[name] = OUT / name
+        return self._tunnel(name)
+
+    def ensure_files(self, paths: list) -> dict:
+        """Her dosya için herkese açık adres {ad: url}. Hostinger varsa videos/stories/ altına yüklenir (close() siler),
+        yoksa geçici sunucu + tünel. Adlar benzersiz olmalı (ör. hikaye-20261014-1.mp4)."""
+        paths = [Path(x) for x in paths]
+        if hostinger.configured():
+            out = {}
+            for p in paths:
+                rel = f"videos/stories/{p.name}"
+                print(f"🌐 Hostinger: yükleniyor {p.name}", file=sys.stderr, flush=True)
+                out[p.name] = hostinger.upload(p, rel)
+                self.extra.append(rel)
+            for url in out.values():
+                for _ in range(10):
+                    if url_reachable(url):
+                        break
+                    time.sleep(2)
+                else:
+                    raise RuntimeError(f"Yüklenen dosya dış adresten okunamadı: {url}")
+            return out
+        for p in paths:
+            self.files[p.name] = p
+        base = self.base or self._tunnel(paths[0].name)
+        return {p.name: f"{base}/videos/{urllib.parse.quote(p.name)}" for p in paths}
+
+    def _tunnel(self, probe: str) -> str:
         import http.server
         import shutil
         import subprocess
         import threading
+        if self.base:
+            return self.base
         if not shutil.which("cloudflared"):
             raise RuntimeError("Dış adres yok ve cloudflared kurulu değil (brew install cloudflared); panelde tüneli açın")
-        out_dir = OUT
+        files = self.files
 
         class H(http.server.SimpleHTTPRequestHandler):
-            def __init__(self, *a, **kw):
-                super().__init__(*a, directory=str(out_dir), **kw)
-
-            def translate_path(self, path):  # /videos/<ad> → out/<ad>; başka yol yok
+            def translate_path(self, path):  # /videos/<ad> → yalnız açıkça verilen dosyalar; başka yol yok
                 p = urllib.parse.unquote(urllib.parse.urlparse(path).path)
-                if not p.startswith("/videos/") or "/" in p[len("/videos/"):] or not p.endswith(".mp4"):
-                    return str(out_dir / "__yok__")
-                return str(out_dir / p[len("/videos/"):])
+                name = p[len("/videos/"):] if p.startswith("/videos/") else ""
+                f = files.get(name) if name and "/" not in name else None
+                return str(f) if f else str(OUT / "__yok__")
 
             def log_message(self, *a):
                 pass
@@ -567,7 +661,7 @@ class _PublicVideo:
             raise RuntimeError("Geçici tünel açılamadı (cloudflared adres vermedi)")
         threading.Thread(target=lambda: [None for _ in iter(self.proc.stdout.readline, "")], daemon=True).start()
         for _ in range(20):  # DNS yayılması birkaç saniye sürer
-            if url_reachable(f"{url}/videos/{urllib.parse.quote(name)}"):
+            if url_reachable(f"{url}/videos/{urllib.parse.quote(probe)}"):
                 break
             time.sleep(3)
         self.base = url
@@ -589,6 +683,7 @@ class _PublicVideo:
         if self.srv:
             self.srv.shutdown()
             self.srv = None
+        self.base = None
 
 
 def ig_upload(path: Path):
@@ -634,6 +729,37 @@ def ig_upload(path: Path):
             fc = {"commentError": str(e)[:160]}
             print(f"  ! Instagram ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
     return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **fc}
+
+
+def ig_story_publish(paths: list) -> list:
+    """Instagram hikâyeleri (media_type STORIES; iş/üretici hesabı): dosyalar sırayla, .jpg görüntü, .mp4 video (≤60 sn, 9:16).
+    API hikâyeye bağlantı, anket ya da etiket çıkartması eklemez. Biri düşerse diğerleri sürer. [{file, ok, id | error}]"""
+    creds = ig_creds()
+    uid = creds[0]
+    paths = [Path(x) for x in paths]
+    pub, res = _PublicVideo(), []
+    try:
+        urls = pub.ensure_files(paths)
+        for p in paths:
+            try:
+                key = "image_url" if p.suffix.lower() in (".jpg", ".jpeg") else "video_url"
+                cid = ig_call("POST", f"{uid}/media", {"media_type": "STORIES", key: urls[p.name]}, creds)["id"]
+                for _ in range(72):
+                    st = ig_call("GET", cid, {"fields": "status_code,status"}, creds)
+                    if st.get("status_code") == "FINISHED":
+                        break
+                    if st.get("status_code") == "ERROR":
+                        raise RuntimeError(f"Instagram işleme hatası: {st.get('status') or st}")
+                    time.sleep(5)
+                else:
+                    raise RuntimeError("Instagram işleme zaman aşımı")
+                mid = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds)["id"]
+                res.append({"file": p.name, "ok": True, "id": mid})
+            except Exception as e:
+                res.append({"file": p.name, "ok": False, "error": str(e)[:200]})
+    finally:
+        pub.close()
+    return res
 
 
 LAST_ERR = DATA / "publish_last_error.json"  # {platform: {at, video, error}} — panel kartında gösterilir
@@ -1144,6 +1270,7 @@ def status():
         "youtube": {"connected": yt_ok, "clientFile": (SECRETS / "youtube_client.json").exists(),
                     "holdUntil": (hold_until("youtube") or None) and hold_until("youtube").isoformat(),
                     "playlists": bool(set(load_json(SECRETS / "youtube_token.json", {}).get("scopes") or []) & YT_MANAGE),
+                    "comments": YT_COMMENT in yt_scopes(),  # ilk yorum ve yorum yanıtı (youtube.force-ssl)
                     "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
         "instagram": ig_status(env),
         "tiktok": {"queue": queue_info("tiktok"), "connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
@@ -1166,7 +1293,10 @@ def main():
     ap.add_argument("--yt-thumbs", action="store_true", help="YouTube'da kapağı reddedilmiş/eksik videolara kapağı yeniden yükle")
     ap.add_argument("--queue", action="store_true", help="sınır sıraları (YouTube, TikTok): bekleyen videolar ve duraklatma")
     ap.add_argument("--retitle", action="store_true", help="tutmayan videonun YouTube başlığını diğer varyanta çevir")
+    ap.add_argument("--first-comments", action="store_true", help="ilk yorumu yazılamamış son videolara yorumu yaz")
     a = ap.parse_args()
+    if a.first_comments:
+        print(json.dumps(fill_first_comments(), ensure_ascii=False)); return
     if a.retitle:
         print(json.dumps(yt_retitle(), ensure_ascii=False)); return
     if a.status:

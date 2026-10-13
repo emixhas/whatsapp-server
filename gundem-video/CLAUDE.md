@@ -614,6 +614,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   YouTube yüklemesinden hemen sonra `commentThreads.insert` (`youtube.force-ssl` izni YT_SCOPES'a eklendi → eski bağlantıda
   "Yeniden bağla"; yoksa `commentError`), Instagram'da `/{media}/comments`. Sabitleme API'de yok (YouTube Studio'dan elle);
   TikTok API yorum yazmaya izin vermez. Sonuç metrics `firstComment`/`commentError`, log 💬.
+  Kaçan ilk yorum (kullanıcı şikâyeti, 14 Ekim: "ilk yorumu atmadı"; en olası neden YouTube token'ında `force-ssl` izninin olmaması —
+  "Yeniden bağla" yapılmamıştı): `publish.py --first-comments` (`fill_first_comments`) her izlenme senkronundan sonra (`retitleCheck`
+  ardından `firstCommentCheck`) son 72 saatte yayında olup ilk yorumu olmayan YouTube/Instagram gönderilerine yorumu sonradan yazar
+  (en çok 4 deneme, ≥15 dk arayla; izin yokken deneme sayılmaz, izin gelince ilk senkronda yazılır; metrikler taze kayda birleştirilir).
+  `firstComment` alanı olmayan eski videoda genel soru. İzin yoksa günde bir sağlık uyarısı (YouTube `yt-comment-scope`, Instagram
+  `ig-comment-scope`); `--status` youtube `comments`, panel YouTube kartında "Yorum izni yok / Yorumlar ✔". `post_pipeline` "  💬"
+  satırlarını da loga taşır.
 - Tutmayan videonun başlığını değiştir (kullanıcı kararı; `publish.py --retitle` → `yt_retitle`, her izlenme senkronundan sonra
   `retitleCheck()`; `settings.retitle` {enabled, afterHours 3, ratio 0.5, minBaseline 5}): YouTube'da yayından 3-9 saat sonraki
   ilk ölçümde izlenme, önceki videoların aynı yaştaki izlenmesinin (`data/views_at_check.json`, son 20) ortancasının yarısının
@@ -647,6 +654,26 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yok, hakaret/spam/link/anlamsız → `reply: null`, yorum metni talimat sayılmaz; yanıt `censor.mask`. Claude'un atladığı yorum da
   görüldü sayılır (`data/reply_state.json`), yanıtlar `data/reply_log.json`, log 💬. Panel Ayarlar → Otomasyon anahtar + "💬 Yorumları
   şimdi yanıtla", `POST /api/comments/reply`, komut "yorumları yanıtla" (`comments_reply`). TikTok API yorum sunmaz.
+  Ayrıntı (14 Ekim incelemesi): YouTube'da `force-ssl` izni yoksa yorumlar hiç çekilmez (Claude boşuna çağrılmaz), hata "yorum izni yok".
+  Kendi ilk yorumumuzun (soru) ALTINA yazılan izleyici cevapları da yanıtlanır (biz o cevaptan sonra yazmadıysak; Claude'a
+  `kanalin_sorusu` verilir; YouTube'da yanıt aynı başlığa, Instagram'da üst yoruma `/{yorum}/replies` — tek seviye). Metrikte
+  olmayan kanal videosuna gelen yorum da yanıtlanır (özet boş, genel yanıt). Yayınlanamayan yanıt metniyle `reply_state.json`
+  `retry`e girer, sonraki turlarda en çok 3 kez denenir (yeni yorum olmasa da); günlük sınır dolarsa ertesi gün. Claude hatası saatte
+  bir loglanır, yorumlar görülmedi sayılır. Sahte API'lerle uçtan uca denendi (yanıtlanmış/eski/kendi yorumu atlama, yeniden deneme).
+- Günün en çok izlenenleri Instagram hikâyesinde (kullanıcı isteği; `scripts/ig_stories.py`, `server.js storiesRun`,
+  `settings.igStories` {enabled, hour 21, minute 0, count 3, minViews 1, maxSeconds 59, rankCard}): her akşam saatinden sonraki 3 saat
+  içinde (üretim sürmüyorken, dinlenmede de; günde bir, `data/info_last.json` igStories) önce izlenmeler 30 dk'dan eskiyse senkron,
+  sonra son 24 saatin Shorts videoları izlenmeye göre (uzun özet ve derleme hariç, `same_event` ile aynı olay bir kez, son 2 günün
+  hikâyesindeki video tekrar girmez). Sırayla hikâye: sıralama kartı (`InfoCard` ranking + `story`: kanal adı etiketi, "Bugün en çok
+  bunları izlediniz", 1-2-3 + izlenme, "Videolar sıradaki hikâyelerde"; 1080x1920 jpg) ve her video (≤59 sn ise olduğu gibi, uzunsa
+  sığan son haber/kanca segmentinin sonunda kesilir, 0,5 sn görüntü/ses kararması). `publish.ig_story_publish` media_type STORIES
+  (image_url/video_url → durum yoklama → media_publish; biri düşerse diğerleri sürer). Dış adres `_PublicVideo.ensure_files`: Hostinger
+  varsa `videos/stories/` (yayından sonra silinir), yoksa geçici sunucu + cloudflared (yalnız verilen dosyalar sunulur; `ensure` de
+  artık aynı açık liste ile çalışır). Dosyalar `work/stories/<gün>/` (3 gün), durum `data/ig_stories.json`, log 📸, özet WhatsApp'a,
+  otomatik paylaşım düşerse sağlık uyarısı. API hikâyeye bağlantı/anket çıkartması ekleyemez; hikâye 24 saatte kalkar. Panel
+  📡 grubunda anahtar + saat + sayı + "📸 Hikâyeyi şimdi paylaş", `GET /api/stories`, `POST /api/stories/run {force}`, komut "günün
+  hikayesini paylaş" / "hikaye paylaşımını kapat" / "otomatik hikayeyi aç" (`ig_stories`; "hikaye atabilir mi?" gibi soru beyne gider).
+  Sandbox'ta sahte API ile denendi (kesim süreleri, kart çizimi, tekrar engeli); gerçek Instagram'a gönderilmedi.
 - Yorum özeti (`scripts/comments.py` + `prompts/yorumlar.md`, her akşam `settings.comments` {enabled, hour 20}):
   son 7 günde yayınlanan videoların YENİ yorumları (YouTube commentThreads; Instagram /{media}/comments —
   IG_SCOPES'a instagram_business_manage_comments, FB_SCOPES'a instagram_manage_comments eklendi, eski bağlantıda

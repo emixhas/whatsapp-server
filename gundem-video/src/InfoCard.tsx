@@ -22,6 +22,7 @@ export type InfoCardProps = {
   date?: { day: string; month: string; weekday?: string };
   weather?: { level: "yellow" | "orange" | "red"; type: string; points: { name: string; lat: number; lon: number }[] };
   /** haftanın en çok izlenenleri: sıra, başlık, izlenme */ ranking?: { title: string; views?: string }[];
+  /** Instagram hikâyesi (dikey, tek başına): üstte büyük başlık, altta not; kanca başlığı binmez */ story?: boolean;
 };
 
 const YELLOW = "#FFD400";
@@ -203,11 +204,16 @@ const Weather = ({ p }: { p: InfoCardProps }) => {
 
 const Ranking = ({ p }: { p: InfoCardProps }) => {
   const tall = !!p.tall;
+  const story = tall && !!p.story;
   const rows = (p.ranking || []).slice(0, 5);
   return (
     <Frame tall={tall} label={p.label || "HAFTANIN EN ÇOK İZLENENLERİ"} stamp={p.stamp} accent={YELLOW}>
-      {/* dikeyde kanca başlığı (≈520-950) altında kalsın */}
-      <div style={{ position: "absolute", top: tall ? 1020 : 270, left: tall ? 60 : 150, right: tall ? 60 : 150 }}>
+      {story && p.title ? (
+        <div style={{ position: "absolute", top: 430, left: 70, right: 70, textAlign: "center", fontWeight: 900, lineHeight: 1.05, ...stroke(4),
+          fontSize: fitFontSize({ text: trUpper(p.title), maxWidth: 940, base: 110, min: 56, maxLines: 3, upper: false }) }}>{trUpper(p.title)}</div>
+      ) : null}
+      {/* dikeyde kanca başlığı (≈520-950) altında kalsın; hikâyede başlığın altında */}
+      <div style={{ position: "absolute", top: story ? 880 : tall ? 1020 : 270, left: tall ? 60 : 150, right: tall ? 60 : 150 }}>
         {rows.map((r, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 28, height: tall ? 140 : 150, marginBottom: tall ? 12 : 16, background: "rgba(255,255,255,.06)", borderRadius: 18, padding: "0 30px" }}>
             <div style={{ minWidth: tall ? 90 : 110, fontSize: tall ? 96 : 110, fontWeight: 900, color: i === 0 ? YELLOW : theme.white, ...stroke(3) }}>{i + 1}</div>
@@ -216,6 +222,9 @@ const Ranking = ({ p }: { p: InfoCardProps }) => {
           </div>
         ))}
       </div>
+      {story && p.sub ? (
+        <div style={{ position: "absolute", top: 880 + rows.length * 152 + 50, left: 70, right: 70, textAlign: "center", fontSize: 50, fontWeight: 800, color: YELLOW }}>▶ {p.sub}</div>
+      ) : null}
     </Frame>
   );
 };
