@@ -19,6 +19,8 @@ def video_rows():
         meta = episode_meta(p.name) or {}
         mv = m["videos"].get(p.name, {})
         yt, ig, tt = mv.get("youtube", {}), mv.get("instagram", {}), mv.get("tiktok", {})
+        # haberin değer penceresi ilk 3 gün (sync_metrics): 72 saati geçen videonun "3. gün" değeri kullanılır
+        yt, ig, tt = ({**x, "views": x["views72h"]} if x.get("views72h") is not None else x for x in (yt, ig, tt))
         haber = [s for s in meta.get("segments", []) if s.get("kind") == "haber"]
         rows.append({
             "name": p.name, "date": meta.get("date"), "time": meta.get("timeLabel"),

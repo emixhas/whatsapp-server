@@ -217,6 +217,7 @@
         <div class="acts"><button class="ghost" id="cmtNow">💬 Yorumları şimdi özetle</button></div>
         <label class="row"><span class="sw" id="cleanOn"></span><span>Disk temizliği: her gece 30 günden eski ve yayınlanmış videoların Mac'teki kopyasını sil (yayınlanmamışlar 60 gün bekler; kayıt, kapak, istatistik ve platformdaki video kalır)</span></label>
         <div class="acts"><button class="ghost" id="cleanNow">🧹 Şimdi temizle</button></div>
+        <div class="row" style="font-size:14px">📊 İzlenme güncelleme: yayından sonraki ilk 3 gün her <input id="syncMin" type="number" min="5" max="180" class="inl" style="width:64px"> dakikada, 3–7 gün arası günde bir; 7 günden eski haber artık sorgulanmaz (analizler her videoyu 3. gün izlenmesiyle karşılaştırır)</div>
         <label class="row"><span class="sw" id="restAfter"></span><span>Her üretimden sonra sistemi durdur (ısınmasın): sıradaki planlı üretime ya da elle talimata kadar son dakika/Mynet taraması ve otomatik üretim bekler; "🎬 Video üret" gibi elle düğmeler her zaman çalışır</span></label>
         <label class="row"><span class="sw" id="stVoice"></span><span>Aşamaları sesli bildir (senaryo hazırlandı, seslendirmeye başlandı, Hostinger'a eklendi, YouTube'da paylaşıldı…)</span></label>
         <label class="row"><span class="sw" id="stMac"></span><span>Panel kapalıyken Mac hoparlöründen söyle (23:00–08:00 arası sessiz)</span></label>
@@ -385,6 +386,7 @@ drawOrb();
 // ================= durum, log
 function renderRest(s){const r=s.rest||{};const on=!!r.on;const b=$('#sysStop');if(!b.dataset.busy){b.textContent=on?'▶ Sistemi başlat':'⏸ Tüm sistemi durdur';b.classList.toggle('rest',on);}
   $('#restBar').classList.toggle('on',on);if(on){const t=x=>new Date(x).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});$('#restTxt').textContent=`${t(r.since)}'den beri (${r.reason||'elle'}). Bilgisayar dinleniyor: modeller kapalı. `+(s.watch?.nextAt?`Haber taraması sürüyor (${s.watch.everyMin} dk'da bir${s.watch.lastAt?', son '+t(s.watch.lastAt):''}, sıradaki ${t(s.watch.nextAt)}); değerli haber düşerse sistem kendiliğinden başlar ve üretir. `:'Haber taraması kapalı. ')+(r.until?`Sıradaki planlı iş ${t(r.until)} (${r.untilWhat||'üretim'}); o zaman kendiliğinden başlar.`:'Zamanlayıcı kapalı; siz başlatana kadar bekler.')+' Elle verdiğiniz her üretim talimatı sistemi uyandırır.';}
+  if(document.activeElement!==$('#syncMin'))$('#syncMin').value=s.settings?.metricsSyncMinutes??20;
   $('#restAfter').classList.toggle('on',s.settings?.restAfterProduction!==false);$('#cleanOn').classList.toggle('on',s.settings?.cleanup?.enabled!==false);$('#cmtOn').classList.toggle('on',s.settings?.comments?.enabled!==false);}
 function setState(s){status=s;renderRest(s);$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor${s.duration?` (${s.duration} sn)`:''}`:s.busy?s.busy:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='📱 '+s.lanUrl;
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
@@ -595,6 +597,7 @@ $('#cleanOn').onclick=async()=>{const on=!$('#cleanOn').classList.contains('on')
 $('#cleanNow').onclick=async()=>{const d=await post('/api/cleanup',{dryRun:true});const n=(d.deleted||[]).length;if(!n){toast('Silinecek eski video yok');return;}
   const mb=d.deleted.reduce((a,x)=>a+(x.mb||0),0);if(!await ask(`${n} eski videonun Mac'teki kopyası silinecek (~${(mb/1024).toFixed(1)} GB). Kayıtlar, kapaklar, istatistik ve platformlardaki videolar kalır. Devam?`))return;
   const r=await post('/api/cleanup');toast(`${(r.deleted||[]).length} video silindi, ${((r.freedMb||0)/1024).toFixed(1)} GB boşaldı`);loadVideos();};
+$('#syncMin').onchange=async()=>{const v=Math.min(180,Math.max(5,Number($('#syncMin').value)||20));await post('/api/settings',{metricsSyncMinutes:v});refreshStatus();};
 $('#restAfter').onclick=async()=>{const on=!$('#restAfter').classList.contains('on');await post('/api/settings',{restAfterProduction:on});refreshStatus();};
 // Mynet manşet takibi
 async function loadMynet(){try{const m=await api('/api/mynet');$('#mynetOn').classList.toggle('on',m.enabled!==false);

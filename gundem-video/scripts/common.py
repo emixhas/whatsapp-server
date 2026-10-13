@@ -76,7 +76,7 @@ def settings():
 _DEFAULTS = ({
         "autopublish": {"youtube": False, "instagram": False, "tiktok": False},
         "dailyReportHour": 9,
-        "metricsSyncMinutes": 60,
+        "metricsSyncMinutes": 20,
         "channelName": "Türkiye Gündemi",
         "hashtags": "#gündem #haber #türkiye #sondakika #shorts",
         "assistantName": "Emixhas",

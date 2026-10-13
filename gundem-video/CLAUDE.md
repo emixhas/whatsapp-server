@@ -415,7 +415,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (pazartesi), hour 10}'da önce izlenmeleri çeker, metni WhatsApp'a gönderir, özeti seslendirir
   (`data/weekly_report_last.json` tekrarı engeller). Komut: "haftalık rapor", "bu hafta nasıl gitti";
   `POST /api/weekly-report`.
-- Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` aralığıyla senkron;
+- Arka plan: her dakika kontrol → bağlı hesap varsa `metricsSyncMinutes` (20) aralığıyla kademeli senkron;
   `dailyReportHour`'da günlük rapor üretilip SSE `jarvis` olayıyla panele seslendirilir.
 - Küre: canvas, mikrofon ve Emixhas sesi için Web Audio analyser; renk = durum (hazır cyan,
   dinliyor yeşil, düşünüyor amber, konuşuyor pembe, üretiyor kırmızı). Boştayken saniyede ~12 kare,
@@ -508,7 +508,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - TikTok sınırı: gelen kutusu modunda paylaşılmamış taslak birikince `spam_risk_too_many_pending_share` (doğrudan yayında
   `spam_risk_too_many_posts`) → `TT_LIMIT_REASONS` LimitReached gibi: 3 saat bekleme, video sıraya, Türkçe açıklama
   `TT_LIMIT_TR` ("taslakları paylaşın ya da silin"), log "📤 tiktok: sınır doldu" + sesli uyarı.
-- `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları.
+- `scripts/sync_metrics.py`: izlenme/beğeni/yorum (YT), plays/reach/shares/saves (IG), TikTok sayaçları. Kademeli takip
+  (kullanıcı kararı: haberlerimiz günlük, 3 gün sonra değeri kalmaz; `settings.metricsSync` {freshHours 72, dailyUntilDays 7}):
+  ilk 72 saat her senkronda (`metricsSyncMinutes`, varsayılan 20 dk; eski 60 bir kez 20'ye taşındı, Ayarlar → Otomasyon), 72. saati
+  geçince bir kez hemen ölçülüp `views72h` saklanır, 3-7 gün günde bir, 7 günden eski video sorgulanmaz (Instagram'da video başına
+  istek gittiği için sınır da korunur). `analyze.video_rows` 72 saati geçen videoda `views72h` kullanır: kategori/saat/varyant
+  ortalamaları, en iyi videolar, haftalık rapor ve altın saat planı her haberi "3. gün" değeriyle karşılaştırır.
   Sonunda `scripts/followers.py` abone/takipçi sayılarını çeker: YouTube `channels.list(mine)` subscriberCount
   (1000 üstünde yuvarlanır), Instagram `followers_count`, TikTok `user/info` follower_count (`user.info.stats` izni:
   TT_SCOPES'a eklendi, eski bağlantıda yeniden bağlamak ve uygulamada izin açık olmak gerekir). Saatte en çok bir
