@@ -507,6 +507,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sayfalarını, video ve fotoğraf adreslerini kullanmaz (fotoğrafta önce aynı haberin diğer sayfaları); her segmente
   `videoSrc`/`imageSrc` yazılır ki sonraki yeniden yayın da farklı görsel seçsin. Meta `remakeOf` (listede "🔁 yeniden"
   etiketi), `post_pipeline.youtube_allowed` yeniden yayını değer kuralına takmaz; yayın anlık videoyla aynı (bağlı tüm hesaplar).
+- En çok izlenen saatlerde tekrar (kullanıcı isteği: "en çok izlenen 3 saatte günün en çok izlenen haberini sırasıyla farklı
+  şekilde, mümkünse farklı görsellerle 30 sn yeniden yayınla"; `scripts/peak_remake.py`, `settings.peakRemake` {enabled true,
+  count 3, duration 30, leadMin 20, minViews 10, defaultHours [12, 18, 21], fromHour 8, toHour 23, minGapHours 3, minVideos 12,
+  minPerHour 2}): `--plan` Shorts videolarının yayın saatine göre izlenme ortalaması (komşu saatlerle yumuşatılmış; yalnız kendi
+  verisi ≥2 video olan saat aday; 24 saatten genç videolar sayılmaz), en iyi 3 saat aralarında ≥3 saat; veri azsa varsayılan
+  saatler. `--pick` son 24 saatin en çok izlenen videosu; son 24 saatte (bu özellikle ya da elle 🔁) yeniden yayınlanmış video/
+  aynı olay (`same_event`) atlanır → 1. saatte günün 1 numarası, sonra sıradakiler. Panel (`server.js` peakRemake): saat
+  `leadMin` dk önce ile :50 arası, saatte bir kez (`data/peak_remake.json`, bekleyen kayıt çift başlamayı önler); önce izlenmeler
+  30 dk'dan eskiyse senkron, sonra `remakeVideo(name, {duration, peakHour})` (eski sayfa/görseller hariç, yeni senaryo),
+  dinlenmedeyse uyandırır, `nextPlanned` sıradaki tekrarı bilir. Meta `peakHour` (listede "🕘 HH:00 tekrarı"). Log 🕘. Panel
+  Analitik "🕘 EN ÇOK İZLENEN SAATLERDE TEKRAR" (anahtar, saatler, bugün yapılanlar, "Şimdi yap"), `GET /api/peak`,
+  `POST /api/peak/run`, komut "en çok izlenen saatler / altın saat tekrarını aç|kapat|şimdi yap" (`peak` eylemi).
 - Viral alarmı (`scripts/viral_watch.py`, her izlenme senkronundan sonra `viralCheck()`): 24 saatten genç video, son 20
   eski videonun ortanca toplam izlenmesinin `settings.viral.ratio` (3) katı ve ≥ `minViews` (200) → bir kez (data/viral.json)
   log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa

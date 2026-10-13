@@ -74,7 +74,7 @@ function listVideos() {
     return { name: f, size: st.size, mtime: st.mtimeMs, duration: dur ? Math.round(dur) : null, targetDuration: meta?.targetDuration ?? null,
       date: meta?.dateLabel ?? null, time: meta?.timeLabel ?? null, episodeOfDay: meta?.episodeOfDay ?? null,
       headlines: meta ? meta.segments.filter((s) => s.kind === "haber").map((s) => ({ title: s.title, category: s.category, breaking: !!s.breaking })) : [],
-      youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, remakeOf: meta?.remakeOf || null,
+      youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, remakeOf: meta?.remakeOf || null, peakHour: meta?.peakHour ?? null,
       // panel araması: başlıklar, seslendirme, kaynaklar, tarih, format (küçük harf, Türkçe)
       search: meta ? [meta.publishTitle, meta.titles?.A, meta.titles?.B, meta.dayLabel, meta.slotLabel, meta.formatLabel, meta.sourceName, ...(meta.hashtags || []),
         ...meta.segments.flatMap((x) => [x.title, x.narration, x.source])].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").slice(0, 4000) : f.toLowerCase(),
@@ -189,6 +189,7 @@ async function nextPlanned() {
   if (d.enabled && readJson(DAILY_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(d.hour), Number(d.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "günün özeti" }); }
   const w = weeklyCfg();
   if (w.enabled && new Date().getDay() === Number(w.weekday) && readJson(WEEKLY_VIDEO_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(w.hour), Number(w.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "haftanın özeti" }); }
+  const pk = peakNext(); if (pk) cands.push(pk);
   return cands.sort((a, b) => a.at - b.at)[0] || null;
 }
 async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
@@ -264,6 +265,7 @@ function startAnlik(topic, duration, opts = {}) {
   writeJson(path.join(WORK, "remake.json"), opts.remake || {}); // yeniden yayın: eski senaryo + kaçınılacak görsel kaynakları
   const env = { ANLIK: "1" };
   if (opts.remake?.of) { env.REMAKE = "1"; env.REMAKE_OF = String(opts.remake.of); }
+  if (opts.peakHour != null) env.PEAK_HOUR = String(opts.peakHour);
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
@@ -359,7 +361,7 @@ async function prepareAnlik(input, duration, opts = {}) {
 // videodakinden FARKLI görsellerle. Anlık videoda tüm konu, çok haberli videoda kanca (manşet) haberi tek konulu son dakika
 // videosu olur. Haber sitelerde yeniden aranır (güncel bilgi + başka sayfalar); eski haber sayfaları ve eski videonun
 // görsel kaynakları work/remake.json "avoid" listesine girer, fetch_images önce başka kaynaklara bakar.
-async function remakeVideo(name) {
+async function remakeVideo(name, opts = {}) {
   name = path.basename(String(name || "")).replace(/\.json$/, "").replace(/\.mp4$/, "") + ".mp4";
   const meta = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), null);
   if (!meta?.segments?.length) return { ok: false, error: "Videonun bilgileri bulunamadı." };
@@ -375,14 +377,74 @@ async function remakeVideo(name) {
   const fresh = f?.found && f.best && !avoid.includes(f.best.url) ? [f.best.title, f.best.description, f.best.body].filter(Boolean).join(". ") : "";
   const topic = [facts, fresh].filter(Boolean).join(" ").replace(/\s+/g, " ").slice(0, 1500);
   const source = pages[0]?.source || meta.sourceName || firstHaber?.source || "";
-  const r = startAnlik(topic, Math.min(60, Math.max(20, Number(meta.targetDuration) || 30)), {
-    source, url: pages[0]?.url, related: (f?.related || []).filter((x) => x.b !== title), pages,
+  const r = startAnlik(topic, Math.min(60, Math.max(20, Number(opts.duration || meta.targetDuration) || 30)), {
+    source, peakHour: opts.peakHour, url: pages[0]?.url, related: (f?.related || []).filter((x) => x.b !== title), pages,
     remake: { of: name, oldScript: segs.map((x) => ({ kind: x.kind, title: x.title, narration: x.narration })), oldTitles: meta.titles || {}, avoid },
   });
   if (r.ok) push(`🔁 ${name} farklı senaryo ve görsellerle yeniden üretiliyor${r.queued ? ` (${r.position}. sırada)` : ""}; bitince bağlı hesaplarda yayınlanacak`);
   return { ...r, title };
 }
 app.post("/api/videos/:name/remake", async (req, res) => res.json(await remakeVideo(req.params.name)));
+
+// ---------- En çok izlenen saatlerde tekrar (kullanıcı isteği): izlenmenin en yüksek olduğu 3 saatte (scripts/peak_remake.py
+// --plan; az veride 12, 18, 21) son 24 saatin en çok izlenen haberi sırasıyla farklı senaryo ve görsellerle 30 sn yeniden
+// yayınlanır. Üretim saatten leadMin (20) dk önce başlar ki video o saatte yayında olsun; pencere saatin 50. dakikasına
+// kadar açık (Mac uyuduysa o saat atlanır). Her saatte bir kez (data/peak_remake.json); dinlenmedeyse sistemi uyandırır.
+const peakCfg = () => ({ enabled: true, count: 3, leadMin: 20, duration: 30, ...(settings().peakRemake || {}) });
+const PEAK_FILE = path.join(DATA, "peak_remake.json");
+let peakPlan = { at: 0, hours: [] }, peakBusy = false;
+async function peakHours(force = false) {
+  if (force || Date.now() - peakPlan.at > 3 * 3600000) {
+    const r = await pyJson(["scripts/peak_remake.py", "--plan"], 60000).catch(() => null);
+    if (r?.hours) {
+      const changed = peakPlan.hours.join(",") !== r.hours.join(",");
+      peakPlan = { ...r, at: Date.now() };
+      if (changed && peakCfg().enabled) push(`🕘 en çok izlenen saatler (${r.source}): ${r.hours.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ")} — o saatlerde günün en çok izlenen haberi yeniden yayınlanacak`);
+    }
+  }
+  return peakPlan;
+}
+const peakToday = () => { const st = readJson(PEAK_FILE, {}); return (st.done || []).filter((d) => d.day === today()); };
+function peakMark(rec) {
+  const st = readJson(PEAK_FILE, {});
+  st.done = [...(st.done || []).filter((d) => Date.now() - (d.at || 0) < 7 * 86400000), { day: today(), at: Date.now(), ...rec }];
+  writeJson(PEAK_FILE, st);
+}
+// sıradaki tekrarın başlama anı (dinlenme "sıradaki planlı iş" için)
+function peakNext() {
+  const c = peakCfg(); if (!c.enabled || !peakPlan.hours?.length) return null;
+  const done = new Set(peakToday().map((d) => d.hour));
+  const t = peakPlan.hours.filter((h) => !done.has(h)).map((h) => { const d = new Date(); d.setHours(h, 0, 0, 0); return d.getTime() - Number(c.leadMin) * 60000; }).filter((x) => x > Date.now()).sort((a, b) => a - b)[0];
+  return t ? { at: t, what: "en çok izlenen saat tekrarı" } : null;
+}
+async function peakRemake({ hour = null, manual = false } = {}) {
+  if (peakBusy) return { ok: false, error: "Tekrar zaten hazırlanıyor." };
+  peakBusy = true;
+  const hh = hour == null ? "şimdi" : `${String(hour).padStart(2, "0")}:00`;
+  try {
+    if (!manual) peakMark({ hour, pending: true }); // aynı saat iki kez başlamasın
+    const m = readJson(path.join(DATA, "metrics.json"), {});
+    if (!m.lastSync || Date.now() - Date.parse(m.lastSync) > 30 * 60000) await execAction({ type: "sync_metrics" }).catch(() => {}); // seçim güncel izlenmeyle
+    const p = await pyJson(["scripts/peak_remake.py", "--pick"], 60000);
+    const finish = (rec) => { const st = readJson(PEAK_FILE, {}); st.done = (st.done || []).filter((d) => !(d.pending && d.day === today() && d.hour === hour)); writeJson(PEAK_FILE, st); peakMark({ hour: manual ? null : hour, manual, ...rec }); };
+    if (!p?.ok) { push(`🕘 en çok izlenen saat (${hh}) tekrarı yapılmadı: ${p?.reason || "seçim yapılamadı"}`); finish({ skipped: true, reason: p?.reason || "" }); return { ok: false, error: p?.reason || "Uygun video bulunamadı." }; }
+    if (resting()) restEnd(`en çok izlenen saat tekrarı (${hh})`);
+    push(`🕘 en çok izlenen saat (${hh}): günün en çok izlenen haberi "${p.title.slice(0, 80)}" (${p.views.toLocaleString("tr-TR")} izlenme) ${peakCfg().duration} sn, farklı senaryo ve görsellerle yeniden yayınlanıyor`);
+    const r = await remakeVideo(p.video, { duration: peakCfg().duration, peakHour: hour });
+    finish(r.ok ? { name: p.video, title: p.title, views: p.views } : { skipped: true, reason: r.error || "" });
+    return { ...r, title: p.title, views: p.views, video: p.video };
+  } finally { peakBusy = false; }
+}
+setInterval(async () => {
+  const c = peakCfg(); if (!c.enabled || peakBusy) return;
+  const { hours = [] } = await peakHours();
+  const n = new Date(), mins = n.getHours() * 60 + n.getMinutes(), done = new Set(peakToday().map((d) => d.hour));
+  const h = hours.find((x) => !done.has(x) && mins >= x * 60 - Number(c.leadMin) && mins <= x * 60 + 50);
+  if (h != null) peakRemake({ hour: h }).catch((e) => push(`🕘 en çok izlenen saat tekrarı hatası: ${e.message}`));
+}, 60000);
+setTimeout(() => { peakHours(true).catch(() => {}); }, 20000);
+app.get("/api/peak", async (_req, res) => { const p = await peakHours(); res.json({ cfg: peakCfg(), plan: p, today: peakToday(), next: peakNext() }); });
+app.post("/api/peak/run", async (_req, res) => res.json(await peakRemake({ manual: true })));
 app.post("/api/anlik", async (req, res) => res.json(await prepareAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
 
@@ -1197,6 +1259,14 @@ async function handleCommand(text) {
       const r = await remakeVideo(pick.name);
       reply = r.ok ? `${cmd.which === "top" ? "En çok izlenen" : "Son"} video (${r.title.slice(0, 70)}${pick.views ? `, ${pick.views} izlenme` : ""}) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error;
       if (!r.ok) action = "none"; break;
+    }
+    case "peak": {
+      if (cmd.run) { const r = await peakRemake({ manual: true }); reply = r.ok ? `Günün en çok izlenen haberi (${r.title.slice(0, 70)}, ${r.views} izlenme) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error; break; }
+      if (cmd.on != null) { patchSettings({ peakRemake: { enabled: cmd.on } }); }
+      const p = await peakHours(true), c = peakCfg(), td = peakToday();
+      const hrs = (p.hours || []).map((h) => `${String(h).padStart(2, "0")}:00`).join(", ");
+      reply = `En çok izlenen saatlerde tekrar ${c.enabled ? "açık" : "kapalı"}. Saatler (${p.source || "hesaplanıyor"}): ${hrs || "henüz yok"}.` + (td.length ? ` Bugün: ${td.map((d) => `${d.hour == null ? "elle" : String(d.hour).padStart(2, "0") + ":00"} ${d.name ? `"${(d.title || "").slice(0, 40)}"` : `atlandı (${d.reason || "bekliyor"})`}`).join("; ")}.` : "");
+      break;
     }
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }

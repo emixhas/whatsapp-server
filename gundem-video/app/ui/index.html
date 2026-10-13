@@ -198,6 +198,9 @@
       <h2 style="margin-top:14px">SÜREYE GÖRE</h2><div class="bars" id="byDur"></div>
       <h2 style="margin-top:14px">SAATE GÖRE</h2><div class="bars" id="byHour"></div>
       <h2 style="margin-top:14px">EN İYİ YAYIN SAATİ</h2><div class="conninfo" id="bestHours">Veri bekleniyor…</div>
+      <h2 style="margin-top:14px">🕘 EN ÇOK İZLENEN SAATLERDE TEKRAR</h2>
+      <div class="conninfo"><label class="row"><span class="sw" id="peakOn"></span><span>En çok izlenen 3 saatte, günün en çok izlenen haberi sırasıyla farklı senaryo ve farklı görsellerle 30 saniyelik yeniden yayınlansın (üretim saatten 20 dk önce başlar)</span></label>
+        <div id="peakInfo" style="margin-top:6px">Hesaplanıyor…</div><div class="acts"><button class="ghost" id="peakRun">🔁 Şimdi yap</button></div></div>
       <h2 style="margin-top:14px">EN İYİ VİDEOLAR</h2><div id="top"></div>
       <h2 style="margin-top:14px">SENARYOYA GİDEN İPUCU</h2><div class="md" id="hint" style="color:var(--mut)"></div>
     </div>
@@ -403,7 +406,7 @@ async function loadVideos(){videos=await api('/api/videos');renderVideos();}
 function renderVideos(){const list=shownVideos(),filtered=list.length!==videos.length;
   $('#count').textContent=videos.length?(filtered?`(${list.length} / ${videos.length})`:`(${videos.length})`):'';
   $('#empty').style.display=list.length?'none':'block';$('#empty').textContent=videos.length?'Aramaya uyan video yok.':'Henüz video yok. "Şimdi üret" ile başlayın.';
-  $('#grid').innerHTML=list.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${/^demo/.test(v.name)?'':`<button class="remk" data-remake="${v.name}" title="Aynı haberi farklı senaryo ve farklı görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button>`}${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.remakeOf?'<span class="tag">🔁 yeniden</span>':''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
+  $('#grid').innerHTML=list.map(v=>`<div class="vid" data-n="${v.name}"><img src="/api/thumb/${v.name}" loading="lazy">${/^demo/.test(v.name)?'':`<button class="remk" data-remake="${v.name}" title="Aynı haberi farklı senaryo ve farklı görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button>`}${v.views?`<div class="views">▶ ${v.views.toLocaleString('tr-TR')}</div>`:''}<div class="m"><b>${v.date??v.name}${v.episodeOfDay?` · ${v.episodeOfDay}. özet`:''}</b><span>${v.duration??'?'} sn · ${v.time??''}</span><div>${v.youtube?'<span class="tag yt">YT</span>':''}${v.instagram?'<span class="tag ig">IG</span>':''}${v.tiktok?'<span class="tag tt">TT</span>':''}${v.remakeOf?`<span class="tag">${v.peakHour!=null?`🕘 ${String(v.peakHour).padStart(2,'0')}:00 tekrarı`:'🔁 yeniden'}</span>`:''}${v.headlines.map(tagHtml).join('')}</div></div></div>`).join('');
   document.querySelectorAll('.vid').forEach(el=>el.onclick=()=>openVideo(el.dataset.n));
   document.querySelectorAll('[data-remake]').forEach(b=>b.onclick=e=>{e.stopPropagation();remake(b.dataset.remake,b);});}
 let vqTimer=null;$('#vq').oninput=()=>{clearTimeout(vqTimer);vqTimer=setTimeout(renderVideos,150);};$('#vsort').onchange=renderVideos;$('#vplat').onchange=renderVideos;
@@ -678,7 +681,18 @@ function renderBestHours(b){const el=$('#bestHours');if(!b){el.textContent='Veri
       :`<div style="margin-top:6px;color:var(--mut)">${esc(b.note||'Şimdiki saatler iyi görünüyor; belirgin daha iyi bir saat yok.')}</div>${off?'<div class="acts"><button class="ghost" id="bhReset">Varsayılana dön</button></div>':''}`);
   const ap=$('#bhApply');if(ap)ap.onclick=async()=>{if(!await ask(b.suggestion.text+'\n\nÜretim saatleri değiştirilsin mi?'))return;const r=await post('/api/schedule/offset',{offset:b.suggestion.offset});toast(r.ok?'Üretim saatleri kaydırıldı ✓':(r.error||'Değiştirilemedi'),!r.ok);refreshStatus();loadInsights();};
   const rs=$('#bhReset');if(rs)rs.onclick=async()=>{const r=await post('/api/schedule/offset',{reset:true});toast(r.ok?'Varsayılan saatlere dönüldü':(r.error||'Değiştirilemedi'),!r.ok);refreshStatus();loadInsights();};}
-async function loadInsights(){const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
+// en çok izlenen saatlerde tekrar (scripts/peak_remake.py): saatler, bugün yapılanlar, aç/kapat, şimdi yap
+async function loadPeak(){const p=await api('/api/peak');if(!p)return;const hh=h=>String(h).padStart(2,'0')+':00';
+  $('#peakOn').classList.toggle('on',p.cfg?.enabled!==false);
+  const det=(p.plan?.detail||[]).map(d=>`<b>${hh(d.hour)}</b> (ort. ${d.avg.toLocaleString('tr-TR')} izlenme)`).join(' · ');
+  const today=(p.today||[]).map(d=>`<div>${d.hour==null?'elle':hh(d.hour)}: ${d.name?`✅ ${esc((d.title||'').slice(0,70))} (${(d.views||0).toLocaleString('tr-TR')} izlenme)`:d.pending?'⏳ hazırlanıyor':`⏭ ${esc(d.reason||'atlandı')}`}</div>`).join('');
+  $('#peakInfo').innerHTML=`<div>Saatler (${esc(p.plan?.source||'…')}): ${det||(p.plan?.hours||[]).map(h=>`<b>${hh(h)}</b>`).join(', ')||'henüz yok'}</div>`
+    +(p.plan?.note?`<div style="color:var(--mut)">${esc(p.plan.note)}</div>`:'')
+    +(p.next?`<div style="color:var(--mut)">Sıradaki: ${new Date(p.next.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}'de başlar</div>`:'')
+    +(today?`<div style="margin-top:4px">Bugün:</div>${today}`:'');}
+$('#peakOn').onclick=async()=>{const on=!$('#peakOn').classList.contains('on');await post('/api/settings',{peakRemake:{enabled:on}});loadPeak();};
+$('#peakRun').onclick=async()=>{if(!await ask('Son 24 saatin en çok izlenen (henüz tekrarlanmamış) haberi farklı senaryo ve görsellerle 30 sn yeniden üretilip yayınlansın mı?'))return;const r=await post('/api/peak/run',{});toast(r.ok?'Yeniden üretiliyor: '+(r.title||'').slice(0,60):(r.error||'Yapılamadı'),!r.ok);loadPeak();};
+async function loadInsights(){loadPeak();const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
   $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
   const bp=i.byPlatform||{};
   bars('#byPlat',Object.fromEntries(Object.entries(bp).filter(([,v])=>v.total).map(([k,v])=>[`${PLAT[k].n} (${v.videos} video, ort. ${v.avg.toLocaleString('tr-TR')})`,v.total])));

@@ -60,6 +60,8 @@ export function parseCommand(raw) {
   }
   const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
   if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
+  // En çok izlenen saatlerde tekrar: "en çok izlenen saatler", "altın saat tekrarını kapat", "altın saat tekrarını şimdi yap"
+  if (/(en çok izlenen saat|altın saat|izlenen saatlerde)/.test(t)) return { action: "peak", run: /(şimdi|hemen) (yap|üret|yayınla|çalıştır)/.test(t), on: /(^|\s)(kapat|durdur)/.test(t) ? false : /(^|\s)(aç|başlat|etkinleştir)(\s|$)/.test(t) ? true : null, reply: "" };
   // Tutan videoyu farklı haliyle yeniden yayınla: "en çok izlenen videoyu yeniden yayınla", "son videoyu yeniden yayınla"
   if (/(yeniden|tekrar) (yayınla|paylaş|üret)/.test(t) && /video/.test(t)) return { action: "remake", which: /(en çok|en fazla|tutan|izlenen|viral)/.test(t) ? "top" : "last", reply: "" };
   if (/kapak(ları|lari)? (yeniden|tekrar) (yükle|gönder)/.test(t)) return { action: "yt_thumbs", reply: "" };

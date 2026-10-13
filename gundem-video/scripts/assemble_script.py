@@ -446,6 +446,7 @@ def main(src: str, dst: str):
         "targetDuration": DURATION,
         "format": os.environ.get("FORMAT", "ozel"),
         "remakeOf": os.environ.get("REMAKE_OF") or None,  # tutan videonun farklı senaryo/görselle yeniden yayını
+        "peakHour": int(os.environ["PEAK_HOUR"]) if os.environ.get("PEAK_HOUR", "").isdigit() else None,  # en çok izlenen saat tekrarı
         "formatLabel": os.environ.get("FORMAT_LABEL", "Gündem"),
         "music": "music/ogle.mp3" if ANLIK else f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
         "segments": segs,
