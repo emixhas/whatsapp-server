@@ -866,6 +866,41 @@ setInterval(() => {
 // Yorumlara otomatik yanıt verilmez. Dinlenmede de çalışır (yerel model açmaz).
 const commentsCfg = () => ({ enabled: true, hour: 20, minute: 0, ...(settings().comments || {}) });
 const COMMENTS_FILE = path.join(DATA, "comments_last.json");
+// ---------- Yorumlara anında otomatik yanıt (kullanıcı kararı; scripts/comment_reply.py, prompts/yanit.md): her
+// autoReply.intervalMin (5) dk yeni yorumlar toplanır, TEK Claude çağrısıyla (düşük effort) yanıtlar yazılır, yayınlanır.
+// Hakaret/spam/link → yanıt yok (reply null). Günlük sınır: YouTube 20 (kota), Instagram 60. Log 💬, dinlenmede de sürer.
+const replyCfg = () => ({ enabled: true, intervalMin: 5, ...(settings().autoReply || {}) });
+let replyAt = 0, replyBusy = false, replyErrAt = 0;
+async function replyCheck({ manual = false } = {}) {
+  if (replyBusy) return { ok: false, error: "Yorum yanıtlama zaten sürüyor." };
+  replyBusy = true;
+  try {
+    const f = await pyJson(["scripts/comment_reply.py", "--fetch"], 120000).catch(() => null);
+    const errs = Object.entries(f?.errors || {}).map(([k, v]) => `${k}: ${v}`);
+    if (errs.length && (manual || Date.now() - replyErrAt > 6 * 3600000)) { replyErrAt = Date.now(); push(`💬 yorum yanıtı: ${errs.join(" · ")}`); }
+    const cs = f?.comments || [];
+    if (!cs.length) return { ok: true, replied: 0, errors: errs };
+    const input = cs.map((c) => ({ id: c.id, video_basligi: c.title, video_ozeti: c.context, yorum: c.text }));
+    let arr = [];
+    try {
+      const txt = await brain.complete(`${readFileSync(path.join(ROOT, "prompts/yanit.md"), "utf8")}\n${JSON.stringify(input)}`);
+      arr = JSON.parse((String(txt).match(/\[[\s\S]*\]/) || ["[]"])[0]);
+    } catch (e) { push(`💬 yorum yanıtı yazılamadı (Claude): ${String(e.message || e).slice(0, 120)}`); return { ok: false, error: "yanıt yazılamadı" }; }
+    const byId = Object.fromEntries((Array.isArray(arr) ? arr : []).map((x) => [String(x.id), x.reply]));
+    // Claude'un atladığı yorum da "görüldü" sayılır (her turda yeniden token harcanmasın)
+    const items = cs.map((c) => ({ id: c.id, platform: c.platform, video: c.video, text: c.text, reply: byId[c.id] ?? null }));
+    const file = path.join(WORK, "replies.json");
+    writeJson(file, items);
+    const r = await py("comment_reply.py", ["--post", file]);
+    for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("💬")) push(l);
+    const j = r.json || {};
+    if (j.replied || j.skipped) push(`💬 ${cs.length} yeni yorum: ${j.replied || 0} yanıtlandı, ${j.skipped || 0} yanıtsız bırakıldı (hakaret/spam/anlamsız)`);
+    return { ok: true, ...j };
+  } finally { replyBusy = false; }
+}
+setInterval(() => { const c = replyCfg(); if (c.enabled && Date.now() - replyAt >= Number(c.intervalMin) * 60000) { replyAt = Date.now(); replyCheck().catch((e) => push(`💬 yorum yanıtı hatası: ${e.message}`)); } }, 60000);
+app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({ manual: true })));
+
 async function commentsDigest({ manual = false } = {}) {
   writeJson(COMMENTS_FILE, { day: today(), at: Date.now() });
   const r = await py("comments.py", []);
@@ -1534,6 +1569,7 @@ async function handleCommand(text, opts = {}) {
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
+    case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }
     case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }
     case "weekly_summary": { const r = startWeekly({ manual: true }); reply = r.ok ? "Haftanın özeti videosu üretiliyor. Yatay, yaklaşık beş dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }
     case "daily_summary": { const r = startDaily({ manual: true }); reply = r.ok ? "Günün özeti videosu üretiliyor. Yatay, yaklaşık dört dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }

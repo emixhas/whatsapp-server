@@ -3,7 +3,7 @@
 commentThreads (mevcut izinle), Instagram /{media}/comments (instagram_business_manage_comments ya da Facebook
 girişinde instagram_manage_comments izni; eski bağlantıda "yeniden bağla" gerekir). TikTok yorum API'si sunmaz.
 Görülen yorumlar data/comments_state.json'da (30 gün); özeti panel Claude ile yazar ve WhatsApp'a gönderir.
-Yorumlara otomatik yanıt VERİLMEZ.
+Bu betik yanıt vermez; anında otomatik yanıt ayrı: scripts/comment_reply.py (kullanıcı kararı, 14 Ekim).
 
   python3 scripts/comments.py         # son satır JSON {comments: [...], errors: {...}}
   python3 scripts/comments.py --all   # görülenleri de getir (deneme)

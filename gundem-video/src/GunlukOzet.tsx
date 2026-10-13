@@ -6,7 +6,7 @@ import { MediaBg } from "./scenes/MediaBg";
 import { InstagramIcon, TikTokIcon, YouTubeIcon } from "./scenes/Outro";
 import { TurkeyMap } from "./scenes/TurkeyMap";
 import { theme } from "./theme";
-import { currentGroup, Word } from "./captionGroups";
+import { currentWord, setCaptionLead, Word } from "./captionGroups";
 import { Thumb } from "./Thumb";
 import { Episode, FPS, Segment } from "./types";
 
@@ -16,22 +16,17 @@ export const WIDE_W = 1920;
 export const WIDE_H = 1080;
 const WHOOSH = 17;
 
-/** Geniş altyazı: en çok 3 kelimelik grup (Shorts ile aynı kural), kelimeler söylendikçe eklenir, konuşulan kelime kategori renginde. */
+/** Geniş altyazı: TEK ve büyük kelime (Shorts ile aynı kural), söylendiği anda belirir, bitince kalkar. */
 const WideCaptions = ({ words, accent }: { words?: Word[]; accent: string }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  if (!words?.length) return null;
-  const t = frame / fps + 0.06;
-  const { idx, start } = currentGroup(words, t);
+  const cur = currentWord(words, frame / fps);
+  if (!cur) return null;
+  const pop = Math.min(1, Math.max(0, cur.age / 0.1));
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", lineHeight: 1.2 }}>
-      {words.slice(start, idx + 1).map((w, i) => {
-        const gi = start + i, active = gi === idx, shown = true;
-        return (
-          <span key={gi} lang="tr" style={{ fontSize: 50, fontWeight: 900, whiteSpace: "nowrap", color: active ? "#0B0F1A" : theme.white, opacity: shown ? 1 : 0,
-            background: active ? accent : "transparent", padding: active ? "0 12px" : 0, borderRadius: 10 }}>{w.w}</span>
-        );
-      })}
+    <div style={{ display: "flex", lineHeight: 1.15 }}>
+      <span key={cur.idx} lang="tr" style={{ fontSize: 76, fontWeight: 900, whiteSpace: "nowrap", color: "#0B0F1A", background: accent, padding: "2px 18px",
+        borderRadius: 12, transform: `scale(${0.85 + 0.15 * pop})`, transformOrigin: "left center", opacity: 0.4 + 0.6 * pop }}>{cur.word.w}</span>
     </div>
   );
 };
@@ -172,6 +167,7 @@ const WideOutro = ({ weekly = false }: { weekly?: boolean }) => {
 };
 
 export const GunlukOzet = ({ episode }: { episode: Episode }) => {
+  setCaptionLead(episode.captionLead);
   const haberler = episode.segments.filter((s) => s.kind === "haber");
   const first = haberler[0];
   let cursor = 0;

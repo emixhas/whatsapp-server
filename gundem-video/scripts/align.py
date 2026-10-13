@@ -122,6 +122,7 @@ def by_silence(words: list, wav: Path, pad: float) -> list:
 
 
 _WHISPER = None
+LAST_COVERAGE = None  # son konuşma tanıma hizalamasında sesle doğrudan eşlenen kelime oranı (log için)
 
 
 def _auto_install(c: dict) -> None:
@@ -160,10 +161,20 @@ def _whisper():
     _auto_install(c)
     try:
         import mlx_whisper  # noqa: F401
-        model = c.get("whisperModel") or "mlx-community/whisper-small-mlx"
+        # large-v3-turbo: Türkçede small'dan belirgin isabetli kelime zamanı, Apple Silicon'da segment başına ~1-2 sn
+        # (ilk kullanımda ~1,6 GB iner). Yüklenemezse bir kez small'a düşer.
+        models = [c.get("whisperModel") or "mlx-community/whisper-large-v3-turbo", "mlx-community/whisper-small-mlx"]
 
         def run(path):
-            r = mlx_whisper.transcribe(str(path), path_or_hf_repo=model, language="tr", word_timestamps=True, verbose=None)
+            while True:
+                try:
+                    r = mlx_whisper.transcribe(str(path), path_or_hf_repo=models[0], language="tr", word_timestamps=True, verbose=None)
+                    break
+                except Exception as e:
+                    if len(models) < 2:
+                        raise
+                    print(f"  ! konuşma tanıma modeli {models[0]} açılamadı ({str(e)[:80]}); {models[1]} kullanılıyor", file=sys.stderr)
+                    models.pop(0)
             return [(w["word"], float(w["start"]), float(w["end"])) for s in r.get("segments", []) for w in s.get("words", [])]
         _WHISPER = run
     except Exception:
@@ -204,6 +215,8 @@ def by_whisper(words: list, wav: Path, spoken: list | None = None) -> list:
             if blk.a + k < len(words):
                 _, s, e = rec[blk.b + k]
                 times[blk.a + k] = (s, e)
+    global LAST_COVERAGE
+    LAST_COVERAGE = sum(1 for t in times if t) / max(1, len(words))
     if sum(1 for t in times if t) < max(2, len(words) // 2):
         return []  # tanıma metne yeterince uymadı
     # eşlenmeyen kelimeler: önceki eşlenenin sonu ile sonraki eşlenenin başı arasına yayılır
@@ -225,6 +238,8 @@ def by_whisper(words: list, wav: Path, spoken: list | None = None) -> list:
 
 def align(words: list, wav: Path, pad: float, spoken: list | None = None) -> tuple:
     """(zamanlı kelimeler, yöntem adı). words: ekranda görünecek kelimeler (yıldızlı olabilir)."""
+    global LAST_COVERAGE
+    LAST_COVERAGE = None
     if not words:
         return [], "boş"
     w = by_whisper(words, wav, spoken)

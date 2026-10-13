@@ -215,6 +215,8 @@
         <div class="acts"><button class="ghost ok" id="autoOn">⚡ Tam otomatik modu aç</button><button class="ghost" id="autoOff">Durdur (üretim ve yayın kapalı)</button></div>
         <label class="row"><span class="sw" id="cmtOn"></span><span>Her akşam 20:00'de YouTube ve Instagram yorumlarını özetleyip WhatsApp'a gönder (sık sorulanlar, düzeltme/şikâyet, öneriler; otomatik yanıt yok)</span></label>
         <div class="acts"><button class="ghost" id="cmtNow">💬 Yorumları şimdi özetle</button></div>
+        <label class="row"><span class="sw" id="replyOn"></span><span>💬 Yorumlara anında otomatik yanıt: 5 dakikada bir yeni YouTube ve Instagram yorumları, videodaki bilgiye dayanan kısa yanıt (hakaret, spam, link içerenlere yanıt yok; günde en çok YouTube 20, Instagram 60)</span></label>
+        <div class="acts"><button class="ghost" id="replyNow">💬 Yorumları şimdi yanıtla</button></div>
         <label class="row"><span class="sw" id="cleanOn"></span><span>Disk temizliği: her gece 30 günden eski ve yayınlanmış videoların Mac'teki kopyasını sil (yayınlanmamışlar 60 gün bekler; kayıt, kapak, istatistik ve platformdaki video kalır)</span></label>
         <div class="acts"><button class="ghost" id="cleanNow">🧹 Şimdi temizle</button></div>
         <div class="row" style="font-size:14px">📊 İzlenme güncelleme: yayından sonraki ilk 3 gün her <input id="syncMin" type="number" min="5" max="180" class="inl" style="width:64px"> dakikada, 3–7 gün arası günde bir; 7 günden eski haber artık sorgulanmaz (analizler her videoyu 3. gün izlenmesiyle karşılaştırır)</div>
@@ -296,6 +298,7 @@
 <h2>DÜŞÜNME DERİNLİĞİ</h2>
       <div class="conninfo">Senaryo için "medium" yeterli. Sohbet için "low" en hızlı yanıtı verir; rapor ve plan için "high". Daha yüksek seviye daha yavaş yanıt verir.</div>
       <label class="row"><span style="min-width:160px">Claude modeli</span><select id="claudeModel"><option value="opus">Opus (önerilen)</option><option value="sonnet">Sonnet (hızlı)</option><option value="haiku">Haiku (en hafif)</option><option value="">Claude Code varsayılanı</option></select></label>
+      <div class="row" style="font-size:14px">🔤 Altyazı kaydırma: altyazı sesten <input id="capLead" type="number" step="0.02" min="-0.5" max="0.5" class="inl" style="width:72px"> sn önde (varsayılan 0,06). Altyazı sesten geride kalıyorsa artırın, önden gidiyorsa azaltın; sonraki videodan geçerli.</div>
       <label class="row"><span class="sw" id="censorOn"></span><span>Hassas kelimeleri gizle (intihar, ölüm, silah, cinayet, bıçak, tecavüz, uyuşturucu…): seste kelimenin yerine <b>bip</b>, açıklama/başlık/ekran yazısında yıldız (int*har, s*lah); hassas hashtag eklenmez</span></label>
       <label class="row"><span style="min-width:160px">Ek gizlenecek kelimeler</span><input id="censorExtra" placeholder="virgülle: rüşvet, kumar" style="flex:1"></label>
       <label class="row"><span class="sw" id="tokenSaver"></span><span>Az token modu (önerilen): video senaryosu en düşük düşünme seviyesinde yazılır, Claude'a yalnızca gereken haberler kısa özetle gider (açıkken aşağıdaki "Senaryo" seçimi yok sayılır)</span></label>
@@ -393,6 +396,7 @@ drawOrb();
 function renderRest(s){const r=s.rest||{};const on=!!r.on;const b=$('#sysStop');if(!b.dataset.busy){b.textContent=on?'▶ Sistemi başlat':'⏸ Tüm sistemi durdur';b.classList.toggle('rest',on);}
   $('#restBar').classList.toggle('on',on);if(on){const t=x=>new Date(x).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});$('#restTxt').textContent=`${t(r.since)}'den beri (${r.reason||'elle'}). Bilgisayar dinleniyor: modeller kapalı. `+(s.watch?.nextAt?`Haber taraması sürüyor (${s.watch.everyMin} dk'da bir${s.watch.lastAt?', son '+t(s.watch.lastAt):''}, sıradaki ${t(s.watch.nextAt)}); değerli haber düşerse sistem kendiliğinden başlar ve üretir. `:'Haber taraması kapalı. ')+(r.until?`Sıradaki planlı iş ${t(r.until)} (${r.untilWhat||'üretim'}); o zaman kendiliğinden başlar.`:'Zamanlayıcı kapalı; siz başlatana kadar bekler.')+' Elle verdiğiniz her üretim talimatı sistemi uyandırır.';}
   if(document.activeElement!==$('#syncMin'))$('#syncMin').value=s.settings?.metricsSyncMinutes??20;
+  $('#replyOn').classList.toggle('on',s.settings?.autoReply?.enabled!==false);
   $('#restAfter').classList.toggle('on',s.settings?.restAfterProduction!==false);$('#cleanOn').classList.toggle('on',s.settings?.cleanup?.enabled!==false);$('#cmtOn').classList.toggle('on',s.settings?.comments?.enabled!==false);}
 function setState(s){status=s;renderRest(s);$('#dot').className='dot '+(s.running?'busy':'on');$('#stateTxt').textContent=s.running?`üretim sürüyor${s.duration?` (${s.duration} sn)`:''}`:s.busy?s.busy:'hazır';$('#gen').disabled=!!s.running;$('#lan').textContent='📱 '+s.lanUrl;
   if(s.running&&mode==='idle')setMode('working');if(!s.running&&mode==='working')setMode('idle');
@@ -524,6 +528,7 @@ function renderConn(s){const c=s.connections||{};
   const tr=s.turkishVoice||{};$('#voiceSum').textContent=(tr.trendyol?'Trendyol ✓ ':'')+(tr.ema?'EMA ✓ ':'')+(s.tts?.ready?'Chatterbox ✓':'')||'kurulu motor yok';$('#trInfo').innerHTML=(tr.trendyol?'✅ Trendyol-TTS hazır (MLX, Apple Silicon). ':'❌ Trendyol-TTS kurulu değil. ')+(tr.ema?'✅ EMA Lightning hazır.':'❌ EMA Lightning kurulu değil.')+(tr.trendyol&&tr.ema?'<br>Video anlatımı Trendyol ile, Emixhas\'ın konuşması EMA ile yapılır; rakamlar otomatik yazıya çevrilir.':'<br>Kurulum bir kez (~5 GB): <code>bash scripts/install_turkish_voice.sh</code>. Trendyol-TTS: 2026 Türkçe ölçümlerinde en doğal açık model (MIT). EMA Lightning: 34 MB, anında, ElevenLabs düzeyi doğallık ölçümü (Apache-2.0).');
   {const nr=s.settings?.narration||{};const gf=nr.femaleGainDb??3,gm=nr.maleGainDb??0;if(document.activeElement!==$('#gainF')){$('#gainF').value=gf;$('#gainFTxt').textContent='+'+gf+' dB';}if(document.activeElement!==$('#gainM')){$('#gainM').value=gm;$('#gainMTxt').textContent='+'+gm+' dB';}}
   $('#narrEngine').value=s.settings?.narrationEngine||'auto';$('#voiceEngine').value=s.settings?.voice?.engine||'auto';$('#exag').value=cb.exaggeration??0.45;$('#exagTxt').textContent=(cb.exaggeration??0.45).toFixed(2);
+  if(document.activeElement!==$('#capLead'))$('#capLead').value=s.settings?.captions?.leadSec??0.06;
   $('#censorOn').classList.toggle('on',s.settings?.censor?.enabled!==false);if(document.activeElement!==$('#censorExtra'))$('#censorExtra').value=(s.settings?.censor?.extra||[]).join(', ');
   $('#tokenSaver').classList.toggle('on',s.settings?.tokenSaver!==false);$('#effScript').disabled=s.settings?.tokenSaver!==false;
   $('#claudeModel').value=s.settings?.claudeModel??'opus';const eff=s.settings?.claudeEffort||{};$('#effScript').value=(typeof eff==='object'?eff.script:eff)||'medium';$('#effBrain').value=(typeof eff==='object'?eff.brain:eff)||'high';$('#effChat').value=(typeof eff==='object'?eff.chat:null)||'low';
@@ -608,6 +613,9 @@ $('#igClean').onclick=async()=>{toast('Liste hazırlanıyor…');const p=await p
   if(!p.ok||!(p.items||[]).length){toast(p.text||p.error||'Silinecek video yok',!p.ok);return;}
   if(!await ask(p.text.replace(/\*/g,'').replace(/Silmek için evet sil yazın, vazgeçmek için iptal \(15 dk geçerli\)\./,'Silinsin mi?')))return;
   toast('Siliniyor…');const r=await post('/api/instagram/cleanup/run',{});toast(r.ok?`${(r.deleted||[]).length} video silindi${(r.failed||[]).length?`, ${r.failed.length} silinemedi`:''}`:(r.error||'Silinemedi'),!r.ok);refreshStatus();};
+$('#capLead').onchange=async()=>{const v=Math.min(0.5,Math.max(-0.5,Number($('#capLead').value)));await post('/api/settings',{captions:{leadSec:Number.isFinite(v)?v:0.06}});refreshStatus();};
+$('#replyOn').onclick=async()=>{const on=!$('#replyOn').classList.contains('on');await post('/api/settings',{autoReply:{enabled:on}});refreshStatus();};
+$('#replyNow').onclick=async()=>{toast('Yorumlar kontrol ediliyor…');const r=await post('/api/comments/reply',{});toast(r.ok?`${r.replied||0} yorum yanıtlandı`:(r.error||'Yapılamadı'),!r.ok);};
 $('#syncMin').onchange=async()=>{const v=Math.min(180,Math.max(5,Number($('#syncMin').value)||20));await post('/api/settings',{metricsSyncMinutes:v});refreshStatus();};
 $('#restAfter').onclick=async()=>{const on=!$('#restAfter').classList.contains('on');await post('/api/settings',{restAfterProduction:on});refreshStatus();};
 // Mynet manşet takibi

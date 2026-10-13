@@ -6,6 +6,7 @@ import { Hook } from "./scenes/Hook";
 import { Intro } from "./scenes/Intro";
 import { Outro } from "./scenes/Outro";
 import { Thumb } from "./Thumb";
+import { setCaptionLead } from "./captionGroups";
 import { Episode, FPS } from "./types";
 
 const WHOOSH_FRAMES = 17; // 0.55 sn
@@ -17,6 +18,7 @@ export const coverText = (e: Episode) => {
 };
 
 export const GundemVideo = ({ episode }: { episode: Episode }) => {
+  setCaptionLead(episode.captionLead);
   const haberler = episode.segments.filter((s) => s.kind === "haber");
   const first = haberler[0];
   let cursor = 0;

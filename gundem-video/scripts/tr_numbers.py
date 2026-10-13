@@ -86,10 +86,23 @@ def _time_repl(m: re.Match) -> str:
     return out + suffix
 
 
+# Spor bağlamı: aynı cümlede bu kelimelerden biri varsa "A-B" skordur ve "A B" diye okunur (2-1'lik → iki birlik)
+_SPORT = re.compile(r"(yen(di|dik|ildi|ilgi|erek|mişti|meyi)|mağlup|berabere|beraberlik|kazan(dı|arak)|kaybetti|skor|maç|galib|galip|"
+                    r"devirdi|deplasman|sahasında|gol|puan|derbi|lig|kupa|uzatma|penaltı|set|devre|eşitlik|tur atladı|elendi|fark)", re.I)
+_SCORE = re.compile(r"(?<![\d.,])(\d{1,2})\s*[-–]\s*(\d{1,2})(?![\d.,]\d)")
+
+
+def _scores(t: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", t)
+    return " ".join(_SCORE.sub(r"\1 \2", p) if _SPORT.search(p) else p for p in parts)
+
+
 def normalize_tr(text: str) -> str:
     """Rakamları Türkçe yazıya çevirir; yüzde işaretini ve bazı sembolleri okunur yapar."""
     t = text.replace("%", "yüzde ")
     t = _TIME.sub(_time_repl, t)  # 14:00'te → on dörtte, 09:30 → dokuz otuz
+    t = re.sub(r"(\d)\s*\+\s*(\d)", r"\1 artı \2", t)  # 90+3. dakika → doksan artı üçüncü dakika
+    t = _scores(t)  # spor skoru: "4-1 yendi" → "dört bir yendi" (kullanıcı isteği; "dört ile bir" yanlış)
     t = re.sub(r"(\d)\s*-\s*(\d)", r"\1 ile \2", t)  # 3-5 derece → 3 ile 5 derece
     t = _NUM.sub(_repl, t)
     t = re.sub(r"\s{2,}", " ", t)

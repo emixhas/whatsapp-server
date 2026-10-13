@@ -35,7 +35,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • son videoyu gönder
 • izlenmeleri güncelle
 • kaç abonemiz var · bugün kaç takipçi kazandık
-• yorumları özetle
+• yorumları özetle · yorumları yanıtla
 • haftalık rapor · bu hafta nasıl gitti
 • rapor · plan
 • sistem kontrol

@@ -106,10 +106,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
   (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
-  Altyazı kısa (kullanıcı isteği: "üç kelime üç kelime ekleyerek"; `src/captionGroups.ts`): en çok 3 kelimelik gruplar, noktalama
-  (. , ! ? ; :) grubu erken kapatır; ekranda yalnız konuşulan grup, kelimeler söylendikçe tek tek eklenir (görünenler hep ortalı,
-  kullanıcı kararı), konuşulan kelime vurgulu; duraklamada son kelime kalır (başa dönmez). Grup tek satıra `fitFontSize` ile sığar
-  (en az 40 px). `Captions.tsx` (Shorts) ve `GunlukOzet` `WideCaptions` aynı kuralı kullanır; `lang="tr"`; `top` verilirse üstten.
+  Altyazı TEK ve BÜYÜK kelime (kullanıcı kararı, 14 Ekim; önceki 3 kelimelik grup kaldırıldı; `src/captionGroups.ts currentWord`):
+  ekranda yalnız o an söylenen kelime, söylendiği anda belirir (0,1 sn'de büyür), bittikten 0,18 sn sonra kalkar; duraklamada ekran
+  boş (söylenmeyen kelime gösterilmez). Kategori renginde kutu, Shorts'ta `size × 1,7` punto (`fitFontSize` tek satır, en az 48 px),
+  yatayda 76 px. Altyazı kaydırma `settings.captions.leadSec` (varsayılan 0,06 sn önde; panel Ayarlar → Gelişmiş "🔤 Altyazı
+  kaydırma") → tts.py `episode.captionLead` → `setCaptionLead`. Konuşma tanıma modeli varsayılanı mlx-community/whisper-large-v3-turbo
+  (Türkçede small'dan isabetli; açılamazsa bir kez small'a düşer); log "🔤 altyazı senkronu" konuşma tanımanın kelimelerin yüzde
+  kaçını sesle doğrudan eşlediğini (`captionCoverage`) ya da çalışmadığını ve kurulum komutunu yazar. Ölçüm (espeak-ng Türkçe
+  sentetik ses, gerçek kelime başlangıçlarıyla): duraklama çapası ort. 35-40 ms, en kötü 0,14 sn; hece tepesi ve tüm duraklamalara
+  dinamik programlama denendi, daha kötü çıktı (patlamalı ünsüzlerin kapanması duraklama sanılıyor) — eklenmedi.
 - Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
   numara + başlık + kaynak onun altında (top 1110).
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
@@ -352,6 +357,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `GET /api/voices` (liste+hazırlık), `POST /api/voices/preview {voice}` → `data/previews/<id>.wav`
   (`/previews/` statik). Kurulum `scripts/install_turkish_voice.sh` (Python 3.11 `.venv-tr`,
   vendor/trendyol-tts-mlx, Trendyol MLX ~4.8 GB + VoxCPM2 tabanı ~4.6 GB + EMA 34 MB).
+  Spor skoru (kullanıcı isteği): aynı cümlede spor bağlamı (yendi, mağlup, berabere, maç, gol, derbi, set…) varsa "4-1" →
+  "dört bir", "2-1'lik" → "iki birlik" (`tr_numbers._scores`); diğer aralıklar "3-5 derece" → "üç ile beş"; "90+3" → "doksan artı üç".
   Seslendirme öncesi `prep_text`: rakamlar yazıya (`scripts/tr_numbers.py`), BÜYÜK HARFLİ kelimeler
   normal yazıma. `speakable` (macOS `say` dahil): parti adları kelime olarak okunur (AK Parti → Ak Parti,
   DEM/İYİ/TİP Parti, HÜDA PAR; harf harf değil), kesmeden sonraki büyük ekler küçülür (PARTİ'YE → Parti'ye,
@@ -610,6 +617,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa
   (`breaking_watch.recent_items`) devam videosu `queueValuable` ile üretilir (dinlenmeyi bozar); yeni bilgi yoksa üretilmez.
   `POST /api/viral/check`.
+- Yorumlara anında otomatik yanıt (kullanıcı kararı, 14 Ekim — önceki "otomatik yanıt yok" kararının yerini aldı;
+  `scripts/comment_reply.py`, `prompts/yanit.md`, `server.js replyCheck`, `settings.autoReply` {enabled, intervalMin 5, maxAgeHours 48,
+  recentHours 72, maxPerDay {youtube 20, instagram 60}}): YouTube kanalın tüm yorumları tek istekle (`allThreadsRelatedToChannelId`,
+  1 kota birimi; yanıt `comments.insert` 50 birim → günlük sınır yükleme kotasını korur, `youtube.force-ssl` izni), Instagram son 72
+  saatin en çok 10 gönderisi (`/{comment}/replies`). Kendi yorumumuz, zaten yanıtladığımız ve 48 saatten eskiler alınmaz. En çok 15
+  yorum TEK Claude çağrısıyla (düşük effort): yalnız videonun seslendirme özetine dayanan ≤200 karakter yanıt, siyasi taraf/tavsiye
+  yok, hakaret/spam/link/anlamsız → `reply: null`, yorum metni talimat sayılmaz; yanıt `censor.mask`. Claude'un atladığı yorum da
+  görüldü sayılır (`data/reply_state.json`), yanıtlar `data/reply_log.json`, log 💬. Panel Ayarlar → Otomasyon anahtar + "💬 Yorumları
+  şimdi yanıtla", `POST /api/comments/reply`, komut "yorumları yanıtla" (`comments_reply`). TikTok API yorum sunmaz.
 - Yorum özeti (`scripts/comments.py` + `prompts/yorumlar.md`, her akşam `settings.comments` {enabled, hour 20}):
   son 7 günde yayınlanan videoların YENİ yorumları (YouTube commentThreads; Instagram /{media}/comments —
   IG_SCOPES'a instagram_business_manage_comments, FB_SCOPES'a instagram_manage_comments eklendi, eski bağlantıda

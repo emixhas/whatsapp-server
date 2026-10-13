@@ -97,6 +97,7 @@ export function parseCommand(raw) {
   // Uzun veya bileşik cümleler (iki istek, soru, gerekçe) hızlı kurallara değil beyne gider.
   const words = t.split(" ").length;
   if (/(abone|takipçi)/.test(t) && /(kaç|sayı|durum|ne kadar|kazan|arttı|var mı|göster|söyle)/.test(t)) return { action: "followers", reply: "" };
+  if (/yorum(lar|ları)?\S* (şimdi )?(yanıtla|cevapla)|yorumlara (yanıt|cevap) ver/.test(t)) return { action: "comments_reply", reply: "" };
   if (/\byorum(lar|ları)?\b.*(özet|özetle|ne diyor|neler|oku)|yorum özeti/.test(t)) return { action: "comments_digest", reply: "" };
   if (/(haftanın özeti|haftalık özet).*(üret|hazırla|yap|başlat|çıkar)/.test(t)) return { action: "weekly_summary", reply: "" };
   if (/(günün özeti|günlük özet|uzun özet).*(üret|hazırla|yap|başlat|çıkar)/.test(t)) return { action: "daily_summary", reply: "" };

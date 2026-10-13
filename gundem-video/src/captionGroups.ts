@@ -1,35 +1,23 @@
-// Yanan altyazı grupları (kullanıcı isteği: "alt yazıları uzun tutma, üç kelime üç kelime ekleyerek devam et").
-// Kelimeler en çok GROUP kelimelik gruplara bölünür; noktalama (. , ! ? ; :) grubu erken kapatır ki cümle/yan cümle iki
-// gruba taşmasın. Ekranda yalnız konuşulan grup görünür; gruptaki kelimeler söylendikçe tek tek eklenir.
+// Yanan altyazı zamanlaması (kullanıcı kararı: "kelimeler tek ve büyük, tek tek gitsin, sesle kesinlikle eşit").
+// Ekranda yalnız o an söylenen kelime görünür: kelime başladığında belirir, bitince (en çok LINGER sn sonra) kalkar;
+// sonraki kelime daha erken başlarsa hemen onunla değişir. Duraklamada ekran boş kalır (söylenmeyen kelime gösterilmez).
 export type Word = { w: string; s: number; e: number };
-export const GROUP = 3;
 
-const cache = new WeakMap<Word[], number[]>();
+let LEAD = 0.06; // altyazı sesten bu kadar önde (panel Ayarlar → altyazı kaydırma; episode.captionLead)
+export const setCaptionLead = (v?: number) => { if (typeof v === "number" && Number.isFinite(v)) LEAD = v; };
+const LINGER = 0.18; // kelime bittikten sonra ekranda kalma süresi (kısa boşluklarda yanıp sönmesin)
 
-/** Her kelimenin grup başlangıç indeksi. */
-function starts(words: Word[]): number[] {
-  const hit = cache.get(words);
-  if (hit) return hit;
-  const out: number[] = [];
-  let start = 0;
-  words.forEach((w, i) => {
-    out.push(start);
-    if (i - start + 1 >= GROUP || /[.,!?;:…]$/.test(w.w)) start = i + 1;
-  });
-  cache.set(words, out);
-  return out;
-}
-
-/** t anında konuşulan kelime ve onun grubu: duraklamada son söylenen kelime ekranda kalır (başa dönmez). */
-export function currentGroup(words: Word[], t: number): { idx: number; start: number; end: number } {
-  let idx = 0;
+/** t (sn, segment başından) anında gösterilecek kelime: { idx, word, age } ya da null. */
+export function currentWord(words: Word[] | undefined, t: number): { idx: number; word: Word; age: number } | null {
+  if (!words?.length) return null;
+  const tt = t + LEAD;
+  let idx = -1;
   for (let i = 0; i < words.length; i++) {
-    if (words[i].s <= t) idx = i;
+    if (words[i].s <= tt) idx = i;
     else break;
   }
-  const st = starts(words);
-  const start = st[idx];
-  let end = idx + 1;
-  while (end < words.length && st[end] === start) end++;
-  return { idx, start, end };
+  if (idx < 0) return null;
+  const w = words[idx];
+  if (tt > w.e + LINGER) return null;
+  return { idx, word: w, age: tt - w.s };
 }

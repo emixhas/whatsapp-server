@@ -34,6 +34,8 @@ export type Segment = {
 };
 
 export type Episode = {
+  /** altyazının sesten önde gelme süresi, sn (panel ayarı captions.leadSec; tts.py yazar) */
+  captionLead?: number;
   date: string;          // "2026-10-07"
   dateLabel: string;     // "7 Ekim 2026"
   episodeOfDay: number;  // günün kaçıncı videosu

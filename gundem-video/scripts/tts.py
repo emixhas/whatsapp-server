@@ -198,6 +198,8 @@ def main(script_path: str, episode_path: str):
             how = "bip parçaları"
         if not words:
             words, how = align.align(shown, raw, 0.0, spoken=seg["narration"].split())
+            if how == "konuşma tanıma" and align.LAST_COVERAGE is not None:
+                seg["captionCoverage"] = round(align.LAST_COVERAGE, 2)
         if not words:
             words, how = word_timings(" ".join(shown), seg["duration"], PAUSE_SEC), "tahmin"
         raw.unlink(missing_ok=True)
@@ -207,9 +209,19 @@ def main(script_path: str, episode_path: str):
 
     sync = [s_.get("captionSync") for s_ in segments if s_.get("captionSync")]
     if sync:
-        print("  🔤 altyazı senkronu: " + ", ".join(f"{k} {sync.count(k)}" for k in dict.fromkeys(sync)), flush=True)
+        cov = [s_["captionCoverage"] for s_ in segments if s_.get("captionCoverage") is not None]
+        print("  🔤 altyazı senkronu: " + ", ".join(f"{k} {sync.count(k)}" for k in dict.fromkeys(sync))
+              + (f" (konuşma tanıma kelimelerin %{round(sum(cov) / len(cov) * 100)}'ini sesle doğrudan eşledi)" if cov else
+                 " — konuşma tanıma çalışmadı: Mac'te 'bash scripts/install_align.sh' ile kurun, altyazı çok daha isabetli olur"
+                 if "konuşma tanıma" not in sync else ""), flush=True)
+    # altyazı kaydırma (panel ayarı): sabit bir gecikme/erken gelme varsa tek ayarla düzeltilir; Remotion okur
+    try:
+        lead = float((voices._S.get("captions") or {}).get("leadSec", 0.06))
+    except Exception:
+        lead = 0.06
     episode = {k: v for k, v in script.items() if k != "segments"}
     episode["segments"] = segments
+    episode["captionLead"] = lead
     Path(episode_path).write_text(json.dumps(episode, ensure_ascii=False, indent=2), encoding="utf-8")
     total = sum(s["duration"] for s in segments)
     used = " + ".join(dict.fromkeys(c["label"] for c in chosen))
