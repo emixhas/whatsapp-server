@@ -125,7 +125,7 @@ SOFT = [r"futbolcu", r"teknik direktör", r"transfer", r"süper lig", r"maç(?:�
 SPORT_CONTEXT = [r"mac", r"gol", r"transfer", r"imza", r"teknik direktor", r"hoca", r"kadro", r"sakat", r"derbi", r"puan",
                  r"lig", r"kupa", r"yendi", r"kazandi", r"berabere", r"maglup", r"futbol", r"forvet", r"stoper", r"kaleci",
                  r"orta saha", r"sozlesme", r"bonservis", r"deplasman", r"ilk 11", r"taraftar", r"hakem", r"penalti",
-                 r"skor", r"galibiyet", r"yenilgi", r"antrenman", r"kamp\b", r"kampa", r"kampta", r"tribun", r"kirmizi kart", r"sampiyon"]
+                 r"skor", r"galibiyet", r"yenilgi", r"antrenman", r"kamp\b", r"kampa\b", r"kampta\b", r"tribun", r"kirmizi kart", r"sampiyon"]
 NICK = {"galatasaray": [r"cimbom", r"sari-kirmizili", r"sari kirmizili"], "fenerbahce": [r"kanarya", r"sari-lacivertli", r"sari lacivertli"],
         "besiktas": [r"siyah-beyazli", r"siyah beyazli", r"kara kartal"], "trabzonspor": [r"bordo-mavili", r"bordo mavili", r"karadeniz firtinasi"]}
 
