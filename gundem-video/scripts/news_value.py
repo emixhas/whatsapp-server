@@ -71,8 +71,22 @@ GROUPS = [
                         r"kira(?:cı|lar| fiyat| artışı| zammı)", r"ev sahibi", r"konut fiyat", r"otomobil fiyat", r"araç fiyat",
                         r"ekmek fiyat", r"indirim (?:geldi|yapıldı)", r"(?:benzin|motorin|akaryakıt)\w* indirim", r"fiyatı düştü",
                         r"kredi (?:faiz|çekmek|kartı borç)", r"borç yapılandırma", r"vergi affı", r"prim affı", r"emeklilikte yaşa takılan|eyt"]),
-    ("eğitim duyurusu", 3, [r"öğretmen atama", r"okullar ne zaman", r"okullar açıl", r"eğitim öğretim yılı", r"ders saat",
+    ("eğitim duyurusu", 3, [r"meb\b", r"meb'(?:in|den|e|ten)", r"milli eğitim bakan", r"öğretmen atama", r"okullar ne zaman", r"okullar açıl", r"eğitim öğretim yılı", r"ders saat",
                             r"servis ücret", r"kyk yurt", r"üniversite harç", r"tercih (?:sonuç|dönemi)", r"sınav sonuç"]),
+    # kullanıcı kararı (KOSGEB, vergi affı, yeni mahkum affı): devlet desteği, hibe ve af düzenlemeleri tek başına değerli
+    ("destek ve af", 3, [r"kosgeb", r"hibe", r"faizsiz kredi", r"devlet desteği", r"girişimci desteği", r"esnaf kredi",
+                         r"vergi aff", r"prim aff", r"imar aff", r"trafik cezası aff", r"cezası? aff", r"aff[ıi] (?:geliyor|çıktı|yasası|müjde)",
+                         r"af yasa", r"genel af", r"mahkum\w*[^.]{0,30}(?:af|tahliye|izin)", r"infaz (?:düzenleme|paketi|indirim|yasası)",
+                         r"yargı paketi", r"ceza indirimi", r"tahliyeler? başla", r"denetimli serbestlik", r"borç(?:lar)? silin",
+                         r"yapılandırma (?:geldi|başladı|müjde)", r"vergi borcu"]),
+    # kullanıcı kararı ("6 gün sonra doğum günüydü! Kahreden olay", "15 yaşındaki Murat'ın hayatı karardı"): yürek
+    # yakan insan hikâyeleri ve acı olaylar tek başına değerli; magazin korumasından muaf
+    ("acı olay", 3, [r"kahreden", r"yürek yakan", r"yürekleri (?:yaktı|dağlayan)", r"acı olay", r"acı haber", r"acı son",
+                     r"feci (?:kaza|ölüm|olay|son)", r"hayatı karardı", r"kurtulamadı", r"kurtarılamadı", r"hayata tutunamadı",
+                     r"(?:gün|hafta|ay) sonra (?:doğum günü|düğün|nikah|mezuniyet)", r"doğum günü\w*[^.!]{0,40}(?:öldü|hayatını kaybet|kaza|ölüm)",
+                     r"\d+ yaşındaki[^.!]{0,60}(?:öldü|hayatını kaybet|hayatı karardı|kurtulamadı|yaralandı|kayboldu|darp|bıçak|kaçırıl|istismar)",
+                     r"gözyaşlarıyla", r"son yolculuğuna", r"toprağa verildi", r"gözyaşı(?:na| sel)", r"özür diledi ama",
+                     r"(?:anne|baba|eş|çocuğ|kardeş)\w*[^.!]{0,30}(?:gözü önünde|kollarında)", r"ölümden döndü"]),
     # adli olay: tek başına yetmez (her gün çok sayıda), başka bir grupla ya da modelin 4-5 önemiyle değerli olur
     ("adli olay", 2, [r"operasyon", r"gözaltı", r"tutuklandı", r"uyuşturucu", r"çete", r"kaçakçılık", r"yolsuzluk", r"rüşvet",
                       r"skandal", r"iddianame", r"hapis cezası", r"müebbet", r"firari"]),
@@ -118,7 +132,7 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     except (TypeError, ValueError):
         imp = None
     # model 1-2 dediyse (magazin: "ünlünün annesi vefat etti") anahtar kelime tek başına yetmez
-    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
+    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
     valuable = (imp is not None and imp >= 4) or (total >= 3 and not soft and (imp is None or imp >= 3))
     if soft and total >= 3 and not valuable:
         hits.append("magazin/spor")

@@ -567,7 +567,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (elektrik/su/doğalgaz kesintisi, yol kapanması, uçuş/sefer iptali, grev), hava ve doğa uyarısı (turuncu/kırmızı kod,
   şiddetli yağış/rüzgar, orman yangını, sağanak), yeni düzenleme (yürürlüğe girdi, ceza, ehliyet/pasaport, başvuru
   tarihi), büyük siyaset (erken seçim, kabine, görevden alma, kayyum, yetkili gözaltısı), dünya ve savaş, iş ve geçim
-  (iflas, işten çıkarma, kira/konut/araç fiyatı, indirim), eğitim duyurusu; "adli olay" (operasyon/gözaltı/uyuşturucu…)
+  (iflas, işten çıkarma, kira/konut/araç fiyatı, indirim), eğitim duyurusu (MEB / Milli Eğitim Bakanlığı geçen her haber dahil),
+  destek ve af (kullanıcı kararı: KOSGEB, hibe, devlet desteği, vergi/prim/imar/ceza affı, af yasası, mahkum affı, infaz
+  düzenlemesi, yargı paketi, tahliye, borç silme), acı olay (kullanıcı kararı: "6 gün sonra doğum günüydü! Kahreden olay",
+  "15 yaşındaki Murat'ın hayatı karardı" türü: kahreden, yürek yakan, hayatı karardı, kurtulamadı, "N gün sonra doğum günü",
+  "N yaşındaki … öldü/yaralandı/kayboldu", toprağa verildi; SOFT'tan muaf); "adli olay" (operasyon/gözaltı/uyuşturucu…)
   ağırlık 2: tek başına yetmez, başka grupla değerli olur. Kullanıcı kararı: değerli haber kaçmasın. SOFT (magazin)
   koruması "ünlü" tek başına değil "ünlü oyuncu/şarkıcı…" kalıbıyla; can kaybı, milli başarı, suç ve vahşet, kayıp ve
   arama, dünya ve savaş SOFT'tan muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
