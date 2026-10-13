@@ -62,8 +62,8 @@ KURALLAR
   erken seçim, kabine, görevden alma, kayyum; savaş, ateşkes, Türkiye'yi ilgilendiren dış gelişme; iflas, işten
   çıkarma, kira/konut/araç fiyatı, indirim; öğretmen ataması, okul takvimi; milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
   ülke çapında ses getiren gelişme.
-- 3: önemli ama sınırlı kesimi ilgilendiren haber. 1-2: magazin, dizi, ünlü, sıradan siyasi açıklama, kulüp maçı
-  sonucu, transfer.
+- 3: önemli ama sınırlı kesimi ilgilendiren haber; magazin, dizi, film, ünlü haberleri (kanal kararı: bunlar da
+  ilgi görür, en az 3 ver). 1-2: sıradan siyasi açıklama, kulüp maçı sonucu, transfer.
 - Abartma: emin değilsen 3 ver. "importanceReason" alanına tek cümlelik gerekçe yaz.
 
 BAŞLIK VARYANTLARI ("titles")

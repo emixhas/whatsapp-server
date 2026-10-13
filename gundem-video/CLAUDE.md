@@ -100,7 +100,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   mlx-community/whisper-small-mlx; `captions.whisper: false` kapatır) tanınan kelimeler senaryo kelimeleriyle difflib ile
   eşlenir, eşlenmeyenler komşuların arasına yayılır; 2) duraklama çapası (her zaman) — ffmpeg silencedetect (-38 dB, 0,12 sn)
   ile sesin gerçek başı/sonu ve duraklamalar bulunur, noktalı/virgüllü kelime sonları ±0,7 sn içindeki en yakın duraklamaya
-  oturur, aradakiler harf ağırlığıyla dağılır (sentetik testte en büyük kayma 0,81 → 0,04 sn); bipli segmentte parçaların
+  oturur, aradakiler SÖYLENEN uzunlukla dağılır (`spoken_len`: rakamlar yazıya çevrilerek sayılır — "1.250" ekranda kısa,
+  söylenişi uzun; 14 Ekim "altyazı sesle eşit gitmiyor" şikâyetinin ana nedeni buydu). Eşik uyarlanır (`noise_floor`: ortalama
+  sesin 17 dB altı) ve duraklamalar SIKIŞTIRMA ÖNCESİ ham seste aranır (`seg-XX.align.wav`, sonra silinir); gürültülü
+  sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
+  (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
   `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`; `top` verilirse üstten konumlanır.
 - Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
@@ -571,10 +575,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   destek ve af (kullanıcı kararı: KOSGEB, hibe, devlet desteği, vergi/prim/imar/ceza affı, af yasası, mahkum affı, infaz
   düzenlemesi, yargı paketi, tahliye, borç silme), acı olay (kullanıcı kararı: "6 gün sonra doğum günüydü! Kahreden olay",
   "15 yaşındaki Murat'ın hayatı karardı" türü: kahreden, yürek yakan, hayatı karardı, kurtulamadı, "N gün sonra doğum günü",
-  "N yaşındaki … öldü/yaralandı/kayboldu", toprağa verildi; SOFT'tan muaf); "adli olay" (operasyon/gözaltı/uyuşturucu…)
-  ağırlık 2: tek başına yetmez, başka grupla değerli olur. Kullanıcı kararı: değerli haber kaçmasın. SOFT (magazin)
-  koruması "ünlü" tek başına değil "ünlü oyuncu/şarkıcı…" kalıbıyla; can kaybı, milli başarı, suç ve vahşet, kayıp ve
-  arama, dünya ve savaş SOFT'tan muaf; magazin/spor kelimesi varsa yalnız model 4-5 derse; "burs" ve
+  "N yaşındaki … öldü/yaralandı/kayboldu", toprağa verildi; SOFT'tan muaf), magazin ve ünlüler (kullanıcı kararı: "Ünlü oyuncu
+  yeni dizisini tanıttı" türü de değerli: ünlü/oyuncu/şarkıcı/sanatçı/sunucu, dizi, film, albüm, klip, konser, evlilik/boşanma,
+  aşk iddiası, Survivor/MasterChef; `prompts/anlik.md` bunlara en az 3 önem verdirir); "adli olay" (operasyon/gözaltı/uyuşturucu…)
+  ağırlık 2: tek başına yetmez, başka grupla değerli olur. Kullanıcı kararı: değerli haber kaçmasın. SOFT koruması artık
+  yalnız sıradan kulüp/spor haberi (futbolcu, teknik direktör, transfer, Süper Lig, maç) için: o kelimeler varsa yalnız
+  model 4-5 derse değerli; can kaybı, milli başarı, suç ve vahşet, kayıp ve arama, dünya ve savaş, acı olay, magazin muaf; "burs" ve
   piyasa desenleri Bursa'yı ve sıradan kur haberini yakalamayacak şekilde dar) +
   `prompts/anlik.md`in istediği `importance` 1-5 (4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar).
   `assemble_script.news_value()` meta'ya `value` yazar; `post_pipeline.youtube_allowed()` karar verir ("⭐ değerli

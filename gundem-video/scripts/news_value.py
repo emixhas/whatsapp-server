@@ -87,6 +87,12 @@ GROUPS = [
                      r"\d+ yaşındaki[^.!]{0,60}(?:öldü|hayatını kaybet|hayatı karardı|kurtulamadı|yaralandı|kayboldu|darp|bıçak|kaçırıl|istismar)",
                      r"gözyaşlarıyla", r"son yolculuğuna", r"toprağa verildi", r"gözyaşı(?:na| sel)", r"özür diledi ama",
                      r"(?:anne|baba|eş|çocuğ|kardeş)\w*[^.!]{0,30}(?:gözü önünde|kollarında)", r"ölümden döndü"]),
+    # kullanıcı kararı ("Ünlü oyuncu yeni dizisini tanıttı tarzı haberleri de değerli sayalım"): magazin ve ünlü haberleri
+    ("magazin ve ünlüler", 3, [r"ünlü (?:oyuncu|şarkıcı|sunucu|isim|çift|manken|model|yönetmen|komedyen|rapçi|sanatçı|fenomen|youtuber)",
+                               r"oyuncu", r"şarkıcı", r"sanatçı", r"sunucu", r"magazin", r"yeni dizi", r"dizisi", r"dizinin", r"dizide",
+                               r"filmi\b", r"vizyona gir", r"albüm", r"klip", r"konser", r"sahneye", r"evlen", r"boşan", r"nişanlan",
+                               r"sevgili", r"aşk iddia", r"bebek müjde", r"hamile", r"reyting", r"sosyal medya paylaşım",
+                               r"(?:instagram|tiktok)\w* paylaşım", r"kırmızı halı", r"ödül töreni", r"survivor", r"masterchef"]),
     # adli olay: tek başına yetmez (her gün çok sayıda), başka bir grupla ya da modelin 4-5 önemiyle değerli olur
     ("adli olay", 2, [r"operasyon", r"gözaltı", r"tutuklandı", r"uyuşturucu", r"çete", r"kaçakçılık", r"yolsuzluk", r"rüşvet",
                       r"skandal", r"iddianame", r"hapis cezası", r"müebbet", r"firari"]),
@@ -109,7 +115,8 @@ GROUPS = [
 
 
 # magazin/spor: anahtar kelime tek başına yetmez ("ünlü oyuncu tatilde"); model 4-5 derse değerli
-SOFT = [r"ünlü (?:oyuncu|şarkıcı|sunucu|isim|çift|manken|model|futbolcu|yönetmen)", r"oyuncu", r"şarkıcı", r"magazin", r"dizi", r"sevgili", r"evlen", r"boşan", r"futbolcu", r"teknik direktör"]
+# magazin artık değerli (kullanıcı kararı); koruma yalnız sıradan kulüp/spor haberi için kaldı
+SOFT = [r"futbolcu", r"teknik direktör", r"transfer", r"süper lig", r"maç(?:ı|ta|tan)?\b"]
 
 
 def score(text: str, extra_keywords=None, importance=None) -> dict:
@@ -132,7 +139,7 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     except (TypeError, ValueError):
         imp = None
     # model 1-2 dediyse (magazin: "ünlünün annesi vefat etti") anahtar kelime tek başına yetmez
-    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
+    soft = not ({"can kaybı", "milli başarı", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay", "magazin ve ünlüler"} & set(hits)) and any(re.search(r"(?<![\wçğıöşü])" + p, t) for p in SOFT)
     valuable = (imp is not None and imp >= 4) or (total >= 3 and not soft and (imp is None or imp >= 3))
     if soft and total >= 3 and not valuable:
         hits.append("magazin/spor")

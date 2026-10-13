@@ -9,7 +9,7 @@ export const Captions = ({ words, accent, bottom = 300, top, size = 60 }: { word
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   if (!words || !words.length) return null;
-  const t = frame / fps;
+  const t = frame / fps + 0.06; // altyazı sesten bir kare önde: göz okumaya sesle aynı anda başlasın
   let idx = words.findIndex((w) => t >= w.s && t < w.e);
   if (idx < 0) idx = t >= words[words.length - 1].e ? words.length - 1 : 0;
   const start = Math.floor(idx / WINDOW) * WINDOW;

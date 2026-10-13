@@ -25,27 +25,54 @@ PUNCT_END = (".", "!", "?")
 PUNCT_MID = (",", ";", ":")
 
 
+def spoken_len(w: str) -> int:
+    """Kelimenin SÖYLENEN uzunluğu: rakamlar yazıya çevrilir ("5" → "beş", "1.250" → "bin iki yüz elli"), yıldızlı
+    kelime özgün uzunlukta sayılır. Ekranda "5" tek harf ama söylenmesi uzun; eski ağırlık bu yüzden kayıyordu."""
+    try:
+        from voices import prep_text
+        sp = prep_text(w.replace("*", "a"))
+    except Exception:
+        sp = w
+    return sum(1 for ch in sp if ch.isalnum())
+
+
 def _weight(w: str) -> float:
-    core = sum(1 for ch in w if ch.isalnum())
-    return 0.6 + core
+    wt = 0.6 + spoken_len(w)
+    if w.endswith(PUNCT_END):
+        wt += 1.2  # cümle sonu uzatması (duraklamanın kendisi çapalarla ayrıca bulunur)
+    elif w.endswith(PUNCT_MID):
+        wt += 0.5
+    return wt
 
 
 def spread(words: list, start: float, end: float) -> list:
-    """Kelimeleri [start, end] aralığına harf ağırlığıyla yayar."""
+    """Kelimeleri [start, end] aralığına söylenen uzunluk ağırlığıyla yayar."""
     if not words:
         return []
-    total = sum(_weight(w) for w in words) or 1.0
+    weights = [_weight(w) for w in words]
+    total = sum(weights) or 1.0
     span = max(0.05, end - start)
     out, t = [], start
-    for w in words:
-        d = span * _weight(w) / total
+    for w, wt in zip(words, weights):
+        d = span * wt / total
         out.append({"w": w, "s": round(t, 3), "e": round(t + d, 3)})
         t += d
     return out
 
 
-def silences(wav: Path, noise_db: int = -38, min_d: float = 0.12) -> tuple:
+def noise_floor(wav: Path) -> int:
+    """Uyarlanır sessizlik eşiği: ortalama sesin 17 dB altı (-50…-28 dB arası). Sabit -38 dB, arka plan uğultusu ya da
+    yankısı olan seslerde duraklamaları kaçırıyordu."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(wav), "-af", "volumedetect", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    m = re.search(r"mean_volume: (-?[\d.]+) dB", r.stderr)
+    return int(max(-50, min(-28, (float(m.group(1)) if m else -21) - 17)))
+
+
+def silences(wav: Path, noise_db: int | None = None, min_d: float = 0.12) -> tuple:
     """(sessizlik aralıkları [(başlangıç, bitiş)], toplam süre)."""
+    if noise_db is None:
+        noise_db = noise_floor(wav)
     r = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(wav), "-af", f"silencedetect=noise={noise_db}dB:d={min_d}",
                         "-f", "null", "-"], capture_output=True, text=True)
     starts = [float(x) for x in re.findall(r"silence_start: (-?[\d.]+)", r.stderr)]
@@ -97,6 +124,30 @@ def by_silence(words: list, wav: Path, pad: float) -> list:
 _WHISPER = None
 
 
+def _auto_install(c: dict) -> None:
+    """Apple Silicon Mac'te mlx-whisper yoksa bir kez kurmayı dener (kullanıcı: altyazı senkronu "çok önemli").
+    `captions.autoInstall: false` kapatır; başarısız deneme 24 saatte bir tekrarlanır."""
+    import importlib.util
+    import json
+    import platform
+    import time
+    if c.get("autoInstall") is False or importlib.util.find_spec("mlx_whisper") or platform.system() != "Darwin" or platform.machine() != "arm64":
+        return
+    mark = Path(__file__).resolve().parent.parent / "work" / ".align_install.json"
+    try:
+        if time.time() - json.loads(mark.read_text()).get("at", 0) < 86400:
+            return
+    except Exception:
+        pass
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.write_text(json.dumps({"at": time.time()}))
+    print("  🔤 altyazı senkronu için konuşma tanıma (mlx-whisper) kuruluyor (bir kez)…", file=sys.stderr, flush=True)
+    r = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "mlx-whisper"], capture_output=True, text=True, timeout=600)
+    importlib.invalidate_caches()
+    print("  🔤 mlx-whisper " + ("kuruldu; model ilk kullanımda indirilir" if r.returncode == 0 else f"kurulamadı: {(r.stderr or '')[-160:]}"),
+          file=sys.stderr, flush=True)
+
+
 def _whisper():
     """mlx-whisper (ya da faster-whisper) kuruluysa tanıma fonksiyonu; değilse None."""
     global _WHISPER
@@ -106,6 +157,7 @@ def _whisper():
     if c.get("whisper") is False:
         _WHISPER = False
         return None
+    _auto_install(c)
     try:
         import mlx_whisper  # noqa: F401
         model = c.get("whisperModel") or "mlx-community/whisper-small-mlx"

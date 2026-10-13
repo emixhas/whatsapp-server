@@ -16,7 +16,7 @@ VALUE_TAGS = {"can kaybı": "#sondakika", "kaza/afet": "#kaza", "emekli/memur ma
               "suç ve vahşet": "#asayiş", "kayıp ve arama": "#kayıp", "kesinti ve ulaşım": "#ulaşım",
               "hava ve doğa uyarısı": "#havadurumu", "yeni düzenleme": "#yenidüzenleme", "büyük siyaset": "#siyaset",
               "dünya ve savaş": "#dünya", "iş ve geçim": "#ekonomi", "eğitim duyurusu": "#eğitim",
-              "destek ve af": "#müjde", "acı olay": "#sondakika"}
+              "destek ve af": "#müjde", "acı olay": "#sondakika", "magazin ve ünlüler": "#magazin"}
 
 
 def tr_lower(t: str) -> str:

@@ -11,6 +11,7 @@ Kullanım: python3 scripts/tts.py work/script.json public/episode.json
 """
 import json
 import os
+import shutil
 import subprocess
 import sys
 import wave
@@ -177,6 +178,8 @@ def main(script_path: str, episode_path: str):
     segments = []
     for i, seg in enumerate(segs):
         out = outs[i]
+        raw = out.with_name(out.stem + ".align.wav")  # duraklamalar işlenmemiş seste aranır (sıkıştırıcı gürültüyü yükseltiyor)
+        shutil.copyfile(out, raw)
         add_pause(out, voice_gain_db(chosen[i]))
         seg = dict(seg)
         seg["audio"] = f"audio/{out.name}"
@@ -194,9 +197,10 @@ def main(script_path: str, episode_path: str):
                 words = []
             how = "bip parçaları"
         if not words:
-            words, how = align.align(shown, out, PAUSE_SEC, spoken=seg["narration"].split())
+            words, how = align.align(shown, raw, 0.0, spoken=seg["narration"].split())
         if not words:
             words, how = word_timings(" ".join(shown), seg["duration"], PAUSE_SEC), "tahmin"
+        raw.unlink(missing_ok=True)
         seg["words"] = words
         seg["captionSync"] = how
         segments.append(seg)
