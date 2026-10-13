@@ -27,6 +27,15 @@ for J in com.gundem.video com.gundem.panel; do
     echo "$J: $(launchctl print "gui/$(id -u)/$J" 2>/dev/null | grep -E '^\s*(state|runs|last exit code|last exit reason) =' | sed 's/^[[:space:]]*//' | tr '\n' ' ')"
   else echo "$J: launchd'de YÜKLÜ DEĞİL"; fi
 done
+LE=$(launchctl list com.gundem.video 2>/dev/null | grep -oE '"LastExitStatus" = -?[0-9]+' | grep -oE -- '-?[0-9]+$')
+if [ -n "$LE" ] && [ "$LE" != "0" ]; then
+  CODE=$LE; [ "$LE" -gt 255 ] && CODE=$(( LE >> 8 ))
+  echo "zamanlayıcının son çıkış kodu: $CODE (ham $LE)"
+  if [ "$CODE" = "78" ]; then
+    echo "  ❌ 78 = launchd işi HİÇ BAŞLATAMADI. Proje klasörü: $PWD"
+    case "$PWD" in "$HOME/Desktop"*|"$HOME/Documents"*|"$HOME/Downloads"*) echo "  → Proje Masaüstü/Belgeler/İndirilenler'de: macOS gizlilik koruması arka plan işini engelliyor. Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi → + → /bin/bash (Cmd+Shift+G: /bin), sonra zamanlayıcıyı kapat/aç; ya da projeyi bu klasörlerin dışına taşı.";; esac
+  fi
+fi
 PL="$HOME/Library/LaunchAgents/com.gundem.video.plist"
 [ -f "$PL" ] && echo "üretim saatleri (plist): $(grep -oE '<key>Hour</key><integer>[0-9]+' "$PL" | grep -oE '[0-9]+$' | tr '\n' ' ')"
 echo "zamanlayıcının başlattığı son üretimler:"; grep -E "üretim başladı|bu çalıştırma atlandı|✖ üretim" work/launchd.out.log 2>/dev/null | tail -8 | cut -c1-120 || echo "  yok"

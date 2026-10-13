@@ -425,6 +425,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Instagram token ≤ 7 gün, bir yayın bağlantısı koptu (`data/health_conn.json`). Otomatik yayın düştü (`publishFailed`: "📤 yayınlanamadı" →
   platform hata satırları + Instagram son hatası, her seferinde; "📤 otomatik yayın yapılmadı" → ayar nedeni, 12 saatte bir). `settings.health` {enabled,
   whatsapp, minFreeGb}. `GET /api/health`.
+- launchd çıkış kodu (`exitText`): `launchctl list` "LastExitStatus" bekleme durumudur (256 → 1 hata, 768 → 3 başka üretim,
+  19968 → 78). 78 = EX_CONFIG: launchd işi HİÇ başlatamadı; proje Masaüstünde olduğundan macOS gizlilik koruması (TCC) arka plan
+  işinin klasöre erişimini engeller (kullanıcının Mac'inde 14 Ekim'de görüldü; panel Terminal'den açık olduğu için o çalışıyordu).
+  Çözüm: Tam Disk Erişimi → /bin/bash ya da projeyi Masaüstü/Belgeler/İndirilenler dışına taşımak. Kaçan üretim uyarısı artık "0 hata"
+  geçen başarı satırlarını "son hata" saymaz ve 78'de eski logu göstermez. Slot bekçisi (her dk): zamanlayıcı açıkken üretim saatinden
+  6-40 dk sonra hiçbir üretim başlamamışsa (kilit yok, panel üretmiyor, launchd logunda slottan sonra "üretim başladı" yok, slottan
+  sonra düzenli video yok) panel o slotu `startPipeline("format")` ile başlatır (slot başına bir kez, `data/panel_slot.json`; log ⏰),
+  78 ise günde bir sağlık uyarısı. `teshis.sh` çıkış kodunu çözer ve 78'de klasör/izin önerisini yazar.
 - Takılan üretim bekçisi (5 dk'da bir): `work/pipeline.lock` canlı sürece ait ve 50 dk'dan (uzun özetlerde 100 dk) eskiyse
   süreç ağacı kapatılır, kilit silinir, "⚠️ üretim … takılmış" + sağlık uyarısı (yoksa sonraki tüm zamanlanmış üretimler
   "başka üretim sürüyor" diye atlanır). Uyku algılama: dakikalık sayaç 5 dk'dan fazla atladıysa "💤 Mac … uykudaydı"

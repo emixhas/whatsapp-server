@@ -798,6 +798,37 @@ async function retitleCheck() {
   for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("📉")) push(l);
   return r.json;
 }
+// ---------- Slot bekçisi: zamanlayıcı açıkken bir üretim saati geçti ve 6 dk içinde hiçbir üretim başlamadıysa (launchd işi
+// başlatamadı — ör. çıkış 78, macOS Masaüstü izni — ya da düştü) panel o slotu kendisi başlatır; 40 dk sonraki "kaçan üretim"
+// uyarısını beklemez. Başladı sayılır: kilit var / panel üretiyor / launchd logunda slottan sonra "üretim başladı" / slottan
+// sonra düzenli video. Slot başına bir kez (data/panel_slot.json); Mac uykudaysa çalışmaz (uyanınca launchd kendisi telafi eder).
+const PANEL_SLOT = path.join(DATA, "panel_slot.json");
+setInterval(async () => {
+  try {
+    if (!isMac || !existsSync(PLIST) || settings().health?.autoCatchUp === false) return;
+    const sch = await getSchedule();
+    const now = new Date(), minute = Number(sch.minute) || 0;
+    const slotAt = (sch.slots || []).map((h) => { const d = new Date(now); d.setHours(h, minute, 0, 0); return d.getTime(); }).filter((t) => t <= now.getTime()).sort((a, b) => b - a)[0];
+    if (!slotAt || now.getTime() - slotAt < 6 * 60000 || now.getTime() - slotAt > 40 * 60000) return;
+    if (readJson(PANEL_SLOT, {}).slot === slotAt || pipelineBusy() || state.running) return;
+    let started = false;
+    try {
+      const log = readFileSync(LAUNCHD_LOG, "utf8").slice(-20000);
+      for (const m of log.matchAll(/== (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) üretim başladı/g)) if (new Date(m[1].replace(" ", "T")).getTime() >= slotAt - 60000) started = true;
+    } catch { /* log yok */ }
+    if (!started) started = listVideos().some((v) => { const m = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), {}); return !(m.anlik || ["anlik", "gunluk", "haftalik"].includes(m.format)) && statSync(path.join(OUT, v.name)).mtimeMs >= slotAt; });
+    if (started) return;
+    writeJson(PANEL_SLOT, { slot: slotAt, at: Date.now() });
+    const lc = spawnSync("launchctl", ["list", VIDEO_JOB], { encoding: "utf8" });
+    const ex = (lc.stdout?.match(/"LastExitStatus"\s*=\s*(-?\d+)/) || [])[1];
+    const why = lc.status !== 0 ? "zamanlayıcı launchd'de yüklü değil" : ex && ex !== "0" ? exitText(ex) : "launchd işi başlamadı";
+    push(`⏰ ${hhmm(slotAt)} üretimi başlamadı (${why.slice(0, 160)}); bu slotu panel başlatıyor`);
+    if (resting()) restEnd(`${hhmm(slotAt)} zamanlanmış üretimi (launchd başlatamadı)`);
+    const r = startPipeline("format");
+    if (!r.ok) push(`⏰ panel slotu başlatamadı: ${r.error}`);
+    if (Number(ex) === 19968 || (Number(ex) > 255 && Number(ex) >> 8 === 78)) healthAlert("launchd-78", `Zamanlayıcı (launchd) üretimi başlatamıyor: ${exitText(ex)}.\nPanel açık olduğu sürece slotları panel başlatacak; panel kapanırsa üretim durur.`, { everyH: 24 });
+  } catch { /* zamanlayıcı okunamadı */ }
+}, 60000);
 // ---------- Takılan üretim bekçisi: pipeline kilidi (work/pipeline.lock) canlı bir sürece ait ve 50 dk'dan (uzun özetlerde
 // 100 dk) eskiyse üretim takılmıştır; süreç ağacı kapatılır, kilit kalkar, sağlık uyarısı gider. Yoksa sonraki tüm
 // zamanlanmış üretimler "başka üretim sürüyor" diye atlanır ve sistem saatlerce video üretmez.
@@ -920,6 +951,19 @@ async function getSchedule() {
 // yeni macOS'ta "unload" hemen ardından "load" sessizce başarısız olabiliyor ve load yine 0 döndürüyor. Bu yüzden
 // bootout/bootstrap kullanılır, her yüklemeden sonra `launchctl print` ile gerçekten yüklendiği doğrulanır, olmazsa
 // 3 kez denenir. healthCheck her 10 dk'da ve panel açılışında plist var ama iş yüklü değilse yeniden yükler.
+// launchctl list "LastExitStatus" bir bekleme durumudur: 256 → çıkış 1, 768 → 3, 19968 → 78. Okunur Türkçe açıklama.
+function exitText(raw) {
+  const n = Number(raw);
+  if (n < 0) return `son zamanlanmış çalışma ${-n} sinyaliyle durduruldu`;
+  const code = n > 255 ? n >> 8 : n;
+  const why = {
+    1: "üretim hata ile bitti (ayrıntı work/pipeline-*.log)",
+    3: "başka üretim sürüyordu, bu slot atlandı",
+    78: "launchd işi HİÇ BAŞLATAMADI (EX_CONFIG): proje klasörüne erişemiyor. Proje Masaüstünde olduğu için macOS gizlilik koruması büyük olasılıkla engelliyor. Çözüm: Sistem Ayarları → Gizlilik ve Güvenlik → Tam Disk Erişimi → + → /bin/bash ekleyip açın (Finder'da Cmd+Shift+G ile /bin yazın), sonra panelde zamanlayıcıyı kapatıp açın; ya da projeyi Masaüstü dışına taşıyın. Bu arada slotları panel kendisi başlatıyor",
+    126: "pipeline.sh çalıştırılamadı (izin yok)", 127: "komut bulunamadı (PATH)",
+  }[code];
+  return `son zamanlanmış çalışmanın çıkış kodu ${code}${why ? ` — ${why}` : ""}`;
+}
 const LA_DOMAIN = `gui/${process.getuid?.() ?? 501}`;
 const VIDEO_JOB = "com.gundem.video";
 const jobLoaded = (label = VIDEO_JOB) => isMac && spawnSync("launchctl", ["print", `${LA_DOMAIN}/${label}`], { encoding: "utf8" }).status === 0;
@@ -1655,10 +1699,11 @@ async function healthCheck() {
       const diag = [];
       const lc = spawnSync("launchctl", ["list", "com.gundem.video"], { encoding: "utf8" });
       if (lc.status !== 0) { const r = await ensureScheduleLoaded("kaçan üretim kontrolü"); diag.push(`zamanlayıcı launchd'de yüklü değildi → ${r?.ok ? "yeniden yüklendi" : "YÜKLENEMEDİ"}`); }
-      else { const ex = (lc.stdout.match(/"LastExitStatus"\s*=\s*(-?\d+)/) || [])[1]; if (ex && ex !== "0") diag.push(`son zamanlanmış çalışmanın çıkış kodu ${ex}${ex === "3" ? " (başka üretim sürüyordu)" : ex === "256" ? " (hata ile bitti)" : ""}`); }
+      else { const ex = (lc.stdout.match(/"LastExitStatus"\s*=\s*(-?\d+)/) || [])[1]; if (ex && ex !== "0") diag.push(exitText(ex)); }
       const lockPid = path.join(WORK, "pipeline.lock", "pid");
       if (existsSync(lockPid)) diag.push("üretim kilidi duruyor (takılmış üretim olabilir; bekçi 50 dk'da temizler)");
-      try { const tail = readFileSync(LAUNCHD_LOG, "utf8").trim().split("\n").filter((l) => /HATA|✖|!! |hata/.test(l)).slice(-2); if (tail.length) diag.push("son hata: " + tail.join(" | ").slice(0, 240)); } catch { /* log yok */ }
+      // "69 haber, 0 hata" gibi başarı satırları hata sayılmaz; launchd işi hiç başlatamadıysa (78) eski log anlamsız
+      if (!diag.some((d) => /başlatamadı/.test(d))) try { const tail = readFileSync(LAUNCHD_LOG, "utf8").trim().split("\n").filter((l) => /HATA|✖|!! |hata/.test(l) && !/(^|\D)0 hata/.test(l)).slice(-2); if (tail.length) diag.push("son hata: " + tail.join(" | ").slice(0, 240)); } catch { /* log yok */ }
       const catchUp = !pipelineBusy() && s.health?.autoCatchUp !== false;
       const sent = await healthAlert("missed", `Zamanlanmış üretim gecikti: son düzenli video ${Math.round((Date.now() - last) / 3600000)} saat önce.${diag.length ? "\nNeden: " + diag.join("; ") : "\nMac uykuda kalmış olabilir (kapak kapalı/pilde)."}${catchUp ? "\nKaçan üretimi şimdi kendim başlattım." : ""}`, { everyH: 5 });
       if (sent && catchUp) { if (resting()) restEnd("kaçan zamanlanmış üretim telafi ediliyor"); const r = startPipeline("format"); push(r.ok ? "⏰ kaçan zamanlanmış üretim telafi ediliyor" : `⏰ telafi üretimi başlatılamadı: ${r.error}`); }
