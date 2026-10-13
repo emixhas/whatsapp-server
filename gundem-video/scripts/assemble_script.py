@@ -465,6 +465,7 @@ def main(src: str, dst: str):
         "timeRange": now.strftime("%H:%M") if ANLIK else week_range(now) if HAFTALIK else f"00:00–{now.strftime('%H:%M')}" if GUNLUK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
         "infoKind": INFO_KIND or None,  # şablon video türü: deprem | mac | piyasa | takvim
+        "expiresAt": data.get("expiresAt") or None,  # bilgi bu andan sonra eskir: expire_videos.py YouTube'da liste dışı yapar
         "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum
         "value": news_value(data, segs) if ANLIK else None,
         "hashtags": topic_hashtags(data),

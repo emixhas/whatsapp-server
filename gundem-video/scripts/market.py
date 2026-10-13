@@ -229,7 +229,7 @@ def build_job(vals: dict, sources: list) -> str | None:
         hook_title=hook_title, hook=hook, items=items,
         titles={"A": f"Dolar, euro, altın ve akaryakıt: {day} piyasalar", "B": hook.rstrip(".") + f" | {day}", "cover": hook_title},
         hashtags=["#dolar", "#altın", "#akaryakıt", "#piyasa", "#ekonomi"],
-        importance=3, reason="günlük piyasa özeti", source=" · ".join(dict.fromkeys(sources)) or "Piyasa verisi", category="finans")
+        importance=3, reason="günlük piyasa özeti", source=" · ".join(dict.fromkeys(sources)) or "Piyasa verisi", category="finans", expires=time.time() + 2 * 86400)
     card = {"kind": "market", "label": "PİYASALAR", "stamp": tr_date(), "rows": rows}
     return str(new_job(f"piyasa-{time.strftime('%Y%m%d')}", script, [card], {"values": vals}))
 
@@ -339,7 +339,7 @@ def fuel_job(f: dict, changes: dict, c: dict) -> str:
     script = make_script(hook_title=f"{who} {word}", hook=parts[0], items=[{"title": f"{who_tr} {word_tr[word]}", "narration": n1, "category": "finans"}],
                          titles={"A": parts[0].rstrip(".") + (f" | {city_name} güncel akaryakıt fiyatları" if city_name else " | Güncel akaryakıt fiyatları"), "B": f"{who_tr} {word_tr[word]}! İşte yeni fiyatlar", "cover": f"{who} {word}"},
                          hashtags=["#akaryakıt", "#benzin", "#motorin", "#zam" if ups else "#indirim"], importance=4, reason="akaryakıt fiyat değişimi",
-                         source="Opet", category="finans")
+                         source="Opet", category="finans", expires=time.time() + 2 * 86400)
     return str(new_job(f"akaryakit-{time.strftime('%Y%m%d%H')}", script, [{"kind": "market", "label": f"{who} {word}", "stamp": tr_date(), "rows": rows}],
                        {"changes": changes}))
 
@@ -357,7 +357,8 @@ def record_job(key: str, price: float, level: float, vals: dict, sources: list) 
     script = make_script(hook_title=f"{name.split()[-1].upper()} REKOR KIRDI", hook=hook, items=[{"title": f"{name} {lvl} lirayı aştı", "narration": n1, "category": "finans", "breaking": True}],
                          titles={"A": f"{name} ilk kez {lvl} lirayı aştı", "B": f"{name} rekor kırdı! İşte son durum", "cover": f"{name.split()[-1].upper()} REKOR"},
                          hashtags=["#dolar" if key == "usd" else "#euro" if key == "eur" else "#altın", "#rekor", "#piyasa", "#ekonomi"],
-                         importance=4, reason=f"{name} rekor", source=" · ".join(sources) or "Piyasa verisi", category="finans")
+                         importance=4, reason=f"{name} rekor", source=" · ".join(sources) or "Piyasa verisi", category="finans",
+                         expires=time.time() + 2 * 86400)
     return str(new_job(f"rekor-{key}-{time.strftime('%Y%m%d')}", script, [{"kind": "market", "label": "REKOR", "stamp": tr_date(), "rows": rows}],
                        {"asset": key, "price": price}))
 

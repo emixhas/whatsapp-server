@@ -172,6 +172,8 @@ npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18
 ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
+# altyazı denetimi: son videonun sesi konuşma tanımayla dinlenir, altyazı zamanlarıyla karşılaştırılır (kurulu değilse atlanır)
+$PY scripts/caption_qa.py "$OUT" 2>/dev/null | grep -v '^{' || true
 echo "-- kapaklar"
 $PY scripts/render_thumbs.py public/episode.json "out/${DATE}-${N}" || echo "  ! kapak adımı atlandı"
 echo "== bitti: $OUT ($(du -h "$OUT" | cut -f1))"

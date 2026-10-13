@@ -19,6 +19,11 @@ PY
 else
   echo "❌ panel YANIT VERMİYOR ($URL). Panel kapalı ya da çökmüş: 'npm run basla' ile açın."
 fi
+echo; echo "--- altyazı hizalama"
+if [ -x .venv-align/bin/python ] && .venv-align/bin/python -c "import torchaudio" 2>/dev/null; then echo "✅ metin hizalama (MMS) kurulu"; else echo "❌ metin hizalama kurulu değil: bash scripts/install_align.sh"; fi
+PYA=".venv/bin/python3"; [ -x "$PYA" ] || PYA=python3
+if "$PYA" -c "import mlx_whisper" 2>/dev/null; then echo "✅ konuşma tanıma (mlx-whisper) kurulu"; else echo "❌ konuşma tanıma kurulu değil (altyazı denetimi çalışmaz): bash scripts/install_align.sh"; fi
+grep -h "altyazı senkronu\|altyazı denetimi" work/pipeline-*.log 2>/dev/null | tail -4 | cut -c1-200
 echo; echo "--- 2) launchd (zamanlayıcı ve panel servisi)"
 launchctl list 2>/dev/null | grep -i gundem || echo "launchd'de gundem işi yok (zamanlayıcı kapalı?)"
 ls "$HOME/Library/LaunchAgents/" 2>/dev/null | grep -i gundem

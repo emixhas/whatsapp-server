@@ -89,6 +89,8 @@ const state = { running: false, startedAt: null, duration: null, log: [], exitCo
 const clients = new Set();
 const NOISE = /\[mcp-sdk\]|SEP-\d{3,}|ExperimentalWarning|punycode|DeprecationWarning/;
 const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if (state.log.length > 400) state.log.shift(); for (const r of clients) r.write(`data: ${JSON.stringify(line)}\n\n`); notifyStage(line); setImmediate(() => { try { stageVoice(line); } catch { /* henüz hazır değil */ } });
+  // altyazı denetimi sorun bulduysa (scripts/caption_qa.py) WhatsApp'a da bildir (12 saatte bir)
+  if (/^⚠️ 🔤 altyazı denetimi/.test(line)) setImmediate(() => { try { healthAlert("caption-qa", line.replace(/^⚠️ 🔤 /, "Altyazı kayıyor: "), { everyH: 12 }); } catch { /* henüz hazır değil */ } });
   // her üretimin son satırı (post_pipeline.py): zamanlayıcıdan gelen üretimlerde de modeller kapatılıp bildirilir
   if (/^\{"autopublish"/.test(line)) { setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000); setTimeout(() => sendDigest("yayın bitti"), 4000); }
   if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
@@ -866,6 +868,25 @@ setInterval(() => {
 // Yorumlara otomatik yanıt verilmez. Dinlenmede de çalışır (yerel model açmaz).
 const commentsCfg = () => ({ enabled: true, hour: 20, minute: 0, ...(settings().comments || {}) });
 const COMMENTS_FILE = path.join(DATA, "comments_last.json");
+// ---------- Süresi geçen videoları YouTube'da liste dışı yap (kullanıcı kararı; scripts/expire_videos.py): saatte bir.
+// Piyasa ve zam/rekor 2 gün, takvim olay günü bitince, meteoroloji uyarı bitince; diğer haberler settings.expire.newsDays (0 = hiç).
+// Silinmez, oynatma listelerinden çıkar; "liste dışı yapılanları geri aç" ile geri alınır. Log 🙈.
+let expireAt = 0;
+async function expireCheck({ manual = false } = {}) {
+  const r = await py("expire_videos.py", ["--check"]);
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🙈")) push(l);
+  if (r.json?.error && (manual || r.json?.due?.length)) push(`🙈 liste dışı yapma: ${r.json.error}`);
+  return r.json || { ok: false, error: "yanıt yok" };
+}
+async function expireRestore(which = "all") {
+  const r = await py("expire_videos.py", ["--restore", which]);
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🙈")) push(l);
+  return r.json || { ok: false, error: "yanıt yok" };
+}
+setInterval(() => { if ((settings().expire?.enabled !== false) && Date.now() - expireAt > 3600000 && !state.running) { expireAt = Date.now(); expireCheck().catch(() => {}); } }, 5 * 60000);
+app.post("/api/expire/run", async (_req, res) => res.json(await expireCheck({ manual: true })));
+app.post("/api/expire/restore", async (req, res) => res.json(await expireRestore(req.body?.name || "all")));
+
 // ---------- Yorumlara anında otomatik yanıt (kullanıcı kararı; scripts/comment_reply.py, prompts/yanit.md): her
 // autoReply.intervalMin (5) dk yeni yorumlar toplanır, TEK Claude çağrısıyla (düşük effort) yanıtlar yazılır, yayınlanır.
 // Hakaret/spam/link → yanıt yok (reply null). Günlük sınır: YouTube 20 (kota), Instagram 60. Log 💬, dinlenmede de sürer.
@@ -1569,6 +1590,12 @@ async function handleCommand(text, opts = {}) {
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
+    case "expire": {
+      if (cmd.restore) { const r = await expireRestore("all"); reply = r.ok ? (r.done?.length ? `${r.done.length} video yeniden herkese açık yapıldı.` : "Liste dışı yaptığım video yok.") : r.error; break; }
+      const r = await expireCheck({ manual: true });
+      reply = !r.ok ? r.error : r.done?.length ? `${r.done.length} süresi geçen video YouTube'da liste dışı yapıldı: ${r.done.map((x) => x.title.slice(0, 40)).join(", ")}.` : "Süresi geçen video yok.";
+      break;
+    }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }
     case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }
     case "weekly_summary": { const r = startWeekly({ manual: true }); reply = r.ok ? "Haftanın özeti videosu üretiliyor. Yatay, yaklaşık beş dakikalık; bitince YouTube'a yüklenecek." : r.error; break; }

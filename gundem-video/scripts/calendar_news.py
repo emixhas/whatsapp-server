@@ -114,7 +114,8 @@ def build_job(e: dict) -> str:
         items=[{"title": short, "narration": narr}],
         titles={"A": f"Yarın {e['title']} ({tr_day(d)})", "B": f"Unutmayın: {e['title']}", "cover": f"YARIN {short}"},
         hashtags=["#" + re.sub(r"[^\wçğıöşü]", "", short.replace("I", "ı").replace("İ", "i").lower())[:30], "#hatırlatma", "#gündem"],
-        importance=3, reason="takvim hatırlatması", source="Takvim", category="toplum")
+        importance=3, reason="takvim hatırlatması", source="Takvim", category="toplum",
+        expires=time.mktime((d + timedelta(days=1)).timetuple()))  # olay günü bitince liste dışı
     card = {"kind": "calendar", "label": "YARIN", "stamp": e["label"], "title": e["title"], "sub": tr_day(d),
             "date": {"day": str(d.day), "month": MONTHS[d.month - 1], "weekday": DAYS[d.weekday()]}}
     return str(new_job(f"takvim-{e['key']}", script, [card], {"event": e}))

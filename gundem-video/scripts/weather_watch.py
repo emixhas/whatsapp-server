@@ -150,7 +150,8 @@ def build_job(g: dict) -> str:
         titles={"A": f"Meteoroloji'den {n} il için {lv} kod uyarısı" if n > 1 else f"{provs[0]} için {lv} kod uyarısı",
                 "B": f"Dikkat: {typ} geliyor! İşte uyarı verilen iller", "cover": f"{lv.upper()} KOD"},
         hashtags=["#meteoroloji", f"#{tag}", f"#{lv}kod", "#havadurumu", "#uyarı"],
-        importance=5 if g["level"] == "red" else 4, reason=f"{lv} kod meteoroloji uyarısı", source="Meteoroloji Genel Müdürlüğü", category="hava")
+        importance=5 if g["level"] == "red" else 4, reason=f"{lv} kod meteoroloji uyarısı", source="Meteoroloji Genel Müdürlüğü", category="hava",
+        expires=(g.get("expires") or (g.get("onset") or time.time()) + 86400) + 3600)  # uyarı bitince liste dışı
     card = {"kind": "weather", "label": f"{lv.upper()} KOD", "stamp": typ.upper(), "title": until and f"Bitiş: {until}",
             "weather": {"level": g["level"], "type": typ, "points": [{"name": p, "lat": CENTERS[p][0], "lon": CENTERS[p][1]} for p in provs]}}
     return str(new_job(f"meteo-{g['key']}", script, [card], {"group": g}))

@@ -38,8 +38,14 @@ def num_tr(x: float, d: int = 1) -> str:
     return s.replace(",", "_").replace(".", ",").replace("_", ".")
 
 
+def iso_at(ts: float) -> str:
+    """Unix zamanı → ISO (UTC); meta `expiresAt` için (expire_videos.py bu andan sonra YouTube'da liste dışı yapar)."""
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat()
+
+
 def make_script(hook_title: str, hook: str, items: list, titles: dict, hashtags: list, importance: int, reason: str,
-                source: str, category: str) -> dict:
+                source: str, category: str, expires: float | None = None) -> dict:
     """Anlık şemasında senaryo: kanca + intro + haber segmentleri + outro (intro/outro metnini assemble yazar)."""
     segs = [{"kind": "hook", "title": hook_title, "narration": hook, "source": source, "category": category},
             {"kind": "intro", "narration": "Son dakika."}]
@@ -48,7 +54,10 @@ def make_script(hook_title: str, hook: str, items: list, titles: dict, hashtags:
                      "category": it.get("category") or category, **({"breaking": True} if it.get("breaking") else {}),
                      **({"displayIndex": it["displayIndex"]} if it.get("displayIndex") else {})})
     segs.append({"kind": "outro", "narration": "Takip etmeyi unutma."})
-    return {"titles": titles, "hashtags": hashtags, "importance": importance, "importanceReason": reason, "segments": segs}
+    out = {"titles": titles, "hashtags": hashtags, "importance": importance, "importanceReason": reason, "segments": segs}
+    if expires:
+        out["expiresAt"] = iso_at(expires)  # bilgi bu andan sonra eskir (liste dışı)
+    return out
 
 
 def new_job(name: str, script: dict, cards: list, meta: dict | None = None) -> Path:

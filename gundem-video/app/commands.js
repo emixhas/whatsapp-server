@@ -61,6 +61,8 @@ export function parseCommand(raw) {
   }
   const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
   if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
+  // Süresi geçen videolar: "süresi geçenleri liste dışı yap", "liste dışı yapılanları geri aç"
+  if (/liste dışı/.test(t)) return { action: "expire", restore: /(geri al|geri aç|herkese açık|kaldır)/.test(t), reply: "" };
   // Instagram temizliği: "instagramda son 7 günde 1000 izlenmenin altındakileri sil" → önce liste, "evet sil" ile silinir
   if (/^(evet,? sil|evet sil hepsini|sil onaylıyorum|onaylıyorum sil)$/.test(t)) return { action: "ig_cleanup_confirm", reply: "" };
   if (/(instagram|insta)/.test(t) && /(^|\s)sil/.test(t) && /(izlenme|görüntülenme|izlenen)/.test(t)) {

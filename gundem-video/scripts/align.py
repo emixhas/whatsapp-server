@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Yanan altyazıyı sesle eş zamanlar (kullanıcı isteği: "alt yazı ses ile eşit gitmeli").
 
-İki yol, sırayla:
+Üç yol, sırayla:
+  0. Metni sese zorla hizalama (MMS, `scripts/mms_align.py`, ayrı ortam .venv-align): bilinen metin sesin karelerine
+     oturtulur, en isabetlisi. Kurulum: bash scripts/install_align.sh
   1. Konuşma tanıma ile kelime zamanları (mlx-whisper; Apple Silicon'da hızlı, Türkçe). Kuruluysa ve
      `settings.captions.whisper` kapalı değilse kullanılır: ses yazıya dökülür, tanınan kelimeler senaryodaki
      kelimelerle sırayla eşlenir (difflib), eşlenen kelime gerçek zamanını alır, eşlenmeyen komşuları arasında
@@ -236,12 +238,89 @@ def by_whisper(words: list, wav: Path, spoken: list | None = None) -> list:
     return out
 
 
+ROOT = Path(__file__).resolve().parent.parent
+ALIGN_PY = ROOT / ".venv-align" / "bin" / "python"
+
+
+def _mms_python():
+    """Metin hizalama (MMS) için torchaudio'lu Python: önce ayrı ortam .venv-align, yoksa torchaudio'su olan proje Python'u."""
+    if ALIGN_PY.exists():
+        return ALIGN_PY
+    try:
+        from voices import python_with
+        return python_with("torchaudio")
+    except Exception:
+        return None
+
+
+_MMS_CACHE: dict = {}  # wav yolu → kelime zamanları (mms_batch doldurur; model bir kez yüklenir)
+
+
+def _pairs(words: list, spoken: list | None):
+    try:
+        from tr_numbers import _SCORE, _SPORT
+        from voices import prep_text
+        src = list(spoken or words)
+        # skor bağlamı cümle düzeyinde (tek kelimede "4-1" bağlamsız kalır): seslendirmeyle aynı okunuş ("dört bir")
+        sport = bool(_SPORT.search(" ".join(src)))
+        sp = [prep_text(_SCORE.sub(r"\1 \2", w) if sport else w.replace("*", "")) for w in src]
+    except Exception:
+        sp = list(spoken or words)
+    if len(sp) != len(words):
+        sp = list(words)
+    return [[w, x] for w, x in zip(words, sp)]
+
+
+def mms_batch(jobs: list) -> int:
+    """Tüm segmentleri tek süreçte hizalar (model bir kez yüklenir). jobs: [(wav, words, spoken)]. Başarılı sayı."""
+    if (settings().get("captions") or {}).get("forcedAlign") is False or not jobs:
+        return 0
+    py = _mms_python()
+    if not py:
+        return 0
+    import json
+    import tempfile
+    payload = [{"wav": str(w), "pairs": _pairs(ws, sp)} for w, ws, sp in jobs]
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+        tmp = f.name
+    try:
+        r = subprocess.run([str(py), str(ROOT / "scripts" / "mms_align.py"), tmp], capture_output=True, text=True, timeout=900)
+        out = json.loads((r.stdout or "").strip().splitlines()[-1]) if (r.stdout or "").strip() else {"ok": False, "error": (r.stderr or "")[-200:]}
+    except Exception as e:
+        out = {"ok": False, "error": str(e)[:200]}
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+    if not out.get("ok"):
+        print(f"  ! metin hizalama çalışmadı: {str(out.get('error'))[:200]}", file=sys.stderr)
+        return 0
+    n = 0
+    for (w, ws, _), res in zip(jobs, out.get("results") or []):
+        if res.get("ok") and len(res.get("words") or []) == len(ws):
+            _MMS_CACHE[str(w)] = res["words"]
+            n += 1
+        else:
+            print(f"  ! metin hizalama ({Path(w).name}): {str(res.get('error', 'kelime sayısı tutmadı'))[:120]}", file=sys.stderr)
+    return n
+
+
+def by_mms(words: list, wav: Path, spoken: list | None = None) -> list:
+    """Metni sese zorla hizalama sonucu (önce mms_batch ile toplu hesaplanır; yoksa bu segment için tek başına)."""
+    if str(wav) not in _MMS_CACHE:
+        mms_batch([(wav, words, spoken)])
+    res = _MMS_CACHE.get(str(wav)) or []
+    return res if len(res) == len(words) else []
+
+
 def align(words: list, wav: Path, pad: float, spoken: list | None = None) -> tuple:
     """(zamanlı kelimeler, yöntem adı). words: ekranda görünecek kelimeler (yıldızlı olabilir)."""
     global LAST_COVERAGE
     LAST_COVERAGE = None
     if not words:
         return [], "boş"
+    w = by_mms(words, wav, spoken)  # en isabetli: bilinen metin sese oturtulur
+    if w:
+        return w, "metin hizalama"
     w = by_whisper(words, wav, spoken)
     if w:
         return w, "konuşma tanıma"

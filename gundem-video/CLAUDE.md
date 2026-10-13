@@ -106,6 +106,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
   (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
+  0) Metni sese zorla hizalama (kullanıcı isteği, en isabetlisi; `scripts/mms_align.py`, `align.mms_batch/by_mms`): bilinen metin
+  torchaudio MMS_FA (Meta, çok dilli, Türkçe) ile sesin karelerine CTC ile oturtulur; Türkçe harfler a-z'ye çevrilir (ç→c, ı→i…),
+  kesme işareti atılır, her ekran kelimesinin söylenen biçimi `prep_text` (skor bağlamı cümle düzeyinde: "4-1" → "dört bir").
+  Ayrı ortam `.venv-align` (torch/torchaudio 2.8 sabit — 2.9 forced_align'ı kaldırdı; ses modellerinin torch'una dokunmaz),
+  model ~1,2 GB torch önbelleğine iner; tüm bipsiz segmentler TEK süreçte (model bir kez yüklenir, varsa MPS, hizalama CPU).
+  Kurulum `bash scripts/install_align.sh` (MMS + mlx-whisper, Yelda sesiyle deneme). Yoksa/hata verirse konuşma tanımaya, o da
+  yoksa duraklama çapasına düşer; yöntem segmentte `captionSync` ("metin hizalama"). `captions.forcedAlign: false` kapatır.
+  Sandbox'ta model inemediği için gerçek ses üzerinde DENENMEDİ; arayüz torchaudio 2.8 kaynağıyla doğrulandı.
+  Video sonrası denetim (`scripts/caption_qa.py`, pipeline render + json kopyasından sonra): son mp4'ün sesi (müzikli) mlx-whisper
+  ile dinlenir, ≥3 harfli kelimeler difflib ile eşlenir, altyazının ekrana geldiği an (s − captionLead) sesteki başlangıçla
+  karşılaştırılır: "🔤 altyazı denetimi: N kelime, 150 ms içinde olan yüzde X, ortanca kayma Y ms geç/erken". Sorun (150 ms içinde
+  < %70 ya da |ortanca| > 120 ms) → "⚠️" + öneri (sabit kayma: kaydırma ayarını şu kadar değiştir; dağınık: metin hizalamayı kur)
+  + WhatsApp sağlık uyarısı (12 saatte bir); `data/caption_qa.json`. `teshis.sh` iki aracın kurulu olup olmadığını ve son satırları yazar.
   Altyazı TEK ve BÜYÜK kelime (kullanıcı kararı, 14 Ekim; önceki 3 kelimelik grup kaldırıldı; `src/captionGroups.ts currentWord`):
   ekranda yalnız o an söylenen kelime, söylendiği anda belirir (0,1 sn'de büyür), bittikten 0,18 sn sonra kalkar; duraklamada ekran
   boş (söylenmeyen kelime gösterilmez). Kategori renginde kutu, Shorts'ta `size × 1,7` punto (`fitFontSize` tek satır, en az 48 px),
@@ -617,6 +630,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa
   (`breaking_watch.recent_items`) devam videosu `queueValuable` ile üretilir (dinlenmeyi bozar); yeni bilgi yoksa üretilmez.
   `POST /api/viral/check`.
+- Süresi geçen videolar YouTube'da liste dışı (kullanıcı kararı; `scripts/expire_videos.py`, panel saatte bir `expireCheck`,
+  `settings.expire` {enabled, piyasaDays 2, alarmDays 2, takvimDays 2, meteoDays 2, newsDays 0}): şablon senaryo `expiresAt` yazar
+  (`info_card.make_script(expires=)`: piyasa ve zam/rekor +2 gün, takvim olay günü bitince, meteoroloji uyarı bitişi + 1 saat) →
+  meta `expiresAt`; eski videolarda türüne göre yayından N gün; diğer haberler yalnız `newsDays` > 0 ise (deprem, maç, derleme,
+  uzun özetler hariç). `videos.update` status unlisted (silinmez) + kendi oynatma listelerimizden çıkarılır (`data/youtube_playlists.json`),
+  metrics `youtube.unlistedAt/unlistReason`, log 🙈, en çok 20/çalıştırma (kota). Geri alma `--restore all|ad` (herkese açık + listelere
+  geri), komutlar "süresi geçenleri liste dışı yap" / "liste dışı yapılanları geri aç" (`expire`), `POST /api/expire/run|restore`, panel
+  📡 grubunda anahtar + "diğer haberler N gün" + düğmeler. Instagram/TikTok API gizlemeye izin vermez.
 - Yorumlara anında otomatik yanıt (kullanıcı kararı, 14 Ekim — önceki "otomatik yanıt yok" kararının yerini aldı;
   `scripts/comment_reply.py`, `prompts/yanit.md`, `server.js replyCheck`, `settings.autoReply` {enabled, intervalMin 5, maxAgeHours 48,
   recentHours 72, maxPerDay {youtube 20, instagram 60}}): YouTube kanalın tüm yorumları tek istekle (`allThreadsRelatedToChannelId`,

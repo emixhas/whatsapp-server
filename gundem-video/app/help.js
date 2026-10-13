@@ -28,6 +28,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • instagram'a yayınla · tiktok'a yayınla · youtube'a yayınla (son video)
 • tiktok sırası · sırada ne var
 • kapakları yeniden yükle
+• süresi geçenleri liste dışı yap · liste dışı yapılanları geri aç
 • instagramda son 7 günde 1000 izlenmenin altındakileri sil → önce liste gelir, *evet sil* ile silinir, *iptal* ile vazgeçilir (gün ve izlenme sayısı değiştirilebilir; sona "24 saatten eski" eklenebilir)
 
 📊 *Bilgi ve rapor*

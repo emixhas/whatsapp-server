@@ -175,11 +175,20 @@ def main(script_path: str, episode_path: str):
         for f in files + [part_out(i, k) for k in range(len(p))]:
             f.unlink(missing_ok=True)
 
+    # hizalama işlenmemiş seste yapılır (sıkıştırıcı gürültüyü yükseltiyor): önce tüm segmentlerin ham kopyası, sonra
+    # metin hizalama (MMS) tüm bipsiz segmentler için TEK seferde (1,2 GB model bir kez yüklenir)
+    raws = {}
+    for i in range(len(segs)):
+        raws[i] = outs[i].with_name(outs[i].stem + ".align.wav")
+        shutil.copyfile(outs[i], raws[i])
+    try:
+        align.mms_batch([(raws[i], censor.mask(seg["narration"]).split(), seg["narration"].split()) for i, seg in enumerate(segs) if i not in piece_spans])
+    except Exception as e:
+        print(f"  ! metin hizalama atlandı: {str(e)[:160]}", file=sys.stderr)
     segments = []
     for i, seg in enumerate(segs):
         out = outs[i]
-        raw = out.with_name(out.stem + ".align.wav")  # duraklamalar işlenmemiş seste aranır (sıkıştırıcı gürültüyü yükseltiyor)
-        shutil.copyfile(out, raw)
+        raw = raws[i]
         add_pause(out, voice_gain_db(chosen[i]))
         seg = dict(seg)
         seg["audio"] = f"audio/{out.name}"
@@ -210,10 +219,12 @@ def main(script_path: str, episode_path: str):
     sync = [s_.get("captionSync") for s_ in segments if s_.get("captionSync")]
     if sync:
         cov = [s_["captionCoverage"] for s_ in segments if s_.get("captionCoverage") is not None]
-        print("  🔤 altyazı senkronu: " + ", ".join(f"{k} {sync.count(k)}" for k in dict.fromkeys(sync))
-              + (f" (konuşma tanıma kelimelerin %{round(sum(cov) / len(cov) * 100)}'ini sesle doğrudan eşledi)" if cov else
-                 " — konuşma tanıma çalışmadı: Mac'te 'bash scripts/install_align.sh' ile kurun, altyazı çok daha isabetli olur"
-                 if "konuşma tanıma" not in sync else ""), flush=True)
+        note = ""
+        if cov:
+            note = f" (konuşma tanıma kelimelerin %{round(sum(cov) / len(cov) * 100)}'ini sesle doğrudan eşledi)"
+        if "metin hizalama" not in sync and not cov:
+            note = " — metin hizalama kurulu değil: Mac'te bir kez 'bash scripts/install_align.sh' çalıştırın, altyazı sese birebir oturur"
+        print("  🔤 altyazı senkronu: " + ", ".join(f"{k} {sync.count(k)}" for k in dict.fromkeys(sync)) + note, flush=True)
     # altyazı kaydırma (panel ayarı): sabit bir gecikme/erken gelme varsa tek ayarla düzeltilir; Remotion okur
     try:
         lead = float((voices._S.get("captions") or {}).get("leadSec", 0.06))
