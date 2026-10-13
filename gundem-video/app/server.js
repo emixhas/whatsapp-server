@@ -400,11 +400,16 @@ const quakeCfg = () => ({ enabled: true, minMag: 4.5, intervalMin: 2, duration: 
 const matchCfg = () => ({ enabled: true, intervalMin: 10, duration: 25, ...(settings().match || {}) });
 const marketCfg = () => ({ enabled: true, hour: 9, minute: 0, duration: 35, ...(settings().market || {}) });
 const calendarCfg = () => ({ enabled: true, hour: 19, minute: 0, duration: 25, extra: [], ...(settings().calendar || {}) });
+const weatherCfg = () => ({ enabled: true, minLevel: "orange", intervalMin: 30, duration: 25, ...(settings().weather || {}) });
+const weeklyTopCfg = () => ({ enabled: true, weekday: 0, hour: 18, minute: 0, duration: 60, ...(settings().weeklyTop || {}) });
 const INFO = {
   deprem: { kind: "deprem", label: "DEPREM", intro: "Son dakika, deprem." },
   mac: { kind: "mac", label: "MAÇ SONUCU", intro: "Maç sonucu.", outro: "Maç sonuçları için takip etmeyi unutma.", breaking: false },
   piyasa: { kind: "piyasa", label: "PİYASALAR", intro: "Güne piyasalarla başlıyoruz.", outro: "Piyasaları her sabah burada takip edin. Takip etmeyi unutma.", breaking: false },
   takvim: { kind: "takvim", label: "HATIRLATMA", intro: "Takvim hatırlatması.", outro: "Önemli günleri kaçırmamak için takip etmeyi unutma.", breaking: false },
+  meteo: { kind: "meteo", label: "METEOROLOJİ UYARISI", intro: "Son dakika, hava durumu uyarısı.", outro: "Hava durumu uyarılarını kaçırmamak için takip etmeyi unutma.", breaking: false },
+  alarm: { kind: "alarm", label: "PİYASA ALARMI", intro: "Son dakika, piyasalar.", outro: "Piyasaları anlık takip etmek için takip etmeyi unutma.", breaking: false },
+  derleme: { kind: "derleme", label: "HAFTANIN EN ÇOK İZLENENLERİ", intro: "Haftanın en çok izlenenleri.", outro: "Her pazar haftanın en çok izlenenleri burada. Takip etmeyi unutma.", breaking: false },
 };
 function startTemplate(kind, job, { title, duration, source }) {
   if (resting()) restEnd(`${INFO[kind].label.toLowerCase()} videosu (${String(title || "").slice(0, 60)})`);
@@ -460,7 +465,36 @@ async function calendarRun({ manual = false } = {}) {
   }
   return { ...last, events: evs };
 }
-let quakeAt = 0, matchAt = 0, infoBusy = false, quakeErrAt = 0;
+async function weatherCheck({ manual = false } = {}) {
+  const r = await pyJson(["scripts/weather_watch.py", "--check"], 60000).catch(() => null);
+  infoMark("weather", { errors: r?.errors || [], found: (r?.warnings || []).length });
+  if (r?.errors?.length && manual) push(`🌧 meteoroloji servisi: ${r.errors.join(" · ")}`);
+  for (const g of r?.warnings || []) {
+    push(`🌧 METEOROLOJİ: ${g.title} — ${g.provinces.slice(0, 8).join(", ")}${g.provinces.length > 8 ? "…" : ""} → video hazırlanıyor`);
+    const res = startTemplate("meteo", g.job, { title: g.title, duration: weatherCfg().duration, source: "Meteoroloji Genel Müdürlüğü" });
+    if (res.ok) await pyJson(["scripts/breaking_watch.py", "--mark", g.title]).catch(() => {});
+  }
+  return { ok: !!r?.ok, warnings: r?.warnings || [], errors: r?.errors || [] };
+}
+async function marketAlarm({ manual = false } = {}) {
+  const r = await pyJson(["scripts/market.py", "--alarm"], 90000).catch(() => null);
+  infoMark("alarm", { errors: r?.errors || [], found: (r?.jobs || []).length });
+  if (r?.errors?.length && manual) push(`💰 piyasa alarmı: ${r.errors.join(" · ")}`);
+  for (const job of r?.jobs || []) {
+    const title = job.includes("akaryakit") ? "Akaryakıt fiyatları değişti" : "Piyasada rekor";
+    push(`💰 PİYASA ALARMI: ${title} → video hazırlanıyor`);
+    startTemplate("alarm", job, { title, duration: marketCfg().duration, source: "Piyasa verisi" });
+  }
+  return { ok: !!r?.ok, jobs: r?.jobs || [], errors: r?.errors || [] };
+}
+async function weeklyTopRun({ manual = false } = {}) {
+  if (!manual) infoMark("weeklyTop", { day: today() });
+  const r = await pyJson(["scripts/weekly_top.py", "--job"], 300000).catch(() => null);
+  if (!r?.ok) { push(`🏆 Pazar derlemesi yapılmadı: ${r?.error || "yanıt yok"}`); return { ok: false, error: r?.error || "Derleme hazırlanamadı." }; }
+  push(`🏆 haftanın en çok izlenenleri: ${r.top.map((x, i) => `${i + 1}. ${x.title.slice(0, 40)} (${x.views})`).join(" · ")} → derleme hazırlanıyor (${r.clips} klip)`);
+  return { ...startTemplate("derleme", r.job, { title: "Haftanın en çok izlenen haberleri", duration: weeklyTopCfg().duration, source: "Türkiye Gündemi" }), top: r.top };
+}
+let quakeAt = 0, matchAt = 0, infoBusy = false, quakeErrAt = 0, weatherAt = 0, alarmAt = 0;
 setInterval(async () => {
   if (infoBusy) return; infoBusy = true;
   try {
@@ -468,6 +502,10 @@ setInterval(async () => {
     const q = quakeCfg(), m = matchCfg(), mk = marketCfg(), cl = calendarCfg();
     if (q.enabled && Date.now() - quakeAt >= Number(q.intervalMin) * 60000) { quakeAt = Date.now(); await quakeCheck(); }
     if (m.enabled && Date.now() - matchAt >= Number(m.intervalMin) * 60000) { matchAt = Date.now(); await matchCheck(); }
+    const wc = weatherCfg(), wt = weeklyTopCfg();
+    if (wc.enabled && Date.now() - weatherAt >= Number(wc.intervalMin) * 60000) { weatherAt = Date.now(); await weatherCheck(); }
+    if (mk.enabled !== false && mk.alarm !== false && Date.now() - alarmAt >= 20 * 60000) { alarmAt = Date.now(); await marketAlarm(); }
+    if (wt.enabled && n.getDay() === Number(wt.weekday) && st.weeklyTop?.day !== today() && mins >= wt.hour * 60 + wt.minute && mins < wt.hour * 60 + wt.minute + 180) await weeklyTopRun();
     // piyasa ve takvim: saatinde (2 saat içinde; Mac uyuduysa o gün atlanır), günde bir kez
     if (mk.enabled && st.market?.day !== today() && mins >= mk.hour * 60 + mk.minute && mins < mk.hour * 60 + mk.minute + 120) await marketRun();
     if (cl.enabled && st.calendar?.day !== today() && mins >= cl.hour * 60 + cl.minute && mins < cl.hour * 60 + cl.minute + 120) await calendarRun();
@@ -476,8 +514,8 @@ setInterval(async () => {
 // dinlenmedeyken "sıradaki planlı iş" bilinsin
 function infoNext() {
   const out = [], st = infoState();
-  for (const [k, c, what] of [["market", marketCfg(), "sabah piyasa kartı"], ["calendar", calendarCfg(), "takvim hatırlatması"]]) {
-    if (!c.enabled || st[k]?.day === today()) continue;
+  for (const [k, c, what] of [["market", marketCfg(), "sabah piyasa kartı"], ["calendar", calendarCfg(), "takvim hatırlatması"], ["weeklyTop", weeklyTopCfg(), "Pazar derlemesi"]]) {
+    if (!c.enabled || st[k]?.day === today() || (k === "weeklyTop" && new Date().getDay() !== Number(c.weekday))) continue;
     const t = new Date(); t.setHours(Number(c.hour), Number(c.minute), 0, 0);
     if (t.getTime() > Date.now()) out.push({ at: t.getTime(), what });
   }
@@ -485,7 +523,7 @@ function infoNext() {
 }
 app.get("/api/info", async (_req, res) => {
   const cal = await pyJson(["scripts/calendar_news.py", "--list", "45"], 30000).catch(() => null);
-  res.json({ quake: quakeCfg(), match: matchCfg(), market: marketCfg(), calendar: calendarCfg(), state: infoState(), upcoming: (cal?.events || []).slice(0, 8) });
+  res.json({ quake: quakeCfg(), match: matchCfg(), market: marketCfg(), calendar: calendarCfg(), weather: weatherCfg(), weeklyTop: weeklyTopCfg(), state: infoState(), upcoming: (cal?.events || []).slice(0, 8) });
 });
 app.post("/api/info/:kind/run", async (req, res) => {
   const k = req.params.kind;
@@ -493,6 +531,9 @@ app.post("/api/info/:kind/run", async (req, res) => {
   if (k === "match") return res.json(await matchCheck({ manual: true }));
   if (k === "market") return res.json(await marketRun({ manual: true }));
   if (k === "calendar") return res.json(await calendarRun({ manual: true }));
+  if (k === "weather") return res.json(await weatherCheck({ manual: true }));
+  if (k === "alarm") return res.json(await marketAlarm({ manual: true }));
+  if (k === "weeklyTop") return res.json(await weeklyTopRun({ manual: true }));
   res.json({ ok: false, error: "bilinmeyen tür" });
 });
 
@@ -1377,8 +1418,11 @@ async function handleCommand(text) {
       if (!r.ok) action = "none"; break;
     }
     case "info": {
-      const fn = { quake: quakeCheck, match: matchCheck, market: marketRun, calendar: calendarRun }[cmd.kind];
+      const fn = { quake: quakeCheck, match: matchCheck, market: marketRun, calendar: calendarRun, weather: weatherCheck, alarm: marketAlarm, weeklyTop: weeklyTopRun }[cmd.kind];
       const r = await fn({ manual: true });
+      if (cmd.kind === "weather") { reply = r.warnings?.length ? `${r.warnings.map((g) => g.title).join(", ")}: uyarı videosu hazırlanıyor.` : `Şu an yeni turuncu ya da kırmızı kod uyarısı yok.${r.errors?.length ? ` Uyarı: ${r.errors.join(" · ")}` : ""}`; break; }
+      if (cmd.kind === "alarm") { reply = r.jobs?.length ? "Fiyat değişimi/rekor var, video hazırlanıyor." : "Akaryakıtta fiyat değişimi ya da dolar/altında yeni rekor yok."; break; }
+      if (cmd.kind === "weeklyTop") { reply = r.ok ? `Haftanın en çok izlenenleri derleniyor: ${(r.top || []).map((x, i) => `${i + 1}. ${x.title.slice(0, 40)}`).join(", ")}.` : r.error; break; }
       if (cmd.kind === "quake") reply = r.events?.length ? `${r.events.map((e) => e.title).join(", ")}: deprem videosu hazırlanıyor.` : `Yeni büyük deprem yok (en az ${quakeCfg().minMag}).${r.errors?.length ? ` Uyarı: ${r.errors.join(" · ")}` : ""}`;
       else if (cmd.kind === "match") reply = r.matches?.length ? `${r.matches.map((m) => m.title).join(", ")}: skor videosu hazırlanıyor.` : "Takip ettiğimiz takımlardan yeni biten maç yok.";
       else reply = r.ok ? (cmd.kind === "market" ? "Piyasa videosu hazırlanıyor: dolar, euro, altın ve akaryakıt." : `Yarının hatırlatması hazırlanıyor: ${(r.events || []).map((e) => e.title).join(", ")}.`) : r.error;

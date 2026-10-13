@@ -22,11 +22,11 @@ const WideCaptions = ({ words, accent }: { words?: Word[]; accent: string }) => 
   const { fps } = useVideoConfig();
   if (!words?.length) return null;
   const t = frame / fps + 0.06;
-  const { idx, start, end } = currentGroup(words, t);
+  const { idx, start } = currentGroup(words, t);
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", lineHeight: 1.2 }}>
-      {words.slice(start, end).map((w, i) => {
-        const gi = start + i, active = gi === idx, shown = gi <= idx;
+      {words.slice(start, idx + 1).map((w, i) => {
+        const gi = start + i, active = gi === idx, shown = true;
         return (
           <span key={gi} lang="tr" style={{ fontSize: 50, fontWeight: 900, whiteSpace: "nowrap", color: active ? "#0B0F1A" : theme.white, opacity: shown ? 1 : 0,
             background: active ? accent : "transparent", padding: active ? "0 12px" : 0, borderRadius: 10 }}>{w.w}</span>

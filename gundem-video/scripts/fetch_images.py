@@ -379,6 +379,11 @@ def main():
             shutil.copyfile(ROOT / c["tall"], tall_f)
             seg["image"], seg["imageTall"], seg["imageSize"] = f"images/{card.name}", f"images/{tall_f.name}", "1840x1120"
             seg["infoCard"] = True
+            if c.get("video") and (ROOT / c["video"]).exists():  # derleme: eski videodan kesilmiş haber görüntüsü
+                dst = OUT / f"vid-{i:02d}.mp4"
+                shutil.copyfile(ROOT / c["video"], dst)
+                seg["video"], seg["videoDuration"], seg["infoCard"] = f"images/{dst.name}", c.get("videoDuration") or 8, False
+                n_vid += 1
             n_img += 1
             continue
         art, rss = seg.get("articleUrl"), seg.get("imageUrl")

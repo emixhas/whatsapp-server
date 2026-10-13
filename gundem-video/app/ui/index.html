@@ -237,6 +237,12 @@
         <textarea id="calExtra" rows="3" style="width:100%;background:#070b16;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:8px 10px;font:inherit"></textarea>
         <div class="acts"><button class="ghost" id="calSave">Olayları kaydet</button><button class="ghost" id="calNow">📅 Yarının hatırlatmasını şimdi üret</button></div>
         <div id="calUpcoming" class="conninfo" style="font-size:13px"></div>
+        <label class="row"><span class="sw" id="weatherOn"></span><span>🌧 Meteoroloji: turuncu ya da kırmızı kod uyarısı verilince uyarı verilen illerin haritasıyla video (yarım saatte bir bakılır)</span></label>
+        <div class="acts"><button class="ghost" id="weatherNow">🌧 Uyarıları şimdi kontrol et</button></div>
+        <label class="row"><span class="sw" id="alarmOn"></span><span>⛽ Zam ve rekor alarmı: benzin/motorin fiyatı değişince (07:00–22:00) ve dolar, euro, gram altın rekor kırıp yeni bir eşiği aşınca anında video</span></label>
+        <div class="acts"><button class="ghost" id="alarmNow">⛽ Şimdi kontrol et</button></div>
+        <label class="row"><span class="sw" id="wtopOn"></span><span>🏆 Pazar derlemesi: her pazar 18:00'de haftanın en çok izlenen 5 haberi, kendi görüntüleriyle tek 60 sn Shorts'ta (geri sayım)</span></label>
+        <div class="acts"><button class="ghost" id="wtopNow">🏆 Derlemeyi şimdi üret</button></div>
         <label class="row"><span class="sw" id="retitleOn"></span><span>📉 Tutmayan videonun YouTube başlığını değiştir: yayından 3 saat sonra izlenmesi son videoların ortancasının yarısının altındaysa B başlığına geçilir (bir kez)</span></label>
         <label class="row"><span class="sw" id="fcOn"></span><span>💬 Her videoya otomatik ilk yorum: konuya özel soru (YouTube ve Instagram; TikTok API'si izin vermiyor)</span></label>
       </details>
@@ -722,13 +728,14 @@ $('#peakRun').onclick=async()=>{if(!await ask('Son 24 saatin en çok izlenen (he
 async function loadInfo(){const i=await api('/api/info');if(!i)return;const S=status.settings||{};
   $('#quakeOn').classList.toggle('on',i.quake.enabled!==false);$('#matchOn').classList.toggle('on',i.match.enabled!==false);
   $('#marketOn').classList.toggle('on',i.market.enabled!==false);$('#calOn').classList.toggle('on',i.calendar.enabled!==false);
+  $('#weatherOn').classList.toggle('on',i.weather?.enabled!==false);$('#alarmOn').classList.toggle('on',i.market.alarm!==false);$('#wtopOn').classList.toggle('on',i.weeklyTop?.enabled!==false);
   $('#retitleOn').classList.toggle('on',S.retitle?.enabled!==false);$('#fcOn').classList.toggle('on',S.firstComment?.enabled!==false);
   const hm=(c)=>String(c.hour).padStart(2,'0')+':'+String(c.minute||0).padStart(2,'0');
   if(document.activeElement!==$('#quakeMin'))$('#quakeMin').value=i.quake.minMag;
   if(document.activeElement!==$('#marketTime'))$('#marketTime').value=hm(i.market);if(document.activeElement!==$('#calTime'))$('#calTime').value=hm(i.calendar);
   if(document.activeElement!==$('#calExtra'))$('#calExtra').value=(i.calendar.extra||[]).join('\n');
-  const st=i.state||{};const err=[...(st.quake?.errors||[]),...(st.match?.errors||[])];
-  $('#infoSum').textContent=[i.quake.enabled!==false&&'deprem',i.match.enabled!==false&&'maç',i.market.enabled!==false&&'piyasa',i.calendar.enabled!==false&&'takvim'].filter(Boolean).join(' · ');
+  const st=i.state||{};const err=[...(st.quake?.errors||[]),...(st.match?.errors||[]),...(st.weather?.errors||[]),...(st.alarm?.errors||[])];
+  $('#infoSum').textContent=[i.quake.enabled!==false&&'deprem',i.match.enabled!==false&&'maç',i.market.enabled!==false&&'piyasa',i.calendar.enabled!==false&&'takvim',i.weather?.enabled!==false&&'meteoroloji',i.market.alarm!==false&&'zam/rekor',i.weeklyTop?.enabled!==false&&'derleme'].filter(Boolean).join(' · ');
   $('#calUpcoming').innerHTML=(i.upcoming||[]).length?'Yaklaşan: '+i.upcoming.map(e=>`<b>${new Date(e.date).toLocaleDateString('tr-TR',{day:'numeric',month:'short'})}</b> ${esc(e.title)}`).join(' · '):'Önümüzdeki 45 günde takvim olayı yok.';
   if(err.length)$('#calUpcoming').innerHTML+=`<div style="color:var(--amber,#f5b041);margin-top:4px">Servis uyarısı: ${esc(err.join(' · '))}</div>`;}
 const infoSet=async(patch)=>{await post('/api/settings',patch);await refreshStatus();loadInfo();};
@@ -736,6 +743,10 @@ $('#quakeOn').onclick=()=>infoSet({quake:{enabled:!$('#quakeOn').classList.conta
 $('#matchOn').onclick=()=>infoSet({match:{enabled:!$('#matchOn').classList.contains('on')}});
 $('#marketOn').onclick=()=>infoSet({market:{enabled:!$('#marketOn').classList.contains('on')}});
 $('#calOn').onclick=()=>infoSet({calendar:{enabled:!$('#calOn').classList.contains('on')}});
+$('#weatherOn').onclick=()=>infoSet({weather:{enabled:!$('#weatherOn').classList.contains('on')}});
+$('#alarmOn').onclick=()=>infoSet({market:{alarm:!$('#alarmOn').classList.contains('on')}});
+$('#wtopOn').onclick=()=>infoSet({weeklyTop:{enabled:!$('#wtopOn').classList.contains('on')}});
+$('#weatherNow').onclick=()=>infoRun('weather','Meteoroloji uyarıları kontrol ediliyor…');$('#alarmNow').onclick=()=>infoRun('alarm','Fiyatlar kontrol ediliyor…');$('#wtopNow').onclick=()=>infoRun('weeklyTop','Haftanın en çok izlenenleri derleniyor…');
 $('#retitleOn').onclick=()=>infoSet({retitle:{enabled:!$('#retitleOn').classList.contains('on')}});
 $('#fcOn').onclick=()=>infoSet({firstComment:{enabled:!$('#fcOn').classList.contains('on')}});
 $('#quakeMin').onchange=()=>{const v=Math.min(8,Math.max(3,Number($('#quakeMin').value)||4.5));infoSet({quake:{minMag:v}});};
@@ -743,8 +754,9 @@ const hmSet=(id,key)=>{const [h,m]=($(id).value||'').split(':').map(Number);if(N
 $('#marketTime').onchange=()=>hmSet('#marketTime','market');$('#calTime').onchange=()=>hmSet('#calTime','calendar');
 $('#calSave').onclick=async()=>{const lines=$('#calExtra').value.split('\n').map(x=>x.trim()).filter(Boolean);await post('/api/settings',{calendar:{extra:lines}});toast('Takvim olayları kaydedildi ✓');loadInfo();};
 const infoRun=async(k,msg)=>{toast(msg);const r=await post(`/api/info/${k}/run`,{});
-  const n=k==='quake'?(r.events||[]).length:k==='match'?(r.matches||[]).length:null;
-  toast(n===0?(k==='quake'?'Yeni büyük deprem yok':'Yeni biten maç yok'):r.ok||n?'Video hazırlanıyor ✓':(r.error||'Yapılamadı'),!(r.ok||n||n===0));loadInfo();};
+  const n=k==='quake'?(r.events||[]).length:k==='match'?(r.matches||[]).length:k==='weather'?(r.warnings||[]).length:k==='alarm'?(r.jobs||[]).length:null;
+  const none={quake:'Yeni büyük deprem yok',match:'Yeni biten maç yok',weather:'Yeni turuncu/kırmızı kod uyarısı yok',alarm:'Fiyat değişimi ya da rekor yok'}[k];
+  toast(n===0?none:r.ok||n?'Video hazırlanıyor ✓':(r.error||'Yapılamadı'),!(r.ok||n||n===0));loadInfo();};
 $('#quakeNow').onclick=()=>infoRun('quake','Depremler kontrol ediliyor…');$('#matchNow').onclick=()=>infoRun('match','Maçlar kontrol ediliyor…');
 $('#marketNow').onclick=()=>infoRun('market','Piyasa verisi alınıyor…');$('#calNow').onclick=()=>infoRun('calendar','Takvim kontrol ediliyor…');
 setTimeout(loadInfo,1500);

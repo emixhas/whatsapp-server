@@ -126,7 +126,8 @@ def episode_meta(video_name: str):
     return load_json(OUT / video_name.replace(".mp4", ".json"), None)
 
 
-INFO_HEAD = {"deprem": "🔴 SON DAKİKA DEPREM", "mac": "⚽ MAÇ SONUCU", "piyasa": "💰 PİYASALAR", "takvim": "📅 HATIRLATMA"}
+INFO_HEAD = {"deprem": "🔴 SON DAKİKA DEPREM", "mac": "⚽ MAÇ SONUCU", "piyasa": "💰 PİYASALAR", "takvim": "📅 HATIRLATMA",
+             "meteo": "🌧 METEOROLOJİ UYARISI", "alarm": "🔴 SON DAKİKA PİYASA", "derleme": "🏆 HAFTANIN EN ÇOK İZLENENLERİ"}
 
 
 def build_caption(video_name: str, max_len: int = 2000):
@@ -176,7 +177,7 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl"):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem") else [])
+    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm") else [])
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"

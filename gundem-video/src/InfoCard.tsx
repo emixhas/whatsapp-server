@@ -10,7 +10,7 @@ import { theme } from "./theme";
  * Kenarlarda ~%8 boşluk bırakılır: MediaBg fotoğrafı yavaşça yakınlaştırır (Ken Burns), kenarlar kırpılır.
  */
 export type InfoCardProps = {
-  kind: "quake" | "score" | "market" | "calendar";
+  kind: "quake" | "score" | "market" | "calendar" | "weather" | "ranking";
   tall?: boolean;
   /** üst etiket: "DEPREM", "MAÇ SONUCU", "PİYASALAR", "TAKVİM" */ label?: string;
   /** etiketin yanındaki tarih/saat */ stamp?: string;
@@ -20,6 +20,8 @@ export type InfoCardProps = {
   score?: { home: string; away: string; hs: number; as: number; league?: string; goals?: { side: "home" | "away"; player: string; minute: string }[]; note?: string };
   rows?: { name: string; value: string; change?: number | null }[];
   date?: { day: string; month: string; weekday?: string };
+  weather?: { level: "yellow" | "orange" | "red"; type: string; points: { name: string; lat: number; lon: number }[] };
+  /** haftanın en çok izlenenleri: sıra, başlık, izlenme */ ranking?: { title: string; views?: string }[];
 };
 
 const YELLOW = "#FFD400";
@@ -173,7 +175,54 @@ const Calendar = ({ p }: { p: InfoCardProps }) => {
   );
 };
 
+const LEVEL_COLOR = { yellow: "#FFD400", orange: "#FF7A00", red: "#E30A17" };
+
+const Weather = ({ p }: { p: InfoCardProps }) => {
+  const w = p.weather!;
+  const tall = !!p.tall;
+  const color = LEVEL_COLOR[w.level] || LEVEL_COLOR.orange;
+  const mapW = tall ? 980 : 1240;
+  const k = mapW / MAP_W;
+  const names = w.points.map((x) => x.name);
+  const list = names.slice(0, tall ? 10 : 12).join(" · ") + (names.length > (tall ? 10 : 12) ? ` +${names.length - (tall ? 10 : 12)}` : "");
+  return (
+    <Frame tall={tall} label={p.label} stamp={p.stamp} accent={color}>
+      <svg style={{ position: "absolute", left: tall ? 50 : 300, top: tall ? 960 : 260, overflow: "visible" }} width={mapW} height={MAP_H * k} viewBox={`0 0 ${MAP_W} ${MAP_H}`}>
+        <path d={MAP_PATH} fill="#1C2742" stroke="#6F84B8" strokeWidth={3} fillRule="evenodd" />
+        {w.points.map((pt, i) => { const [x, y] = project([pt.lon, pt.lat]); return (
+          <g key={i}><circle cx={x} cy={y} r={34} fill={color} opacity={0.28} /><circle cx={x} cy={y} r={15} fill={color} stroke="#fff" strokeWidth={4} /></g>
+        ); })}
+      </svg>
+      <div style={{ position: "absolute", left: tall ? 70 : 150, right: tall ? 70 : 150, ...(tall ? { top: 1460 } : { bottom: 110 }), textAlign: "center" }}>
+        <div style={{ fontSize: fitFontSize({ text: list, maxWidth: tall ? 940 : 1540, base: tall ? 54 : 64, min: 34, maxLines: 2, upper: false }), fontWeight: 900, ...stroke(3) }}>{list}</div>
+        {p.title ? <div style={{ marginTop: 14, fontSize: tall ? 44 : 52, fontWeight: 800, color: YELLOW }}>{p.title}</div> : null}
+      </div>
+    </Frame>
+  );
+};
+
+const Ranking = ({ p }: { p: InfoCardProps }) => {
+  const tall = !!p.tall;
+  const rows = (p.ranking || []).slice(0, 5);
+  return (
+    <Frame tall={tall} label={p.label || "HAFTANIN EN ÇOK İZLENENLERİ"} stamp={p.stamp} accent={YELLOW}>
+      {/* dikeyde kanca başlığı (≈520-950) altında kalsın */}
+      <div style={{ position: "absolute", top: tall ? 1020 : 270, left: tall ? 60 : 150, right: tall ? 60 : 150 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 28, height: tall ? 140 : 150, marginBottom: tall ? 12 : 16, background: "rgba(255,255,255,.06)", borderRadius: 18, padding: "0 30px" }}>
+            <div style={{ minWidth: tall ? 90 : 110, fontSize: tall ? 96 : 110, fontWeight: 900, color: i === 0 ? YELLOW : theme.white, ...stroke(3) }}>{i + 1}</div>
+            <div style={{ flex: 1, fontSize: fitFontSize({ text: r.title, maxWidth: tall ? 720 : 1200, base: tall ? 46 : 58, min: 30, maxLines: 2, upper: false }), fontWeight: 800, lineHeight: 1.1 }}>{r.title}</div>
+            {r.views ? <div style={{ fontSize: tall ? 40 : 50, fontWeight: 900, color: YELLOW, whiteSpace: "nowrap" }}>▶ {r.views}</div> : null}
+          </div>
+        ))}
+      </div>
+    </Frame>
+  );
+};
+
 export const InfoCard = (p: InfoCardProps) => {
+  if (p.kind === "weather" && p.weather) return <Weather p={p} />;
+  if (p.kind === "ranking") return <Ranking p={p} />;
   if (p.kind === "quake" && p.quake) return <Quake p={p} />;
   if (p.kind === "score" && p.score) return <Score p={p} />;
   if (p.kind === "market") return <Market p={p} />;

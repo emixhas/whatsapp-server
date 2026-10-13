@@ -316,7 +316,10 @@ def regular_slot_of_day(date: str) -> int:
 FIRST_COMMENT = {"deprem": "Depremi hissettiniz mi? Bulunduğunuz ili yorumlara yazın, geçmiş olsun 👇",
                  "mac": "Maçı nasıl buldunuz? Sizce maçın en iyisi kimdi? 👇",
                  "piyasa": "Sizce dolar ve altın bu hafta nereye gider? Tahmininizi yazın 👇",
-                 "takvim": "Bu hatırlatma işinize yaradı mı? Başka hangi tarihleri hatırlatalım? 👇"}
+                 "takvim": "Bu hatırlatma işinize yaradı mı? Başka hangi tarihleri hatırlatalım? 👇",
+                 "meteo": "Sizin ilinizde durum nasıl? Yorumlara yazın, dikkatli olun 👇",
+                 "alarm": "Bu fiyatlar bütçenizi nasıl etkiliyor? Yorumlara yazın 👇",
+                 "derleme": "Bu hafta sizi en çok hangi haber etkiledi? 👇"}
 
 
 def first_comment(data: dict, segs: list) -> str | None:
@@ -336,7 +339,10 @@ def main(src: str, dst: str):
     data = extract_json(raw)
     segs = data.get("segments", [])
     haber = [s for s in segs if s.get("kind") == "haber"]
-    if not (HABER_MIN <= len(haber) <= HABER_MAX):
+    # şablon videoda (deprem/maç/piyasa/takvim/derleme) haber sayısını veri belirler (1-6); Claude senaryosunda sınır
+    if os.environ.get("TEMPLATE_DIR") and not 1 <= len(haber) <= 6:
+        sys.exit(f"Şablon senaryoda haber sayısı {len(haber)} (1-6 olmalı)")
+    if not os.environ.get("TEMPLATE_DIR") and not (HABER_MIN <= len(haber) <= HABER_MAX):
         sys.exit(f"Haber sayısı {len(haber)}, beklenen {HABER_MIN}-{HABER_MAX}")
     if segs[0].get("kind") == "intro" and len(segs) > 1 and segs[1].get("kind") != "hook":
         # Kanca yoksa ilk haberden üret: ilk cümle, en fazla 9 kelime

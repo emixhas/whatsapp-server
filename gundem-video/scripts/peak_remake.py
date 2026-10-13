@@ -97,7 +97,8 @@ def pick() -> dict:
     cands, skipped = [], 0
     for r in video_rows():
         m = metas.get(r["name"])
-        if not m or r.get("format") in LONG or m.get("archived") or not (OUT / r["name"]).exists():
+        # zamana bağlı şablon videolar (piyasa, takvim, zam/rekor, derleme) yeniden yayınlanmaz
+        if not m or r.get("format") in LONG or m.get("archived") or m.get("infoKind") in ("piyasa", "takvim", "alarm", "derleme") or not (OUT / r["name"]).exists():
             continue
         if now - _made_at(r["name"], m) > 86400:
             continue

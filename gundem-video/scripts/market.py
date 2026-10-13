@@ -10,6 +10,15 @@ varsa "zam/indirim geldi" cümlesi eklenir. Senaryo şablondan yazılır (Claude
 
   python3 scripts/market.py --job     # bugünün piyasa videosu için iş klasörü (panel settings.market.hour'da)
   python3 scripts/market.py --show    # yalnız verileri yazdır
+  python3 scripts/market.py --alarm   # akaryakıt fiyat değişimi / dolar-euro-altın rekoru varsa iş klasörü (panel 20 dk'da bir)
+
+Alarm (kullanıcı kararı: zam ve rekor anında video):
+  - Akaryakıt: son görülen fiyattan (`data/fuel_last.json`) ≥ 10 kuruş fark → "Benzine X zam/indirim geldi" videosu. Fiyatlar
+    gece yarısı değişir; 07:00-22:00 arasında bakılır ki video sabah izlenirken yayında olsun. İlk çalıştırma yalnız kaydeder.
+  - Rekor: dolar, euro, gram altın tüm zamanların en yükseğini geçip yeni bir eşiği aşınca (`recordSteps` {usd 1, eur 1, gram
+    250} lira: "Dolar ilk kez 42 lirayı aştı") video; varlık başına günde en çok bir. Tüm zamanların en yükseği Yahoo Finance
+    aylık verisinden bir kez tohumlanır (`data/market_records.json`; altın: ons × dolar en yüksekleri / 31,1035, temkinli
+    yüksek). Tohumlanamazsa yanlış "rekor" demeyelim diye o varlıkta rekor videosu 365 günlük kendi kaydı birikene kadar yapılmaz.
 """
 import json
 import re
@@ -30,10 +39,14 @@ except ImportError:
     CTX = ssl.create_default_context()
 
 HIST = DATA / "market_history.json"
+FUEL_LAST = DATA / "fuel_last.json"
+RECORDS = DATA / "market_records.json"
+NAMES = {"usd": "Dolar", "eur": "Euro", "gram": "Gram altın"}
 
 
 def cfg() -> dict:
-    return {"enabled": True, "hour": 9, "minute": 0, "duration": 35, "fuelProvince": 34,
+    return {"enabled": True, "hour": 9, "minute": 0, "duration": 35, "fuelProvince": 34, "alarm": True, "fuelMinDiff": 0.10,
+            "recordSteps": {"usd": 1, "eur": 1, "gram": 250}, "fuelFrom": 7, "fuelTo": 22,
             "fuelUrl": "https://api.opet.com.tr/api/fuelprices/prices?ProvinceCode={province}&IncludeAllProducts=true",
             **(settings().get("market") or {})}
 
@@ -221,8 +234,139 @@ def build_job(vals: dict, sources: list) -> str | None:
     return str(new_job(f"piyasa-{time.strftime('%Y%m%d')}", script, [card], {"values": vals}))
 
 
+def _yahoo_max(symbol: str) -> list:
+    """Aylık en yüksekler [(zaman, değer)] (Yahoo Finance grafik verisi)."""
+    d = json.loads(_get(f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=max&interval=1mo").decode("utf-8"))
+    r = d["chart"]["result"][0]
+    return [(t, h) for t, h in zip(r.get("timestamp") or [], r["indicators"]["quote"][0].get("high") or []) if h]
+
+
+def seed_records(rec: dict, vals: dict) -> list:
+    """Tüm zamanların en yükseğini bir kez tohumla; olmazsa kendi kaydından başla (rekor videosu kapalı)."""
+    errors = []
+    try_hi = None
+    for key, sym in (("usd", "TRY=X"), ("eur", "EURTRY=X"), ("gram", None)):
+        if key in rec or key not in vals:
+            continue
+        try:
+            if key == "gram":
+                try_hi = try_hi or dict(_yahoo_max("TRY=X"))
+                gold = _yahoo_max("GC=F")
+                hi = max(h * try_hi[t] / 31.1035 for t, h in gold if t in try_hi)
+            else:
+                rows = _yahoo_max(sym)
+                if sym == "TRY=X":
+                    try_hi = dict(rows)
+                hi = max(h for _, h in rows)
+            rec[key] = {"max": max(hi, vals[key]["price"]), "seeded": "yahoo", "since": time.time()}
+        except Exception as e:
+            errors.append(f"{NAMES[key]} geçmiş en yüksek alınamadı: {str(e)[:60]}")
+            rec[key] = {"max": vals[key]["price"], "seeded": "self", "since": time.time()}
+    return errors
+
+
+def alarm() -> dict:
+    c = cfg()
+    jobs, errors = [], []
+    hour = int(time.strftime("%H"))
+    # akaryakıt fiyat değişimi
+    if int(c["fuelFrom"]) <= hour < int(c["fuelTo"]):
+        try:
+            f = fuel(c)
+            last = load_json(FUEL_LAST, {}) or {}
+            changes = {k: round(v["price"] - last[k], 2) for k, v in f.items() if k in last and abs(v["price"] - last[k]) >= float(c["fuelMinDiff"])}
+            if f:
+                save_json(FUEL_LAST, {**{k: v["price"] for k, v in f.items()}, "at": time.time()})
+            if changes:
+                jobs.append(fuel_job(f, changes, c))
+        except Exception as e:
+            errors.append(f"akaryakıt: {str(e)[:80]}")
+    # dolar / euro / gram altın rekoru
+    vals, sources = {}, []
+    for fn in (truncgil, tcmb):
+        try:
+            got = fn()
+            if got.get("_source"):
+                sources.append(got.pop("_source"))
+            for k, v in got.items():
+                vals.setdefault(k, v)
+        except Exception as e:
+            errors.append(f"kur: {str(e)[:60]}")
+        if all(k in vals for k in ("usd", "eur", "gram")):
+            break
+    rec = load_json(RECORDS, {}) or {}
+    errors += seed_records(rec, vals)
+    today = time.strftime("%Y-%m-%d")
+    for key in ("usd", "eur", "gram"):
+        v, r = vals.get(key), rec.get(key)
+        if not v or not r:
+            continue
+        old, new = float(r["max"]), v["price"]
+        if new <= old:
+            continue
+        r["max"] = new
+        step = float(c["recordSteps"].get(key, 1))
+        trusted = r.get("seeded") == "yahoo" or time.time() - float(r.get("since") or time.time()) > 365 * 86400
+        crossed = int(new // step) > int(old // step)
+        if trusted and crossed and r.get("videoDay") != today:
+            r["videoDay"] = today
+            jobs.append(record_job(key, new, int(new // step) * step, vals, sources))
+    save_json(RECORDS, rec)
+    return {"ok": True, "jobs": [j for j in jobs if j], "errors": errors}
+
+
+def fuel_job(f: dict, changes: dict, c: dict) -> str:
+    city_name = {34: "İstanbul", 6: "Ankara", 35: "İzmir"}.get(int(c["fuelProvince"]), "")
+    city = {34: "İstanbul'da", 6: "Ankara'da", 35: "İzmir'de"}.get(int(c["fuelProvince"]), "")
+    names = {"benzin": "benzine", "motorin": "motorine"}
+    ups = [k for k, d in changes.items() if d > 0]
+    downs = [k for k, d in changes.items() if d < 0]
+    parts = []
+    for grp, word in ((ups, "zam"), (downs, "indirim")):
+        if grp:
+            same = len(grp) == 2 and abs(changes[grp[0]]) == abs(changes[grp[1]])
+            if same:
+                parts.append(f"Benzin ve motorine {lira(abs(changes[grp[0]]))} {word} geldi.")
+            else:
+                parts += [f"{names[k].capitalize()} {lira(abs(changes[k]))} {word} geldi." for k in grp]
+    word = "ZAM" if ups and not downs else "İNDİRİM" if downs and not ups else "FİYAT DEĞİŞTİ"
+    who_tr = "Benzine" if list(changes) == ["benzin"] else "Motorine" if list(changes) == ["motorin"] else "Akaryakıta"
+    who = {"Benzine": "BENZİNE", "Motorine": "MOTORİNE", "Akaryakıta": "AKARYAKITA"}[who_tr]
+    word_tr = {"ZAM": "zam", "İNDİRİM": "indirim", "FİYAT DEĞİŞTİ": "fiyat değişikliği"}
+    prices = ", ".join(f"{k}in litresi {lira(f[k]['price'])}" for k in ("benzin", "motorin") if k in f)
+    n1 = " ".join(parts) + f" Yeni fiyatlarla {city} {prices} oldu."
+    rows = [{"name": k.capitalize(), "value": f"{num_tr(f[k]['price'], 2)} ₺", "change": round(changes.get(k, 0) / (f[k]["price"] - changes.get(k, 0)) * 100, 2)} for k in ("benzin", "motorin") if k in f]
+    script = make_script(hook_title=f"{who} {word}", hook=parts[0], items=[{"title": f"{who_tr} {word_tr[word]}", "narration": n1, "category": "finans"}],
+                         titles={"A": parts[0].rstrip(".") + (f" | {city_name} güncel akaryakıt fiyatları" if city_name else " | Güncel akaryakıt fiyatları"), "B": f"{who_tr} {word_tr[word]}! İşte yeni fiyatlar", "cover": f"{who} {word}"},
+                         hashtags=["#akaryakıt", "#benzin", "#motorin", "#zam" if ups else "#indirim"], importance=4, reason="akaryakıt fiyat değişimi",
+                         source="Opet", category="finans")
+    return str(new_job(f"akaryakit-{time.strftime('%Y%m%d%H')}", script, [{"kind": "market", "label": f"{who} {word}", "stamp": tr_date(), "rows": rows}],
+                       {"changes": changes}))
+
+
+def record_job(key: str, price: float, level: float, vals: dict, sources: list) -> str:
+    name = NAMES[key]
+    lvl = f"{int(level):,}".replace(",", ".")
+    hook = f"{name} rekor kırdı."
+    n1 = f"{name} ilk kez {lvl} liranın üzerine çıktı ve {lira_from(price)} işlem görüyor."
+    ch = vals[key].get("change")
+    if ch is not None:
+        n1 += f" Dünden bu yana {move(ch)}."
+    rows = [{"name": NAMES[k], "value": (f"{num_tr(v['price'], 2)} ₺" if v["price"] < 1000 else f"{int(round(v['price'])):,} ₺".replace(",", ".")), "change": v.get("change")}
+            for k, v in vals.items() if k in NAMES]
+    script = make_script(hook_title=f"{name.split()[-1].upper()} REKOR KIRDI", hook=hook, items=[{"title": f"{name} {lvl} lirayı aştı", "narration": n1, "category": "finans", "breaking": True}],
+                         titles={"A": f"{name} ilk kez {lvl} lirayı aştı", "B": f"{name} rekor kırdı! İşte son durum", "cover": f"{name.split()[-1].upper()} REKOR"},
+                         hashtags=["#dolar" if key == "usd" else "#euro" if key == "eur" else "#altın", "#rekor", "#piyasa", "#ekonomi"],
+                         importance=4, reason=f"{name} rekor", source=" · ".join(sources) or "Piyasa verisi", category="finans")
+    return str(new_job(f"rekor-{key}-{time.strftime('%Y%m%d')}", script, [{"kind": "market", "label": "REKOR", "stamp": tr_date(), "rows": rows}],
+                       {"asset": key, "price": price}))
+
+
 if __name__ == "__main__":
     try:
+        if "--alarm" in sys.argv:
+            print(json.dumps(alarm(), ensure_ascii=False))
+            sys.exit(0)
         vals, errors, sources = collect()
         if "--job" in sys.argv:
             job = build_job(vals, sources)

@@ -107,8 +107,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
   Altyazı kısa (kullanıcı isteği: "üç kelime üç kelime ekleyerek"; `src/captionGroups.ts`): en çok 3 kelimelik gruplar, noktalama
-  (. , ! ? ; :) grubu erken kapatır; ekranda yalnız konuşulan grup, kelimeler söylendikçe tek tek eklenir (sonrakiler yer tutar,
-  satır kaymaz), konuşulan kelime vurgulu; duraklamada son kelime kalır (başa dönmez). Grup tek satıra `fitFontSize` ile sığar
+  (. , ! ? ; :) grubu erken kapatır; ekranda yalnız konuşulan grup, kelimeler söylendikçe tek tek eklenir (görünenler hep ortalı,
+  kullanıcı kararı), konuşulan kelime vurgulu; duraklamada son kelime kalır (başa dönmez). Grup tek satıra `fitFontSize` ile sığar
   (en az 40 px). `Captions.tsx` (Shorts) ve `GunlukOzet` `WideCaptions` aynı kuralı kullanır; `lang="tr"`; `top` verilirse üstten.
 - Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
   numara + başlık + kaynak onun altında (top 1110).
@@ -181,7 +181,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   aranmaz, `infoCard: true` → Headline'da karartma, kategori simgesi ve "FOTOĞRAF:" etiketi binmez). Meta `infoKind`; açıklama
   başlığı `common.INFO_HEAD` (🔴 SON DAKİKA DEPREM / ⚽ MAÇ SONUCU / 💰 PİYASALAR / 📅 HATIRLATMA), #sondakika yalnız depremde.
   Dinlenmede uyandırır. Panel Ayarlar → "📡 Otomatik içerikler" (anahtarlar, saatler, şimdi düğmeleri, takvim ek olayları),
-  `GET /api/info`, `POST /api/info/:kind/run` (quake|match|market|calendar), komutlar "depremleri kontrol et", "piyasa videosu
+  `GET /api/info`, `POST /api/info/:kind/run` (quake|match|market|calendar|weather|alarm|weeklyTop), komutlar "depremleri kontrol et", "piyasa videosu
   üret", "maç sonuçlarını kontrol et", "yarının takvim hatırlatmasını üret" (`info` eylemi). Durum `data/info_last.json`.
   - Deprem (`scripts/quake_watch.py`, `settings.quake` {enabled, minMag 4.5, intervalMin 2, maxAgeMin 45, maxPerDay 6,
     duration 25}): AFAD apiv2 (saat UTC; gelecekte görünürse yerel sayılır), yedek Kandilli lst0.asp (ASCII büyük harf → il/deniz
@@ -204,6 +204,25 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     maaşı (15) ve KDV (28; son gün/maaş hafta sonuna denk gelirse atlanır), Ramazan/Kurban Bayramı `RELIGIOUS` (Diyanet takvimi;
     2028 ve sonrası için Diyanet'in ilan ettiği tarihleri EKLE), panelden ek olaylar ("2027-06-19 | YKS | açıklama", "06-19",
     "ay:17"). Üretilenler `data/calendar_done.json`.
+  - Meteoroloji (`scripts/weather_watch.py`, `settings.weather` {enabled, minLevel orange, intervalMin 30, duration 25, url}):
+    Meteoalarm Türkiye akışı (MGM'nin resmi uyarıları, CAP: areaDesc, awareness_level, awareness_type, onset, expires); il adı
+    `CENTERS` (81 il merkezi, harita noktası) ile eşlenir; aynı seviye+türdeki iller tek video, taramada en şiddetli grup; aynı
+    uyarı (gün-tür-seviye) bir kez, turuncu → kırmızı yükselirse yeniden. Kart `weather` (il noktaları seviye renginde + il listesi +
+    bitiş). Tür başına güvenlik cümlesi (yağış/rüzgar/kar/sıcak). `data/weather_seen.json`. INFO kind `meteo`.
+  - Zam ve rekor alarmı (`market.py --alarm`, panel 20 dk'da bir, `settings.market` {alarm, fuelMinDiff 0.10, fuelFrom 7,
+    fuelTo 22, recordSteps {usd 1, eur 1, gram 250}}): akaryakıt son görülen fiyattan (`data/fuel_last.json`) ≥10 kuruş farkta
+    "Benzine X zam/indirim geldi" (gece yarısı değişir; 07-22 arası bakılır). Rekor: tüm zamanların en yükseği Yahoo Finance aylık
+    verisinden bir kez tohumlanır (`data/market_records.json`; altın ons × dolar en yükseği / 31,1035, temkinli); yeni en yüksek bir
+    eşiği aşınca ("Dolar ilk kez 42 lirayı aştı") video, varlık başına günde bir. Tohumlanamayan varlıkta (seeded self) 365 gün
+    kendi kaydı birikmeden rekor denmez (yanlış "rekor" olmasın). INFO kind `alarm`.
+  - Pazar derlemesi (`scripts/weekly_top.py`, `settings.weeklyTop` {enabled, weekday 0, hour 18, minute 0, count 5, duration 60}):
+    son 7 günün Shorts videoları (uzun özet, piyasa/takvim/derleme hariç) izlenmeye göre (3. gün değeri), aynı olay bir kez, en çok
+    5; her videonun ilk haber kartının görüntü alanı (Shorts karesinde crop 920x560+80+220) ffmpeg ile ~8 sn kesilir → cards.json
+    `{video, image, videoDuration}` (info_card bunları çizmez, fetch_images videoyu segmente koyar). Geri sayım 5 → 1, kartta
+    `displayIndex` (05…01), kanca sıralama tablosu kartı (`ranking`). Seslendirme: "Beşinci sırada perşembe gününün haberi: başlık."
+    + başlığı tekrar etmeyen, dün/yarın içermeyen ilk cümle ("bugün" → gün adı). INFO kind `derleme`.
+  Şablon senaryoda haber sayısı veriden gelir (1-6); `assemble_script` Claude'un haber sayısı sınırını TEMPLATE_DIR'de uygulamaz.
+  En çok izlenen saat tekrarı piyasa/takvim/alarm/derleme videolarını seçmez.
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =

@@ -45,7 +45,8 @@ def make_script(hook_title: str, hook: str, items: list, titles: dict, hashtags:
             {"kind": "intro", "narration": "Son dakika."}]
     for it in items:
         segs.append({"kind": "haber", "title": it["title"], "narration": it["narration"], "source": it.get("source") or source,
-                     "category": it.get("category") or category, **({"breaking": True} if it.get("breaking") else {})})
+                     "category": it.get("category") or category, **({"breaking": True} if it.get("breaking") else {}),
+                     **({"displayIndex": it["displayIndex"]} if it.get("displayIndex") else {})})
     segs.append({"kind": "outro", "narration": "Takip etmeyi unutma."})
     return {"titles": titles, "hashtags": hashtags, "importance": importance, "importanceReason": reason, "segments": segs}
 
@@ -75,6 +76,9 @@ def render(job_dir: Path) -> list:
     cards = json.loads((job_dir / "cards.json").read_text(encoding="utf-8"))
     jobs, out = [], []
     for i, props in enumerate(cards):
+        if "video" in props:  # hazır görüntü (Pazar derlemesi: eski videodan kesilmiş klip + karesi)
+            out.append({"card": props["image"], "tall": props.get("tall") or props["image"], "video": props["video"], "videoDuration": props.get("videoDuration")})
+            continue
         wide, tall = job_dir / f"card-{i}.jpg", job_dir / f"card-{i}-tall.jpg"
         jobs += [{"id": "InfoCard", "out": str(wide.relative_to(ROOT)), "props": {**props, "tall": False}},
                  {"id": "InfoCardTall", "out": str(tall.relative_to(ROOT)), "props": {**props, "tall": True}}]

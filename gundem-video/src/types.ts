@@ -23,6 +23,8 @@ export type Segment = {
   image?: string;
   /** görsel kodla çizilen bilgi kartı (deprem haritası, skor, piyasa, takvim) */
   infoCard?: boolean;
+  /** kartta gösterilecek numara (Pazar derlemesinde geri sayım sırası) */
+  displayIndex?: number;
   /** 1080x1920 dikey sürüm: fotoğrafın tamamı keskin, arkası bulanık (kanca ve dikey kapak). */
   imageTall?: string;
   /** Haber videosu (public/ altına göre, sessiz); varsa fotoğrafın yerine oynar. */

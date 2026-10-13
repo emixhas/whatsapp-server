@@ -4,7 +4,7 @@ import { fitFontSize } from "../fit";
 import { theme } from "../theme";
 
 /** Yanan altyazı: en çok 3 kelimelik grup; kelimeler söylendikçe eklenir (hafif büyüyerek), konuşulan kelime vurgulu.
- *  Sonraki kelimeler yer tutar ama görünmez: satır söylendikçe kaymaz. */
+ *  Görünen kelimeler hep ortalı (kullanıcı kararı): kelime eklendikçe satır ortada kalır. */
 export const Captions = ({ words, accent, bottom = 300, top, size = 60 }: { words?: Word[]; accent: string; bottom?: number; top?: number; size?: number }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -16,10 +16,10 @@ export const Captions = ({ words, accent, bottom = 300, top, size = 60 }: { word
   const fs = fitFontSize({ text: slice.map((w) => w.w).join(" "), maxWidth: 940, base: size, min: 40, maxLines: 1, letterSpacing: 1 });
   return (
     <div style={{ position: "absolute", left: 50, right: 50, ...(top !== undefined ? { top } : { bottom }), display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "4px 18px", fontFamily: theme.font, lineHeight: 1.15 }}>
-      {slice.map((w, i) => {
+      {slice.slice(0, idx - start + 1).map((w, i) => {
         const gi = start + i;
         const active = gi === idx;
-        const shown = gi <= idx;
+        const shown = true;
         const pop = shown ? Math.min(1, Math.max(0, (t - w.s) / 0.12)) : 0; // söylenince 0,12 sn'de belirir
         return (
           <span key={gi} lang="tr" style={{

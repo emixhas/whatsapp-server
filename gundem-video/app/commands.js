@@ -65,6 +65,9 @@ export function parseCommand(raw) {
   if (/(piyasa|döviz|altın) (videosu|kartı)/.test(t) && /(üret|yap|hazırla|çek)/.test(t)) return { action: "info", kind: "market", reply: "" };
   if (/maç (sonuçlarını|sonucunu|sonuçları)/.test(t) && /(kontrol|bak|üret)/.test(t)) return { action: "info", kind: "match", reply: "" };
   if (/(takvim|hatırlatma)/.test(t) && /(üret|yap|hazırla)/.test(t) && /(yarın|takvim)/.test(t)) return { action: "info", kind: "calendar", reply: "" };
+  if (/(meteoroloji|hava durumu|turuncu kod|kırmızı kod) (uyarı|kontrol)/.test(t) || /meteoroloji uyarılarını kontrol/.test(t)) return { action: "info", kind: "weather", reply: "" };
+  if (/(zam|rekor) (alarmı|kontrol)/.test(t) || /akaryakıt (zammı|fiyatlarını kontrol)/.test(t)) return { action: "info", kind: "alarm", reply: "" };
+  if (/(haftanın en çok izlenen|pazar derlemesi|derleme)/.test(t) && /(üret|yap|hazırla)/.test(t)) return { action: "info", kind: "weeklyTop", reply: "" };
   // En çok izlenen saatlerde tekrar: "en çok izlenen saatler", "altın saat tekrarını kapat", "altın saat tekrarını şimdi yap"
   if (/(en çok izlenen saat|altın saat|izlenen saatlerde)/.test(t)) return { action: "peak", run: /(şimdi|hemen) (yap|üret|yayınla|çalıştır)/.test(t), on: /(^|\s)(kapat|durdur)/.test(t) ? false : /(^|\s)(aç|başlat|etkinleştir)(\s|$)/.test(t) ? true : null, reply: "" };
   // Tutan videoyu farklı haliyle yeniden yayınla: "en çok izlenen videoyu yeniden yayınla", "son videoyu yeniden yayınla"
