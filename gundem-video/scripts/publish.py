@@ -109,7 +109,9 @@ def local_hhmm(dt):
 # "youtube" kapsamı oynatma listesi yönetimi için; eski bağlantılar (yalnız upload+readonly) yeniden bağlanana kadar
 # listesiz yükler. Token dosyadaki kendi kapsamlarıyla okunur (yeni kapsamla yenilemek invalid_scope verir).
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly",
-             "https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/yt-analytics.readonly"]
+             "https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/yt-analytics.readonly",
+             "https://www.googleapis.com/auth/youtube.force-ssl"]
+YT_COMMENT = "https://www.googleapis.com/auth/youtube.force-ssl"  # ilk yorum (commentThreads.insert yalnız bu izinle)
 YT_ANALYTICS = "https://www.googleapis.com/auth/yt-analytics.readonly"  # günlük abone kazanımı geçmişi (followers.py)
 YT_MANAGE = {"https://www.googleapis.com/auth/youtube", "https://www.googleapis.com/auth/youtube.force-ssl"}
 PLAYLIST_FILE = DATA / "youtube_playlists.json"  # {liste adı: playlistId}
@@ -203,9 +205,107 @@ def yt_upload(path: Path):
         yt_retry_thumbs(yt, limit=3)
     meta = episode_meta(path.name) or {}
     lists = yt_add_to_playlists(yt, vid, meta)
+    fc = yt_first_comment(yt, vid, meta)
     url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") else f"https://youtube.com/shorts/{vid}"
     return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
-            "titleVariant": meta.get("titleVariant"), "playlists": lists, **({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})}
+            "titleVariant": meta.get("titleVariant"), "playlists": lists, **fc, **({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})}
+
+
+def first_comment_text(meta: dict) -> str:
+    """Kanal adına ilk yorum (kullanıcı kararı; senaryo "firstComment" yazar, assemble yedeği). settings.firstComment.enabled."""
+    from common import settings
+    if (settings().get("firstComment") or {}).get("enabled") is False:
+        return ""
+    return str(meta.get("firstComment") or "").strip()
+
+
+def yt_scopes() -> set:
+    try:
+        return set(json.loads((SECRETS / "youtube_token.json").read_text()).get("scopes") or [])
+    except Exception:
+        return set()
+
+
+def yt_first_comment(yt, vid: str, meta: dict) -> dict:
+    """Yüklemeden hemen sonra ilk yorum. Sabitleme API'de yok (YouTube Studio'dan elle). Hata yüklemeyi bozmaz."""
+    text = first_comment_text(meta)
+    if not text:
+        return {}
+    if YT_COMMENT not in yt_scopes():
+        print("  ! YouTube ilk yorum yazılamadı: yorum izni yok (Ayarlar → YouTube → 🔄 Yeniden bağla)", file=sys.stderr)
+        return {"commentError": "yorum izni yok: yeniden bağla"}
+    try:
+        r = yt.commentThreads().insert(part="snippet", body={"snippet": {"videoId": vid, "topLevelComment": {"snippet": {"textOriginal": text}}}}).execute()
+        print(f"  💬 YouTube ilk yorum: {text[:80]}", file=sys.stderr)
+        return {"firstComment": r.get("id")}
+    except Exception as e:
+        print(f"  ! YouTube ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
+        return {"commentError": str(e)[:160]}
+
+
+VIEWS_AT = DATA / "views_at_check.json"  # başlık kontrolü: {video: {views, ageH, at}} (ortanca bundan)
+
+
+def yt_retitle() -> dict:
+    """Tutmayan videonun YouTube başlığını değiştir (kullanıcı kararı): yayından `afterHours` (3) saat sonraki ilk
+    izlenme senkronunda video, önceki videoların aynı yaştaki izlenmesinin ortancasının `ratio` (0,5) katının altındaysa
+    başlık diğer varyanta (A ↔ B) geçer; bir kez. Ortanca için en az `minBaseline` (5) kayıt gerekir. Instagram ve TikTok
+    API'si başlık/açıklama değiştirmeye izin vermez. settings.retitle {enabled, afterHours, ratio, minBaseline}."""
+    import statistics
+    from common import settings
+    c = {"enabled": True, "afterHours": 3, "ratio": 0.5, "minBaseline": 5, **(settings().get("retitle") or {})}
+    if c.get("enabled") is False:
+        return {"ok": True, "changed": [], "skipped": "kapalı"}
+    m = metrics()
+    rec = load_json(VIEWS_AT, {}) or {}
+    now = datetime.now(timezone.utc)
+    changed, yt = [], None
+    for name, v in list(m["videos"].items()):
+        y = v.get("youtube") or {}
+        pub = _parse(y.get("publishedAt", "")) if y.get("id") else None
+        if not pub or name in rec or y.get("views") is None:
+            continue
+        age = (now - pub).total_seconds() / 3600
+        if age < float(c["afterHours"]):
+            continue
+        meta = episode_meta(name) or {}
+        late = age > float(c["afterHours"]) + 6 or meta.get("format") in ("gunluk", "haftalik")
+        base = [x["views"] for x in rec.values() if not x.get("skip") and x.get("views") is not None][-20:]
+        rec[name] = {"views": y["views"], "ageH": round(age, 1), "at": time.time(), **({"skip": True} if late else {})}
+        if late or len(base) < int(c["minBaseline"]):
+            continue
+        med = statistics.median(base)
+        if y["views"] >= med * float(c["ratio"]):
+            continue
+        titles = meta.get("titles") or {}
+        cur = meta.get("titleVariant") or "A"
+        other = "B" if cur == "A" else "A"
+        new = str(titles.get(other) or "").strip()
+        if not new or new == meta.get("publishTitle"):
+            continue
+        try:
+            if not (yt_scopes() & YT_MANAGE):
+                raise RuntimeError("başlık değiştirme izni yok (Ayarlar → YouTube → 🔄 Yeniden bağla)")
+            yt = yt or yt_service()
+            meta_path = OUT / name.replace(".mp4", ".json")
+            old_title = y.get("title") or meta.get("publishTitle") or ""
+            meta.update({"publishTitle": new, "titleVariant": other,
+                         "retitled": {"from": cur, "to": other, "views": y["views"], "median": med, "at": now_iso()}})
+            meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+            title, _ = build_caption(name, max_len=4900)
+            sn = yt.videos().list(part="snippet", id=y["id"]).execute()["items"][0]["snippet"]
+            body = {"id": y["id"], "snippet": {"title": title, "description": sn.get("description", ""), "categoryId": sn.get("categoryId", "25"),
+                                               "tags": sn.get("tags") or [], "defaultLanguage": sn.get("defaultLanguage", "tr")}}
+            yt.videos().update(part="snippet", body=body).execute()
+            mm = metrics()
+            mm["videos"].setdefault(name, {}).setdefault("youtube", {}).update({"title": title, "retitled": {"from": old_title, "at": now_iso()}})
+            save_metrics(mm)
+            print(f"📉 YouTube başlığı değiştirildi: {name} ({y['views']} izlenme, ortanca {int(med)}) → \"{title[:70]}\"", flush=True)
+            changed.append(name)
+        except Exception as e:
+            print(f"📉 YouTube başlığı değiştirilemedi ({name}): {str(e)[:160]}", flush=True)
+    save_json(VIEWS_AT, dict(list(rec.items())[-300:]))
+    return {"ok": True, "changed": changed}
 
 
 def yt_thumb_hint(e) -> str:
@@ -524,7 +624,16 @@ def ig_upload(path: Path):
         pub_srv.close()
     mid = pub["id"]
     info = ig_call("GET", mid, {"fields": "permalink"}, creds)
-    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso()}
+    fc = {}
+    text = first_comment_text(episode_meta(path.name) or {})
+    if text:  # ilk yorum (instagram_business_manage_comments izni; eski bağlantıda yeniden bağlamak gerekebilir)
+        try:
+            fc = {"firstComment": ig_call("POST", f"{mid}/comments", {"message": text}, creds).get("id")}
+            print(f"  💬 Instagram ilk yorum: {text[:80]}", file=sys.stderr)
+        except Exception as e:
+            fc = {"commentError": str(e)[:160]}
+            print(f"  ! Instagram ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
+    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **fc}
 
 
 LAST_ERR = DATA / "publish_last_error.json"  # {platform: {at, video, error}} — panel kartında gösterilir
@@ -1051,7 +1160,10 @@ def main():
     ap.add_argument("--flush", action="store_true")
     ap.add_argument("--yt-thumbs", action="store_true", help="YouTube'da kapağı reddedilmiş/eksik videolara kapağı yeniden yükle")
     ap.add_argument("--queue", action="store_true", help="sınır sıraları (YouTube, TikTok): bekleyen videolar ve duraklatma")
+    ap.add_argument("--retitle", action="store_true", help="tutmayan videonun YouTube başlığını diğer varyanta çevir")
     a = ap.parse_args()
+    if a.retitle:
+        print(json.dumps(yt_retitle(), ensure_ascii=False)); return
     if a.status:
         print(json.dumps(status(), ensure_ascii=False)); return
     if a.ig_diagnose:

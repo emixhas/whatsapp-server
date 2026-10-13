@@ -190,6 +190,7 @@ async function nextPlanned() {
   const w = weeklyCfg();
   if (w.enabled && new Date().getDay() === Number(w.weekday) && readJson(WEEKLY_VIDEO_FILE, {}).day !== today()) { const t = new Date(); t.setHours(Number(w.hour), Number(w.minute), 0, 0); if (t.getTime() > Date.now()) cands.push({ at: t.getTime(), what: "haftanın özeti" }); }
   const pk = peakNext(); if (pk) cands.push(pk);
+  try { cands.push(...infoNext()); } catch { /* henüz tanımlı değil */ }
   return cands.sort((a, b) => a.at - b.at)[0] || null;
 }
 async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
@@ -266,6 +267,9 @@ function startAnlik(topic, duration, opts = {}) {
   const env = { ANLIK: "1" };
   if (opts.remake?.of) { env.REMAKE = "1"; env.REMAKE_OF = String(opts.remake.of); }
   if (opts.peakHour != null) env.PEAK_HOUR = String(opts.peakHour);
+  // şablon video (deprem/maç/piyasa/takvim): senaryo ve bilgi kartları work/jobs/<ad>/ içinde hazır, Claude çağrılmaz
+  if (opts.templateDir) env.TEMPLATE_DIR = String(opts.templateDir);
+  if (opts.info) { const i = opts.info; env.INFO_KIND = i.kind || ""; env.INFO_LABEL = i.label || ""; if (i.intro) env.INFO_INTRO = i.intro; if (i.outro) env.INFO_OUTRO = i.outro; if (i.breaking === false) env.INFO_BREAKING = "0"; }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
@@ -385,6 +389,110 @@ async function remakeVideo(name, opts = {}) {
   return { ...r, title };
 }
 app.post("/api/videos/:name/remake", async (req, res) => res.json(await remakeVideo(req.params.name)));
+
+// ---------- Şablon videolar (kullanıcı kararı): deprem (AFAD/Kandilli), maç sonucu (ilk 5 takım, Avrupa'da Türk takımları),
+// sabah piyasa kartı, takvim hatırlatması. Bilgi kesin veriden gelir: senaryo şablondan (Claude çağrılmaz), görsel kodla
+// çizilen bilgi kartı (scripts/info_card.py, src/InfoCard.tsx). Python betiği work/jobs/<ad>/ hazırlar; startAnlik
+// {templateDir, info} ile üretir. Dinlenmedeyse uyandırır (deprem acil; maç değerli; piyasa/takvim planlı iş).
+const quakeCfg = () => ({ enabled: true, minMag: 4.5, intervalMin: 2, duration: 25, ...(settings().quake || {}) });
+const matchCfg = () => ({ enabled: true, intervalMin: 10, duration: 25, ...(settings().match || {}) });
+const marketCfg = () => ({ enabled: true, hour: 9, minute: 0, duration: 35, ...(settings().market || {}) });
+const calendarCfg = () => ({ enabled: true, hour: 19, minute: 0, duration: 25, extra: [], ...(settings().calendar || {}) });
+const INFO = {
+  deprem: { kind: "deprem", label: "DEPREM", intro: "Son dakika, deprem." },
+  mac: { kind: "mac", label: "MAÇ SONUCU", intro: "Maç sonucu.", outro: "Maç sonuçları için takip etmeyi unutma.", breaking: false },
+  piyasa: { kind: "piyasa", label: "PİYASALAR", intro: "Güne piyasalarla başlıyoruz.", outro: "Piyasaları her sabah burada takip edin. Takip etmeyi unutma.", breaking: false },
+  takvim: { kind: "takvim", label: "HATIRLATMA", intro: "Takvim hatırlatması.", outro: "Önemli günleri kaçırmamak için takip etmeyi unutma.", breaking: false },
+};
+function startTemplate(kind, job, { title, duration, source }) {
+  if (resting()) restEnd(`${INFO[kind].label.toLowerCase()} videosu (${String(title || "").slice(0, 60)})`);
+  const need = Number(readJson(path.join(ROOT, job, "meta.json"), {}).duration) || 0; // uzun senaryoda süre büyür (kelime sınırı)
+  return startAnlik(title, Math.min(60, Math.max(Number(duration) || 25, need)), { templateDir: job, info: INFO[kind], source });
+}
+const INFO_FILE = path.join(DATA, "info_last.json"); // {quake, match, market:{day}, calendar:{day}}
+const infoState = () => readJson(INFO_FILE, {});
+const infoMark = (k, v) => { const st = infoState(); st[k] = { ...(st[k] || {}), ...v, at: Date.now() }; writeJson(INFO_FILE, st); };
+async function quakeCheck({ manual = false } = {}) {
+  infoMark("quake", { checking: true });
+  const r = await pyJson(["scripts/quake_watch.py", "--check"], 90000).catch(() => null);
+  infoMark("quake", { checking: false, errors: r?.errors || [], found: (r?.events || []).length });
+  // iki kaynak da düştüyse 6 saatte bir loga (internet yokken her 2 dakikada satır basılmasın)
+  if (r?.errors?.length && (manual || (r.errors.length > 1 && Date.now() - quakeErrAt > 6 * 3600000))) { quakeErrAt = Date.now(); push(`🌍 deprem servisi: ${r.errors.join(" · ")}`); }
+  for (const e of r?.events || []) {
+    push(`🌍 DEPREM: ${e.title} (${e.source}, derinlik ${String(e.depth).replace(".", ",")} km) → video hazırlanıyor`);
+    const res = startTemplate("deprem", e.job, { title: e.title, duration: quakeCfg().duration, source: e.source });
+    if (res.ok && e.mag < 6) await pyJson(["scripts/breaking_watch.py", "--mark", e.title]).catch(() => {}); // aynı depremin haberi ikinci video olmasın (büyük depremde gelişmeler serbest)
+  }
+  return { ok: !!r?.ok, events: r?.events || [], errors: r?.errors || [] };
+}
+async function matchCheck({ manual = false } = {}) {
+  const r = await pyJson(["scripts/match_watch.py", "--check"], 120000).catch(() => null);
+  infoMark("match", { errors: r?.errors || [], found: (r?.matches || []).length });
+  if (r?.errors?.length && manual) push(`⚽ skor servisi: ${r.errors.join(" · ")}`);
+  for (const m of r?.matches || []) {
+    push(`⚽ MAÇ BİTTİ: ${m.title} → skor videosu hazırlanıyor`);
+    const res = startTemplate("mac", m.job, { title: m.title, duration: matchCfg().duration, source: "Maç sonucu" });
+    if (res.ok) await pyJson(["scripts/breaking_watch.py", "--mark", m.title]).catch(() => {});
+  }
+  return { ok: !!r?.ok, matches: r?.matches || [], errors: r?.errors || [] };
+}
+async function marketRun({ manual = false } = {}) {
+  if (!manual) infoMark("market", { day: today() });
+  const r = await pyJson(["scripts/market.py", "--job"], 90000).catch(() => null);
+  if (r?.errors?.length) push(`💰 piyasa verisi: ${r.errors.join(" · ")}`);
+  if (!r?.ok) { push(`💰 piyasa videosu üretilemedi: ${r?.error || "yanıt yok"}`); return { ok: false, error: r?.error || "Piyasa verisi alınamadı." }; }
+  push(`💰 piyasa kartı (${(r.sources || []).join(", ")}): dolar ${r.values?.usd?.price ?? "?"} · euro ${r.values?.eur?.price ?? "?"} · gram altın ${r.values?.gram?.price ?? "?"}`);
+  return startTemplate("piyasa", r.job, { title: "Güne piyasalarla başlıyoruz: dolar, euro, altın ve akaryakıt", duration: marketCfg().duration, source: (r.sources || []).join(" · ") });
+}
+async function calendarRun({ manual = false } = {}) {
+  if (!manual) infoMark("calendar", { day: today() });
+  const due = await pyJson(["scripts/calendar_news.py", "--due"], 30000).catch(() => null);
+  const evs = due?.events || [];
+  if (!evs.length) { if (manual) push("📅 yarın için takvim olayı yok"); return { ok: false, error: "Yarın için takvim olayı yok (ya da üretildi)." }; }
+  let last = { ok: false };
+  for (const e of evs.slice(0, 2)) {
+    const j = await pyJson(["scripts/calendar_news.py", "--job", e.key], 30000).catch(() => null);
+    if (!j?.ok) continue;
+    push(`📅 takvim: yarın ${e.title} → hatırlatma videosu hazırlanıyor`);
+    last = startTemplate("takvim", j.job, { title: `Yarın ${e.title}`, duration: calendarCfg().duration, source: "Takvim" });
+  }
+  return { ...last, events: evs };
+}
+let quakeAt = 0, matchAt = 0, infoBusy = false, quakeErrAt = 0;
+setInterval(async () => {
+  if (infoBusy) return; infoBusy = true;
+  try {
+    const n = new Date(), mins = n.getHours() * 60 + n.getMinutes(), st = infoState();
+    const q = quakeCfg(), m = matchCfg(), mk = marketCfg(), cl = calendarCfg();
+    if (q.enabled && Date.now() - quakeAt >= Number(q.intervalMin) * 60000) { quakeAt = Date.now(); await quakeCheck(); }
+    if (m.enabled && Date.now() - matchAt >= Number(m.intervalMin) * 60000) { matchAt = Date.now(); await matchCheck(); }
+    // piyasa ve takvim: saatinde (2 saat içinde; Mac uyuduysa o gün atlanır), günde bir kez
+    if (mk.enabled && st.market?.day !== today() && mins >= mk.hour * 60 + mk.minute && mins < mk.hour * 60 + mk.minute + 120) await marketRun();
+    if (cl.enabled && st.calendar?.day !== today() && mins >= cl.hour * 60 + cl.minute && mins < cl.hour * 60 + cl.minute + 120) await calendarRun();
+  } catch (e) { push(`📡 otomatik içerik hatası: ${e.message}`); } finally { infoBusy = false; }
+}, 60000);
+// dinlenmedeyken "sıradaki planlı iş" bilinsin
+function infoNext() {
+  const out = [], st = infoState();
+  for (const [k, c, what] of [["market", marketCfg(), "sabah piyasa kartı"], ["calendar", calendarCfg(), "takvim hatırlatması"]]) {
+    if (!c.enabled || st[k]?.day === today()) continue;
+    const t = new Date(); t.setHours(Number(c.hour), Number(c.minute), 0, 0);
+    if (t.getTime() > Date.now()) out.push({ at: t.getTime(), what });
+  }
+  return out;
+}
+app.get("/api/info", async (_req, res) => {
+  const cal = await pyJson(["scripts/calendar_news.py", "--list", "45"], 30000).catch(() => null);
+  res.json({ quake: quakeCfg(), match: matchCfg(), market: marketCfg(), calendar: calendarCfg(), state: infoState(), upcoming: (cal?.events || []).slice(0, 8) });
+});
+app.post("/api/info/:kind/run", async (req, res) => {
+  const k = req.params.kind;
+  if (k === "quake") return res.json(await quakeCheck({ manual: true }));
+  if (k === "match") return res.json(await matchCheck({ manual: true }));
+  if (k === "market") return res.json(await marketRun({ manual: true }));
+  if (k === "calendar") return res.json(await calendarRun({ manual: true }));
+  res.json({ ok: false, error: "bilinmeyen tür" });
+});
 
 // ---------- En çok izlenen saatlerde tekrar (kullanıcı isteği): izlenmenin en yüksek olduğu 3 saatte (scripts/peak_remake.py
 // --plan; az veride 12, 18, 21) son 24 saatin en çok izlenen haberi sırasıyla farklı senaryo ve görsellerle 30 sn yeniden
@@ -599,6 +707,12 @@ async function viralCheck() {
   return r.json;
 }
 app.post("/api/viral/check", async (_req, res) => res.json(await viralCheck()));
+// tutmayan videonun YouTube başlığını diğer varyanta çevir (publish.py --retitle; 3. saatteki izlenme ortancanın yarısının altındaysa, bir kez)
+async function retitleCheck() {
+  const r = await py("publish.py", ["--retitle"]);
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("📉")) push(l);
+  return r.json;
+}
 // ---------- Takılan üretim bekçisi: pipeline kilidi (work/pipeline.lock) canlı bir sürece ait ve 50 dk'dan (uzun özetlerde
 // 100 dk) eskiyse üretim takılmıştır; süreç ağacı kapatılır, kilit kalkar, sağlık uyarısı gider. Yoksa sonraki tüm
 // zamanlanmış üretimler "başka üretim sürüyor" diye atlanır ve sistem saatlerce video üretmez.
@@ -889,7 +1003,7 @@ async function execAction(a) {
     case "breaking_news": return prepareAnlik(a.topic, a.duration);
     case "schedule": return setSchedule(!!a.enabled, Number(a.hours) || 5);
     case "note": brain.addNote(a.text); return { ok: true };
-    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
+    case "sync_metrics": { push("📊 izlenmeler çekiliyor"); const r = await py("sync_metrics.py"); await py("analyze.py"); viralCheck().catch((e) => push(`🔥 viral kontrolü: ${e.message}`)); retitleCheck().catch(() => {}); push(`📊 ${r.ok ? `güncellendi: YT ${r.json?.youtube ?? 0}, IG ${r.json?.instagram ?? 0}, TT ${r.json?.tiktok ?? 0}` : "hata"}`); return { ok: r.ok, ...(r.json || {}) }; }
     case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram, tiktok: !!a.tiktok } }); return { ok: true };
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
@@ -1260,6 +1374,14 @@ async function handleCommand(text) {
       reply = r.ok ? `${cmd.which === "top" ? "En çok izlenen" : "Son"} video (${r.title.slice(0, 70)}${pick.views ? `, ${pick.views} izlenme` : ""}) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error;
       if (!r.ok) action = "none"; break;
     }
+    case "info": {
+      const fn = { quake: quakeCheck, match: matchCheck, market: marketRun, calendar: calendarRun }[cmd.kind];
+      const r = await fn({ manual: true });
+      if (cmd.kind === "quake") reply = r.events?.length ? `${r.events.map((e) => e.title).join(", ")}: deprem videosu hazırlanıyor.` : `Yeni büyük deprem yok (en az ${quakeCfg().minMag}).${r.errors?.length ? ` Uyarı: ${r.errors.join(" · ")}` : ""}`;
+      else if (cmd.kind === "match") reply = r.matches?.length ? `${r.matches.map((m) => m.title).join(", ")}: skor videosu hazırlanıyor.` : "Takip ettiğimiz takımlardan yeni biten maç yok.";
+      else reply = r.ok ? (cmd.kind === "market" ? "Piyasa videosu hazırlanıyor: dolar, euro, altın ve akaryakıt." : `Yarının hatırlatması hazırlanıyor: ${(r.events || []).map((e) => e.title).join(", ")}.`) : r.error;
+      break;
+    }
     case "peak": {
       if (cmd.run) { const r = await peakRemake({ manual: true }); reply = r.ok ? `Günün en çok izlenen haberi (${r.title.slice(0, 70)}, ${r.views} izlenme) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error; break; }
       if (cmd.on != null) { patchSettings({ peakRemake: { enabled: cmd.on } }); }
@@ -1486,7 +1608,7 @@ setInterval(async () => {
 app.post("/api/weekly-report", async (_req, res) => res.json(await weeklyReport({ send: true })));
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
-let lastReportDay = null, lastFlush = 0;
+let lastReportDay = null, lastFlush = 0, retentionTry = 0;
 setInterval(async () => {
   const s = settings();
   const rest = resting(); // dinlenmede yalnız hafif izlenme/abone senkronu sürer (grafikte gün boşluğu kalmasın)
@@ -1495,6 +1617,14 @@ setInterval(async () => {
   const m = readJson(path.join(DATA, "metrics.json"), { lastSync: null });
   const due = !m.lastSync || Date.now() - Date.parse(m.lastSync) > s.metricsSyncMinutes * 60000;
   if (anyConnected && due && !state.running) { await execAction({ type: "sync_metrics" }); push("· izlenmeler güncellendi"); }
+  // izleyici tutma (scripts/retention.py): 12 saatte bir, YouTube bağlıysa; izleyicinin ayrıldığı bölüm senaryo ipucuna girer
+  if (conn.youtube?.connected && !state.running && Date.now() - (readJson(path.join(DATA, "retention.json"), {}).updatedAt || 0) * 1000 > 12 * 3600000 && Date.now() - retentionTry > 3 * 3600000) {
+    retentionTry = Date.now();
+    const r = await py("retention.py", ["--sync"]);
+    const sm = r.json?.summary;
+    if (r.json?.fetched) { await py("analyze.py"); push(`👀 izleyici tutma: ${r.json.fetched} video güncellendi${sm?.videos ? ` · ortalama izlenme %${sm.avgViewPct ?? "?"} · kapanışa ulaşan %${sm.reachOutro ?? "?"}${sm.worst ? ` · en çok kayıp: ${sm.worst}` : ""}` : ""}`); }
+    else if (r.json?.errors?.length || r.json?.error) push(`👀 izleyici tutma alınamadı: ${(r.json.errors || [r.json.error]).join(" · ").slice(0, 200)}`);
+  }
   // günlük yükleme sınırı yüzünden sıraya alınan videolar: saatte bir, üretim yokken dene
   if (Date.now() - lastQueueLog > 2 * 3600000) { lastQueueLog = Date.now(); logQueues().catch(() => {}); } // TikTok/YouTube sırası 2 saatte bir loga
   if (rest) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca

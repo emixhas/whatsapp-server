@@ -12,7 +12,8 @@ export PATH="$PWD/.venv/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$P
 # .venv varsa onun Python'u (piper orada kurulu), yoksa sistem python3
 PY="python3"; [ -x ".venv/bin/python3" ] && PY=".venv/bin/python3"
 # Arka plan servisi kullanıcının kabuk ayarlarını yüklemez; Claude Code bilinen kurulum yerlerinde aranır
-CLAUDE="$(bash scripts/find_claude.sh)" || { echo "HATA: 'claude' komutu bulunamadı. Terminalde 'which claude' çıktısını secrets/.env içine CLAUDE_BIN=... olarak yazın."; exit 1; }
+# şablon videoda (TEMPLATE_DIR: deprem/maç/piyasa/takvim) Claude kullanılmaz; bulunamasa da üretim sürer
+CLAUDE="$(bash scripts/find_claude.sh)" || { if [ -n "${TEMPLATE_DIR:-}" ]; then CLAUDE="/usr/bin/true"; else echo "HATA: 'claude' komutu bulunamadı. Terminalde 'which claude' çıktısını secrets/.env içine CLAUDE_BIN=... olarak yazın."; exit 1; fi; }
 export PATH="$(dirname "$CLAUDE"):$PATH"
 command -v ffmpeg >/dev/null || { echo "HATA: ffmpeg bulunamadı (brew install ffmpeg)."; exit 1; }
 # Format: FORMAT=sabah|ogle|aksam|ozel. Verilmezse saate göre seçilir; DURATION verilmezse formatın süresi.
@@ -49,6 +50,10 @@ if [ "${GUNLUK:-0}" = "1" ]; then
     FORMAT_INTRO="Haftanın özeti. Bu hafta Türkiye'de öne çıkan haberler."
   fi
 fi
+# Şablon video (deprem, maç sonucu, piyasa, takvim; scripts/info_card.py): senaryo hazır (Claude çağrılmaz), görsel bilgi kartı
+TEMPLATE_DIR="${TEMPLATE_DIR:-}"
+if [ -n "$TEMPLATE_DIR" ]; then [ -s "$TEMPLATE_DIR/claude_out.json" ] || { echo "HATA: şablon senaryo bulunamadı ($TEMPLATE_DIR)"; exit 1; }; fi
+export TEMPLATE_DIR INFO_KIND="${INFO_KIND:-}" INFO_LABEL="${INFO_LABEL:-}" INFO_INTRO="${INFO_INTRO:-}" INFO_OUTRO="${INFO_OUTRO:-}" INFO_BREAKING="${INFO_BREAKING:-}"
 export ANLIK="${ANLIK:-0}" GUNLUK="${GUNLUK:-0}" HAFTALIK="${HAFTALIK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
 # Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
 SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
@@ -91,7 +96,9 @@ exec > >(tee -a "$LOG") 2>&1
 echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (format ${FORMAT} · ${FORMAT_LABEL}, hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
 
 echo "-- 1/4 haberler"
-if [ "$ANLIK" = "1" ]; then
+if [ -n "$TEMPLATE_DIR" ]; then
+  echo '{"items":[]}' > work/news.json; echo "  şablon video: bilgi doğrudan kaynaktan (${INFO_LABEL:-veri}), haber taraması atlandı"
+elif [ "$ANLIK" = "1" ]; then
   # Anlık haberde RSS olmasa da editörün yazdığı bilgiyle devam edilir
   $PY scripts/fetch_news.py work/news.json || { echo "  ! haberler çekilemedi; yalnızca yazdığın bilgiyle devam ediliyor"; echo '{"items":[]}' > work/news.json; }
 else
@@ -99,6 +106,7 @@ else
 fi
 
 echo "-- 2/4 senaryo (Claude)"
+if [ -n "$TEMPLATE_DIR" ]; then cp "$TEMPLATE_DIR/claude_out.json" work/claude_out.json; SKIP_CLAUDE=1; echo "  şablon senaryo hazır (Claude kullanılmadı)"; fi
 if [ "${SKIP_CLAUDE:-0}" != "1" ]; then
   HINT="Henüz performans verisi yok."
   if [ -f data/prompt_hint.txt ]; then
@@ -150,6 +158,7 @@ echo "-- görseller ve videolar (tam boy fotoğraf, HD, haber videosu)"
 if [ ! -f work/.ytdlp_updated ] || [ -n "$(find work/.ytdlp_updated -mtime +7 2>/dev/null)" ]; then
   $PY -m pip install -q -U "yt-dlp[default]" >/dev/null 2>&1 && touch work/.ytdlp_updated && echo "  yt-dlp güncellendi" || true
 fi
+if [ -n "$TEMPLATE_DIR" ]; then $PY scripts/info_card.py --render "$TEMPLATE_DIR" || echo "  ! bilgi kartı adımı atlandı"; fi
 $PY scripts/fetch_images.py public/episode.json || echo "  ! görsel adımı atlandı"
 
 echo "-- 4/4 render"

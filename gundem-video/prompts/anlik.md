@@ -72,6 +72,12 @@ BAŞLIK VARYANTLARI ("titles")
 - "A": haberci başlık (olayın kendisi), "B": merak uyandıran ama dürüst başlık. İkisi de en fazla 7 kelime.
 - "cover": kapakta büyük yazılacak 2-4 kelime.
 
+İLK YORUM ("firstComment", en üst düzeyde)
+- Videonun altına kanal adına yazılacak tek bir soru (en çok 110 karakter): izleyiciyi konu hakkında fikrini yazmaya
+  davet etsin, habere özel olsun (ör. "Sizce asgari ücrete ara zam yapılmalı mı? Yorumlarda buluşalım 👇"). Tarafsız
+  sor; taraf tutma, kışkırtma, hakaret çağrısı yok. Can kaybı ve acı olaylarda soru sorma, başsağlığı yaz
+  (ör. "Hayatını kaybedenlere rahmet, yaralılara acil şifalar diliyoruz.").
+
 HASHTAG ("hashtags", en üst düzeyde)
 - Videonun konusuna özel 3-5 hashtag: Türkçe, boşluksuz, küçük harf, Türkçe karakterli (ör. "#asgariücret",
   "#emeklizammı", "#istanbuldeprem", "#akaryakıt"). İnsanların gerçekten arayacağı kelimeler; genel etiket
@@ -83,6 +89,7 @@ Sadece aşağıdaki şemada geçerli bir JSON döndür. Açıklama, kod bloğu, 
 {
   "titles": {"A": "...", "B": "...", "cover": "..."},
   "hashtags": ["#...", "#...", "#..."],
+  "firstComment": "...",
   "importance": 3,
   "importanceReason": "...",
   "segments": [

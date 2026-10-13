@@ -126,6 +126,9 @@ def episode_meta(video_name: str):
     return load_json(OUT / video_name.replace(".mp4", ".json"), None)
 
 
+INFO_HEAD = {"deprem": "🔴 SON DAKİKA DEPREM", "mac": "⚽ MAÇ SONUCU", "piyasa": "💰 PİYASALAR", "takvim": "📅 HATIRLATMA"}
+
+
 def build_caption(video_name: str, max_len: int = 2000):
     """Yayın başlığı ve açıklaması senaryo meta'sından üretilir: gün, kaçıncı 5 saat, saat aralığı ve
     her haberin başlığı + seslendirme metni + kaynağı (açıklamada tam haber ayrıntısı)."""
@@ -153,9 +156,10 @@ def build_caption(video_name: str, max_len: int = 2000):
             t += float(seg.get("duration") or 0)
         if chapters:
             lines += ["00:00 Giriş", *chapters, ""]
-    elif anlik:  # tek konulu son dakika videosu
-        title = f"🔴 SON DAKİKA: {first} | {s['channelName']} #Shorts"
-        lines = [f"🔴 SON DAKİKA · {s['channelName']} · {day} · {rng}", ""]
+    elif anlik:  # tek konulu son dakika videosu (şablon videoda kendi etiketi: ⚽ MAÇ SONUCU, 💰 PİYASALAR, 📅 HATIRLATMA)
+        head = INFO_HEAD.get(meta.get("infoKind") or "", "🔴 SON DAKİKA")
+        title = f"{head}: {first} | {s['channelName']} #Shorts"
+        lines = [f"{head} · {s['channelName']} · {day} · {rng}", ""]
     else:
         title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
         lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
@@ -172,7 +176,7 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl"):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem") else [])
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"

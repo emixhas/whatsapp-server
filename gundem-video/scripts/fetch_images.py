@@ -365,8 +365,21 @@ def main():
     found_src: dict = {}  # haber sayfası → videonun bulunduğu kaynak (aynı haberin kanca + kart segmentleri)
     first_haber = next((k for k, x in enumerate(ep["segments"]) if x.get("kind") == "haber"), -1)
     n_img = n_vid = n_hd = 0
+    # şablon video (deprem/maç/piyasa/takvim): her kanca/haber segmentine sırayla bilgi kartı, arama yapılmaz
+    from info_card import cards_for_episode
+    cards, k = cards_for_episode(), 0
     for i, seg in enumerate(ep["segments"]):
         if seg.get("kind") not in ("hook", "haber"):
+            continue
+        if cards:
+            c = cards[k % len(cards)]
+            k += 1
+            card, tall_f = OUT / f"seg-{i:02d}.jpg", OUT / f"seg-{i:02d}-tall.jpg"
+            shutil.copyfile(ROOT / c["card"], card)
+            shutil.copyfile(ROOT / c["tall"], tall_f)
+            seg["image"], seg["imageTall"], seg["imageSize"] = f"images/{card.name}", f"images/{tall_f.name}", "1840x1120"
+            seg["infoCard"] = True
+            n_img += 1
             continue
         art, rss = seg.get("articleUrl"), seg.get("imageUrl")
         if not art and not rss and not MEDIA.get("video"):

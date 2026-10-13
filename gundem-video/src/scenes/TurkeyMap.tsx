@@ -28,7 +28,7 @@ const MARMARA: [number, number][] = [
   [28.6, 41.0], [27.7, 40.95], [27.0, 40.75],
 ];
 
-const project = ([lon, lat]: [number, number]): [number, number] => [(lon - 25.8) * 52, (42.3 - lat) * 66];
+export const project = ([lon, lat]: [number, number]): [number, number] => [(lon - 25.8) * 52, (42.3 - lat) * 66];
 
 /** Kapalı Catmull-Rom eğrisi → SVG path */
 function smoothPath(src: [number, number][]): string {
@@ -44,7 +44,7 @@ function smoothPath(src: [number, number][]): string {
   return d + " Z";
 }
 
-const MAP_PATH = smoothPath(OUTLINE) + " " + smoothPath(MARMARA);
+export const MAP_PATH = smoothPath(OUTLINE) + " " + smoothPath(MARMARA);
 export const MAP_W = 1000;
 export const MAP_H = 440;
 

@@ -51,7 +51,7 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} />
             ) : (
-              <Headline index={haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image} video={seg.video} videoDuration={seg.videoDuration} />
+              <Headline index={haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image} video={seg.video} videoDuration={seg.videoDuration} infoCard={seg.infoCard} />
             )}
           </Sequence>
         );

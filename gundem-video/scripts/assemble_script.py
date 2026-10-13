@@ -27,6 +27,9 @@ OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son d
 # Anlık (tek konulu son dakika) videonun kapanışı; panelden "Anlık haber üret" ile ANLIK=1 gelir
 ANLIK = os.environ.get("ANLIK") == "1"
 OUTRO_ANLIK = "Gelişmeleri takip etmeye devam ediyoruz. Son dakika haberleri için takip etmeyi unutma."
+# Şablon video (deprem/maç/piyasa/takvim, scripts/info_card.py): etiket, intro/outro ve SON DAKİKA kartı panelden env ile
+INFO_KIND = os.environ.get("INFO_KIND", "").strip()
+INFO_LABEL = os.environ.get("INFO_LABEL", "").strip()
 # Günlük uzun özet (yatay, YouTube): pipeline GUNLUK=1, prompts/gunluk.md, Remotion GunlukOzet
 GUNLUK = os.environ.get("GUNLUK") == "1"
 OUTRO_GUNLUK = "Bugünün Türkiye gündemi buydu. Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone olmayı unutma."
@@ -291,7 +294,7 @@ def short_title(t: str, max_chars: int = 32, max_words: int = 4) -> str:
 def intro_text() -> str:
     """Sabit intro cümlesi: format adı + "son N saatin Türkiye gündemi"."""
     if ANLIK:
-        return "Son dakika."
+        return os.environ.get("INFO_INTRO", "").strip() or "Son dakika."
     if GUNLUK:
         return INTRO_HAFTALIK if HAFTALIK else INTRO_GUNLUK
     hours = int(load_json(DATA / "settings.json", {}).get("scheduleHours") or 5)
@@ -307,6 +310,25 @@ def regular_slot_of_day(date: str) -> int:
         if re.match(rf"{re.escape(date)}-\d+\.json$", f.name) and load_json(f, {}).get("format") not in ("anlik", "gunluk", "haftalik"):
             n += 1
     return n + 1
+
+
+# şablon videolarda (Claude yazmaz) ve Claude yazmadıysa ilk yorum
+FIRST_COMMENT = {"deprem": "Depremi hissettiniz mi? Bulunduğunuz ili yorumlara yazın, geçmiş olsun 👇",
+                 "mac": "Maçı nasıl buldunuz? Sizce maçın en iyisi kimdi? 👇",
+                 "piyasa": "Sizce dolar ve altın bu hafta nereye gider? Tahmininizi yazın 👇",
+                 "takvim": "Bu hatırlatma işinize yaradı mı? Başka hangi tarihleri hatırlatalım? 👇"}
+
+
+def first_comment(data: dict, segs: list) -> str | None:
+    t = str(data.get("firstComment") or "").strip() or FIRST_COMMENT.get(INFO_KIND, "")
+    if not t:
+        t = "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
+    try:  # hassas kelimeler yorumda da yıldızlı
+        import censor
+        t = censor.mask(t)
+    except Exception:
+        pass
+    return expand_abbr(t)[:300]
 
 
 def main(src: str, dst: str):
@@ -331,7 +353,7 @@ def main(src: str, dst: str):
     if len(segs) > 1 and segs[1].get("kind") != "intro":
         sys.exit("İkinci segment intro olmalı")
     # Outro her videoda aynı kancalı kapanış: marka tutarlılığı için Claude'un yazdığı metin ezilir
-    segs[-1]["narration"] = OUTRO_ANLIK if ANLIK else OUTRO_HAFTALIK if HAFTALIK else OUTRO_GUNLUK if GUNLUK else OUTRO_TEXT
+    segs[-1]["narration"] = (os.environ.get("INFO_OUTRO", "").strip() or OUTRO_ANLIK) if ANLIK else OUTRO_HAFTALIK if HAFTALIK else OUTRO_GUNLUK if GUNLUK else OUTRO_TEXT
     # Intro da sabit: "Güne başlarken, son 5 saatin Türkiye gündemi." (anlık haberde "Son dakika.")
     if len(segs) > 1 and segs[1].get("kind") == "intro":
         segs[1]["narration"] = intro_text()
@@ -355,7 +377,7 @@ def main(src: str, dst: str):
         if s["kind"] in ("haber", "hook") and s.get("category") not in ("asayis", "dunya", "hava") and ASAYIS.search(f"{s.get('title', '')} {s['narration']}"):
             print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
             s["category"] = "asayis"
-    if ANLIK and haber:
+    if ANLIK and haber and os.environ.get("INFO_BREAKING", "") != "0":
         haber[0]["breaking"] = True  # anlık videonun ilk haberi her zaman SON DAKİKA kartı
         segs[0]["breaking"] = True
     src_name, src_url = os.environ.get("ANLIK_SOURCE", "").strip(), os.environ.get("ANLIK_URL", "").strip()
@@ -433,9 +455,11 @@ def main(src: str, dst: str):
         "dateLabel": f"{now.day} {AYLAR[now.month - 1]} {now.year}",
         "dayLabel": f"{now.day} {AYLAR[now.month - 1]} {GUNLER[now.weekday()]}",
         "episodeOfDay": ep_n,
-        "slotLabel": "ANLIK HABER" if ANLIK else "HAFTANIN ÖZETİ" if HAFTALIK else "GÜNÜN ÖZETİ" if GUNLUK else f"{regular_slot_of_day(date)}. {hours} SAAT",
+        "slotLabel": (INFO_LABEL or "ANLIK HABER") if ANLIK else "HAFTANIN ÖZETİ" if HAFTALIK else "GÜNÜN ÖZETİ" if GUNLUK else f"{regular_slot_of_day(date)}. {hours} SAAT",
         "timeRange": now.strftime("%H:%M") if ANLIK else week_range(now) if HAFTALIK else f"00:00–{now.strftime('%H:%M')}" if GUNLUK else f"{start.strftime('%H:%M')}–{now.strftime('%H:%M')}",
         "anlik": ANLIK,
+        "infoKind": INFO_KIND or None,  # şablon video türü: deprem | mac | piyasa | takvim
+        "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum
         "value": news_value(data, segs) if ANLIK else None,
         "hashtags": topic_hashtags(data),
         "sourceName": src_name or None,

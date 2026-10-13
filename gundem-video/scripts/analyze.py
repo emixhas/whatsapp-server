@@ -147,6 +147,10 @@ def main():
             hints.append(f"Başlık stili {better} ({'haberci, somut' if better == 'A' else 'merak uyandıran'}) daha çok izleniyor; bu stili güçlü yaz.")
         if top and top[0]["firstTitle"]:
             hints.append("En çok tutan açılış başlıkları: " + "; ".join(f"“{r['firstTitle']}”" for r in top[:3]) + ". Benzer netlikte, somut ve kısa açılış başlıkları yaz.")
+    # izleyici tutma (scripts/retention.py): izleyicinin ayrıldığı bölüm senaryo ipucuna girer
+    retention = (load_json(DATA / "retention.json", {}) or {}).get("summary") or {}
+    if retention.get("videos", 0) >= 3:
+        hints = (retention.get("hints") or []) + hints  # önce: az token modunda ipucu 300 karakterde kesilir
     hint_text = " ".join(hints) if hints else "Henüz yeterli performans verisi yok; kuralları uygula."
 
     sugg = load_json(DATA / "category_suggestions.json", {}) if "load_json" in globals() else {}
@@ -157,7 +161,7 @@ def main():
         "byCategory": cat_avg, "byDuration": dur_avg, "byHour": hour_avg, "byTitleVariant": var_avg, "byFormat": fmt_avg,
         "breakingAvg": breaking_avg, "normalAvg": normal_avg,
         "top": [{k: r.get(k) for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "bestPlatform", "categories", "targetDuration", "urls")} for r in top],
-        "byPlatform": by_platform, "leadingPlatform": leader, "bestHours": best_hours(rows),
+        "byPlatform": by_platform, "leadingPlatform": leader, "bestHours": best_hours(rows), "retention": retention,
         "hint": hint_text, "rows": rows,
     }
     try:  # abone/takipçi: güncel, bugün, 7 gün, 30 gün, günlük seri (scripts/followers.py)

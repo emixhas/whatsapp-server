@@ -21,6 +21,8 @@ export type Segment = {
   words?: { w: string; s: number; e: number }[];
   /** Haber görseli (public/ altına göre), varsa: 1840x1120 kart. */
   image?: string;
+  /** görsel kodla çizilen bilgi kartı (deprem haritası, skor, piyasa, takvim) */
+  infoCard?: boolean;
   /** 1080x1920 dikey sürüm: fotoğrafın tamamı keskin, arkası bulanık (kanca ve dikey kapak). */
   imageTall?: string;
   /** Haber videosu (public/ altına göre, sessiz); varsa fotoğrafın yerine oynar. */

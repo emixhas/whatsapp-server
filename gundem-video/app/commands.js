@@ -60,6 +60,11 @@ export function parseCommand(raw) {
   }
   const an3 = String(raw).trim().match(/^(?:emixhas[,\s]*)?([\s\S]{6,}?)\s+(?:hakkında|ile ilgili|konulu|konusunda)\s+(?:son ?dakika\s+)?(?:bir\s+)?(?:haber|video)\w*\s+(?:üret|yap|hazırla|çek)\w*\s*$/i);
   if (an3 && !question) return { action: "anlik", topic: an3[1].trim(), duration: extractSeconds(t) || 30, reply: "" };
+  // Şablon videolar: "depremleri kontrol et", "piyasa videosu üret", "maç sonuçlarını kontrol et", "yarının hatırlatmasını üret"
+  if (/deprem(leri)? (kontrol|var m)|son depremler/.test(t)) return { action: "info", kind: "quake", reply: "" };
+  if (/(piyasa|döviz|altın) (videosu|kartı)/.test(t) && /(üret|yap|hazırla|çek)/.test(t)) return { action: "info", kind: "market", reply: "" };
+  if (/maç (sonuçlarını|sonucunu|sonuçları)/.test(t) && /(kontrol|bak|üret)/.test(t)) return { action: "info", kind: "match", reply: "" };
+  if (/(takvim|hatırlatma)/.test(t) && /(üret|yap|hazırla)/.test(t) && /(yarın|takvim)/.test(t)) return { action: "info", kind: "calendar", reply: "" };
   // En çok izlenen saatlerde tekrar: "en çok izlenen saatler", "altın saat tekrarını kapat", "altın saat tekrarını şimdi yap"
   if (/(en çok izlenen saat|altın saat|izlenen saatlerde)/.test(t)) return { action: "peak", run: /(şimdi|hemen) (yap|üret|yayınla|çalıştır)/.test(t), on: /(^|\s)(kapat|durdur)/.test(t) ? false : /(^|\s)(aç|başlat|etkinleştir)(\s|$)/.test(t) ? true : null, reply: "" };
   // Tutan videoyu farklı haliyle yeniden yayınla: "en çok izlenen videoyu yeniden yayınla", "son videoyu yeniden yayınla"

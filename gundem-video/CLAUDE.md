@@ -167,6 +167,40 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   İkisi her `startAnlik` başlangıcında yeniden yazılır. Bulunamazsa ve konu 15 kelimeden kısaysa video ÜRETİLMEZ, link ya da
   ayrıntı istenir; uzunsa yalnız yazılanla üretilir. `prompts/anlik.md` "ayrıntılar bulunamadı" türü cümleleri ve genel
   bilgiyi yasaklar; `emixhas.md` yalnız manşet cümlesi yazılırsa breaking_news kullandırır.
+- Şablon videolar (kullanıcı kararı; bilgisi kesin veriden gelen, Claude ÇAĞRILMAYAN videolar; `scripts/info_card.py`):
+  Python betiği `work/jobs/<ad>/` içine `claude_out.json` (anlık şemasında şablon senaryo, `make_script`), `cards.json` (kart
+  prop'ları) ve `meta.json` (gereken en kısa süre: kelime / 2,4) yazar; panel `startTemplate()` → `startAnlik(başlık, süre,
+  {templateDir, info})` → env `TEMPLATE_DIR`, `INFO_KIND` (deprem|mac|piyasa|takvim), `INFO_LABEL` (slotLabel), `INFO_INTRO`,
+  `INFO_OUTRO`, `INFO_BREAKING=0` (SON DAKİKA kartı yalnız depremde). `pipeline.sh`: haber taraması atlanır, senaryo kopyalanır
+  (Claude bulunamasa da sürer), seslendirmeden sonra `info_card.py --render` kartları `render_thumbs.mjs` ile çizer
+  (`InfoCard` 1840x1120 + `InfoCardTall` 1080x1920, `src/InfoCard.tsx`: deprem haritası — `TurkeyMap` MAP_PATH/project —,
+  skor tablosu, piyasa tablosu, takvim yaprağı), `fetch_images` her kanca/haber segmentine sırayla kart koyar (video/fotoğraf
+  aranmaz, `infoCard: true` → Headline'da karartma, kategori simgesi ve "FOTOĞRAF:" etiketi binmez). Meta `infoKind`; açıklama
+  başlığı `common.INFO_HEAD` (🔴 SON DAKİKA DEPREM / ⚽ MAÇ SONUCU / 💰 PİYASALAR / 📅 HATIRLATMA), #sondakika yalnız depremde.
+  Dinlenmede uyandırır. Panel Ayarlar → "📡 Otomatik içerikler" (anahtarlar, saatler, şimdi düğmeleri, takvim ek olayları),
+  `GET /api/info`, `POST /api/info/:kind/run` (quake|match|market|calendar), komutlar "depremleri kontrol et", "piyasa videosu
+  üret", "maç sonuçlarını kontrol et", "yarının takvim hatırlatmasını üret" (`info` eylemi). Durum `data/info_last.json`.
+  - Deprem (`scripts/quake_watch.py`, `settings.quake` {enabled, minMag 4.5, intervalMin 2, maxAgeMin 45, maxPerDay 6,
+    duration 25}): AFAD apiv2 (saat UTC; gelecekte görünürse yerel sayılır), yedek Kandilli lst0.asp (ASCII büyük harf → il/deniz
+    adları `PROVINCES` ile Türkçe), aynı deprem 3 dk/60 km içinde tek; Türkiye ve yakını (35-43 K, 25-45,5 D). Senaryo yalnız
+    ölçülen veri (yer, saat, büyüklük, derinlik, kaynak) + artçı uyarısı (6+ için güçlü uyarı); bulunma eki `loc()`. 6'dan küçük
+    depremde `breaking_watch --mark` (aynı depremin haberi ikinci video olmasın). Görülenler `data/quake_seen.json`. İki kaynak da
+    düşerse log 6 saatte bir.
+  - Maç sonu (`scripts/match_watch.py`, `settings.match` {enabled, leagues [tur.1, uefa.champions, uefa.europa,
+    uefa.europa.conf], maxAgeHours 8, intervalMin 10, duration 25}): ESPN scoreboard; Süper Lig'de `standings.cached_top()`
+    takımlarından biri, Avrupa'da herhangi bir Türk takımı (`standings.TR_NAMES`), biten ve 8 saatten yeni maç. Skor, golcüler
+    (dakika, penaltı, kendi kalesine), Süper Lig'de güncel sıra/puan (standings yeniden çekilir); takım adı ekleri `suffix()`.
+    Görülenler `data/match_seen.json`.
+  - Sabah piyasa kartı (`scripts/market.py`, `settings.market` {enabled, hour 9, minute 0, duration 35, fuelProvince 34,
+    fuelUrl}): Truncgil Finans v4 → today.json → TCMB today.xml (yalnız dolar/euro); akaryakıt Opet il fiyatları (yapı esnek
+    taranır: productName benzin/motorin). Değişim kaynakta yoksa `data/market_history.json`daki dünkü değerden; akaryakıtta dünden
+    fark ≥ 5 kuruşsa "zam/indirim geldi". Seslendirmede "41 lira 85 kuruştan". Önem 3 (YouTube ek hakkını harcamaz). Saatinden
+    sonraki 2 saat içinde günde bir.
+  - Takvim (`scripts/calendar_news.py`, `settings.calendar` {enabled, hour 19, minute 0, duration 25, monthly true, extra}):
+    bir gün önce "Yarın …": sabit resmi tatiller, 10 Kasım, gelir vergisi (31 Mart), MTV (31 Ocak, 31 Temmuz), her ay memur
+    maaşı (15) ve KDV (28; son gün/maaş hafta sonuna denk gelirse atlanır), Ramazan/Kurban Bayramı `RELIGIOUS` (Diyanet takvimi;
+    2028 ve sonrası için Diyanet'in ilan ettiği tarihleri EKLE), panelden ek olaylar ("2027-06-19 | YKS | açıklama", "06-19",
+    "ay:17"). Üretilenler `data/calendar_done.json`.
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =
@@ -519,6 +553,23 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   dinlenmedeyse uyandırır, `nextPlanned` sıradaki tekrarı bilir. Meta `peakHour` (listede "🕘 HH:00 tekrarı"). Log 🕘. Panel
   Analitik "🕘 EN ÇOK İZLENEN SAATLERDE TEKRAR" (anahtar, saatler, bugün yapılanlar, "Şimdi yap"), `GET /api/peak`,
   `POST /api/peak/run`, komut "en çok izlenen saatler / altın saat tekrarını aç|kapat|şimdi yap" (`peak` eylemi).
+- Otomatik ilk yorum (kullanıcı kararı; `settings.firstComment.enabled`, varsayılan açık): senaryo prompt'ları en üst düzeyde
+  `firstComment` yazar (habere özel tarafsız soru, ≤110 karakter; can kaybında soru yerine başsağlığı), şablon videolarda ve
+  Claude yazmazsa `assemble_script.FIRST_COMMENT`/genel soru; hassas kelime yıldızlanır, meta `firstComment`. `publish.py`
+  YouTube yüklemesinden hemen sonra `commentThreads.insert` (`youtube.force-ssl` izni YT_SCOPES'a eklendi → eski bağlantıda
+  "Yeniden bağla"; yoksa `commentError`), Instagram'da `/{media}/comments`. Sabitleme API'de yok (YouTube Studio'dan elle);
+  TikTok API yorum yazmaya izin vermez. Sonuç metrics `firstComment`/`commentError`, log 💬.
+- Tutmayan videonun başlığını değiştir (kullanıcı kararı; `publish.py --retitle` → `yt_retitle`, her izlenme senkronundan sonra
+  `retitleCheck()`; `settings.retitle` {enabled, afterHours 3, ratio 0.5, minBaseline 5}): YouTube'da yayından 3-9 saat sonraki
+  ilk ölçümde izlenme, önceki videoların aynı yaştaki izlenmesinin (`data/views_at_check.json`, son 20) ortancasının yarısının
+  altındaysa başlık diğer varyanta (A ↔ B) geçer, bir kez: meta `publishTitle`/`titleVariant`/`retitled`, `build_caption` ile yeni
+  başlık, `videos.update` (açıklama, etiket, kategori korunur; "youtube" izni). Log 📉. Instagram/TikTok API başlık değiştirmez.
+- İzleyici tutma (`scripts/retention.py`, panel 12 saatte bir, YouTube bağlıysa): YouTube Analytics `audienceWatchRatio`
+  (elapsedVideoTimeRatio) + `averageViewPercentage`; yayından 2-28 gün sonraki videolar (9 günden gençler 2 günde bir yeniden),
+  `data/retention.json`. Eğri videonun segment süreleriyle bölünür: kanca/intro/her haber sonunda kalan izleyici, kapanışa ulaşan,
+  bölüm kayıpları, en çok kayıp. `analyze.py` özeti `insights.retention`a ve ipuçlarını senaryo ipucunun BAŞINA koyar (az token
+  modunda 300 karakterde kesilir); kanca kaybı ≥%30, haber kartı başına ≥%15 olursa ipucu; intro kaybı ≥%10 ise panelde not.
+  Panel Analitik "👀 İZLEYİCİ NEREDE AYRILIYOR". Log 👀.
 - Viral alarmı (`scripts/viral_watch.py`, her izlenme senkronundan sonra `viralCheck()`): 24 saatten genç video, son 20
   eski videonun ortanca toplam izlenmesinin `settings.viral.ratio` (3) katı ve ≥ `minViews` (200) → bir kez (data/viral.json)
   log "🔥 VİRAL", ses, WhatsApp. Video yayınlandıktan SONRA düşmüş, aynı olaya ait, üretilmemiş yeni haber varsa
