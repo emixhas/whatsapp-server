@@ -207,7 +207,8 @@ export const GunlukOzet = ({ episode }: { episode: Episode }) => {
           {/* ThumbWide 1280x720 için çizilir; 1920x1080'e 1,5 kat büyütülür */}
           <div style={{ position: "absolute", left: 0, top: 0, width: 1280, height: 720, transform: "scale(1.5)", transformOrigin: "top left" }}>
             <Thumb wide text={episode.titles?.cover || first?.title || ""} category={first?.category} breaking={false} image={first?.image}
-              variant="A" dayLabel={episode.dayLabel} slotLabel={longLabel(episode)} timeRange={episode.timeRange} />
+              variant="A" dayLabel={episode.dayLabel} slotLabel={longLabel(episode)} timeRange={episode.timeRange}
+              images={haberler.slice(1, 3).map((h) => h.image).filter((x): x is string => !!x)} count={haberler.length} />
           </div>
         </Sequence>
       ) : null}

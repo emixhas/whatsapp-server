@@ -14,6 +14,7 @@ sınır açılınca sıradakiler en yeniden eskiye yüklenir. QUEUE_MAX_HOURS'te
 """
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -197,19 +198,66 @@ def yt_upload(path: Path):
             raise LimitReached(reason) from e
         raise
     vid = resp["id"]
-    thumb = path.with_name(path.stem + "-kapakYT.jpg")  # 16:9 YouTube kapağı; yoksa dikey
-    if not thumb.exists():
-        thumb = path.with_name(path.stem + "-kapak.jpg")
-    if thumb.exists():
-        try:
-            yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()
-        except Exception as e:  # kanal doğrulanmamışsa özel kapak reddedilir; yayın yine de tamam
-            print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
+    thumb_err = yt_set_thumb(yt, vid, path)
+    if not thumb_err:  # kapak izni çalışıyor: önceden kapağı reddedilmiş videoları da düzelt (en çok 3)
+        yt_retry_thumbs(yt, limit=3)
     meta = episode_meta(path.name) or {}
     lists = yt_add_to_playlists(yt, vid, meta)
     url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") else f"https://youtube.com/shorts/{vid}"
     return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
-            "titleVariant": meta.get("titleVariant"), "playlists": lists}
+            "titleVariant": meta.get("titleVariant"), "playlists": lists, **({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})}
+
+
+def yt_thumb_hint(e) -> str:
+    msg = str(e)
+    if re.search(r"(403|forbidden|permission|custom video thumbnails|not authorized)", msg, re.I):
+        return ("kanal özel kapak iznine sahip değil: youtube.com/verify adresinden kanalı telefonla doğrulayın "
+                "(doğrulanana kadar YouTube videonun ortasından rastgele kare seçer); sonra panelde 'kapakları yeniden yükle'")
+    if re.search(r"(429|rateLimit|quota)", msg, re.I):
+        return "YouTube kota/sıklık sınırı; bir sonraki yüklemede yeniden denenecek"
+    return msg[:200]
+
+
+def yt_set_thumb(yt, vid: str, path: Path):
+    """Videoya kendi kapağımızı (-kapakYT.jpg, yoksa dikey) koyar; hata varsa Türkçe nedeni döner (yayın yine tamam)."""
+    thumb = path.with_name(path.stem + "-kapakYT.jpg")  # 16:9 YouTube kapağı; yoksa dikey
+    if not thumb.exists():
+        thumb = path.with_name(path.stem + "-kapak.jpg")
+    if not thumb.exists():
+        return "kapak dosyası yok"
+    try:
+        yt.thumbnails().set(videoId=vid, media_body=MediaFileUpload(str(thumb))).execute()
+        print(f"  ▶ YouTube kapağı yüklendi ({thumb.name})", file=sys.stderr)
+        return None
+    except Exception as e:
+        hint = yt_thumb_hint(e)
+        print(f"  ! YouTube kapağı yüklenemedi: {hint}", file=sys.stderr)
+        return hint
+
+
+def yt_retry_thumbs(yt=None, limit: int = 50) -> dict:
+    """Kapağı reddedilmiş (thumbError) ya da hiç denenmemiş YouTube videolarına kapağı yeniden yükler."""
+    m = metrics()
+    todo = [(name, v["youtube"]) for name, v in m["videos"].items()
+            if (v.get("youtube") or {}).get("id") and not v["youtube"].get("thumbSet") and (OUT / name).exists()]
+    todo.sort(key=lambda x: x[1].get("publishedAt") or "", reverse=True)
+    if not todo:
+        return {"ok": True, "done": 0, "left": 0}
+    yt = yt or yt_service()
+    done, err = 0, None
+    for name, rec in todo[:limit]:
+        e = yt_set_thumb(yt, rec["id"], OUT / name)
+        if e:
+            err = e
+            rec["thumbError"] = e
+            if "özel kapak izni" in e or "kota" in e:
+                break  # aynı neden hepsini etkiler
+        else:
+            rec.pop("thumbError", None)
+            rec["thumbSet"] = True
+            done += 1
+    save_metrics(m)
+    return {"ok": err is None, "done": done, "left": len(todo) - done, "error": err}
 
 
 def playlist_names(meta: dict) -> list:
@@ -1001,6 +1049,7 @@ def main():
     ap.add_argument("--ig-diagnose", action="store_true", help="Instagram yayın zincirini sına")
     ap.add_argument("--delete-remote", help="videoyu yüklendiği platformlardan sil (dosya adı)")
     ap.add_argument("--flush", action="store_true")
+    ap.add_argument("--yt-thumbs", action="store_true", help="YouTube'da kapağı reddedilmiş/eksik videolara kapağı yeniden yükle")
     ap.add_argument("--queue", action="store_true", help="sınır sıraları (YouTube, TikTok): bekleyen videolar ve duraklatma")
     a = ap.parse_args()
     if a.status:
@@ -1018,6 +1067,8 @@ def main():
         return
     if a.flush:
         print(json.dumps(flush(), ensure_ascii=False)); return
+    if a.yt_thumbs:
+        print(json.dumps(yt_retry_thumbs(), ensure_ascii=False)); return
     if a.queue:
         for plat in ("tiktok", "youtube"):
             print(queue_line(plat))

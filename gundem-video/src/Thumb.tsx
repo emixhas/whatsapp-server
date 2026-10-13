@@ -9,6 +9,8 @@ export type ThumbProps = {
   /** "1. 5 SAAT" ya da "ANLIK HABER" */ slotLabel?: string;
   /** "09:00–14:00" */ timeRange?: string;
   /** true: 1280x720 YouTube kapağı; false: 1080x1920 dikey kapak */ wide?: boolean;
+  /** geniş kapak: diğer haberlerin fotoğrafları (köşede küçük kareler) */ images?: string[];
+  /** geniş kapak: videodaki haber sayısı ("+9 HABER") */ count?: number;
 };
 
 const YELLOW = "#FFD400";
@@ -27,7 +29,85 @@ function keyWordIndex(words: string[]): number {
  * kontürlü dev başlık, anahtar kelime sarı kutuda, kategori renginde kalın çerçeve, üstte SON DAKİKA bandı,
  * ortada gün / "N. 5 SAAT" / saat aralığı rozetleri. Her şey ortalı. Dikey 1080x1920 ve geniş 1280x720.
  */
-export const Thumb = ({ text, category, breaking, image, variant = "A", channel = "TÜRKİYE GÜNDEMİ", dayLabel, slotLabel, timeRange, wide = false }: ThumbProps) => {
+export const Thumb = (props: ThumbProps) => {
+  if (props.wide) return <WideThumb {...props} />;
+  return <TallThumb {...props} />;
+};
+
+/**
+ * YouTube (1280x720) kapağı — kullanıcı isteği: "aşırı dikkat çekici". Haber kanallarının tıklanan kapak dili:
+ * sağda büyük, canlı haber fotoğrafı; solda 2-3 satırlık DEV başlık (beyaz, kalın siyah kontür; anahtar kelime sarı
+ * kutuda), üstte eğik kırmızı etiket (GÜNÜN ÖZETİ / SON DAKİKA) + tarih, başlıktan fotoğrafa uzanan kırmızı ok,
+ * sağ altta diğer haberlerden iki küçük kare ve "+N HABER" rozeti. Az ama iri öğe: küçük ekranda da okunur.
+ */
+const WideThumb = ({ text, category, breaking, image, dayLabel, slotLabel, images = [], count }: ThumbProps) => {
+  const st = styleFor(category);
+  const words = trUpper(text).split(/\s+/).filter(Boolean);
+  const key = keyWordIndex(words);
+  const size = fitFontSize({ text, maxWidth: 640, base: 132, min: 64, maxLines: 3 });
+  const stroke = Math.max(7, Math.round(size * 0.09));
+  const label = slotLabel === "GÜNÜN ÖZETİ" || slotLabel === "HAFTANIN ÖZETİ" ? slotLabel : breaking ? "SON DAKİKA" : slotLabel === "ANLIK HABER" ? "SON DAKİKA" : st.label;
+  const extra = images.filter(Boolean).slice(0, 2);
+  const more = count && count > 1 ? count - 1 : 0;
+  return (
+    <AbsoluteFill style={{ background: "#07090f", fontFamily: theme.font, color: theme.white, overflow: "hidden" }}>
+      {/* sağda büyük fotoğraf, canlı renk, sola doğru karanlığa erir */}
+      {image ? (
+        <Img src={staticFile(image)} style={{ position: "absolute", right: 0, top: 0, width: 860, height: 720, objectFit: "cover", filter: "saturate(1.45) contrast(1.22) brightness(1.06)" }} />
+      ) : (
+        <AbsoluteFill style={{ background: `radial-gradient(circle at 72% 45%, ${st.accent}88 0%, #1a0306 45%, #07090f 100%)` }} />
+      )}
+      <AbsoluteFill style={{ background: "linear-gradient(90deg, #07090f 0%, #07090f 34%, rgba(7,9,15,.88) 46%, rgba(7,9,15,.25) 62%, rgba(7,9,15,0) 75%)" }} />
+      <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 70%, rgba(0,0,0,.55) 100%)" }} />
+      {/* soldan kırmızı enerji ışıması */}
+      <AbsoluteFill style={{ background: `radial-gradient(ellipse at 0% 100%, ${theme.red}99 0%, transparent 50%)`, mixBlendMode: "screen" }} />
+
+      {/* etiket + tarih */}
+      <div style={{ position: "absolute", left: 44, top: 38, display: "flex", alignItems: "center", gap: 18 }}>
+        <div style={{ background: theme.red, color: theme.white, fontSize: 40, fontWeight: 900, letterSpacing: 3, padding: "8px 22px", transform: "skewX(-10deg)", boxShadow: `0 0 34px ${theme.red}, 0 8px 22px rgba(0,0,0,.7)` }}>{label}</div>
+        {dayLabel ? <div style={{ fontSize: 34, fontWeight: 900, color: YELLOW, textShadow: "0 3px 12px #000, 0 0 2px #000" }}>{trUpper(dayLabel)}</div> : null}
+      </div>
+
+      {/* dev başlık */}
+      <div lang="tr" style={{ position: "absolute", left: 40, top: 130, width: 680, bottom: 70, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ fontSize: size, fontWeight: 900, lineHeight: 1.0, letterSpacing: -1.5 }}>
+          {words.map((w, i) => i === key ? (
+            <span key={i} style={{ display: "inline-block", background: YELLOW, color: "#0B0F1A", padding: "0 0.1em", margin: "0.03em 0.08em", borderRadius: 8, transform: "rotate(-2.5deg)", boxShadow: "0 10px 26px rgba(0,0,0,.7)" }}>{w}</span>
+          ) : (
+            <span key={i} style={{ display: "inline-block", margin: "0.03em 0.08em", WebkitTextStroke: `${stroke}px #000`, paintOrder: "stroke fill", textShadow: `0 ${stroke}px ${stroke * 2}px rgba(0,0,0,.95)` }}>{w}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* başlıktan fotoğrafa kırmızı ok */}
+      <svg width="190" height="120" viewBox="0 0 190 120" style={{ position: "absolute", left: 700, top: 250, filter: `drop-shadow(0 0 14px ${theme.red}) drop-shadow(0 6px 10px rgba(0,0,0,.8))` }}>
+        <path d="M6 70 C 60 30, 110 28, 150 48" stroke={theme.red} strokeWidth="16" fill="none" strokeLinecap="round" />
+        <path d="M128 18 L 184 54 L 122 82 Z" fill={theme.red} />
+      </svg>
+
+      {/* diğer haberlerden küçük kareler + "+N HABER" */}
+      {extra.length || more ? (
+        <div style={{ position: "absolute", right: 30, bottom: 28, display: "flex", alignItems: "flex-end", gap: 14 }}>
+          {extra.map((src, i) => (
+            <Img key={i} src={staticFile(src)} style={{ width: 190, height: 120, objectFit: "cover", border: "6px solid #fff", borderRadius: 6, transform: `rotate(${i ? 3 : -3}deg)`, boxShadow: "0 10px 26px rgba(0,0,0,.75)", filter: "saturate(1.3) contrast(1.1)" }} />
+          ))}
+          {more ? (
+            <div style={{ width: 130, height: 130, borderRadius: "50%", background: YELLOW, color: "#0B0F1A", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontWeight: 900, boxShadow: "0 0 30px rgba(255,212,0,.7), 0 10px 24px rgba(0,0,0,.7)", border: "5px solid #0B0F1A", transform: "rotate(-8deg)" }}>
+              <div style={{ fontSize: 52, lineHeight: 1 }}>+{more}</div>
+              <div style={{ fontSize: 22, letterSpacing: 1 }}>HABER</div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* sol kenarda kalın kırmızı şerit + ince çerçeve */}
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 14, background: theme.red, boxShadow: `0 0 30px ${theme.red}` }} />
+      <AbsoluteFill style={{ border: `6px solid ${theme.red}`, boxShadow: `inset 0 0 40px ${theme.red}66` }} />
+    </AbsoluteFill>
+  );
+};
+
+const TallThumb = ({ text, category, breaking, image, variant = "A", channel = "TÜRKİYE GÜNDEMİ", dayLabel, slotLabel, timeRange, wide = false }: ThumbProps) => {
   const st = styleFor(category);
   const accent = breaking ? theme.red : st.accent;
   const s = wide ? 0.62 : 1; // rozet ölçeği

@@ -1097,6 +1097,15 @@ app.get("/api/connections", async (_req, res) => res.json(await brain.connection
 app.post("/api/connect/youtube", async (_req, res) => { push("▶ YouTube: tarayıcıda Google onayı açılıyor (yeniden bağlama)"); const r = await py("publish.py", ["--connect", "youtube"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }; push(`${j.ok ? "✔" : "✖"} YouTube: ${j.message || j.error}`); res.json(j);
   // yeni izinlerle abone geçmişini hemen çek (6 saatlik beklemeyi atla): grafik eksik günleri hemen dolsun
   if (j.ok) py("followers.py", ["--sync", "--backfill"]).then((r) => { const e = r.json?.historyErrors?.youtube; push(e ? `👥 YouTube abone geçmişi alınamadı: ${e}` : "👥 YouTube abone geçmişi çekildi; Analitik grafiği güncellendi"); }).catch(() => {}); });
+// YouTube özel kapakları: kanal doğrulanınca (youtube.com/verify) reddedilmiş kapakları yeniden yükle
+async function ytThumbs() {
+  push("▶ YouTube: kapağı eksik/reddedilmiş videolara kapak yükleniyor");
+  const r = await py("publish.py", ["--yt-thumbs"]);
+  const j = r.json || { ok: false, error: (r.stderr || r.stdout || "").slice(-300) };
+  push(j.ok ? `▶ YouTube kapakları: ${j.done} video güncellendi${j.left ? `, ${j.left} kaldı` : ""}` : `▶ YouTube kapakları yüklenemedi: ${j.error}`);
+  return j;
+}
+app.post("/api/youtube/thumbs", async (_req, res) => res.json(await ytThumbs()));
 app.post("/api/disconnect/youtube", async (_req, res) => { const r = await py("publish.py", ["--disconnect", "youtube"]); push("YouTube bağlantısı kesildi"); res.json(r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) }); });
 let igConnect = null; // süren bağlanma denemesi (publish.py --connect instagram)
 app.post("/api/connect/instagram", async (_req, res) => {
@@ -1186,6 +1195,7 @@ async function handleCommand(text) {
       reply = r.ok ? `${cmd.which === "top" ? "En çok izlenen" : "Son"} video (${r.title.slice(0, 70)}${pick.views ? `, ${pick.views} izlenme` : ""}) farklı senaryo ve görsellerle yeniden üretiliyor; bitince yayınlayacağım.` : r.error;
       if (!r.ok) action = "none"; break;
     }
+    case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
     case "comments_digest": { const r = await commentsDigest({ manual: true }); reply = r.ok ? (r.count ? `${r.count} yeni yorumu özetledim, WhatsApp'a gönderdim.` : "Yeni yorum yok.") : r.error; extra = { text: r.text }; break; }

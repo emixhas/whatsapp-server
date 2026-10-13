@@ -5,7 +5,7 @@ type Word = { w: string; s: number; e: number };
 const WINDOW = 4; // ekranda aynı anda görünen kelime sayısı
 
 /** Yanan altyazı: konuşulan kelime vurgulanır, 4 kelimelik pencere kayar. */
-export const Captions = ({ words, accent, bottom = 300, size = 60 }: { words?: Word[]; accent: string; bottom?: number; size?: number }) => {
+export const Captions = ({ words, accent, bottom = 300, top, size = 60 }: { words?: Word[]; accent: string; bottom?: number; top?: number; size?: number }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   if (!words || !words.length) return null;
@@ -18,7 +18,7 @@ export const Captions = ({ words, accent, bottom = 300, size = 60 }: { words?: W
   const longest = Math.max(...slice.map((w) => w.w.length), 1);
   const fs = longest > 12 ? Math.max(38, Math.round(size * 12 / longest)) : size;
   return (
-    <div style={{ position: "absolute", left: 50, right: 50, bottom, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "4px 18px", fontFamily: theme.font, lineHeight: 1.15 }}>
+    <div style={{ position: "absolute", left: 50, right: 50, ...(top !== undefined ? { top } : { bottom }), display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "4px 18px", fontFamily: theme.font, lineHeight: 1.15 }}>
       {slice.map((w, i) => {
         const gi = start + i;
         const active = gi === idx;

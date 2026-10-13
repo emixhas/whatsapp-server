@@ -54,7 +54,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `Thumb` çizer (TikTok `video_cover_timestamp_ms: 0`, Instagram varsayılanı da ilk kare). Silinmiş fotoğraf
   yolu kapağa verilmez. `--missing` kapağı eksik eski videoları tamamlar; panel açılışından 90 sn sonra çalışır.
   Panel listesi ve WhatsApp küçük resmi `-kapak.jpg`den üretilir (`makeThumb`).
-- Kapak (`Thumb.tsx`): haber fotoğrafı tam ekran (dikeyde `imageTall`, canlı renk), yoksa kategori ışıltısı +
+- YouTube kapağı (`Thumb.tsx` → `WideThumb`, 1280x720, kullanıcı: "aşırı dikkat çekici"): sağda büyük canlı fotoğraf
+  (soldan karanlığa erir), solda en çok 3 satır DEV başlık (beyaz, kalın siyah kontür, anahtar kelime sarı kutuda,
+  `fitFontSize` 640 px), üstte eğik kırmızı etiket (GÜNÜN ÖZETİ / HAFTANIN ÖZETİ / SON DAKİKA / kategori) + sarı tarih,
+  başlıktan fotoğrafa kırmızı ok, sağ altta diğer haberlerden 2 küçük kare (`images`) ve sarı "+N HABER" rozeti (`count`),
+  sol kenarda kırmızı şerit. `render_thumbs` ve `GunlukOzet` 0. kare aynı prop'ları verir. ÖNEMLİ: YouTube özel kapağı
+  ancak telefonla doğrulanmış kanalda kabul eder; reddedilirse YouTube videonun ortasından kare seçer (12-13 Ekim yatay
+  videolarda görülen buydu). `publish.yt_set_thumb` hatayı Türkçe nedenle loga ("  ! YouTube kapağı yüklenemedi: kanal
+  özel kapak iznine sahip değil: youtube.com/verify…") ve metrics `youtube.thumbError`a yazar; başarılı yüklemeden sonra
+  `yt_retry_thumbs` reddedilmiş/denenmemiş en çok 3 eski videoyu düzeltir; `publish.py --yt-thumbs`, `POST /api/youtube/thumbs`,
+  komut "kapakları yeniden yükle", YouTube kartında "🖼 Kapakları yeniden yükle".
+- Dikey kapak (`TallThumb`): haber fotoğrafı tam ekran (dikeyde `imageTall`, canlı renk), yoksa kategori ışıltısı +
   büyük illüstrasyon; ışık huzmeleri, vinyet, kategori renginde kalın çerçeve; eğik SON DAKİKA/kategori bandı,
   gün, "N. 5 SAAT" + sarı saat aralığı; dev başlık siyah kontürlü, anahtar kelime (rakamlı ya da en uzun) sarı
   kutuda. Her şey ortalı.
@@ -78,13 +88,23 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   text, words, extra}; panel Ayarlar → Gelişmiş anahtar + "Ek gizlenecek kelimeler"): kökler `DEFAULT_WORDS` (intihar,
   öl+ek kalıbı — ölçü/ölçek değil, silah, cinayet, katil/katle, bıçak, kurşun, tecavüz, istismar, taciz, uyuşturucu, ceset,
   işkence, vahşet, boğ+ek kalıbı — Boğaz değil, tabanca, pompalı, rehin, bomba, terör), Türkçe ekler dahil, `tr_lower`
-  uzunluk korur. SES: `tts.py` segmenti `censor.pieces()` ile parçalar, kelimenin yerine 1 kHz bip (`beep_wav`, 0,32-0,8 sn,
-  yumuşak kenar) koyar, parçaları `join_wavs` ile birleştirir (log "🔇 N hassas kelime bipleniyor"). YAZI: `mask()` bir harfi
+  uzunluk korur. SES (kullanıcı: "kesilmesin, kelime arkadan duyulsun"): `tts.py` segmenti `censor.pieces()` ile
+  [text, word, text…] parçalarına böler, hassas kelime de seslendirilir; `bleep_word` kelimeyi -20 LUFS'a getirip yarıya
+  indirir, üstüne aynı uzunlukta yumuşak kenarlı 1 kHz bip (~6 dB üstte) bindirir; `trim_wav` her parçanın baş/son
+  sessizliğini kırpıp 70 ms boşluk bırakır (kesik duyulmaz), `join_wavs` birleştirir (log "🔇 N hassas kelime bipleniyor"). YAZI: `mask()` bir harfi
   yıldızlar (int*har, s*lah, ö*üm, c*nayet): `assemble_script` ekrandaki kanca/haber başlıkları, titles A/B/cover ve
   publishTitle; `tts.py` yanan altyazı (`words`); `common.build_caption` başlık + açıklama; hassas hashtag `clean_tags` ile
   atılır (build_caption, caption_tags, meta hashtags). `narration` alanı özgün kalır (seslendirme ve tekrar engeli için).
-- Yanan altyazı: `tts.py` `word_timings()` segment süresini karakter ağırlığıyla kelimelere dağıtır
-  (noktalama duraklama payı); `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`.
+- Yanan altyazı ses ile eş zamanlı (kullanıcı: "çok önemli"; `scripts/align.py`): 1) konuşma tanıma — mlx-whisper (ya da
+  faster-whisper) kuruluysa (`bash scripts/install_align.sh`, model `settings.captions.whisperModel`, varsayılan
+  mlx-community/whisper-small-mlx; `captions.whisper: false` kapatır) tanınan kelimeler senaryo kelimeleriyle difflib ile
+  eşlenir, eşlenmeyenler komşuların arasına yayılır; 2) duraklama çapası (her zaman) — ffmpeg silencedetect (-38 dB, 0,12 sn)
+  ile sesin gerçek başı/sonu ve duraklamalar bulunur, noktalı/virgüllü kelime sonları ±0,7 sn içindeki en yakın duraklamaya
+  oturur, aradakiler harf ağırlığıyla dağılır (sentetik testte en büyük kayma 0,81 → 0,04 sn); bipli segmentte parçaların
+  kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
+  `Captions.tsx` 4 kelimelik pencere, konuşulan kelime vurgulu, `lang="tr"`; `top` verilirse üstten konumlanır.
+- Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
+  numara + başlık + kaynak onun altında (top 1110).
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
   aksam 17-05 90 sn "Günün Özeti"}; `FORMAT`/`DURATION` env verilmezse saat seçer. Prompt'a
   `__FORMAT_ADI__`, `__FORMAT_INTRO__`, `__FORMAT_TON__` gider; intro'da format etiketi görünür.

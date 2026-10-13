@@ -56,16 +56,17 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
         )}
       </div>
 
-      {/* metin bloğu */}
-      <div style={{ position: "absolute", top: 830, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>
+      {/* yanan altyazı: görselin HEMEN altında (kullanıcı isteği: göz görselden kaymadan okusun) */}
+      <Captions words={words} accent={st.accent} top={812} size={64} />
+
+      {/* başlık bloğu: altyazının altında, ekranın alt bölümünde (kullanıcı isteği: başlık aşağıda) */}
+      <div style={{ position: "absolute", top: 1110, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 28 }}>
           <div style={{ fontSize: 150, fontWeight: 900, color: st.accent, lineHeight: 0.85 }}>{String(index + 1).padStart(2, "0")}</div>
           <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 920 - 28 - textWidth(String(index + 1).padStart(2, "0"), 150), base: breaking ? 84 : 76, min: 48, maxLines: 3, upper: false }), fontWeight: 900, lineHeight: 1.06, paddingBottom: 6, overflowWrap: "normal", wordBreak: "keep-all" }}>{title}</div>
         </div>
         {source ? <div style={{ opacity: textIn, marginTop: 18, fontSize: 32, color: theme.muted }}>Kaynak: {source}</div> : null}
       </div>
-      {/* yanan altyazı: anlatım metni kelime kelime */}
-      <Captions words={words} accent={st.accent} bottom={560} size={62} />
 
       <div style={{ position: "absolute", bottom: 130, left: 80, right: 80, height: 10, background: theme.card, borderRadius: 5 }}>
         <div style={{ width: `${progress * 100}%`, height: "100%", background: st.accent, borderRadius: 5 }} />

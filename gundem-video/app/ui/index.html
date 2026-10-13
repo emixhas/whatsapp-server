@@ -219,7 +219,7 @@
         <label class="row"><span class="sw" id="waStages"></span><span>Her aşamayı WhatsApp'a bildir (yalnız tek mesaj kapalıyken: üretim, ses, render, yükleme, yayın)</span></label>
       </details>
       <details class="grp"><summary>📣 Yayın hesapları <span class="sum" id="accSum"></span></summary>
-<h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts" style="gap:8px;flex-wrap:wrap"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button><button class="ghost danger" id="ytDisconnect" style="display:none">Bağlantıyı kes</button></div>
+<h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts" style="gap:8px;flex-wrap:wrap"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button><button class="ghost" id="ytThumbs" title="Kanal doğrulandıktan sonra (youtube.com/verify) reddedilmiş kapakları yeniden yükler">🖼 Kapakları yeniden yükle</button><button class="ghost danger" id="ytDisconnect" style="display:none">Bağlantıyı kes</button></div>
       <h2>INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button><button class="ghost" id="igDiag">🩺 Instagram'ı sına</button></div>
       <h2>TIKTOK</h2><div class="conninfo" id="ttInfo"></div>
       <div id="ttKeys" style="display:grid;gap:6px;margin:8px 0">
@@ -623,6 +623,7 @@ $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topi
   }catch(e){toast('Sunucuya ulaşılamadı',true);}finally{setTimeout(()=>{btn.disabled=false;},3000);}};
 $('#censorOn').onclick=async()=>{const on=!$('#censorOn').classList.contains('on');await post('/api/settings',{censor:{enabled:on}});addMsg('j',on?'Hassas kelimeler gizlenecek: seste bip, yazıda yıldız.':'Hassas kelime gizleme kapatıldı.');refreshStatus();};
 $('#censorExtra').onchange=async e=>{const extra=e.target.value.split(',').map(x=>x.trim()).filter(Boolean);await post('/api/settings',{censor:{extra}});addMsg('j',extra.length?'Ek gizlenecek kelimeler: '+extra.join(', '):'Ek gizlenecek kelime yok.');};
+$('#ytThumbs').onclick=async()=>{const b=$('#ytThumbs');b.disabled=true;try{const r=await post('/api/youtube/thumbs',{});toast(r.ok?`${r.done} videonun kapağı yüklendi`:(r.error||'Yüklenemedi'),!r.ok);addMsg('j',r.ok?`YouTube kapakları güncellendi: ${r.done} video${r.left?`, ${r.left} kaldı`:''}.`:'YouTube kapakları yüklenemedi: '+r.error);}finally{b.disabled=false;}};
 $('#tokenSaver').onclick=async()=>{const on=!$('#tokenSaver').classList.contains('on');await post('/api/settings',{tokenSaver:on});addMsg('j',on?'Az token modu açık: video senaryoları en az Claude kullanımıyla yazılacak.':'Az token modu kapalı: senaryo seçili seviyede yazılır.');refreshStatus();};
 $('#effScript').onchange=e=>post('/api/settings',{claudeEffort:{script:e.target.value}}).then(()=>addMsg('j','Senaryo effort: '+e.target.value));
 $('#effChat').onchange=e=>post('/api/settings',{claudeEffort:{chat:e.target.value}}).then(()=>addMsg('j','Sohbet seviyesi: '+e.target.value));

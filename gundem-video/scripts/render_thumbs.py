@@ -40,8 +40,10 @@ def jobs_for(ep: dict, base: str) -> list:
 
     js = [{"id": "Thumb", "out": f"{base}-kapak{v}.jpg", "props": {**cp, "text": text_for(v), "variant": v,
                                                                      "image": media(first.get("imageTall")) or media(first.get("image"))}} for v in ("A", "B")]
+    others = [m for m in (media(h.get("image")) for h in haber[1:]) if m][:2]  # geniş kapakta küçük kareler
     js.append({"id": "ThumbWide", "out": f"{base}-kapakYT.jpg", "props": {**cp, "text": text_for(v_sel), "variant": v_sel,
-                                                                           "image": media(first.get("image")), "wide": True}})
+                                                                           "image": media(first.get("image")), "wide": True,
+                                                                           "images": others, "count": len(haber)}})
     return js
 
 

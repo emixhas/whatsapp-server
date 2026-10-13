@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hassas kelimeleri platform denetimine takılmayacak, ama anlaşılır kalacak şekilde gizler (kullanıcı isteği).
 
-- Seste: kelimenin yerine "bip" sesi çalar (tts.py, `pieces()`); cümlenin geri kalanı okunur, anlam bağlamdan anlaşılır.
+- Seste: kelime kısık sesle okunur ve üstüne "bip" biner (tts.py, `pieces()`); kelime arkadan duyulur, anlaşılır.
 - Yazıda (açıklama, yayın başlığı, ekrandaki başlıklar, yanan altyazı): kelimenin bir harfi yıldızla gizlenir
   (`mask()`): intihar → int*har, silah → s*lah, ölüm → ö*üm, cinayet → c*nayet. Hassas kelime içeren hashtag atılır.
 
@@ -82,7 +82,9 @@ def has(text: str) -> bool:
 
 
 def pieces(text: str) -> list:
-    """Seslendirme parçaları: [("text", "..."), ("beep", saniye), ("text", "...")…]; hassas kelime yoksa tek parça."""
+    """Seslendirme parçaları: [("text", "..."), ("word", "intihar"), ("text", "...")…]; hassas kelime yoksa tek parça.
+    "word" parçası da seslendirilir; tts.py onu kısık sesle bırakıp üstüne bip bindirir (kelime arkadan duyulur,
+    anlaşılır, ama net söylenmez — kullanıcı isteği: "hem duyulsun hem biplensin")."""
     c = cfg()
     if not text or not c.get("enabled") or not c.get("audio"):
         return [("text", text)]
@@ -92,10 +94,10 @@ def pieces(text: str) -> list:
         if before and re.search(r"[\wçğıöşüÇĞİÖŞÜ]", before):  # yalnız noktalama kalan parça seslendirilmez
             out.append(("text", before))
         word = text[a:b]
-        out.append(("beep", round(min(0.8, max(0.32, 0.065 * len(word))), 2)))
-        last = b
+        tail = re.match(r"[.,;:!?…]+", text[b:])  # kelimeye bitişik noktalama (tonlama için) kelimeyle okunur
+        out.append(("word", word + (tail.group(0) if tail else "")))
+        last = b + (len(tail.group(0)) if tail else 0)
     after = text[last:].strip()
-    # kelimeden sonra yalnız noktalama kaldıysa ayrı seslendirilmez
     if after and re.search(r"[\wçğıöşüÇĞİÖŞÜ]", after):
         out.append(("text", after))
     return out or [("text", text)]
