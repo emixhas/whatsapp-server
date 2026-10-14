@@ -189,11 +189,14 @@ _PARTY_CTX = re.compile(r"\b(AK|DEM|İYİ|TİP)\b(?=\s+(?:Parti|PARTİ|parti))|\
 
 # Okunuş sözlüğü: yabancı kökenli marka/adların Türkçe okunuşu (yalnız seslendirmede; ekranda yazım değişmez).
 # Ekler korunur: "Mynet'in" → "Maynet'in". settings.pronunciations {"Kelime": "Okunuş"} ile genişletilir.
-PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka"}
+# TV: ses motorları İngilizce "tivi" okuyor (kullanıcı bildirimi) → "Teve" ("Halk TV'de" → "Halk Teve'de", "TV8" → "Teve 8"; ATV, NTV de).
+PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka", "TV": "Teve", "ATV": "Ateve", "NTV": "Enteve"}
+_GLUED_NUM = re.compile(r"(?<![\wçğıöşüÇĞİÖŞÜ])(TV)(?=\d)")  # kanal adındaki bitişik sayı ayrılır: TV8 → TV 8 (sayı yazıya çevrilsin)
 
 
 def _pronounce(t: str) -> str:
     words = {**PRONOUNCE, **(settings().get("pronunciations") or {})}
+    t = _GLUED_NUM.sub(r"\1 ", t)
     for w, say in words.items():
         if not (w and say):
             continue
@@ -218,7 +221,7 @@ def speakable(text: str) -> str:
 
 def prep_text(text: str) -> str:
     """Yerel modeller için: rakamlar yazıya, parti adları kelime olarak, BÜYÜK HARFLİ kelimeler (NATO, TÜİK) normal yazıma."""
-    t = speakable(normalize_tr(text))
+    t = speakable(normalize_tr(_GLUED_NUM.sub(r"\1 ", text)))
     return re.sub(r"\b([A-ZÇĞİÖŞÜ]{4,})\b", lambda m: m.group(1)[0] + tr_lower(m.group(1)[1:]), t)
 
 
