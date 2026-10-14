@@ -262,6 +262,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   #sondakika eklenir; en çok izlenen saat tekrarı bu videoları seçmez (görüntü haber aramasıyla yeniden üretilemez). Panel 📡 grubunda
   iki anahtar; yardım listesinde. Sandbox'ta sahte Claude planıyla dikey + yatay iki videodan montaj ve pipeline (sessiz ses) + render
   denendi; gerçek WhatsApp indirmesi ve Claude'un kare okuması Mac'te denenmedi. Videonun kendi sesi kullanılmaz (seslendirme + müzik).
+- Sosyal medya linkinden haber (kullanıcı isteği: "Instagram'da viral olmuş haberin linkini göndersem videoyu çekip bizim stilimizde
+  haber yap"; `commands.js` `social_video` kuralı — instagram.com/reel|p|tv, tiktok, x/twitter status, youtube shorts/watch/youtu.be,
+  facebook reel/watch/videos, fb.watch; linkin dışındaki metin talimat —, `server.js socialVideoNews` → `runVideoNews`,
+  `scripts/social_video.py`): yt-dlp (≤1080p mp4, ≤10 dk `duration <? 600` — süresi bilinmeyen de geçer, ≤300 MB, `--write-info-json`)
+  `work/wa_inbox/`a indirir; açıklama, hesap (`credit` "Instagram / @hesap"), izlenme/beğeni/tarih okunur. Instagram çoğu zaman
+  girişsiz vermez: `secrets/social_cookies.txt` ya da `settings.social.cookiesFromBrowser` (panel 📡 "Sosyal medya çerezleri") →
+  `--cookies-from-browser`; giriş hatasında Türkçe yol gösterir. Aynı olay `news_lookup.py --topic` (açıklamanın ilk 10 anlamlı kelimesi)
+  ile haber sitelerinde aranır → `related`. Montaj planına `kaynak_paylasim` + `ilgili_haberler` gider (`prompts/montaj.md`: açıklama
+  doğrulanmamış iddia, "sosyal medyada paylaşılan görüntülerde…"; haber sitesindeki bilgi esas; videonun tamamı değil seçilmiş kısa
+  parçalar). Her kartın kaynağı `credit` (zorla), ANLIK_SOURCE/URL ile açıklamada "Haber kaynağı: Instagram / @hesap · link". Yayın
+  onaylı (userVideo). Telif: başkasının görüntüsü; kaynak gösterilir ama platformlar telif bildirimi yapabilir — kullanıcıya söylendi.
+  `wa_video.py` konuşma tanıma çalışmazsa (mlx-whisper ilk ihtiyaçta kendiliğinden kurulur; olmadıysa) logda ve "Kurgu hazır"
+  mesajında söyler (`plan.speech`).
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =

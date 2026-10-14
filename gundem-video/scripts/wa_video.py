@@ -27,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, settings  # noqa: E402
 from info_card import new_job  # noqa: E402
 
+SPEECH_OFF = False  # konuşma tanıma kurulamadı/kapalı: plan yalnız kareler ve sahne geçişleriyle
 CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
 
 
@@ -60,7 +61,9 @@ def transcript(p: Path, tmp: Path) -> list:
         run = align._whisper()
     except Exception:
         run = None
-    if not run:
+    if not run:  # align._whisper Apple Silicon'da mlx-whisper'ı ilk ihtiyaçta kendisi kurar; olmadıysa söylenir
+        global SPEECH_OFF
+        SPEECH_OFF = True
         return []
     wav = tmp / f"{p.stem}.wav"
     if subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(p), "-vn", "-ac", "1", "-ar", "16000", str(wav)]).returncode:
@@ -198,7 +201,7 @@ def build(job: dict) -> dict:
     if not srcs:
         return {"ok": False, "error": "video dosyası bulunamadı"}
     instruction = str(job.get("instruction") or "").strip()
-    m = re.search(r"(\d{2,3})\s*(saniye|sn)\b", instruction.lower())
+    m = re.search(r"(\d{2,3})\s*(?:saniye\w*|sn\b)", instruction.lower())
     dur = int(job.get("duration") or (int(m.group(1)) if m else 0) or (settings().get("waVideo") or {}).get("duration") or 30)
     dur = max(20, min(60, dur))
     name = f"video-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -221,8 +224,15 @@ def build(job: dict) -> dict:
         blocks.append({"video": i, "sure": round(info["duration"], 1), "boyut": f"{info['width']}x{info['height']}",
                        "sahne_gecisleri": info["scenes"], "konusma": [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][:80],
                        "kareler_dosyasi": info["sheet"], "kareler": info["frames"]})
+    if SPEECH_OFF:
+        log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): kurgu yalnız kareler ve sahne geçişleriyle yapılacak — Mac'te bir kez 'bash scripts/install_align.sh'")
     tpl = (ROOT / "prompts" / "montaj.md").read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
-    prompt = tpl + json.dumps({"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}, ensure_ascii=False, indent=1)
+    social, rel = job.get("social") or None, job.get("related") or []
+    inp = {"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}
+    if social:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
+        inp["kaynak_paylasim"] = {k: social.get(k) for k in ("platform", "credit", "uploader", "caption", "title", "views", "likes", "comments", "date")}
+        inp["ilgili_haberler"] = rel[:5]
+    prompt = tpl + json.dumps(inp, ensure_ascii=False, indent=1)
     log("🎬 kurgu planı yazılıyor (Claude görüntüleri ve konuşmayı inceliyor)")
     rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] for b in blocks))
     if rc not in (0, 2):  # resim aracı açılamadıysa ya da geçersiz yanıt: resimsiz bir kez daha
@@ -265,6 +275,10 @@ def build(job: dict) -> dict:
         log(f"✂️ {'kanca' if hook else str(k) + '. haber'}: " + ", ".join(f"v{c['video']} {c['start']:.1f}-{c['end']:.1f} sn" for c in clips)
             + f" (toplam {clen} sn, seslendirme ~{round(need)} sn)")
     src = str(segs[1].get("source") or "Türkiye Gündemi")
+    if social:  # görüntünün sahibi her kartta görünür (VİDEO: Instagram / @hesap)
+        src = social.get("credit") or src
+        for x in segs:
+            x["source"] = src
     script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
               "importanceReason": plan.get("importanceReason", "WhatsApp'tan gönderilen görüntü"), "firstComment": plan.get("firstComment"),
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,
@@ -287,7 +301,7 @@ def build(job: dict) -> dict:
     return {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)),
             "plan": {"label": str(plan.get("label") or "SON DAKİKA")[:30], "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
                      "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
-                     "narration": " ".join(s["narration"] for s in segs)[:900]}}
+                     "narration": " ".join(s["narration"] for s in segs)[:900], "speech": not SPEECH_OFF}}
 
 
 if __name__ == "__main__":

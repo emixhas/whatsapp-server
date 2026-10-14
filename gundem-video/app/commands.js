@@ -48,6 +48,9 @@ export function parseCommand(raw) {
   const link = String(raw).match(/https?:\/\/[^\s<>"']+/i);
   if (link) {
     if (/(^|\s)(aç|göster)(\s|$)/.test(t)) return { action: "open_url", target: link[0], reply: "" };
+    // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
+    if (/^https?:\/\/([\w-]+\.)*(instagram\.com\/(reels?|p|tv)\/|tiktok\.com\/|(x|twitter)\.com\/[^/\s]+\/status\/|youtube\.com\/(shorts\/|watch)|youtu\.be\/|facebook\.com\/(reel|watch|share|[^/\s]+\/videos)|fb\.watch\/)/i.test(link[0]))
+      return { action: "social_video", url: link[0], instruction: String(raw).replace(link[0], " ").replace(/\s+/g, " ").trim(), reply: "" };
     return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, reply: "" };
   }
   // İki noktasız: "son dakika Eşref Tek geri dönüyor", "son dakika X ile haber üret", "X hakkında son dakika videosu yap".

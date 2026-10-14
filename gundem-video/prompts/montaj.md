@@ -9,6 +9,16 @@ ELİNDEKİLER
   çizelgesi: KARELER dosyası (resim). Kareler soldan sağa, yukarıdan aşağı sıralıdır; her karenin saniyesi "kareler" listesinde.
   Resmi Read aracıyla aç ve İNCELE: ne görünüyor, hangi bölüm net, hangisi titrek/karanlık/bulanık/boş.
 
+SOSYAL MEDYA PAYLAŞIMI ("kaynak_paylasim" varsa: video Instagram/TikTok/X… paylaşımından indirildi)
+- Paylaşımın açıklaması ("caption") DOĞRULANMAMIŞ iddiadır: "sosyal medyada paylaşılan görüntülerde…", "paylaşıma göre…", "iddia
+  edildi" diliyle aktar; kesin bilgi gibi yazma. Kişileri suçlu ilan etme.
+- "ilgili_haberler" haber sitelerinde aynı olaya dair bulunan haberlerdir: oradaki bilgi doğrulanmış sayılır, önce onu kullan
+  ("… sitesinin haberine göre" diyebilirsin). Çelişki varsa haber sitesindekini esas al.
+- İzlenme/beğeni yüksekse "sosyal medyada çok konuşulan / gündem olan" diyebilirsin (sayıyı verilen değerden yaz, uydurma).
+- "source" alanına "kaynak_paylasim.credit" metnini yaz (ör. "Instagram / @hesap").
+- Görüntüdeki başka kanalın logosu/yazısı en az görünen bölümleri tercih et; paylaşımın yalnız haber değeri olan anlarını kullan,
+  videonun tamamını baştan sona aynen verme (kısa, seçilmiş parçalar).
+
 KURGU KURALLARI
 - Kesilecekler: ilk ve son saniyelerdeki kayıt başlatma/bitirme sarsıntısı, kararmış/bulanık/boş kareler, kameranın yere ya da
   cebe döndüğü yerler, olayla ilgisiz kısımlar, aynı görüntünün uzun tekrarı ve talimatta istenmeyen her şey.
