@@ -114,7 +114,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
       ? "GÖREV: Günlük performans raporu hazırla. Son 24 saat ve toplam; en iyi/en kötü video; kategori ve saat gözlemleri; yarın için 3 somut öneri. report alanına Markdown yaz, reply'da 2 cümleyle özetle."
       : mode === "plan"
         ? "GÖREV: Önümüzdeki 7 gün için içerik planı yap: günde kaç video, hangi süreler, hangi saatler, kategori ağırlıkları, denenecek 2 hipotez ve nasıl ölçüleceği. Veriye dayan; veri yoksa makul başlangıç planı kur ve bunu söyle. report alanına Markdown, reply'da özet. Planı note eylemiyle hafızana da kısa yaz."
-        : `${opts.channel === "whatsapp" ? "KANAL: WhatsApp (sahip telefondan yazdı; yanıt düz metin gider, sesli okunmaz — reply 3 cümleye kadar olabilir).\n" : ""}KULLANICI DEDİ Kİ: ${userText}`;
+        : `${opts.channel === "whatsapp" ? "KANAL: WhatsApp (sahip telefondan yazdı; yanıt düz metin gider). Sahibin kuralı: KISA yaz — reply en çok 2 kısa cümle; ara aşamaları, ne yapacağını adım adım anlatma; yalnız sonucu, işin başladığını ya da sorunu söyle. report boş kalsın (sahip rapor/liste istemedikçe).\n" : ""}KULLANICI DEDİ Kİ: ${userText}`;
     // komut listesi: "command" eylemiyle kural motorundaki her komut çalıştırılabilir (WhatsApp'ta yazılabilen her şey)
     const cmds = mode === "chat" ? `\n\nKOMUT LİSTESİ ("command" eylemiyle çalıştırılır; metni bu kalıplara yakın yaz):\n${HELP_TEXT}` : "";
     const prompt = `${system}${cmds}\n\nBAĞLAM:\n${JSON.stringify(ctx)}\n\n${task}\n\nSadece JSON döndür.`;

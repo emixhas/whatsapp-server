@@ -151,7 +151,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     const r = await handleCommand(text, { source: "whatsapp" });
     try { await sock?.sendPresenceUpdate?.("paused", jid); } catch { /* yok */ }
     let reply = r.reply || "Tamam.";
-    if (r.report) reply += "\n\n" + r.report.slice(0, 3500);
+    // kısa modda rapor yalnız istenirse (rapor, liste, detay…) eklenir; yanıt en çok ~700 karakter
+    if (r.report && (!brief() || /(rapor|liste|detay|ayrıntı|hepsini|tamamını)/.test(t))) reply += "\n\n" + r.report.slice(0, 3500);
+    else if (brief() && reply.length > 700 && !/evet sil/.test(reply)) reply = reply.slice(0, 690).replace(/\s\S*$/, "") + " …";
     if (r.pending?.length) { reply += "\n\n(Bu eylem panelden onay bekliyor.)"; }
     await send(jid, reply);
   }
@@ -189,6 +191,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   // Tek mesaj modunun yayın satırları (post_pipeline "📤 platform: …") → platform başına son durum, kısa
   const PL = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" };
   const SHORT = { youtube: "youtube", instagram: "insta", tiktok: "tiktok" };
+  // kısa mesaj modu (kullanıcı isteği, 14 Ekim: "uzun mesajlar atmasın, aşamaları bildirmesin; sorun varsa, işe başladıysa, başarılıysa
+  // onu bildirsin"): settings.whatsapp.brief (varsayılan açık)
+  const brief = () => settings().whatsapp?.brief !== false;
   const APPROVE = /^(onay|onayla|evet|yayınla|yayinla|ok|tamam|paylaş|paylas)(\s|$|[.,!])/;
   // mesajdaki platform adları (Türkçe küçük harfte "Insta" → "ınsta" olur; ı → i ile bakılır)
   function pickPlatforms(t) {
@@ -202,14 +207,16 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   // ilk yorumun sonucu (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): yazıldı mı, yazılamadıysa neden
   const commentNote = (pl, v) => {
     if (pl === "tiktok") return "";  // TikTok API yorum yazmaya izin vermez
-    if (v.firstComment) return "\n   💬 ilk yorum yazıldı";
+    if (v.firstComment) return brief() ? "" : "\n   💬 ilk yorum yazıldı";
     if (v.commentError) return /izni yok/.test(v.commentError)
       ? `\n   💬 ilk yorum yazılamadı: yorum izni yok → panelde ${PL[pl]} kartında 🔄 Yeniden bağla (izin gelince kendiliğinden yazılır)`
       : `\n   💬 ilk yorum yazılamadı (${String(v.commentError).slice(0, 80)}); 20 dk içinde yeniden denenecek`;
     return "";
   };
   // onay satırı: hepsi için "onay", tek platform için "onay insta" …
-  const approveLine = (platforms) => `\n\n✅ Hepsinde yayınlamak için *onay* → ${platforms.map((pl) => PL[pl]).join(", ")}` +
+  const approveLine = (platforms) => brief()
+    ? `\n\nYayın: *onay* (${platforms.map((pl) => PL[pl]).join(", ")})${platforms.length > 1 ? ` · ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : ""} · *iptal*`
+    : `\n\n✅ Hepsinde yayınlamak için *onay* → ${platforms.map((pl) => PL[pl]).join(", ")}` +
     (platforms.length > 1 ? `\n▫️ Yalnız birinde: ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : "") + "\n❌ Yayınlamamak için *iptal*";
   function publishLines(summary) {
     const last = {}; const notes = [];
@@ -275,6 +282,21 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       ? approveLine(platforms)
       : (!autoPl.length && !L.platforms.length ? "\n\n(Yayın için bağlı platform yok; panelden hesap bağlayın.)" : "");
     const jid = ownerJid();
+    if (summary && brief()) { // kısa: ne hazır, nerede yayında, sorun varsa ne, onay gerekiyorsa tek satır
+      const first = v.segments.find((s) => s.kind === "haber")?.title || v.label;
+      const pub = publishLines(summary).filter((l) => !/^ℹ️/.test(l));
+      const okPl = pub.filter((l) => l.startsWith("✅")).map((l) => l.replace(/^✅ /, "").replace(/[:\s(].*$/, ""));
+      const bad = pub.filter((l) => !l.startsWith("✅")).map((l) => l.slice(0, 90));
+      const pending = needAsk ? approveLine(platforms) : "";
+      const msg = [`✅ *Video hazır*: ${first} (${v.duration ?? "?"} sn)`, okPl.length && !schedAt ? `📤 Yayında: ${okPl.join(", ")}` : "",
+        ...(schedAt ? [] : bad), schedAt ? `⏰ ${whenLabel(schedAt)}'de yayınlanacak` : ""].filter(Boolean).join("\n") + pending;
+      let fileSent = false;
+      if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, msg); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
+      if (fileSent === false) await send(jid, msg);
+      if (pending) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
+      push(`💬 WhatsApp'a kısa bildirim gönderildi: ${v.label}${fileSent ? " (+video)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
+      return { ok: true, fileSent, awaitingApproval: !!pending };
+    }
     if (summary) { // tek mesaj: video dosyası + kısa özet aynı mesajda (dosya gönderilmezse düz metin)
       const titles = v.segments.filter((s) => s.kind === "haber").slice(0, 5).map((s) => `• ${s.breaking ? "🔴 " : ""}${s.title}`).join("\n");
       const pub = publishLines(summary).filter((l) => !(needAsk && /^ℹ️ otomatik yayın yapılmadı/.test(l)));  // onay satırı zaten anlatıyor

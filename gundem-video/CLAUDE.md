@@ -587,6 +587,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Yeni video (panelden ya da launchd'den; `out/` izlenir) → sahibine: başlıklar + seslendirme metni,
   Wi-Fi linki, tünel açıksa dış link, ayar açıksa video dosyasının kendisi; bağlı platform varsa
   "onay" ister. "onay/evet/yayınla" → bağlı platformlara yayın; "iptal" → yayınlanmaz.
+- Kısa mesaj modu (kullanıcı isteği, 14 Ekim: "uzun mesajlar atmasın, aşamaları bildirmesin; sorun varsa, işe başladıysa, başarılıysa
+  onu bildirsin"; `settings.whatsapp.brief`, varsayılan açık, panel WhatsApp grubunda ✂️ anahtar): aşama bildirimleri (`notifyStage`)
+  hiç gitmez; video haberinde yalnız "🎬 Başladı: …" (link/video alınınca), "❌ …" (indirme/kurgu/üretim hatası) ve video bitince
+  `notifyVideo` kısa biçimi: "✅ *Video hazır*: <ilk haber> (N sn)" + "📤 Yayında: …" + yalnız sorunlu platform satırları + tek satır
+  onay ("Yayın: *onay* (…) · *onay insta* … · *iptal*"); "✂️ Kurgu hazır", "🔗 Paylaşım indirildi", "inceliyorum" mesajları yalnız logda.
+  Haber linki yanıtı "🎬 Başladı: <başlık>. Bitince video gelecek." Beyin WhatsApp'ta en çok 2 kısa cümle (prompt'ta kural), komut
+  çalıştırdıysa yalnız komutun yanıtı gider; rapor yalnız "rapor/liste/detay/ayrıntı" istenirse eklenir, yanıt ~700 karakterde kesilir
+  ("evet sil" onay listesi kesilmez). İlk yorum başarısı yazılmaz, yalnız sorunu. Sağlık uyarıları, planlı yayın sonucu, viral alarmı
+  ve zamanlanmış raporlar (haftalık rapor, yorum özeti) değişmedi.
 - Diğer mesajları ÖNCE Claude anlar (kullanıcı isteği, 14 Ekim: "WhatsApp'tan gönderdiğim mesajları Claude alsın, ne demek istediğimi
   anlasın, yapsın"; `server.js smartWhatsApp`, `settings.whatsapp.smart`, panel WhatsApp grubunda 🧠 anahtar): `handleCommand(text,
   {source: "whatsapp"})` → `think(text, "chat", {channel: "whatsapp"})`. Beyin prompt'una `HELP_TEXT` "KOMUT LİSTESİ" olarak girer;
