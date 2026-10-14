@@ -18,7 +18,8 @@ try:
     urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPSHandler(context=_ctx)))
     os.environ.setdefault("SSL_CERT_FILE", certifi.where())
 except Exception:
-    pass
+    if os.path.exists("/etc/ssl/cert.pem"):  # certifi yoksa macOS'un kendi sertifika deposu
+        os.environ.setdefault("SSL_CERT_FILE", "/etc/ssl/cert.pem")
 OUT = ROOT / "out"
 DATA.mkdir(exist_ok=True)
 

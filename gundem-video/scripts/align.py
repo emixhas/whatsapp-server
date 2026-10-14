@@ -16,6 +16,7 @@ Kullanım (deneme): python3 scripts/align.py public/audio/seg-01.wav "Seslendirm
 """
 import difflib
 import re
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -285,14 +286,20 @@ def mms_batch(jobs: list) -> int:
         json.dump(payload, f, ensure_ascii=False)
         tmp = f.name
     try:
-        r = subprocess.run([str(py), str(ROOT / "scripts" / "mms_align.py"), tmp], capture_output=True, text=True, timeout=900)
+        env = dict(os.environ)
+        if not Path(env.get("SSL_CERT_FILE") or "/yok").exists() and Path("/etc/ssl/cert.pem").exists():
+            env["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"  # model indirmesi: python.org Python'u sistem sertifikalarını görmez
+        r = subprocess.run([str(py), str(ROOT / "scripts" / "mms_align.py"), tmp], capture_output=True, text=True, timeout=900, env=env)
         out = json.loads((r.stdout or "").strip().splitlines()[-1]) if (r.stdout or "").strip() else {"ok": False, "error": (r.stderr or "")[-200:]}
     except Exception as e:
         out = {"ok": False, "error": str(e)[:200]}
     finally:
         Path(tmp).unlink(missing_ok=True)
     if not out.get("ok"):
-        print(f"  ! metin hizalama çalışmadı: {str(out.get('error'))[:200]}", file=sys.stderr)
+        err = str(out.get("error"))
+        hint = (" — model indirilemedi (sertifika); Mac'te bir kez: bash scripts/install_align.sh" if "CERTIFICATE_VERIFY_FAILED" in err
+                else "")
+        print(f"  ! metin hizalama çalışmadı: {err[:200]}{hint}", file=sys.stderr)
         return 0
     n = 0
     for (w, ws, _), res in zip(jobs, out.get("results") or []):

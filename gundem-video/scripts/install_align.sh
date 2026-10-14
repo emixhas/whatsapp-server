@@ -11,7 +11,7 @@ PY=".venv/bin/python3"; [ -x "$PY" ] || PY="python3"
 echo "▶ 1/2 metin hizalama ortamı (.venv-align)"
 [ -x .venv-align/bin/python ] || python3 -m venv .venv-align
 .venv-align/bin/python -m pip install -q --upgrade pip
-.venv-align/bin/python -m pip install -q "torch==2.8.*" "torchaudio==2.8.*" numpy || { echo "✖ torch/torchaudio kurulamadı"; exit 1; }
+.venv-align/bin/python -m pip install -q "torch==2.8.*" "torchaudio==2.8.*" numpy certifi || { echo "✖ torch/torchaudio kurulamadı"; exit 1; }
 echo "  model indiriliyor ve deneniyor (ilk sefer birkaç dakika sürebilir)"
 T="$(mktemp -d)"
 say -v Yelda -o "$T/t.wav" --data-format=LEI16@22050 "Fenerbahçe, Galatasaray'ı dört bir yendi." 2>/dev/null || true
@@ -19,7 +19,7 @@ if [ -s "$T/t.wav" ]; then
   printf '%s' '[["Fenerbahçe,","Fenerbahçe,"],["Galatasaray’ı","Galatasaray’ı"],["4-1","dört bir"],["yendi.","yendi."]]' > "$T/w.json"
   .venv-align/bin/python scripts/mms_align.py "$T/t.wav" "$T/w.json"
 else
-  .venv-align/bin/python -c "import torchaudio; torchaudio.pipelines.MMS_FA.get_model(); print('model hazır')"
+  .venv-align/bin/python -c "import sys; sys.path.insert(0, 'scripts'); import mms_align, torchaudio; torchaudio.pipelines.MMS_FA.get_model(); print('model hazır')"
 fi
 rm -rf "$T"
 

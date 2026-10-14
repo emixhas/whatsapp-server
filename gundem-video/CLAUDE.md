@@ -114,6 +114,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Kurulum `bash scripts/install_align.sh` (MMS + mlx-whisper, Yelda sesiyle deneme). Yoksa/hata verirse konuşma tanımaya, o da
   yoksa duraklama çapasına düşer; yöntem segmentte `captionSync` ("metin hizalama"). `captions.forcedAlign: false` kapatır.
   Sandbox'ta model inemediği için gerçek ses üzerinde DENENMEDİ; arayüz torchaudio 2.8 kaynağıyla doğrulandı.
+  Sertifika (kullanıcının Mac'i, 14 Ekim: "metin hizalama çalışmadı: CERTIFICATE_VERIFY_FAILED"): python.org Python'u ve onun
+  `.venv-align`'ı macOS sertifika deposunu görmez, model indirmesi düşer. `mms_align._use_ca()` certifi → SSL_CERT_FILE →
+  /etc/ssl/cert.pem sırasıyla varsayılan HTTPS bağlamını kurar; `align.mms_batch` çocuğa SSL_CERT_FILE verir; `common.py` certifi yoksa
+  /etc/ssl/cert.pem'e düşer; `install_align.sh` .venv-align'a certifi kurar ve modeli kurulumda indirir. Hata satırında kurulum ipucu.
   Video sonrası denetim (`scripts/caption_qa.py`, pipeline render + json kopyasından sonra): son mp4'ün sesi (müzikli) mlx-whisper
   ile dinlenir, ≥3 harfli kelimeler difflib ile eşlenir, altyazının ekrana geldiği an (s − captionLead) sesteki başlangıçla
   karşılaştırılır: "🔤 altyazı denetimi: N kelime, 150 ms içinde olan yüzde X, ortanca kayma Y ms geç/erken". Sorun (150 ms içinde

@@ -18,6 +18,25 @@ import re
 import sys
 import wave
 
+def _use_ca() -> None:
+    """Model ilk kullanımda HTTPS ile iner. python.org Python'u (ve onun venv'i) macOS sertifika deposunu görmez:
+    "CERTIFICATE_VERIFY_FAILED" (kullanıcının Mac'inde 14 Ekim). certifi → SSL_CERT_FILE → /etc/ssl/cert.pem sırasıyla."""
+    import os
+    import ssl
+    ca = None
+    try:
+        import certifi
+        ca = certifi.where()
+    except Exception:
+        ca = os.environ.get("SSL_CERT_FILE") if os.path.exists(os.environ.get("SSL_CERT_FILE") or "") else None
+    if not ca and os.path.exists("/etc/ssl/cert.pem"):
+        ca = "/etc/ssl/cert.pem"
+    if ca:
+        os.environ["SSL_CERT_FILE"] = ca
+        ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=ca)
+
+
+_use_ca()
 TR = str.maketrans({"ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u", "â": "a", "î": "i", "û": "u"})
 
 
