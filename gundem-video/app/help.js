@@ -2,6 +2,8 @@
 // Yeni bir kural eklerken buraya da yaz (kullanıcı WhatsApp'tan ne yazabileceğini buradan öğrenir).
 export const HELP_TEXT = `📋 *Emixhas komutları*
 
+🧠 Bu kalıpları ezberlemenize gerek yok: ne istediğinizi kendi cümlenizle yazın, Claude anlayıp yapar (soru sorarsanız cevaplar). Aşağıdakiler örnektir.
+
 ✅ *Yayın onayı*
 • onay / evet — bekleyen videoyu yayınla
 • onay insta / onay youtube / onay tiktok — yalnız o platformda yayınla (ör. *onay insta youtube*); diğerleri beklemede kalır, sonra *onay tiktok* ya da *iptal*

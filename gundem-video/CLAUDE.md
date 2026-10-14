@@ -587,7 +587,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Yeni video (panelden ya da launchd'den; `out/` izlenir) → sahibine: başlıklar + seslendirme metni,
   Wi-Fi linki, tünel açıksa dış link, ayar açıksa video dosyasının kendisi; bağlı platform varsa
   "onay" ister. "onay/evet/yayınla" → bağlı platformlara yayın; "iptal" → yayınlanmaz.
-- Diğer mesajlar `handleCommand()` üzerinden aynı kural+beyin yoluna gider; yanıt düz metin döner.
+- Diğer mesajları ÖNCE Claude anlar (kullanıcı isteği, 14 Ekim: "WhatsApp'tan gönderdiğim mesajları Claude alsın, ne demek istediğimi
+  anlasın, yapsın"; `server.js smartWhatsApp`, `settings.whatsapp.smart`, panel WhatsApp grubunda 🧠 anahtar): `handleCommand(text,
+  {source: "whatsapp"})` → `think(text, "chat", {channel: "whatsapp"})`. Beyin prompt'una `HELP_TEXT` "KOMUT LİSTESİ" olarak girer;
+  yeni eylem `{"type":"command","text":"…"}` kural motorundaki herhangi bir komutu çalıştırır (`execAction` → `handleCommand(text,
+  {direct: true})`; kural yoksa "Bu komutu tanımadım", beyne geri dönmez), komutun yanıtı/raporu beyin yanıtının altına eklenir.
+  Kurallar: soru → eylemsiz cevap (gerekirse yalnız okuma komutu), geri dönüşsüz onay adımı ("evet sil") açıkça yazılmadıkça yok.
+  Hızlı yol (Claude'a gitmez): link içeren mesaj (haber/sosyal medya videosu + saat), yayın onayı/iptali ve video talimatı (whatsapp.js
+  önce işler), tek kelimelik kesin komutlar (`WA_DIRECT`: yardım, durum, iptal, evet sil…). Claude'a ulaşılamazsa eski kural yolu.
+  Claude düşünürken WhatsApp'ta "yazıyor…" görünür (`sendPresenceUpdate`). Yanıt ~10-20 sn sürer.
 - Gönderen tanıma (komutlar sessizce kaybolmasın): WhatsApp'ın yeni LID kimliğinde 1'e 1 sohbet `…@lid` gelir, numara
   `key.senderPn`'dedir; `isOwner` LID'i telefon sanmaz. Sahip: senderPn/participantPn/remoteJid telefonu eşleşen,
   ya da bilinen sahip LID'i (`learnOwnerLid`: bağlanınca `sock.onWhatsApp(ownerJid)` ile öğrenilir, senderPn ile
@@ -692,7 +700,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - En çok izlenen saatlerde tekrar (kullanıcı isteği: "en çok izlenen 3 saatte günün en çok izlenen haberini sırasıyla farklı
   şekilde, mümkünse farklı görsellerle 30 sn yeniden yayınla"; `scripts/peak_remake.py`, `settings.peakRemake` {enabled true,
   count 3, duration 30, leadMin 20, minViews 10, defaultHours [12, 18, 21], fromHour 8, toHour 23, minGapHours 3, minVideos 12,
-  minPerHour 2}): `--plan` Shorts videolarının yayın saatine göre izlenme ortalaması (komşu saatlerle yumuşatılmış; yalnız kendi
+  minPerHour 2}): `--plan` son `windowDays` (7, kullanıcı kararı 14 Ekim; o pencerede 12 video yoksa tüm geçmiş) günün Shorts videolarının yayın saatine göre izlenme ortalaması (komşu saatlerle yumuşatılmış; yalnız kendi
   verisi ≥2 video olan saat aday; 24 saatten genç videolar sayılmaz), en iyi 3 saat aralarında ≥3 saat; veri azsa varsayılan
   saatler. `--pick` son 24 saatin en çok izlenen videosu; son 24 saatte (bu özellikle ya da elle 🔁) yeniden yayınlanmış video/
   aynı olay (`same_event`) atlanır → 1. saatte günün 1 numarası, sonra sıradakiler. Panel (`server.js` peakRemake): saat

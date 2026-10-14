@@ -6,7 +6,7 @@ farklı şekilde, mümkünse farklı görsellerle yeniden 30 saniyelik yayınlas
   python3 scripts/peak_remake.py --pick     # şu an yeniden yayınlanacak video (son 24 saatin en çok izleneni)
   python3 scripts/peak_remake.py --status   # plan + bugün yapılanlar
 
-Saatler: uzun olmayan (Shorts) videoların yayın saatine göre toplam izlenme ortalaması, komşu saatlerle yumuşatılır
+Saatler: son `windowDays` (7) günün (yetmezse tüm geçmişin) uzun olmayan (Shorts) videolarının yayın saatine göre toplam izlenme ortalaması, komşu saatlerle yumuşatılır
 (0,5 · önceki + sonraki); aday saat kendi verisi olan (en az `minPerHour` 2 video) saattir, 24 saatten genç videolar
 (izlenmesi oturmadı) sayılmaz. `fromHour`-`toHour` (08-23) arasındaki en iyi `count` (3) saat, aralarında en az
 `minGapHours` (3) saat; eksik kalırsa varsayılanlarla tamamlanır. İzlenme verili video `minVideos`ten (12) azsa `defaultHours` (12, 18, 21: öğle arası ve akşam) kullanılır.
@@ -31,7 +31,7 @@ STATE = DATA / "peak_remake.json"
 
 def cfg() -> dict:
     return {"enabled": True, "count": 3, "defaultHours": [12, 18, 21], "fromHour": 8, "toHour": 23, "minGapHours": 3,
-            "minVideos": 12, "minPerHour": 2, "minViews": 10, "duration": 30, "leadMin": 20, **(settings().get("peakRemake") or {})}
+            "minVideos": 12, "minPerHour": 2, "windowDays": 7, "minViews": 10, "duration": 30, "leadMin": 20, **(settings().get("peakRemake") or {})}
 
 
 def plan() -> dict:
@@ -39,8 +39,14 @@ def plan() -> dict:
     n_want = max(1, min(5, int(c["count"])))
     now = time.time()
     # 24 saatten genç videoların izlenmesi henüz oturmadı; saat hesabına girmez
-    rows = [r for r in video_rows() if r["hour"] is not None and r.get("format") not in LONG and r["views"] > 0
-            and now - _made_at(r["name"], {"date": r.get("date"), "timeLabel": r.get("time")}) > 86400]
+    all_rows = [r for r in video_rows() if r["hour"] is not None and r.get("format") not in LONG and r["views"] > 0
+                and now - _made_at(r["name"], {"date": r.get("date"), "timeLabel": r.get("time")}) > 86400]
+    # kullanıcı kararı (14 Ekim): saatler son `windowDays` (7) günün videolarından; o pencerede veri yetmezse tüm geçmiş
+    win = float(c["windowDays"]) * 86400
+    rows = [r for r in all_rows if now - _made_at(r["name"], {"date": r.get("date"), "timeLabel": r.get("time")}) <= win + 86400]
+    window = f"son {int(c['windowDays'])} gün"
+    if len(rows) < int(c["minVideos"]):
+        rows, window = all_rows, "tüm geçmiş"
     by = defaultdict(list)
     for r in rows:
         by[r["hour"]].append(r["views"])
@@ -70,7 +76,7 @@ def plan() -> dict:
         if all(min(abs(h - x), 24 - abs(h - x)) >= int(c["minGapHours"]) for x in hours):
             hours.append(h)
     detail = [{"hour": h, "avg": round(smooth(h) or 0), "n": len(by.get(h, []))} for h in hours]
-    return {"hours": sorted(hours), "source": "izlenme verisi", "videos": len(rows), "detail": detail}
+    return {"hours": sorted(hours), "source": f"izlenme verisi, {window}", "videos": len(rows), "detail": detail}
 
 
 def _made_at(name: str, meta: dict) -> float:

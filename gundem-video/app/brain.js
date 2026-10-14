@@ -3,6 +3,7 @@ import { execFile, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { HELP_TEXT } from "./help.js";
 
 // Claude Code komutunun tam yolu. Arka plan servisi kullanıcının kabuk ayarlarını yüklemediği için
 // scripts/find_claude.sh bilinen kurulum yerlerini ve kullanıcının kabuğunu dener. Bulunan yol saklanır.
@@ -106,15 +107,17 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
   };
 
   /** mode: chat | report | plan */
-  async function ask(userText, mode = "chat") {
+  async function ask(userText, mode = "chat", opts = {}) {
     const system = readFileSync(path.join(ROOT, "prompts/emixhas.md"), "utf8");
     const ctx = await context();
     const task = mode === "report"
       ? "GÖREV: Günlük performans raporu hazırla. Son 24 saat ve toplam; en iyi/en kötü video; kategori ve saat gözlemleri; yarın için 3 somut öneri. report alanına Markdown yaz, reply'da 2 cümleyle özetle."
       : mode === "plan"
         ? "GÖREV: Önümüzdeki 7 gün için içerik planı yap: günde kaç video, hangi süreler, hangi saatler, kategori ağırlıkları, denenecek 2 hipotez ve nasıl ölçüleceği. Veriye dayan; veri yoksa makul başlangıç planı kur ve bunu söyle. report alanına Markdown, reply'da özet. Planı note eylemiyle hafızana da kısa yaz."
-        : `KULLANICI DEDİ Kİ: ${userText}`;
-    const prompt = `${system}\n\nBAĞLAM:\n${JSON.stringify(ctx)}\n\n${task}\n\nSadece JSON döndür.`;
+        : `${opts.channel === "whatsapp" ? "KANAL: WhatsApp (sahip telefondan yazdı; yanıt düz metin gider, sesli okunmaz — reply 3 cümleye kadar olabilir).\n" : ""}KULLANICI DEDİ Kİ: ${userText}`;
+    // komut listesi: "command" eylemiyle kural motorundaki her komut çalıştırılabilir (WhatsApp'ta yazılabilen her şey)
+    const cmds = mode === "chat" ? `\n\nKOMUT LİSTESİ ("command" eylemiyle çalıştırılır; metni bu kalıplara yakın yaz):\n${HELP_TEXT}` : "";
+    const prompt = `${system}${cmds}\n\nBAĞLAM:\n${JSON.stringify(ctx)}\n\n${task}\n\nSadece JSON döndür.`;
     let r;
     try { r = await runClaude(prompt, mode); } catch (e) { console.error("[beyin]", e.message); return { reply: `Beyne bağlanılamadı: ${claudeError(e.message)}`, report: "", actions: [], error: true }; }
     try { return { ...parseJson(r.text), usage: r.usage }; } catch { return { reply: r.text.slice(0, 300), report: "", actions: [], usage: r.usage }; }

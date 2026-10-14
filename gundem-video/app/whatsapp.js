@@ -147,7 +147,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
     if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
     if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
+    try { await sock?.sendPresenceUpdate?.("composing", jid); } catch { /* "yazıyor…" gösterilemedi */ }  // Claude düşünürken
     const r = await handleCommand(text, { source: "whatsapp" });
+    try { await sock?.sendPresenceUpdate?.("paused", jid); } catch { /* yok */ }
     let reply = r.reply || "Tamam.";
     if (r.report) reply += "\n\n" + r.report.slice(0, 3500);
     if (r.pending?.length) { reply += "\n\n(Bu eylem panelden onay bekliyor.)"; }

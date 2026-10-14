@@ -1362,7 +1362,7 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 
 // ---------- beyin
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
-const SAFE = new Set(["generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
+const SAFE = new Set(["command", "generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 async function execAction(a) {
   switch (a.type) {
@@ -1376,6 +1376,7 @@ async function execAction(a) {
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
     case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶|♪|💬)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "command": { const r = await handleCommand(String(a.text || ""), { source: "brain", direct: true }); return { ok: !/tanımadım/.test(r.reply || ""), reply: r.reply, report: r.report }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
     case "tunnel": return a.enabled === false ? stopTunnel() : startTunnel();
@@ -1388,10 +1389,10 @@ async function execAction(a) {
     default: return { ok: false, error: "bilinmeyen eylem" };
   }
 }
-async function think(text, mode = "chat") {
+async function think(text, mode = "chat", opts = {}) {
   push(`🧠 ${mode === "chat" ? "düşünüyor" : mode === "report" ? "rapor hazırlıyor" : "plan yapıyor"}: ${String(text).slice(0, 80)}`);
   const t0 = Date.now();
-  const r = await brain.ask(text, mode);
+  const r = await brain.ask(text, mode, opts);
   push(`🧠 yanıt ${Math.round((Date.now() - t0) / 1000)} sn${r.actions.length ? `, ${r.actions.length} eylem` : ""}${r.error ? " (hata)" : ""}`);
   const done = [], pending = [];
   for (const a of r.actions) { if (needsConfirm(a)) { pending.push(a); push(`⏸ onay bekliyor: ${a.type}`); } else { const res = await execAction(a); push(`⚡ ${a.type}${a.duration ? " " + a.duration + " sn" : ""}${a.platforms ? " → " + a.platforms.join(",") : ""}: ${res?.ok === false ? "hata " + (res.error || "") : "tamam"}`); done.push({ ...a, result: res }); } }
@@ -1726,8 +1727,25 @@ app.post("/api/ask", async (req, res) => { state.busy = "düşünüyor"; try { r
 app.post("/api/actions", async (req, res) => { const out = []; for (const a of req.body?.actions || []) out.push({ ...a, result: await execAction(a) }); res.json(out); });
 
 // ---------- API: sesli komut → kural, kural yoksa beyin
+// WhatsApp mesajını önce Claude anlar (kullanıcı isteği, 14 Ekim: "WhatsApp'tan gönderdiğim mesajları Claude alsın, ne demek istediğimi
+// anlasın, yapsın"): beyin yanıtlar ve gerekirse kural komutlarını "command" eylemiyle çalıştırır. Link (haber/sosyal medya videosu),
+// kısa kesin komutlar (yardım, durum, iptal, evet sil) ve Claude'a ulaşılamazsa eski kural yolu. `settings.whatsapp.smart: false` kapatır.
+const WA_DIRECT = /^(yardım|komutlar|durum|status|iptal|vazgeç|hayır|evet sil|sil|dur|sus|tamam|teşekkürler|sağ ol)$/;
+async function smartWhatsApp(text) {
+  const t = text.toLocaleLowerCase("tr-TR").replace(/[.!?]+$/, "").trim();
+  if (settings().whatsapp?.smart === false || !t || /https?:\/\/|www\./i.test(text) || WA_DIRECT.test(t)) return null;
+  push(`💬 WhatsApp mesajı Claude'a soruluyor: ${text.slice(0, 80)}`);
+  const r = await think(text, "chat", { channel: "whatsapp" });
+  if (r.error) { push("💬 Claude'a ulaşılamadı; mesaj kurallarla işleniyor"); return null; }
+  const outs = r.done.filter((d) => d.type === "command").map((d) => [d.result?.reply, d.result?.report].filter(Boolean).join("\n\n")).filter(Boolean);
+  const reply = [r.reply, ...outs].filter(Boolean).join("\n\n") || "Tamam.";
+  return { action: "brain", reply, report: r.report, pending: r.pending, done: r.done };
+}
 async function handleCommand(text, opts = {}) {
-  text = String(text || ""); const cmd = parseCommand(text); const videos = listVideos();
+  text = String(text || "");
+  if (opts.source === "whatsapp" && !opts.direct) { const sm = await smartWhatsApp(text).catch((e) => { push(`💬 Claude yorumu başarısız: ${e.message}`); return null; }); if (sm) return sm; }
+  const cmd = parseCommand(text); const videos = listVideos();
+  if (opts.direct && cmd.action === "brain") return { action: "none", reply: `Bu komutu tanımadım: "${text.slice(0, 80)}"` };
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   if (igCleanupPending && /(iptal|vazgeç|boş ver|silme)/.test(text.toLocaleLowerCase("tr-TR")) && cmd.action !== "ig_cleanup") { igCleanupPending = null; push("🗑 Instagram temizliği iptal edildi"); }
   switch (cmd.action) {
@@ -1826,7 +1844,7 @@ async function handleCommand(text, opts = {}) {
     case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }
-  if (!["report", "plan", "brain", "none", "stop"].includes(cmd.action) && reply) brain.addExchange(text, reply, [{ type: cmd.action }]);
+  if (!["report", "plan", "brain", "none", "stop"].includes(cmd.action) && reply && !opts.direct) brain.addExchange(text, reply, [{ type: cmd.action }]);
   return { action, reply, payload, heard: text, ...extra };
 }
 app.post("/api/command", async (req, res) => res.json(await handleCommand(req.body?.text)));
