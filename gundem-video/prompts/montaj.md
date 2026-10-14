@@ -16,8 +16,14 @@ SOSYAL MEDYA PAYLAŞIMI ("kaynak_paylasim" varsa: video Instagram/TikTok/X… pa
   ("… sitesinin haberine göre" diyebilirsin). Çelişki varsa haber sitesindekini esas al.
 - İzlenme/beğeni yüksekse "sosyal medyada çok konuşulan / gündem olan" diyebilirsin (sayıyı verilen değerden yaz, uydurma).
 - "source" alanına "kaynak_paylasim.credit" metnini yaz (ör. "Instagram / @hesap").
-- Görüntüdeki başka kanalın logosu/yazısı en az görünen bölümleri tercih et; paylaşımın yalnız haber değeri olan anlarını kullan,
-  videonun tamamını baştan sona aynen verme (kısa, seçilmiş parçalar).
+- Görüntüdeki başka kanalın logosu/yazısı en az görünen bölümleri tercih et.
+- "orijinal_ses_tamami" VARSA (kanal sahibinin kararı: "indirilen videonun mümkünse hepsini orijinal sesiyle paylaş"): videonun
+  TAMAMI tek bir "sesli" bölümde kendi sesiyle oynar (yalnız baştaki/sondaki kayıt sarsıntısı ve boş/siyah kareler kesilir).
+  Video "en_fazla_saniye"den uzunsa olayın/konuşmanın en önemli kesintisiz bölümünü seç (en çok o kadar saniye; cümle ortasında
+  kesme). Yapı: kanca → kısa giriş haberi (12-20 kelime: ne olduğu, nerede, kaynak; "işte o anlar" gibi videoya bağla) → "sesli"
+  bölüm → kısa devam haberi (10-20 kelime: gelişme/sonuç ya da haber sitelerindeki bilgi). Kanca ve haber parçaları için
+  videonun en çarpıcı anlarını kullanabilirsin (sesli bölümde tekrar görünmesi sorun değil).
+- "orijinal_ses_tamami" YOKSA: paylaşımın yalnız haber değeri olan anlarını kullan, videonun tamamını baştan sona aynen verme.
 
 KURGU KURALLARI
 - Kesilecekler: ilk ve son saniyelerdeki kayıt başlatma/bitirme sarsıntısı, kararmış/bulanık/boş kareler, kameranın yere ya da
@@ -29,7 +35,7 @@ KURGU KURALLARI
 - Parça sınırları videonun süresi içinde kalsın. Saniyeleri 0,1 hassasiyetle yaz.
 
 ORİJİNAL SESLİ BÖLÜM ("sesli") — YALNIZ talimat videonun kendi sesini isterse ("orijinal sesi kullan", "kendi sesi kalsın",
-"konuşması duyulsun", "röportajı kullan" gibi). İstenmediyse hiç kullanma.
+"konuşması duyulsun", "röportajı kullan" gibi) ya da girdide "orijinal_ses_tamami" varsa. İkisi de yoksa hiç kullanma.
 - Bu bölümde seslendirme YOKTUR: video kendi sesiyle oynar, biz susarız; video bitince seslendirme kaldığı yerden devam eder.
 - Yapı: kanca → kısa giriş haberi (ne olduğunu 1-2 cümleyle söyle, "işte o anlar" gibi videoya bağla) → "sesli" bölüm →
   devam haberi (gelişme/sonuç). Talimat başka bir sıra isterse ona uy.

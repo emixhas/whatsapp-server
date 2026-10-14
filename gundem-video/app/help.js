@@ -16,7 +16,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • en çok izlenen videoyu yeniden yayınla · son videoyu yeniden yayınla
 • ⏰ Linkin yanına saat yazın, video hemen hazırlanır ve o saatte yayınlanır: "18:30'da paylaş", "akşam 9'da", "yarın sabah 9", "2 saat sonra". Saat yazmazsanız hemen yayınlanır
 • planlı yayınlar · planlı yayını iptal et · planlı yayını şimdi yayınla
-• 🔗 *Instagram/TikTok/X/YouTube paylaşım linki* (+ isterseniz nasıl bir haber istediğiniz) → videoyu indirip aynı şekilde kurgularım; hesap adı kaynak olarak yazılır, olay haber sitelerinde aranıp doğrulanır
+• 🔗 *Instagram/TikTok/X/YouTube paylaşım linki* (+ isterseniz nasıl bir haber istediğiniz) → videoyu indirip aynı şekilde kurgularım; hesap adı kaynak olarak yazılır, olay haber sitelerinde aranıp doğrulanır. Video baştan sona kendi sesiyle oynar (önce kısa giriş, sonra video, sonra kısa kapanış; en çok 150 sn, daha uzunsa en önemli bölüm). İstemezseniz linkin yanına "sesi kapat" yazın
 • 📹 *video gönderin* + açıklamaya nasıl bir haber istediğinizi yazın (ör. "Kadıköy'de yangın, 30 saniye, baştaki titrek kısmı kes") → kurgulanır, gereksiz yerler kesilir, seslendirilir; açıklama yoksa sorarım. Birden çok videoyu arka arkaya gönderirseniz tek haberde birleştiririm (en çok 4). Bitince size gelir, *onay* yazınca yayınlanır. Talimata "orijinal sesini kullan" yazarsanız o bölümde seslendirme susar, video kendi sesiyle oynar; dikey videoda haberler tam ekran dikey düzende olur.
 
 📡 *Otomatik içerikler*

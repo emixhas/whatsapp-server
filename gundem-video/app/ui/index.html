@@ -247,6 +247,7 @@
         <div class="acts"><button class="ghost" id="wtopNow">🏆 Derlemeyi şimdi üret</button></div>
         <label class="row"><span class="sw" id="waVidOn"></span><span>🎬 WhatsApp'tan gönderdiğim videodan haber: açıklamaya (ya da ardından yazdığım mesaja) göre kurgu yapılır, gereksiz yerler kesilir, seslendirilir</span></label>
         <label class="row"><span class="sw" id="waVidPub"></span><span>…bu videolar onay beklemeden bağlı hesaplarda yayınlansın (kapalıyken önce size gelir, <b>onay</b> yazınca yayınlanır)</span></label>
+        <label class="row"><span class="sw" id="socialSound"></span><span>🔊 Sosyal medya linkinden indirilen video baştan sona kendi sesiyle oynasın (kanca + kısa giriş → video → kısa kapanış; en çok 150 sn, daha uzunsa en önemli bölüm). Talimata "sesi kapat" yazarsanız o videoda uygulanmaz</span></label>
         <label class="row"><span>🔗 Sosyal medya çerezleri (Instagram/TikTok/X linkinden video indirmek için; Instagram çoğu videoyu girişsiz vermez): <select id="socialCookies" class="inl"><option value="">yok</option><option value="chrome">Chrome</option><option value="safari">Safari</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Edge</option></select> — seçtiğiniz tarayıcıda Instagram'a giriş yapılı olmalı</span></label>
         <label class="row"><span class="sw" id="storiesOn"></span><span>📸 Instagram hikâyesi: her akşam <input id="storiesTime" type="time" class="inl"> son 24 saatin en çok izlenen <input id="storiesCount" type="number" min="1" max="5" class="inl" style="width:48px"> haberi (önce sıralama kartı, sonra videolar; 60 sn'den uzunsa kesilir)</span></label>
         <div class="acts"><button class="ghost" id="storiesNow">📸 Hikâyeyi şimdi paylaş</button></div>
@@ -751,7 +752,7 @@ async function loadInfo(){const i=await api('/api/info');if(!i)return;const S=st
   $('#weatherOn').classList.toggle('on',i.weather?.enabled!==false);$('#alarmOn').classList.toggle('on',i.market.alarm!==false);$('#wtopOn').classList.toggle('on',i.weeklyTop?.enabled!==false);
   $('#expireOn').classList.toggle('on',S.expire?.enabled!==false);if(document.activeElement!==$('#expireNews'))$('#expireNews').value=S.expire?.newsDays??0;
   if(document.activeElement!==$('#socialCookies'))$('#socialCookies').value=S.social?.cookiesFromBrowser||'';
-  $('#waVidOn').classList.toggle('on',S.waVideo?.enabled!==false);$('#waVidPub').classList.toggle('on',!!S.waVideo?.autoPublish);
+  $('#socialSound').classList.toggle('on',S.social?.fullSound!==false);  $('#waVidOn').classList.toggle('on',S.waVideo?.enabled!==false);$('#waVidPub').classList.toggle('on',!!S.waVideo?.autoPublish);
   {const sc={hour:21,minute:0,count:3,...(S.igStories||{})};$('#storiesOn').classList.toggle('on',sc.enabled!==false);if(document.activeElement!==$('#storiesTime'))$('#storiesTime').value=String(sc.hour).padStart(2,'0')+':'+String(sc.minute||0).padStart(2,'0');if(document.activeElement!==$('#storiesCount'))$('#storiesCount').value=sc.count;}
   $('#retitleOn').classList.toggle('on',S.retitle?.enabled!==false);$('#fcOn').classList.toggle('on',S.firstComment?.enabled!==false);
   const hm=(c)=>String(c.hour).padStart(2,'0')+':'+String(c.minute||0).padStart(2,'0');
@@ -777,6 +778,7 @@ $('#expireNow').onclick=async()=>{toast('Kontrol ediliyor…');const r=await pos
 $('#expireUndo').onclick=async()=>{if(!await ask('Liste dışı yaptığım tüm videolar yeniden herkese açık yapılsın mı?'))return;const r=await post('/api/expire/restore',{});toast(r.ok?`${(r.done||[]).length} video yeniden herkese açık`:(r.error||'Yapılamadı'),!r.ok);};
 $('#socialCookies').onchange=()=>infoSet({social:{cookiesFromBrowser:$('#socialCookies').value}});
 $('#waVidOn').onclick=()=>infoSet({waVideo:{enabled:!$('#waVidOn').classList.contains('on')}});
+$('#socialSound').onclick=()=>infoSet({social:{fullSound:!$('#socialSound').classList.contains('on')}});
 $('#waVidPub').onclick=()=>infoSet({waVideo:{autoPublish:!$('#waVidPub').classList.contains('on')}});
 $('#storiesOn').onclick=()=>infoSet({igStories:{enabled:!$('#storiesOn').classList.contains('on')}});
 $('#storiesTime').onchange=()=>hmSet('#storiesTime','igStories');

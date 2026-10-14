@@ -33,6 +33,10 @@ WORDS: dict = {}  # video yolu → [(kelime, başlangıç, bitiş)] (orijinal se
 WANT_SOUND = re.compile(r"(orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|ses(?:i|ini)?\s+(?:kullan|koru|kalsın|açık|aç|duy|olsun|gitsin|verilsin|"
                         r"kapatma|kısma)|sesiyle|sesli\s+(?:kullan|ver|olsun|bölüm)|konuşma(?:sı|yı|ları|ları)?\s+(?:duyul|kullan|ver|kalsın)|"
                         r"röportaj\w*\s+(?:kullan|ver|duyul)|araya\s+gir\w*\s+(?:me|ma)", re.I)
+# sosyal medya linkinden indirilen video varsayılan olarak baştan sona kendi sesiyle oynar (kullanıcı isteği, 14 Ekim: "indirilen video
+# 1 dakikadan uzun olabilir, mümkünse hepsini orijinal sesiyle paylaşsın"); talimat açıkça seslendirme/sessiz isterse uygulanmaz
+NO_SOUND = re.compile(r"ses(?:i|ini)?\s+(?:kapat(?!ma)|kıs(?!ma)|olmasın|gitsin\b|istemiyorum|kullanma)|sessiz|orijinal\s+ses\w*\s+(?:olmasın|kullanma|istemiyorum)|"
+                      r"(?:yalnız|sadece|hep)\s+seslendir|kısa\s+(?:kes|parça|tut)|özetle", re.I)
 CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
 
 
@@ -217,6 +221,31 @@ def clean_clips(raw, infos: list, need: float, used_until: dict) -> list:
     return [{"video": v, "start": round(s, 2), "end": round(e, 2)}]
 
 
+def full_clips(raw, infos: list, max_s: float) -> list:
+    """Videonun tamamı tek sesli bölümde: Claude'un sesli parçaları hedefin (%85) altındaysa baştaki/sondaki kayıt sarsıntısı
+    dışında tüm video (en çok max_s sn) kullanılır."""
+    v = max(range(len(infos)), key=lambda i: infos[i]["duration"])
+    d = infos[v]["duration"]
+    ok = clean_clips(raw, infos, 6.0, {}) if raw else []
+    if sum(c["end"] - c["start"] for c in ok) >= min(d - 0.6, max_s) * 0.85:
+        return ok
+    s0 = min(0.3, d / 10)
+    return [{"video": v + 1, "start": round(s0, 2), "end": round(min(d - 0.2, s0 + max_s), 2)}]
+
+
+def cap_clips(clips: list, budget: float) -> list:
+    """Parçaların toplamını `budget` saniyeyle sınırlar (sondan kırpar)."""
+    out, acc = [], 0.0
+    for c in clips:
+        room = budget - acc
+        if room < 0.8:
+            break
+        e = min(c["end"], c["start"] + room)
+        out.append({**c, "end": round(e, 2)})
+        acc += e - c["start"]
+    return out or clips[:1]
+
+
 def build(job: dict) -> dict:
     srcs = [Path(p) for p in job.get("videos") or [] if Path(p).exists()][:4]
     if not srcs:
@@ -225,6 +254,12 @@ def build(job: dict) -> dict:
     m = re.search(r"(\d{2,3})\s*(?:saniye\w*|sn\b)", instruction.lower())
     dur = int(job.get("duration") or (int(m.group(1)) if m else 0) or (settings().get("waVideo") or {}).get("duration") or 30)
     dur = max(20, min(60, dur))
+    social, rel = job.get("social") or None, job.get("related") or []
+    soc_cfg = settings().get("social") or {}
+    max_sound = float(soc_cfg.get("maxSoundSeconds") or 150)  # kanca + haberler + kapanışla toplam ≤ ~3 dk (YouTube Shorts sınırı)
+    full_sound = bool(social) and soc_cfg.get("fullSound") is not False and not NO_SOUND.search(instruction)
+    if full_sound and not m:  # video kendi sesiyle oynayacak: seslendirme kısa (kanca + giriş + devam)
+        dur = 25
     name = f"video-{time.strftime('%Y%m%d-%H%M%S')}"
     tmp = ROOT / "work" / "jobs" / f"{name}-analiz"
     shutil.rmtree(tmp, ignore_errors=True)
@@ -248,11 +283,12 @@ def build(job: dict) -> dict:
     if SPEECH_OFF:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): kurgu yalnız kareler ve sahne geçişleriyle yapılacak — Mac'te bir kez 'bash scripts/install_align.sh'")
     tpl = (ROOT / "prompts" / "montaj.md").read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
-    social, rel = job.get("social") or None, job.get("related") or []
     inp = {"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}
     if social:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
         inp["kaynak_paylasim"] = {k: social.get(k) for k in ("platform", "credit", "uploader", "caption", "title", "views", "likes", "comments", "date")}
         inp["ilgili_haberler"] = rel[:5]
+    if full_sound:
+        inp["orijinal_ses_tamami"] = {"video_suresi": round(max(i["duration"] for i in infos), 1), "en_fazla_saniye": int(max_sound)}
     prompt = tpl + json.dumps(inp, ensure_ascii=False, indent=1)
     log("🎬 kurgu planı yazılıyor (Claude görüntüleri ve konuşmayı inceliyor)")
     rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] for b in blocks))
@@ -266,7 +302,7 @@ def build(job: dict) -> dict:
         plan = parse_plan(text)
     except Exception as e:
         return {"ok": False, "error": f"kurgu planı okunamadı: {e}"}
-    want_sound = bool(WANT_SOUND.search(instruction))
+    want_sound = bool(WANT_SOUND.search(instruction)) or full_sound
     segs = [s for s in plan.get("segments") or [] if (s.get("kind") in ("hook", "haber") and str(s.get("narration") or "").strip())
             or (s.get("kind") == "sesli" and want_sound)]  # sesli bölüm yalnız talimatta istendiyse (kullanıcı kararı)
     if not any(s["kind"] == "haber" for s in segs):
@@ -283,6 +319,19 @@ def build(job: dict) -> dict:
         at = next(i for i, x in enumerate(segs) if x["kind"] == "haber") + 1
         segs.insert(at, {"kind": "sesli", "title": "", "clips": [{"video": v + 1, "start": min(0.3, dv / 10), "end": max(1.0, dv - 0.2)}]})
         log("🔊 talimatta orijinal ses istendi: videonun kendi sesiyle oynayan bölüm eklendi")
+    if full_sound:  # tek sesli bölüm, videonun tamamı (Claude kısa kestiyse tamamlanır)
+        firsts = [x for x in segs if x["kind"] == "sesli"]
+        for x in firsts[1:]:
+            segs.remove(x)
+        firsts[0]["clips"] = full_clips(firsts[0].get("clips"), infos, max_sound)
+    src_secs, sound_left = round(max(i["duration"] for i in infos), 1), max_sound
+    for x in segs:  # orijinal ses toplamı en çok max_sound sn (videonun toplamı ~3 dk'yı geçmesin)
+        if x["kind"] == "sesli":
+            x["clips"] = cap_clips(clean_clips(x.get("clips"), infos, 6.0, {}), sound_left)
+            sound_left -= sum(c["end"] - c["start"] for c in x["clips"])
+    if full_sound:
+        got = sum(c["end"] - c["start"] for x in segs if x["kind"] == "sesli" for c in x["clips"])
+        log(f"🔊 sosyal medya videosu kendi sesiyle: {round(got)} sn" + (" (videonun tamamı)" if got >= src_secs - 2.5 else f" ({round(src_secs)} sn'lik videonun en önemli bölümü; en çok {int(max_sound)} sn)"))
     # dikey video (kullanıcı isteği: "video tam gözüksün, üstünde etrafında bizim süslemeler"): haber bölümleri de tam ekran
     vertical = all(i["height"] > i["width"] * 1.15 for i in infos if i["width"])
     if vertical:
@@ -354,6 +403,7 @@ def build(job: dict) -> dict:
     words = sum(len(s.get("narration", "").split()) for s in segs if s["kind"] != "sesli")
     return {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)), "vertical": vertical,
             "soundSeconds": round(sum(x["soundDuration"] for x in segs if x["kind"] == "sesli"), 1),
+            "soundFull": full_sound, "sourceSeconds": src_secs,
             "plan": {"label": str(plan.get("label") or "SON DAKİKA")[:30], "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
                      "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
                      "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF}}

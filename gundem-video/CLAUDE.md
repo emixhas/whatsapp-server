@@ -295,6 +295,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   onaylı (userVideo). Telif: başkasının görüntüsü; kaynak gösterilir ama platformlar telif bildirimi yapabilir — kullanıcıya söylendi.
   `wa_video.py` konuşma tanıma çalışmazsa (mlx-whisper ilk ihtiyaçta kendiliğinden kurulur; olmadıysa) logda ve "Kurgu hazır"
   mesajında söyler (`plan.speech`).
+  Tamamı kendi sesiyle (kullanıcı isteği, 14 Ekim: "indirilen video 1 dakikadan uzun olabilir, mümkünse hepsini orijinal sesiyle
+  paylaşsın"; `settings.social` {fullSound true, maxSoundSeconds 150}, panel 📡 "🔊 … baştan sona kendi sesiyle"): sosyal medya videosunda
+  talimat `NO_SOUND` (sesi kapat/kısma değil, sessiz, orijinal ses olmasın, yalnız seslendirme, kısa kes) demedikçe montaj girdisine
+  `orijinal_ses_tamami` {video_suresi, en_fazla_saniye} gider (`prompts/montaj.md`: kanca → 12-20 kelimelik giriş → TEK sesli bölüm →
+  10-20 kelimelik devam), seslendirme hedefi 25 sn. Kod da zorlar (`full_clips`): Claude'un sesli parçaları hedefin %85'inden kısaysa
+  baştaki 0,3 sn ve sondaki 0,2 sn dışında videonun tamamı; fazla sesli bölüm atılır. Tüm sesli bölümlerin toplamı `maxSoundSeconds`
+  ile sınırlı (`cap_clips`; WhatsApp videosunda da) — kanca/giriş/devam/kapanışla video ~3 dk'yı (YouTube Shorts sınırı) geçmesin; uzun
+  videoda Claude en önemli kesintisiz bölümü seçer, seçmezse baştan 150 sn. Sonuç `soundFull`/`sourceSeconds` → "Kurgu hazır" mesajında
+  "(videonun tamamı)" ya da "(N sn'lik videonun en önemli bölümü)".
   İlk yorum (kullanıcı isteği, 14 Ekim: "linkten gelen haberde de ilk yorum atsın"): `wa_video.py` planın `firstComment`ini (yoksa genel
   soru) senaryoya yazar, sosyal medya görüntüsünde altına "📹 Görüntü: Instagram / @hesap" eklenir; yayın (otomatik ya da "onay") diğer
   videolar gibi YouTube/Instagram'a ilk yorumu yazar, yazılamazsa `fill_first_comments` sonradan tamamlar. WhatsApp "onay" yanıtı platform
