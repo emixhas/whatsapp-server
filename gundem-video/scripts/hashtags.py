@@ -14,7 +14,7 @@ VALUE_TAGS = {"can kaybı": "#sondakika", "kaza/afet": "#kaza", "emekli/memur ma
               "zam/fiyat/vergi": "#zam", "tatil/izin": "#tatil", "kamu duyurusu": "#duyuru", "güvenlik": "#güvenlik",
               "para ve destek": "#ekonomi", "sağlık ve gıda": "#sağlık", "milli başarı": "#millitakım",
               "suç ve vahşet": "#asayiş", "kayıp ve arama": "#kayıp", "kesinti ve ulaşım": "#ulaşım",
-              "hava ve doğa uyarısı": "#havadurumu", "yeni düzenleme": "#yenidüzenleme", "büyük siyaset": "#siyaset",
+              "hava ve doğa uyarısı": "#havadurumu", "resmi uyarı": "#uyarı", "yeni düzenleme": "#yenidüzenleme", "büyük siyaset": "#siyaset",
               "dünya ve savaş": "#dünya", "iş ve geçim": "#ekonomi", "eğitim duyurusu": "#eğitim",
               "destek ve af": "#müjde", "acı olay": "#sondakika", "magazin ve ünlüler": "#magazin"}
 

@@ -60,7 +60,8 @@ KURALLAR
   hileli ürün listesi; kayıp çocuk/kişi ve arama; elektrik/su/doğalgaz kesintisi, yol kapanması, uçuş/sefer iptali,
   grev; turuncu/kırmızı kod hava uyarısı, orman yangını; yürürlüğe giren yeni düzenleme, ceza, başvuru tarihi;
   erken seçim, kabine, görevden alma, kayyum; savaş, ateşkes, Türkiye'yi ilgilendiren dış gelişme; iflas, işten
-  çıkarma, kira/konut/araç fiyatı, indirim; öğretmen ataması, okul takvimi; milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
+  çıkarma, kira/konut/araç fiyatı, indirim; öğretmen ataması, okul takvimi; valinin, valiliğin, bakanlığın, AFAD'ın, emniyetin
+  ya da belediyenin halka yönelik uyarısı, duyurusu, tedbiri (ör. "Vali Gül'den İstanbul için yeni uyarı" — kanal kararı); milli takımın ya da milli sporcunun büyük başarısı (galibiyet, final, madalya, şampiyonluk);
   ülke çapında ses getiren gelişme.
 - 3: önemli ama sınırlı kesimi ilgilendiren haber; magazin, dizi, film, ünlü haberleri (kanal kararı: bunlar da
   ilgi görür, en az 3 ver). Süper Lig'in ilk beşindeki

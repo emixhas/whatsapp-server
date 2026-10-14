@@ -94,6 +94,13 @@ GROUPS = [
                                r"sevgili", r"aşk iddia", r"bebek müjde", r"hamile", r"reyting", r"sosyal medya paylaşım",
                                r"(?:instagram|tiktok)\w* paylaşım", r"kırmızı halı", r"ödül töreni", r"survivor", r"masterchef"]),
     # adli olay: tek başına yetmez (her gün çok sayıda), başka bir grupla ya da modelin 4-5 önemiyle değerli olur
+    # kullanıcı kararı (14 Ekim, "Vali Gül'den İstanbul için yeni uyarı" — bu tarz haberler değerli): resmi makamdan uyarı/duyuru/
+    # tedbir. Makam ve eylem aynı cümlede olmalı ("Vali ziyaret etti", "dikkat çeken" yakalanmaz).
+    ("resmi uyarı", 3, [r"(?:vali|kaymakam|bakan|afad|emniyet|jandarma|sahil güvenlik|belediye|itfaiye|kızılay|diyanet|"
+                        r"sağlık müdürlüğü|il sağlık|dsi|karayolları|tedaş|aski|iski|başkent ?gaz|igdaş)\w*[^.!?]{0,70}?"
+                        r"(?:uyar|duyur|tedbir|önlem|talimat|çağrı|alarm|acil\b|dikkat(?! çek)|genelge|karar (?:al|ver)|"
+                        r"(?:kritik|önemli|flaş|yeni) açıklama)",
+                        r"(?:uyar|duyuru|tedbir|önlem|talimat|çağrı|genelge)\w*[^.!?]{0,40}?(?:vali|kaymakam|bakanlığ|afad|emniyet)"]),
     ("adli olay", 2, [r"operasyon", r"gözaltı", r"tutuklandı", r"uyuşturucu", r"çete", r"kaçakçılık", r"yolsuzluk", r"rüşvet",
                       r"skandal", r"iddianame", r"hapis cezası", r"müebbet", r"firari"]),
     # "burs" Bursa'yı, "kura" kuralı yakalamasın diye ekler açık yazıldı; piyasa haberi yalnız rekor/çöküşle değerli

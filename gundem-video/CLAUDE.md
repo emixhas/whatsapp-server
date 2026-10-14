@@ -780,7 +780,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   tarihi), büyük siyaset (erken seçim, kabine, görevden alma, kayyum, yetkili gözaltısı), dünya ve savaş, iş ve geçim
   (iflas, işten çıkarma, kira/konut/araç fiyatı, indirim), eğitim duyurusu (MEB / Milli Eğitim Bakanlığı geçen her haber dahil),
   destek ve af (kullanıcı kararı: KOSGEB, hibe, devlet desteği, vergi/prim/imar/ceza affı, af yasası, mahkum affı, infaz
-  düzenlemesi, yargı paketi, tahliye, borç silme), acı olay (kullanıcı kararı: "6 gün sonra doğum günüydü! Kahreden olay",
+  düzenlemesi, yargı paketi, tahliye, borç silme), resmi uyarı (kullanıcı kararı, 14 Ekim: "Vali Gül'den İstanbul için yeni uyarı" türü:
+  vali/kaymakam/bakan/AFAD/emniyet/jandarma/belediye/itfaiye/İSKİ… ile uyar/duyur/tedbir/önlem/talimat/çağrı/genelge/acil aynı cümlede;
+  "Vali ziyaret etti", "dikkat çeken proje" değerli değil; `prompts/anlik.md` önem 4; hashtag #uyarı), acı olay (kullanıcı kararı: "6 gün sonra doğum günüydü! Kahreden olay",
   "15 yaşındaki Murat'ın hayatı karardı" türü: kahreden, yürek yakan, hayatı karardı, kurtulamadı, "N gün sonra doğum günü",
   "N yaşındaki … öldü/yaralandı/kayboldu", toprağa verildi; SOFT'tan muaf), magazin ve ünlüler (kullanıcı kararı: "Ünlü oyuncu
   yeni dizisini tanıttı" türü de değerli: ünlü/oyuncu/şarkıcı/sanatçı/sunucu, dizi, film, albüm, klip, konser, evlilik/boşanma,
