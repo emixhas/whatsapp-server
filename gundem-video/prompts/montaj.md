@@ -15,7 +15,9 @@ SOSYAL MEDYA PAYLAŞIMI ("kaynak_paylasim" varsa: video Instagram/TikTok/X… pa
 - "ilgili_haberler" haber sitelerinde aynı olaya dair bulunan haberlerdir: oradaki bilgi doğrulanmış sayılır, önce onu kullan
   ("… sitesinin haberine göre" diyebilirsin). Çelişki varsa haber sitesindekini esas al.
 - İzlenme/beğeni yüksekse "sosyal medyada çok konuşulan / gündem olan" diyebilirsin (sayıyı verilen değerden yaz, uydurma).
-- "source" alanına "kaynak_paylasim.credit" metnini yaz (ör. "Instagram / @hesap").
+- Kaynak (platform/hesap adı) videoda GEÇMEZ: "source" alanını boş bırak ("") ve seslendirmede hesap adını, kullanıcı adını ya da
+  "Instagram'da … paylaştı" gibi kaynak cümlesini yazma (kaynak açıklamanın en altında ayrıca yazılır). "Sosyal medyada paylaşılan
+  görüntülerde…" gibi genel ifade serbest.
 - Görüntüdeki başka kanalın logosu/yazısı en az görünen bölümleri tercih et.
 - "orijinal_ses_tamami" VARSA (kanal sahibinin kararı: "indirilen videonun mümkünse hepsini orijinal sesiyle paylaş"): videonun
   TAMAMI tek bir "sesli" bölümde kendi sesiyle oynar (yalnız baştaki/sondaki kayıt sarsıntısı ve boş/siyah kareler kesilir).
@@ -53,7 +55,7 @@ METİN KURALLARI
 - Haber segmentleri: 1-3 segment; her biri 12-30 kelime ("sesli" bölümler bu sayıya ve kelime sınırına girmez). Toplam seslendirme (kanca + haberler) en çok __KELIME__ kelime
   (hedef video süresi __SURE__ sn).
 - Kategori şunlardan biri: finans, siyaset, asayis, spor, hava, toplum, teknoloji, saglik, dunya, parti, egitim, genel.
-- "source": haberin kaynağı; talimatta yazmıyorsa "Türkiye Gündemi".
+- "source": haberin kaynağı; talimatta yazmıyorsa "Türkiye Gündemi" (sosyal medya paylaşımında boş "").
 - "breaking": yalnız gerçekten büyük bir son dakika olayıysa ilk habere true.
 - "firstComment": videoya kanal adına yazılacak ilk yorum; habere özel tarafsız kısa soru (en çok 110 karakter; can kaybında
   soru yerine başsağlığı).

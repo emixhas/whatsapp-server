@@ -175,9 +175,11 @@ def build_caption(video_name: str, max_len: int = 2000):
         if h.get("source"):
             lines.append(f"Kaynak: {h['source']}")
         lines.append("")
+    # sosyal medya linkinden video: kaynak videoda ve haber metinlerinde yok, açıklamanın EN ALTINDA tek satır (kullanıcı kararı, 14 Ekim)
+    social_src = meta.get("sourceName") if meta.get("infoKind") == "video" and meta.get("sourceUrl") and meta.get("sourceName") else None
     if meta.get("sources"):  # çoklu son dakika: her haberin kaynağı
         lines += ["Haber kaynakları:"] + [f"• {x.get('name') or 'kaynak'} · {x.get('url')}" for x in meta["sources"] if x.get("url")] + [""]
-    elif meta.get("sourceUrl"):
+    elif meta.get("sourceUrl") and not social_src:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
     tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
@@ -190,7 +192,7 @@ def build_caption(video_name: str, max_len: int = 2000):
         title, lines, tags = censor.mask(title), [censor.mask(x) for x in lines], censor.clean_tags(tags)
     except Exception:
         pass
-    tail = "\n" + " ".join(tags)
+    tail = "\n" + " ".join(tags) + (f"\n\nKaynak: {social_src}" if social_src else "")
     return title[:100], "\n".join(lines)[:max(0, max_len - len(tail))] + tail
 
 

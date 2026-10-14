@@ -371,14 +371,12 @@ def build(job: dict) -> dict:
         log(f"✂️ {label}: " + ", ".join(f"v{c['video']} {c['start']:.1f}-{c['end']:.1f} sn" for c in clips)
             + (f" (toplam {clen} sn, seslendirme yok — videonun kendi sesi)" if sesli else f" (toplam {clen} sn, seslendirme ~{round(need)} sn)"))
     src = str(next((x.get("source") for x in segs[1:] if x.get("source")), None) or "Türkiye Gündemi")
-    if social:  # görüntünün sahibi her kartta görünür (VİDEO: Instagram / @hesap)
-        src = social.get("credit") or src
+    if social:  # kullanıcı kararı (14 Ekim): sosyal medya kaynağı videoda yazmaz; açıklamanın en altında tek satır "Kaynak: …"
+        src = ""
         for x in segs:
-            x["source"] = src
-    # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru; sosyal medya görüntüsünde altına sahibi
+            x["source"] = ""
+    # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru (kaynak yalnız açıklamada)
     first = str(plan.get("firstComment") or "").strip()[:160] or "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
-    if social and social.get("credit"):
-        first += f"\n📹 Görüntü: {social['credit']}"
     script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
               "importanceReason": plan.get("importanceReason", "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,

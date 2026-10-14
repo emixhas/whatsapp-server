@@ -291,7 +291,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `--cookies-from-browser`; giriş hatasında Türkçe yol gösterir. Aynı olay `news_lookup.py --topic` (açıklamanın ilk 10 anlamlı kelimesi)
   ile haber sitelerinde aranır → `related`. Montaj planına `kaynak_paylasim` + `ilgili_haberler` gider (`prompts/montaj.md`: açıklama
   doğrulanmamış iddia, "sosyal medyada paylaşılan görüntülerde…"; haber sitesindeki bilgi esas; videonun tamamı değil seçilmiş kısa
-  parçalar). Her kartın kaynağı `credit` (zorla), ANLIK_SOURCE/URL ile açıklamada "Haber kaynağı: Instagram / @hesap · link". Yayın
+  parçalar). Kaynak VİDEODA YAZMAZ (kullanıcı kararı, 14 Ekim: "video içinde kaynak belirtme, açıklamanın en altına tek bir kere
+  'Kaynak' yaz"): `wa_video` segment kaynaklarını boşaltır, prompt seslendirmede hesap/platform adını yasaklar, `assemble` INFO_KIND video'da
+  ANLIK_SOURCE'u kartlara yazmaz, `Headline` boş kaynakta "VİDEO: …" etiketini çizmez; `common.build_caption` "Haber kaynağı" satırı yerine
+  hashtag'lerden SONRA, en altta tek satır "Kaynak: Instagram / @hesap" (link yok; meta sourceName). Yayın
   onaylı (userVideo). Telif: başkasının görüntüsü; kaynak gösterilir ama platformlar telif bildirimi yapabilir — kullanıcıya söylendi.
   `wa_video.py` konuşma tanıma çalışmazsa (mlx-whisper ilk ihtiyaçta kendiliğinden kurulur; olmadıysa) logda ve "Kurgu hazır"
   mesajında söyler (`plan.speech`).
@@ -305,7 +308,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   videoda Claude en önemli kesintisiz bölümü seçer, seçmezse baştan 150 sn. Sonuç `soundFull`/`sourceSeconds` → "Kurgu hazır" mesajında
   "(videonun tamamı)" ya da "(N sn'lik videonun en önemli bölümü)".
   İlk yorum (kullanıcı isteği, 14 Ekim: "linkten gelen haberde de ilk yorum atsın"): `wa_video.py` planın `firstComment`ini (yoksa genel
-  soru) senaryoya yazar, sosyal medya görüntüsünde altına "📹 Görüntü: Instagram / @hesap" eklenir; yayın (otomatik ya da "onay") diğer
+  soru) senaryoya yazar (kaynak ilk yorumda da yok, yalnız açıklamada); yayın (otomatik ya da "onay") diğer
   videolar gibi YouTube/Instagram'a ilk yorumu yazar, yazılamazsa `fill_first_comments` sonradan tamamlar. WhatsApp "onay" yanıtı platform
   başına "💬 ilk yorum yazıldı / yazılamadı (neden)" der (`commentNote`); panel `publish` eylemi "  💬" satırlarını loga taşır.
 - Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;

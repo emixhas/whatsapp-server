@@ -51,7 +51,7 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
             <div style={{ position: "absolute", right: 18, bottom: 14, width: 920, height: 560, transform: "scale(0.3)", transformOrigin: "bottom right", filter: "drop-shadow(0 6px 16px rgba(0,0,0,.6))" }}>
               <st.Illustration />
             </div>
-            <div style={{ position: "absolute", left: 22, bottom: 16, fontSize: 24, color: "rgba(255,255,255,.75)", letterSpacing: 2 }}>{video ? "VİDEO" : "FOTOĞRAF"}: {(source || "KAYNAK").toUpperCase()}</div>
+            {source ? <div style={{ position: "absolute", left: 22, bottom: 16, fontSize: 24, color: "rgba(255,255,255,.75)", letterSpacing: 2 }}>{video ? "VİDEO" : "FOTOĞRAF"}: {source.toUpperCase()}</div> : null}
             </>}
           </>
         ) : (

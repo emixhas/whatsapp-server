@@ -425,7 +425,8 @@ def main(src: str, dst: str):
         src_name = " · ".join(dict.fromkeys(m.get("source") or "" for m in multi if m.get("source"))) or src_name
         src_url = ""
         print(f"  çoklu son dakika: {len(multi)} haber tek videoda ({src_name})")
-    if ANLIK and src_url:  # haber sitesinden gelen anlık haber: fotoğraf/video o haberin sayfasından
+    # sosyal medya linkinden video (INFO_KIND video + adres): kaynak videoda gösterilmez, açıklamanın en altında tek satır (kullanıcı kararı)
+    if ANLIK and src_url and INFO_KIND != "video":  # haber sitesinden gelen anlık haber: fotoğraf/video o haberin sayfasından
         for s in segs:
             if s.get("kind") in ("hook", "haber"):
                 s["articleUrl"] = src_url
