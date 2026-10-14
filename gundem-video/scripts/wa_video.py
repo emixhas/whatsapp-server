@@ -28,6 +28,11 @@ from common import ROOT, settings  # noqa: E402
 from info_card import new_job  # noqa: E402
 
 SPEECH_OFF = False  # konuşma tanıma kurulamadı/kapalı: plan yalnız kareler ve sahne geçişleriyle
+WORDS: dict = {}  # video yolu → [(kelime, başlangıç, bitiş)] (orijinal sesli bölümün altyazısı)
+# kullanıcı isteği: talimatta videonun kendi sesi istenirse o bölümde seslendirme susar, video kendi sesiyle izlenir
+WANT_SOUND = re.compile(r"(orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|ses(?:i|ini)?\s+(?:kullan|koru|kalsın|açık|aç|duy|olsun|gitsin|verilsin|"
+                        r"kapatma|kısma)|sesiyle|sesli\s+(?:kullan|ver|olsun|bölüm)|konuşma(?:sı|yı|ları|ları)?\s+(?:duyul|kullan|ver|kalsın)|"
+                        r"röportaj\w*\s+(?:kullan|ver|duyul)|araya\s+gir\w*\s+(?:me|ma)", re.I)
 CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
 
 
@@ -73,6 +78,7 @@ def transcript(p: Path, tmp: Path) -> list:
     except Exception as e:
         log(f"  ! konuşma tanıma: {str(e)[:120]}")
         return []
+    WORDS[str(p)] = [(str(w).strip(), float(a), float(b)) for w, a, b in words if str(w).strip()]
     lines, cur = [], []
     for w, s, e in words:
         if cur and (s - cur[-1][2] > 0.6 or len(cur) >= 12):
@@ -146,13 +152,28 @@ def fit_filter(w: int, h: int, idx: int) -> str:
             f"[bg{idx}][fg{idx}]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[c{idx}]")
 
 
-def cut(clips: list, srcs: list, w: int, h: int, out: Path) -> bool:
-    ins, fl = [], []
+def cut(clips: list, srcs: list, w: int, h: int, out: Path, audio: list | None = None) -> bool:
+    """Parçaları kesip birleştirir. `audio` verilirse (video başına ses var mı) videonun kendi sesi de alınır (sesli bölüm);
+    sesi olmayan parçaya sessizlik konur, toplam ses -17 LUFS'a getirilir (seslendirmeyle aynı seviye)."""
+    ins, fl, extra = [], [], []
     for i, c in enumerate(clips):
         ins += ["-ss", f"{c['start']:.2f}", "-t", f"{c['end'] - c['start']:.2f}", "-i", str(srcs[c["video"] - 1])]
         fl.append(fit_filter(w, h, i))
-    fl.append("".join(f"[c{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[out]")
-    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *ins, "-filter_complex", ";".join(fl), "-map", "[out]", "-an",
+    if audio is not None:
+        for i, c in enumerate(clips):
+            if audio[c["video"] - 1]:
+                fl.append(f"[{i}:a]aresample=48000,aformat=channel_layouts=stereo,asetpts=PTS-STARTPTS[a{i}]")
+            else:
+                j = len(clips) + len(extra)
+                extra += ["-f", "lavfi", "-t", f"{c['end'] - c['start']:.2f}", "-i", "anullsrc=r=48000:cl=stereo"]
+                fl.append(f"[{j}:a]asetpts=PTS-STARTPTS[a{i}]")
+        fl.append("".join(f"[c{i}][a{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=1[out][aout]")
+        fl.append("[aout]loudnorm=I=-17:TP=-1.5:LRA=11[an]")
+        maps = ["-map", "[out]", "-map", "[an]", "-c:a", "aac", "-b:a", "160k"]
+    else:
+        fl.append("".join(f"[c{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[out]")
+        maps = ["-map", "[out]", "-an"]
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *ins, *extra, "-filter_complex", ";".join(fl), *maps,
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out)],
                        capture_output=True, text=True)
     if r.returncode:
@@ -245,24 +266,40 @@ def build(job: dict) -> dict:
         plan = parse_plan(text)
     except Exception as e:
         return {"ok": False, "error": f"kurgu planı okunamadı: {e}"}
-    segs = [s for s in plan.get("segments") or [] if s.get("kind") in ("hook", "haber") and str(s.get("narration") or "").strip()]
+    want_sound = bool(WANT_SOUND.search(instruction))
+    segs = [s for s in plan.get("segments") or [] if (s.get("kind") in ("hook", "haber") and str(s.get("narration") or "").strip())
+            or (s.get("kind") == "sesli" and want_sound)]  # sesli bölüm yalnız talimatta istendiyse (kullanıcı kararı)
     if not any(s["kind"] == "haber" for s in segs):
         return {"ok": False, "error": "planda haber segmenti yok"}
     if segs[0]["kind"] != "hook":
-        h = segs[0]
+        h = next(x for x in segs if x["kind"] == "haber")
         segs.insert(0, {"kind": "hook", "title": h.get("title", ""), "narration": re.split(r"(?<=[.!?])\s", h["narration"])[0],
                         "category": h.get("category"), "clips": h.get("clips")})
-    segs = [segs[0]] + [s for s in segs[1:] if s["kind"] == "haber"][:4]
-    # montaj: her segmentin parçaları → kanca dikey, haber kartı yatay; kare görüntüleri kapak ve yedek için
+    segs = [segs[0]] + [s for s in segs[1:] if s["kind"] in ("haber", "sesli")][:6]
+    if want_sound and not any(s["kind"] == "sesli" for s in segs):
+        # Claude eklemediyse: konuşması en çok olan videonun tamamı (baştaki/sondaki yarım saniye hariç) ilk haberden sonra
+        v = max(range(len(infos)), key=lambda i: (len(infos[i]["speech"]), infos[i]["duration"]))
+        dv = infos[v]["duration"]
+        at = next(i for i, x in enumerate(segs) if x["kind"] == "haber") + 1
+        segs.insert(at, {"kind": "sesli", "title": "", "clips": [{"video": v + 1, "start": min(0.3, dv / 10), "end": max(1.0, dv - 0.2)}]})
+        log("🔊 talimatta orijinal ses istendi: videonun kendi sesiyle oynayan bölüm eklendi")
+    # dikey video (kullanıcı isteği: "video tam gözüksün, üstünde etrafında bizim süslemeler"): haber bölümleri de tam ekran
+    vertical = all(i["height"] > i["width"] * 1.15 for i in infos if i["width"])
+    if vertical:
+        log("📱 dikey video: haber bölümleri tam ekran dikey düzende (kart yerine)")
+    # montaj: her segmentin parçaları → kanca ve sesli bölüm dikey tam ekran, haber kartı yatay (dikey videoda tam ekran)
     d = tmp / "parcalar"
     d.mkdir(exist_ok=True)
     cards, used_until, plan_out = [], {}, []
+    has_audio = [bool(i["audio"]) for i in infos]
     for k, s in enumerate(segs):
-        need = len(s["narration"].split()) / 2.4 + 0.5
-        clips = clean_clips(s.get("clips"), infos, need, used_until)
+        sesli = s["kind"] == "sesli"
+        need = 0.0 if sesli else len(s["narration"].split()) / 2.4 + 0.5
+        clips = clean_clips(s.get("clips"), infos, need or 6.0, used_until)
         hook = s["kind"] == "hook"
+        full = hook or sesli or vertical
         vid = d / f"seg-{k}.mp4"
-        if not cut(clips, srcs, *((1080, 1920) if hook else (1280, 780)), vid):
+        if not cut(clips, srcs, *((1080, 1920) if full else (1280, 780)), vid, audio=has_audio if sesli else None):
             return {"ok": False, "error": f"{k + 1}. segment kesilemedi (ffmpeg)"}
         c0 = clips[0]
         mid = c0["start"] + min(1.0, (c0["end"] - c0["start"]) / 2)
@@ -270,11 +307,21 @@ def build(job: dict) -> dict:
         still(srcs[c0["video"] - 1], mid, 1840, 1120, img)
         still(srcs[c0["video"] - 1], mid, 1080, 1920, tall)
         clen = round(sum(c["end"] - c["start"] for c in clips), 2)
-        cards.append({"video": vid, "image": img if img.exists() else tall, "tall": tall if tall.exists() else img, "videoDuration": clen})
+        cards.append({"video": vid, "image": img if img.exists() else tall, "tall": tall if tall.exists() else img, "videoDuration": clen,
+                      **({"sound": True} if sesli else {}), **({"fullFrame": True} if (vertical or sesli) and not hook else {})})
+        if sesli:  # altyazı: videodaki konuşmanın kelimeleri, birleştirilmiş parçaların zamanına çevrilir
+            ws, off = [], 0.0
+            for c in clips:
+                for w, a, b in WORDS.get(str(srcs[c["video"] - 1]), []):
+                    if a >= c["start"] and b <= c["end"] + 0.05:
+                        ws.append({"w": w, "s": round(off + a - c["start"], 3), "e": round(off + min(b, c["end"]) - c["start"], 3)})
+                off += c["end"] - c["start"]
+            s["soundWords"], s["soundDuration"] = ws, clen
         plan_out.append({"kind": s["kind"], "title": s.get("title", ""), "clips": clips, "seconds": clen, "narrationSeconds": round(need, 1)})
-        log(f"✂️ {'kanca' if hook else str(k) + '. haber'}: " + ", ".join(f"v{c['video']} {c['start']:.1f}-{c['end']:.1f} sn" for c in clips)
-            + f" (toplam {clen} sn, seslendirme ~{round(need)} sn)")
-    src = str(segs[1].get("source") or "Türkiye Gündemi")
+        label = "kanca" if hook else "🔊 orijinal ses" if sesli else f"{k}. haber"
+        log(f"✂️ {label}: " + ", ".join(f"v{c['video']} {c['start']:.1f}-{c['end']:.1f} sn" for c in clips)
+            + (f" (toplam {clen} sn, seslendirme yok — videonun kendi sesi)" if sesli else f" (toplam {clen} sn, seslendirme ~{round(need)} sn)"))
+    src = str(next((x.get("source") for x in segs[1:] if x.get("source")), None) or "Türkiye Gündemi")
     if social:  # görüntünün sahibi her kartta görünür (VİDEO: Instagram / @hesap)
         src = social.get("credit") or src
         for x in segs:
@@ -284,8 +331,11 @@ def build(job: dict) -> dict:
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,
                             "category": segs[0].get("category") if segs[0].get("category") in CATS else "genel"},
                            {"kind": "intro", "narration": "Son dakika."}]
-              + [{"kind": "haber", "title": s.get("title", ""), "narration": s["narration"], "source": s.get("source") or src,
-                  "category": s.get("category") if s.get("category") in CATS else "genel", **({"breaking": True} if s.get("breaking") else {})}
+              + [({"kind": "sesli", "title": s.get("title", ""), "narration": "", "source": s.get("source") or src, "category": (
+                     s.get("category") if s.get("category") in CATS else "genel"), "soundDuration": s["soundDuration"], "soundWords": s["soundWords"]}
+                  if s["kind"] == "sesli" else
+                  {"kind": "haber", "title": s.get("title", ""), "narration": s["narration"], "source": s.get("source") or src,
+                   "category": s.get("category") if s.get("category") in CATS else "genel", **({"breaking": True} if s.get("breaking") else {})})
                  for s in segs[1:]]
               + [{"kind": "outro", "narration": "Takip etmeyi unutma."}]}
     job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs]})
@@ -297,11 +347,12 @@ def build(job: dict) -> dict:
             c[key] = str(dst.relative_to(ROOT))
     (jd / "cards.json").write_text(json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8")
     shutil.rmtree(tmp, ignore_errors=True)
-    words = sum(len(s["narration"].split()) for s in segs)
-    return {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)),
+    words = sum(len(s.get("narration", "").split()) for s in segs if s["kind"] != "sesli")
+    return {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)), "vertical": vertical,
+            "soundSeconds": round(sum(x["soundDuration"] for x in segs if x["kind"] == "sesli"), 1),
             "plan": {"label": str(plan.get("label") or "SON DAKİKA")[:30], "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
                      "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
-                     "narration": " ".join(s["narration"] for s in segs)[:900], "speech": not SPEECH_OFF}}
+                     "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF}}
 
 
 if __name__ == "__main__":

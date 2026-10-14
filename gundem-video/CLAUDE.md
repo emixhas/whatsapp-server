@@ -265,7 +265,23 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `notifyVideo` tüm platformları "onay"a koyar; `waVideo.autoPublish` açılırsa normal anlık kuralı. Açıklama başlığı "🔴 <etiket>",
   #sondakika eklenir; en çok izlenen saat tekrarı bu videoları seçmez (görüntü haber aramasıyla yeniden üretilemez). Panel 📡 grubunda
   iki anahtar; yardım listesinde. Sandbox'ta sahte Claude planıyla dikey + yatay iki videodan montaj ve pipeline (sessiz ses) + render
-  denendi; gerçek WhatsApp indirmesi ve Claude'un kare okuması Mac'te denenmedi. Videonun kendi sesi kullanılmaz (seslendirme + müzik).
+  denendi; gerçek WhatsApp indirmesi ve Claude'un kare okuması Mac'te denenmedi.
+  Orijinal sesli bölüm (kullanıcı isteği, 14 Ekim: "videonun orijinal sesini kullanmasını istediğim zaman video kaç saniye ise sussun,
+  video izlensin, sonra konuşmaya devam edilsin"): YALNIZ talimat isterse (`wa_video.WANT_SOUND`: orijinal/kendi/videonun sesi, sesi
+  kalsın/kullan, sesiyle, konuşması duyulsun, röportajı kullan…). Segment türü `sesli` (`types.ts`): Claude yerleştirir (kanca → giriş
+  haberi → sesli → devam haberi; `prompts/montaj.md`), eklemezse konuşması en çok olan videonun tamamı ilk haberden sonra eklenir; istenmeden
+  gelen sesli bölüm atılır. Kesim sesle (`cut(audio=…)`: ses yoksa sessizlik, loudnorm -17 LUFS), 1080x1920; altyazı videodaki konuşmanın
+  kelimeleri (`WORDS`, konuşma tanıma; parçalara göre kaydırılır) → `soundWords`. `assemble` sesli bölümde boş seslendirmeye izin verir
+  (`soundDuration` şart); `tts.py` sentezlemez, klip süresinde sessiz wav (zamanlama sesten), `words` = soundWords (yıldızlı), captionSync
+  "orijinal ses"; `fetch_images`/`info_card.render` `sound` bayrağını taşır. Remotion: sesli bölümde seslendirme ve sahne efekti yok,
+  `FullFrame` videoyu `volume=1` ile oynatır; müzik yatağı sesli bölümlerde susar (müzik `Sequence` parçaları, sesli olmayan aralıklarda).
+  Dikey video (kullanıcı isteği: "dikey ise yeni dikey format, video tam gözüksün, üstünde etrafında bizim süslemeler, kanca olaylarımız"):
+  tüm kaynaklar dikeyse (yükseklik > genişlik × 1,15) haber bölümleri de 1080x1920 kesilir ve `fullFrame` → `src/scenes/FullFrame.tsx`:
+  video tüm kare (oranı uymayan bulanık zeminle), üst/alt karartma, giriş ışık süpürmesi, kategori renginde kenar çerçevesi + köşe süsleri,
+  üstte kategori + sıra ya da SON DAKİKA şeridi (sesli bölümde dalga çubuklu "ORİJİNAL SES" rozeti), altyazı (top 1090), numaralı başlık +
+  "VİDEO/GÖRÜNTÜ: kaynak" (top 1260), ilerleme çubuğu. Kanca her zaman `Hook.tsx` (flaş, sarsıntı, punch-in). WhatsApp "Kurgu hazır"
+  mesajı dikey düzeni ve sesli saniyeyi yazar. Sandbox'ta sahte planla dikey + sesli montaj, pipeline (sessiz ses) ve render denendi:
+  sesli bölümde orijinal ses −19 dB, diğerlerinde yok; altyazı konuşmayla eş zamanlı.
 - Sosyal medya linkinden haber (kullanıcı isteği: "Instagram'da viral olmuş haberin linkini göndersem videoyu çekip bizim stilimizde
   haber yap"; `commands.js` `social_video` kuralı — instagram.com/reel|p|tv, tiktok, x/twitter status, youtube shorts/watch/youtu.be,
   facebook reel/watch/videos, fb.watch; linkin dışındaki metin talimat —, `server.js socialVideoNews` → `runVideoNews`,

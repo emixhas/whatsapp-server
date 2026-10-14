@@ -369,7 +369,7 @@ def main():
     from info_card import cards_for_episode
     cards, k = cards_for_episode(), 0
     for i, seg in enumerate(ep["segments"]):
-        if seg.get("kind") not in ("hook", "haber"):
+        if seg.get("kind") not in ("hook", "haber", "sesli"):
             continue
         if cards:
             c = cards[k % len(cards)]
@@ -383,6 +383,10 @@ def main():
                 dst = OUT / f"vid-{i:02d}.mp4"
                 shutil.copyfile(ROOT / c["video"], dst)
                 seg["video"], seg["videoDuration"], seg["infoCard"] = f"images/{dst.name}", c.get("videoDuration") or 8, False
+                if c.get("sound"):  # videonun kendi sesi bu bölümde duyulur (FullFrame.tsx, sesli bölüm)
+                    seg["sound"] = True
+                if c.get("fullFrame"):  # dikey video tüm kareyi kaplar (FullFrame.tsx)
+                    seg["fullFrame"] = True
                 n_vid += 1
             n_img += 1
             continue

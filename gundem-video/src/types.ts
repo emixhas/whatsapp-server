@@ -1,6 +1,6 @@
 export type Segment = {
   /** "intro" | "haber" | "outro" */
-  kind: "hook" | "intro" | "haber" | "outro";
+  kind: "hook" | "intro" | "haber" | "outro" | "sesli";
   /** Ekranda görünen kısa başlık (haber için). */
   title?: string;
   /** Seslendirilen metin. */
@@ -31,6 +31,10 @@ export type Segment = {
   video?: string;
   /** Video klibinin saniye cinsinden süresi (döngü için). */
   videoDuration?: number;
+  /** "sesli" bölüm: videonun kendi sesi çalar, seslendirme yok (WhatsApp/sosyal medya görüntüsü). */
+  sound?: boolean;
+  /** dikey tam ekran haber (FullFrame.tsx): WhatsApp'tan gelen dikey video kart yerine tüm kareyi kaplar. */
+  fullFrame?: boolean;
 };
 
 export type Episode = {

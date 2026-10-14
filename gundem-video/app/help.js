@@ -14,7 +14,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • günün özetini üret · haftanın özetini üret
 • en çok izlenen videoyu yeniden yayınla · son videoyu yeniden yayınla
 • 🔗 *Instagram/TikTok/X/YouTube paylaşım linki* (+ isterseniz nasıl bir haber istediğiniz) → videoyu indirip aynı şekilde kurgularım; hesap adı kaynak olarak yazılır, olay haber sitelerinde aranıp doğrulanır
-• 📹 *video gönderin* + açıklamaya nasıl bir haber istediğinizi yazın (ör. "Kadıköy'de yangın, 30 saniye, baştaki titrek kısmı kes") → kurgulanır, gereksiz yerler kesilir, seslendirilir; açıklama yoksa sorarım. Birden çok videoyu arka arkaya gönderirseniz tek haberde birleştiririm (en çok 4). Bitince size gelir, *onay* yazınca yayınlanır.
+• 📹 *video gönderin* + açıklamaya nasıl bir haber istediğinizi yazın (ör. "Kadıköy'de yangın, 30 saniye, baştaki titrek kısmı kes") → kurgulanır, gereksiz yerler kesilir, seslendirilir; açıklama yoksa sorarım. Birden çok videoyu arka arkaya gönderirseniz tek haberde birleştiririm (en çok 4). Bitince size gelir, *onay* yazınca yayınlanır. Talimata "orijinal sesini kullan" yazarsanız o bölümde seslendirme susar, video kendi sesiyle oynar; dikey videoda haberler tam ekran dikey düzende olur.
 
 📡 *Otomatik içerikler*
 • depremleri kontrol et

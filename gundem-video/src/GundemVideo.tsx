@@ -1,6 +1,7 @@
 import { AbsoluteFill, Audio, Sequence, staticFile } from "remotion";
 import { styleFor } from "./categories";
 import { Background } from "./scenes/Background";
+import { FullFrame } from "./scenes/FullFrame";
 import { Headline } from "./scenes/Headline";
 import { Hook } from "./scenes/Hook";
 import { Intro } from "./scenes/Intro";
@@ -21,12 +22,25 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
   setCaptionLead(episode.captionLead);
   const haberler = episode.segments.filter((s) => s.kind === "haber");
   const first = haberler[0];
+  // müzik yatağı: orijinal sesli bölüm varsa o sırada susar (video kendi sesiyle izlensin); sesli bölümler arası parçalarda çalar
+  const runs: [number, number][] = [];
+  { let t = 0, start: number | null = 0;
+    for (const s of episode.segments) {
+      if (s.kind === "sesli") { if (start !== null && t > start) runs.push([start, t]); start = null; }
+      else if (start === null) start = t;
+      t += s.duration;
+    }
+    if (start !== null && t > start) runs.push([start, t]); }
   let cursor = 0;
   return (
     <AbsoluteFill>
       <Background />
       {/* müzik yatağı: formatın yatağı, düşük seviyede, döngülü */}
-      {episode.music ? <Audio src={staticFile(episode.music)} volume={episode.musicVolume ?? 0.07} loop /> : null}
+      {episode.music ? runs.map(([a, b], k) => (
+        <Sequence key={`m${k}`} from={Math.round(a * FPS)} durationInFrames={Math.max(1, Math.round((b - a) * FPS))}>
+          <Audio src={staticFile(episode.music!)} volume={episode.musicVolume ?? 0.07} loop />
+        </Sequence>
+      )) : null}
       {episode.segments.map((seg, i) => {
         const from = Math.round(cursor * FPS);
         const dur = Math.max(1, Math.round(seg.duration * FPS));
@@ -38,10 +52,10 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
         const sceneVol = seg.kind === "haber" ? st.sfxVolume : seg.kind === "hook" ? 0.75 : 0.5;
         return (
           <Sequence key={i} from={from} durationInFrames={dur}>
-            {/* seslendirme */}
-            <Audio src={staticFile(seg.audio)} />
+            {/* seslendirme (sesli bölümde yok: videonun kendi sesi çalar) */}
+            {seg.kind === "sesli" ? null : <Audio src={staticFile(seg.audio)} />}
             {/* sahne efekti: her sahne başında, sabit eşleme */}
-            <Audio src={staticFile(sceneSfx)} volume={sceneVol} />
+            {seg.kind === "sesli" ? null : <Audio src={staticFile(sceneSfx)} volume={sceneVol} />}
             {breakingSfx ? <Audio src={staticFile(breakingSfx)} volume={0.7} /> : null}
             {/* geçiş: sahneler arası whoosh (ilk sahne hariç) */}
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH_FRAMES}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.35} /></Sequence> : null}
@@ -52,6 +66,10 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
                 slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} words={seg.words} />
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} />
+            ) : seg.kind === "sesli" || seg.fullFrame ? (
+              <FullFrame index={seg.displayIndex != null ? seg.displayIndex - 1 : Math.max(0, haberIndex)} total={haberler.length} title={seg.title ?? ""} source={seg.source}
+                category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words}
+                video={seg.video} videoDuration={seg.videoDuration} sound={seg.kind === "sesli"} />
             ) : (
               <Headline index={seg.displayIndex != null ? seg.displayIndex - 1 : haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image} video={seg.video} videoDuration={seg.videoDuration} infoCard={seg.infoCard} />
             )}

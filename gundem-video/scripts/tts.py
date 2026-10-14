@@ -126,12 +126,16 @@ def main(script_path: str, episode_path: str):
     outs = [audio_dir / f"seg-{i:02d}.wav" for i in range(len(segs))]
     chosen = voices.assign(len(segs))
     # Hassas kelimeler (censor.py): segment parçalara bölünür, kelimenin yerine bip girer; parçalar sonra birleştirilir
-    plan = [censor.pieces(seg["narration"]) for seg in segs]
+    snd = {i for i, seg in enumerate(segs) if seg.get("kind") == "sesli"}  # videonun kendi sesi: seslendirilmez
+    plan = [[("text", "")] if i in snd else censor.pieces(seg["narration"]) for i, seg in enumerate(segs)]
     part_out = lambda i, k: audio_dir / f"seg-{i:02d}.p{k}.wav"
     beeped = sum(1 for p in plan for kind, _ in p if kind == "word")
     if beeped:
         print(f"  🔇 {beeped} hassas kelime bipleniyor (kelime arkadan kısık duyulur), yazıda yıldızla gizleniyor", flush=True)
-    pending = list(range(len(segs)))
+    for i in snd:  # süresi klip kadar sessiz ses: sahne zamanlaması sesten geldiği için
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
+                        "-t", f"{float(segs[i].get('soundDuration') or 1):.3f}", str(outs[i])], check=True)
+    pending = [i for i in range(len(segs)) if i not in snd]
     for attempt in range(6):
         jobs = []
         for i in pending:
@@ -182,13 +186,20 @@ def main(script_path: str, episode_path: str):
         raws[i] = outs[i].with_name(outs[i].stem + ".align.wav")
         shutil.copyfile(outs[i], raws[i])
     try:
-        align.mms_batch([(raws[i], censor.mask(seg["narration"]).split(), seg["narration"].split()) for i, seg in enumerate(segs) if i not in piece_spans])
+        align.mms_batch([(raws[i], censor.mask(seg["narration"]).split(), seg["narration"].split()) for i, seg in enumerate(segs) if i not in piece_spans and i not in snd])
     except Exception as e:
         print(f"  ! metin hizalama atlandı: {str(e)[:160]}", file=sys.stderr)
     segments = []
     for i, seg in enumerate(segs):
         out = outs[i]
         raw = raws[i]
+        if i in snd:  # orijinal sesli bölüm: altyazı videodaki konuşmanın kelimeleri (wa_video.py, konuşma tanıma)
+            raw.unlink(missing_ok=True)
+            seg = dict(seg, audio=f"audio/{out.name}", voice="orijinal", duration=round(wav_duration(out), 3), captionSync="orijinal ses",
+                       words=[{"w": censor.mask(w["w"]), "s": w["s"], "e": w["e"]} for w in seg.get("soundWords") or []])
+            seg.pop("soundWords", None)
+            segments.append(seg)
+            continue
         add_pause(out, voice_gain_db(chosen[i]))
         seg = dict(seg)
         seg["audio"] = f"audio/{out.name}"

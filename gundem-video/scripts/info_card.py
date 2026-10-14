@@ -86,7 +86,8 @@ def render(job_dir: Path) -> list:
     jobs, out = [], []
     for i, props in enumerate(cards):
         if "video" in props:  # hazır görüntü (Pazar derlemesi: eski videodan kesilmiş klip + karesi)
-            out.append({"card": props["image"], "tall": props.get("tall") or props["image"], "video": props["video"], "videoDuration": props.get("videoDuration")})
+            out.append({"card": props["image"], "tall": props.get("tall") or props["image"], "video": props["video"], "videoDuration": props.get("videoDuration"),
+                        **({"sound": True} if props.get("sound") else {}), **({"fullFrame": True} if props.get("fullFrame") else {})})
             continue
         wide, tall = job_dir / f"card-{i}.jpg", job_dir / f"card-{i}-tall.jpg"
         jobs += [{"id": "InfoCard", "out": str(wide.relative_to(ROOT)), "props": {**props, "tall": False}},

@@ -370,6 +370,13 @@ def main(src: str, dst: str):
     if hk.get("category") not in CATEGORIES:
         hk["category"] = next((x.get("category") for x in segs if x.get("kind") == "haber" and x.get("category") in CATEGORIES), "genel")
     for s in segs:
+        if s.get("kind") == "sesli":  # WhatsApp/sosyal medya görüntüsü kendi sesiyle oynar: seslendirme yok, süre klipten
+            if float(s.get("soundDuration") or 0) <= 0:
+                sys.exit("Orijinal sesli bölümün süresi yok")
+            s["narration"] = ""
+            if s.get("title"):
+                s["title"] = expand_abbr(s["title"])
+            continue
         if not s.get("narration", "").strip():
             sys.exit("Boş seslendirme metni")
         s["narration"] = expand_abbr(s["narration"])
