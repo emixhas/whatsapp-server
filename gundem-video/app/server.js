@@ -273,6 +273,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.peakHour != null) env.PEAK_HOUR = String(opts.peakHour);
   // şablon video (deprem/maç/piyasa/takvim): senaryo ve bilgi kartları work/jobs/<ad>/ içinde hazır, Claude çağrılmaz
   if (opts.templateDir) env.TEMPLATE_DIR = String(opts.templateDir);
+  if (opts.userVideo) env.USER_VIDEO = "1"; // WhatsApp'tan gönderilen video: yayın onayla (waVideo.autoPublish)
   if (opts.info) { const i = opts.info; env.INFO_KIND = i.kind || ""; env.INFO_LABEL = i.label || ""; if (i.intro) env.INFO_INTRO = i.intro; if (i.outro) env.INFO_OUTRO = i.outro; if (i.breaking === false) env.INFO_BREAKING = "0"; }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
@@ -939,6 +940,63 @@ async function replyCheck({ manual = false } = {}) {
 setInterval(() => { const c = replyCfg(); if (c.enabled && Date.now() - replyAt >= Number(c.intervalMin) * 60000) { replyAt = Date.now(); replyCheck().catch((e) => push(`💬 yorum yanıtı hatası: ${e.message}`)); } }, 60000);
 app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({ manual: true })));
 
+// ---------- WhatsApp'tan gönderilen videodan haber (kullanıcı isteği: "video gönderdiğimde altına nasıl bir haber istersem hazırla,
+// kesilmesi gereken yerlerden kes, montaj yap"; scripts/wa_video.py + prompts/montaj.md). Video(lar) work/wa_inbox/'a iner; açıklama
+// talimattır, yoksa sorulur (settings.waVideo.waitMin içinde gelen ilk mesaj talimat, "iptal" vazgeçer). Arka arkaya gelen videolar
+// (albüm) 8 sn beklenip TEK haberde birleştirilir. wa_video.py çözümler (konuşma, sahneler, kareler), Claude kurgu planını yazar,
+// parçalar kesilir → şablon iş klasörü → startAnlik({templateDir, userVideo}). Yayın varsayılan ONAYLA (waVideo.autoPublish false).
+const waVideoCfg = () => ({ enabled: true, autoPublish: false, duration: 30, waitMin: 30, ...(settings().waVideo || {}) });
+let waVid = null; // {files, instruction, at, timer, asked}
+async function waVideoIn({ file, caption }) {
+  const c = waVideoCfg();
+  if (!c.enabled) return "WhatsApp'tan gelen videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler).";
+  try { const dir = path.dirname(file); for (const f of readdirSync(dir)) { const p = path.join(dir, f); if (Date.now() - statSync(p).mtimeMs > 3 * 86400000) rmSync(p, { force: true }); } } catch { /* temizlik */ }
+  if (!waVid || waVid.running || Date.now() - waVid.at > Number(c.waitMin) * 60000) waVid = { files: [], instruction: "", at: Date.now() };
+  if (waVid.files.length >= 4) return "En çok 4 video birleştirilebilir; bu video alınmadı.";
+  waVid.files.push(file); waVid.at = Date.now();
+  if (caption) waVid.instruction = `${waVid.instruction} ${caption}`.trim();
+  push(`🎬 WhatsApp videosu alındı (${waVid.files.length}. video)${caption ? ` · talimat: ${caption.slice(0, 100)}` : ""}`);
+  clearTimeout(waVid.timer);
+  waVid.timer = setTimeout(() => waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`)), 8000); // albümün diğer videoları
+  return null;
+}
+function waVideoText(text) {
+  const v = waVid;
+  if (!v || !v.files.length || v.instruction || v.running) return null;
+  if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
+  if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
+  v.instruction = text.trim(); clearTimeout(v.timer);
+  waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`));
+  return true; // yanıtı waVideoGo gönderir
+}
+async function waVideoGo() {
+  const v = waVid;
+  if (!v || !v.files.length || v.running) return;
+  if (!v.instruction) {
+    if (!v.asked) { v.asked = true; try { await wa.send(`🎬 ${v.files.length > 1 ? `${v.files.length} video` : "Video"} alındı. Nasıl bir haber yapayım? Kısaca yazın — ne olduğunu, nerede olduğunu, istediğiniz süreyi ve kesilmesini istediğiniz yerleri.\nÖrnek: "Kadıköy'de akşam saatlerinde iş yerinde yangın çıktı, 30 saniye, başındaki titrek kısmı kes"\n(${waVideoCfg().waitMin} dk içinde yazın; vazgeçmek için *iptal*)`); } catch { /* WhatsApp yok */ } }
+    return;
+  }
+  v.running = true; waVid = null;
+  const sendW = async (t) => { try { await wa.send(t); } catch { /* WhatsApp bağlı değil: log yeterli */ } };
+  push(`🎬 video haberi hazırlanıyor (${v.files.length} video): ${v.instruction.slice(0, 120)}`);
+  await sendW(`🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
+  const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
+  writeJson(jobFile, { videos: v.files, instruction: v.instruction }); // süre talimatta yazmıyorsa settings.waVideo.duration
+  const r = await run(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: 25 * 60000 });
+  rmSync(jobFile, { force: true });
+  for (const l of String(r.stdout || "").split("\n")) if (/^(🎬|✂️|  !)/.test(l)) push(l.trim());
+  let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
+  if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🎬 video haberi hazırlanamadı: ${err}`); await sendW(`❌ Video haberi hazırlanamadı: ${err}`); return { ok: false, error: err }; }
+  const p = j.plan || {};
+  const segLines = (p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.clips.map((c) => `${v.files.length > 1 ? `${c.video}. video ` : ""}${c.start.toFixed(1).replace(".", ",")}–${c.end.toFixed(1).replace(".", ",")} sn`).join(", ")}`).join("\n");
+  push(`✂️ kurgu: ${String(p.cuts || "").slice(0, 200)}`);
+  await sendW(`✂️ *Kurgu hazır* — ${p.titles?.A || p.hook}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info: { kind: "video", label: p.label || "SON DAKİKA", intro: "Son dakika." }, source: "Türkiye Gündemi", userVideo: true });
+  if (!res.ok) await sendW(`❌ Üretim başlatılamadı: ${res.error}`);
+  else if (res.queued) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`);
+  return res;
+}
+
 // ---------- Günün en çok izlenenleri Instagram hikâyesinde (kullanıcı isteği; scripts/ig_stories.py): her akşam
 // settings.igStories {enabled, hour 21, minute 0, count 3} son 24 saatin en çok izlenen videoları (aynı olay bir kez) +
 // sıralama kartı hikâye olarak paylaşılır, özet WhatsApp'a. Saatinden sonraki 3 saat içinde, üretim sürmüyorken, günde bir.
@@ -1275,7 +1333,7 @@ async function think(text, mode = "chat") {
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
 const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const statusText = async () => {
   const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
@@ -1286,7 +1344,7 @@ const statusText = async () => {
   if (vids[0]) lines.push(`🎞 Son video: ${label(vids[0])}${vids[0].views ? " · ▶ " + vids[0].views : ""}`);
   return lines.join("\n");
 };
-const wa = await makeWhatsApp({ autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
+const wa = await makeWhatsApp({ handleVideo: (v) => waVideoIn(v), videoInstruction: (t) => waVideoText(t), autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
 app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
 app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));

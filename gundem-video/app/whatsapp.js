@@ -1,11 +1,12 @@
 // WhatsApp köprüsü (Baileys, WhatsApp Web protokolü). Panelden QR okutulur; yalnızca sahip numarası komut verebilir.
 // Video bitince: metin + izleme linkleri + (isteğe bağlı) video dosyası gönderir; "onay" gelince yayınlar.
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import QRCode from "qrcode";
 import { HELP_TEXT } from "./help.js";
 
-export async function makeWhatsApp({ autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
+export async function makeWhatsApp({ handleVideo = null, videoInstruction = null, autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
   const st = { status: "disconnected", qr: null, qrSvg: null, phone: null, error: null, pending: null, lastMsgAt: null, retries: 0 };
   let sock = null, stopping = false, baileys = null;
@@ -65,7 +66,10 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
         if (lid && !knownOwnerLids.has(lidKey(lid))) await learnOwnerLid();
         let owner = selfChat || pnCands.some(isOwner) || (!!lid && knownOwnerLids.has(lidKey(lid)));
         if (owner && lid && !selfChat) knownOwnerLids.add(lidKey(lid));
-        const text = (m.message.conversation || m.message.extendedTextMessage?.text || m.message.imageMessage?.caption || "").trim();
+        // video: doğrudan, belge olarak ya da süreli/tek görümlük mesaj içinde gelebilir
+        const inner = m.message.ephemeralMessage?.message || m.message.viewOnceMessage?.message || m.message.viewOnceMessageV2?.message || m.message.documentWithCaptionMessage?.message || m.message;
+        const vm = inner.videoMessage || (String(inner.documentMessage?.mimetype || "").startsWith("video/") ? inner.documentMessage : null);
+        const text = (inner.conversation || inner.extendedTextMessage?.text || inner.imageMessage?.caption || vm?.caption || "").trim();
         if (!owner) {
           if (text && Date.now() - lastIgnoredLog > 60000) {
             lastIgnoredLog = Date.now();
@@ -75,15 +79,33 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
           }
           continue;
         }
-        if (!text) continue;
+        if (!text && !vm) continue;
         st.lastMsgAt = Date.now();
         // yanıt: kendine-mesajsa kendi numaramıza, değilse sahibin telefon numarasına (LID adresine değil)
         const replyTo = selfChat ? `${selfPhone()}@s.whatsapp.net` : (pnCands.find(isOwner) && !String(pnCands.find(isOwner)).endsWith("@lid") ? `${digits(pnCands.find(isOwner))}@s.whatsapp.net` : ownerJid());
+        if (vm && handleVideo) { // sahibin gönderdiği video: indir, açıklaması haber talimatıdır (yoksa sorulur)
+          try { await onOwnerVideo(replyTo, { ...m, message: inner }, vm, text); } catch (e) { push(`✖ WhatsApp videosu alınamadı: ${e.message}`); try { await send(replyTo, `Video alınamadı: ${e.message}`); } catch { /* bağlantı yok */ } }
+          continue;
+        }
+        if (!text) continue;
         push(`💬 WhatsApp'tan: ${text.slice(0, 80)}`);
         try { await onOwnerMessage(replyTo, text); } catch (e) { push(`✖ WhatsApp komutu: ${e.message}`); try { await send(replyTo, `Hata: ${e.message}`); } catch { /* bağlantı yok */ } }
       }
     });
     return status();
+  }
+
+  async function onOwnerVideo(jid, msg, vm, caption) {
+    const mb = Number(vm.fileLength || 0) / 1048576;
+    if (mb > 500) { await send(jid, `Video çok büyük (${Math.round(mb)} MB); en çok 500 MB gönderin.`); return; }
+    const dir = path.join(ROOT, "work", "wa_inbox"); mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${Date.now()}-${String(msg.key.id || "v").replace(/[^\w-]/g, "").slice(0, 24)}.mp4`);
+    push(`🎬 WhatsApp'tan video geliyor (${mb ? mb.toFixed(1) + " MB" : "boyut bilinmiyor"}${vm.seconds ? `, ${vm.seconds} sn` : ""})${caption ? `: ${caption.slice(0, 80)}` : ""}`);
+    const pino = (await import("pino")).default;
+    const stream = await baileys.downloadMediaMessage(msg, "stream", {}, { logger: pino({ level: "silent" }), reuploadRequest: sock.updateMediaMessage });
+    await pipeline(stream, createWriteStream(file));
+    const r = await handleVideo({ file, caption, seconds: vm.seconds || null });
+    if (r) await send(jid, r);
   }
 
   async function onOwnerMessage(jid, text) {
@@ -99,6 +121,8 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
       return;
     }
     if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)\b/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label} yayınlanmadı.`); return; }
+    // talimatı bekleyen WhatsApp videosu: bu mesaj nasıl bir haber istendiğidir ("iptal" vazgeçer)
+    if (videoInstruction) { const vr = await videoInstruction(text); if (vr) { if (typeof vr === "string") await send(jid, vr); return; } }
     if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
     if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
     if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
@@ -162,6 +186,8 @@ export async function makeWhatsApp({ autoAll = () => false, automode = async () 
     if (v.anlik && yp.onlyValuable !== false && !v.value?.valuable) ap.youtube = false;
     // 5 saatlik (düzenli) video YouTube'a onaysız gider (post_pipeline aynı kuralı uygular)
     if (!v.anlik && !["gunluk", "haftalik"].includes(v.format) && yp.regularAuto !== false && L.platforms.includes("youtube")) ap.youtube = true;
+    // WhatsApp'tan gönderilen görüntüyle yapılan haber: varsayılan onaylı (post_pipeline aynı kuralı uygular)
+    if (v.userVideo && !settings().waVideo?.autoPublish) for (const pl of Object.keys(ap)) ap[pl] = false;
     const autoPl = L.platforms.filter((pl) => ap[pl] && !already[pl]);      // otomatik yayın açık: onay gerekmez
     const platforms = L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
     const autoLine = autoPl.length ? `\n\n🚀 Otomatik yayın: ${autoPl.join(", ")} (onay gerekmez, yüklenince bildirilir)` : "";

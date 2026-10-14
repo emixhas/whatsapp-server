@@ -13,6 +13,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • <konu> hakkında son dakika videosu yap
 • günün özetini üret · haftanın özetini üret
 • en çok izlenen videoyu yeniden yayınla · son videoyu yeniden yayınla
+• 📹 *video gönderin* + açıklamaya nasıl bir haber istediğinizi yazın (ör. "Kadıköy'de yangın, 30 saniye, baştaki titrek kısmı kes") → kurgulanır, gereksiz yerler kesilir, seslendirilir; açıklama yoksa sorarım. Birden çok videoyu arka arkaya gönderirseniz tek haberde birleştiririm (en çok 4). Bitince size gelir, *onay* yazınca yayınlanır.
 
 📡 *Otomatik içerikler*
 • depremleri kontrol et

@@ -159,6 +159,8 @@ def build_caption(video_name: str, max_len: int = 2000):
             lines += ["00:00 Giriş", *chapters, ""]
     elif anlik:  # tek konulu son dakika videosu (şablon videoda kendi etiketi: ⚽ MAÇ SONUCU, 💰 PİYASALAR, 📅 HATIRLATMA)
         head = INFO_HEAD.get(meta.get("infoKind") or "", "🔴 SON DAKİKA")
+        if meta.get("infoKind") == "video" and meta.get("slotLabel"):  # WhatsApp görüntüsü: etiket kurgu planından (ÖZEL HABER…)
+            head = f"🔴 {meta['slotLabel']}"
         title = f"{head}: {first} | {s['channelName']} #Shorts"
         lines = [f"{head} · {s['channelName']} · {day} · {rng}", ""]
     else:
@@ -177,7 +179,7 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl"):
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm") else [])
+    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"

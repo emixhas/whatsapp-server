@@ -241,6 +241,27 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     + başlığı tekrar etmeyen, dün/yarın içermeyen ilk cümle ("bugün" → gün adı). INFO kind `derleme`.
   Şablon senaryoda haber sayısı veriden gelir (1-6); `assemble_script` Claude'un haber sayısı sınırını TEMPLATE_DIR'de uygulamaz.
   En çok izlenen saat tekrarı piyasa/takvim/alarm/derleme videolarını seçmez.
+- WhatsApp'tan gönderilen videodan haber (kullanıcı isteği, 14 Ekim: "video gönderdiğimde altına nasıl bir haber istersem hazırla,
+  kesilmesi gereken yerlerden kes, montaj yap"; `app/whatsapp.js onOwnerVideo`, `server.js waVideoIn/waVideoText/waVideoGo`,
+  `scripts/wa_video.py`, `prompts/montaj.md`, `settings.waVideo` {enabled, autoPublish false, duration 30, waitMin 30}): sahibin
+  gönderdiği video (doğrudan, belge olarak, süreli/tek görümlük; ≤500 MB) Baileys `downloadMediaMessage` akışıyla `work/wa_inbox/`a
+  iner (3 günden eskiler silinir). Açıklama talimattır; yoksa 8 sn sonra "Nasıl bir haber yapayım?" sorulur ve `waitMin` içinde gelen
+  ilk mesaj talimat olur ("iptal" vazgeçer; yayın onayı "onay/iptal" önce işlenir). 8 sn içinde arka arkaya gelen videolar (albüm,
+  en çok 4) TEK haberde birleşir. `wa_video.py`: her video için ffprobe, sahne geçişleri (`select gt(scene,0.3)`), konuşma dökümü
+  (mlx-whisper kelime zamanları → cümle satırları), kare çizelgesi (8-16 kare, 4 sütun tek jpg) → TEK Claude çağrısı (Read aracı yalnız
+  iş klasöründeki çizelgeler için `--tools Read --allowedTools Read`; olmazsa resimsiz bir kez daha): talimat önceliklidir; titrek/
+  karanlık/alakasız yerler kesilir; yalnız talimatta yazan ve görüntüde/konuşmada açıkça olan bilgi (uydurma yok); kanca + 1-3 haber,
+  her segmente parçalar `clips` [{video, start, end}] ve `cuts` (neyin neden kesildiği), `label` (SON DAKİKA / ÖZEL HABER…). Parçalar
+  doğrulanır (sınır, ≥0,8 sn; geçersizse kullanılmamış bölümden seslendirme kadar), ffmpeg ile kesilip birleştirilir (sessiz; kanca
+  1080x1920, haber kartı 1280x780; oranı uymayan görüntü KIRPILMAZ, bulanık hali zemin — `fit_filter`, birleştirme için setsar=1),
+  her segmente kare (1840x1120 + 1080x1920). İş klasörü `work/jobs/video-<zaman>/` şablon düzeninde (claude_out.json + cards.json
+  {video, image, tall, videoDuration}); süre talimattaki "N saniye"den, yoksa `waVideo.duration`. WhatsApp'a "✂️ Kurgu hazır" (kesimler,
+  kullanılan saniyeler, seslendirme) → `startAnlik(başlık, süre, {templateDir, info: {kind: "video", label}, userVideo})` (env
+  `USER_VIDEO=1` → meta `userVideo`). Yayın varsayılan ONAYLA: `post_pipeline.targets` userVideo'da hedef vermez ("önce size gelir"),
+  `notifyVideo` tüm platformları "onay"a koyar; `waVideo.autoPublish` açılırsa normal anlık kuralı. Açıklama başlığı "🔴 <etiket>",
+  #sondakika eklenir; en çok izlenen saat tekrarı bu videoları seçmez (görüntü haber aramasıyla yeniden üretilemez). Panel 📡 grubunda
+  iki anahtar; yardım listesinde. Sandbox'ta sahte Claude planıyla dikey + yatay iki videodan montaj ve pipeline (sessiz ses) + render
+  denendi; gerçek WhatsApp indirmesi ve Claude'un kare okuması Mac'te denenmedi. Videonun kendi sesi kullanılmaz (seslendirme + müzik).
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =

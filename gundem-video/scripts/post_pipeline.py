@@ -78,6 +78,9 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     meta = episode_meta(Path(video).name) or {}
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
     conn = connected()
+    # WhatsApp'tan gönderilen görüntüyle yapılan haber: sahibi önce izlesin, "onay" ile yayınlansın (waVideo.autoPublish açılabilir)
+    if meta.get("userVideo") and not (s.get("waVideo") or {}).get("autoPublish"):
+        return [], "anlık", "WhatsApp'tan gönderdiğiniz görüntüyle yapılan haber önce size gelir; izleyip \"onay\" yazınca yayınlanır"
     auto_all = schedule_enabled() or bool(s.get("autoMode"))
     if auto_all:
         extra = [p for p in conn if p not in chosen]
