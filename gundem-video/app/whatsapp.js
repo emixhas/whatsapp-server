@@ -135,7 +135,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
         st.pending = rest.length ? { ...p, platforms: rest, partial: true, at: Date.now() } : null;
         await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${chosen.map((pl) => PL[pl]).join(", ")}${missing.length ? `\n(${missing.map((pl) => PL[pl]).join(", ")} bekleyen listede yok)` : ""}`);
         const r = await publishVideo(p.video, chosen);
-        const lines = Object.entries(r.results || {}).map(([k, v]) => v.ok ? `✅ ${PL[k] || k}: ${v.skipped ? "zaten yayında" : (v.url || v.note || "tamam")}` : `❌ ${PL[k] || k}: ${v.error}`);
+        const lines = Object.entries(r.results || {}).map(([k, v]) => v.ok ? `✅ ${PL[k] || k}: ${v.skipped ? "zaten yayında" : (v.url || v.note || "tamam")}${v.skipped ? "" : commentNote(k, v)}` : `❌ ${PL[k] || k}: ${v.error}`);
         if (rest.length) lines.push(`\n⏸ Beklemede: ${rest.map((pl) => PL[pl]).join(", ")} → ${rest.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")} · bırakmak için *iptal*`);
         await send(jid, lines.join("\n") || "Yayınlanacak platform yok.");
         return;
@@ -197,6 +197,15 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (/ (tiktok\w*|tik tok\w*|tt) /.test(x)) out.push("tiktok");
     return out;
   }
+  // ilk yorumun sonucu (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): yazıldı mı, yazılamadıysa neden
+  const commentNote = (pl, v) => {
+    if (pl === "tiktok") return "";  // TikTok API yorum yazmaya izin vermez
+    if (v.firstComment) return "\n   💬 ilk yorum yazıldı";
+    if (v.commentError) return /izni yok/.test(v.commentError)
+      ? `\n   💬 ilk yorum yazılamadı: yorum izni yok → panelde ${PL[pl]} kartında 🔄 Yeniden bağla (izin gelince kendiliğinden yazılır)`
+      : `\n   💬 ilk yorum yazılamadı (${String(v.commentError).slice(0, 80)}); 20 dk içinde yeniden denenecek`;
+    return "";
+  };
   // onay satırı: hepsi için "onay", tek platform için "onay insta" …
   const approveLine = (platforms) => `\n\n✅ Hepsinde yayınlamak için *onay* → ${platforms.map((pl) => PL[pl]).join(", ")}` +
     (platforms.length > 1 ? `\n▫️ Yalnız birinde: ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : "") + "\n❌ Yayınlamamak için *iptal*";

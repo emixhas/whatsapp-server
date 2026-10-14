@@ -326,8 +326,12 @@ def build(job: dict) -> dict:
         src = social.get("credit") or src
         for x in segs:
             x["source"] = src
+    # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru; sosyal medya görüntüsünde altına sahibi
+    first = str(plan.get("firstComment") or "").strip()[:160] or "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
+    if social and social.get("credit"):
+        first += f"\n📹 Görüntü: {social['credit']}"
     script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
-              "importanceReason": plan.get("importanceReason", "WhatsApp'tan gönderilen görüntü"), "firstComment": plan.get("firstComment"),
+              "importanceReason": plan.get("importanceReason", "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,
                             "category": segs[0].get("category") if segs[0].get("category") in CATS else "genel"},
                            {"kind": "intro", "narration": "Son dakika."}]
