@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
 import { parseCommand } from "./commands.js";
+import { parseWhen, whenLabel } from "./when.js";
 import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_LEAN, claudeCwd } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
 
@@ -274,6 +275,7 @@ function startAnlik(topic, duration, opts = {}) {
   // şablon video (deprem/maç/piyasa/takvim): senaryo ve bilgi kartları work/jobs/<ad>/ içinde hazır, Claude çağrılmaz
   if (opts.templateDir) env.TEMPLATE_DIR = String(opts.templateDir);
   if (opts.userVideo) env.USER_VIDEO = "1"; // WhatsApp'tan gönderilen video: yayın onayla (waVideo.autoPublish)
+  if (opts.publishAt) env.PUBLISH_AT = String(opts.publishAt); // WhatsApp'ta yazılan yayın saati: video hemen üretilir, o saatte yayınlanır
   if (opts.info) { const i = opts.info; env.INFO_KIND = i.kind || ""; env.INFO_LABEL = i.label || ""; if (i.intro) env.INFO_INTRO = i.intro; if (i.outro) env.INFO_OUTRO = i.outro; if (i.breaking === false) env.INFO_BREAKING = "0"; }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
@@ -954,7 +956,7 @@ async function waVideoIn({ file, caption }) {
   if (!waVid || waVid.running || Date.now() - waVid.at > Number(c.waitMin) * 60000) waVid = { files: [], instruction: "", at: Date.now() };
   if (waVid.files.length >= 4) return "En çok 4 video birleştirilebilir; bu video alınmadı.";
   waVid.files.push(file); waVid.at = Date.now();
-  if (caption) waVid.instruction = `${waVid.instruction} ${caption}`.trim();
+  if (caption) { const wn = parseWhen(caption); if (wn.at) waVid.publishAt = wn.at.toISOString(); waVid.instruction = `${waVid.instruction} ${caption}`.trim(); }
   push(`🎬 WhatsApp videosu alındı (${waVid.files.length}. video)${caption ? ` · talimat: ${caption.slice(0, 100)}` : ""}`);
   clearTimeout(waVid.timer);
   waVid.timer = setTimeout(() => waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`)), 8000); // albümün diğer videoları
@@ -966,6 +968,7 @@ function waVideoText(text) {
   if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
   if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
   v.instruction = text.trim(); clearTimeout(v.timer);
+  { const wn = parseWhen(text); if (wn.at) v.publishAt = wn.at.toISOString(); }
   waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`));
   return true; // yanıtı waVideoGo gönderir
 }
@@ -994,9 +997,9 @@ async function runVideoNews(v) {
   const p = j.plan || {};
   const segLines = (p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.kind === "sesli" ? `🔊 Orijinal ses${s.title ? ` (${s.title})` : ""} — seslendirme susar` : s.title}: ${s.clips.map((c) => `${v.files.length > 1 ? `${c.video}. video ` : ""}${c.start.toFixed(1).replace(".", ",")}–${c.end.toFixed(1).replace(".", ",")} sn`).join(", ")}`).join("\n");
   push(`✂️ kurgu: ${String(p.cuts || "").slice(0, 200)}`);
-  await sendW(`✂️ *Kurgu hazır* — ${p.titles?.A || p.hook}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  await sendW(`✂️ *Kurgu hazır* — ${p.titles?.A || p.hook}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info: { kind: "video", label: p.label || "SON DAKİKA", intro: "Son dakika." },
-    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true });
+    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}) });
   if (!res.ok) await sendW(`❌ Üretim başlatılamadı: ${res.error}`);
   else if (res.queued) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`);
   return res;
@@ -1006,7 +1009,7 @@ async function runVideoNews(v) {
 // videoyu çekip bizim stilimizde haber yap"): scripts/social_video.py indirir + paylaşım bilgisi + haber sitelerinde aynı olay;
 // sonra runVideoNews (kurgu, kesim, seslendirme). Kaynak hesabı kartlarda ve açıklamada görünür; yayın onaylı (userVideo).
 let socialBusy = false;
-async function socialVideoNews({ url, instruction = "" }) {
+async function socialVideoNews({ url, instruction = "", publishAt = null }) {
   if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
   socialBusy = true;
   try {
@@ -1018,9 +1021,49 @@ async function socialVideoNews({ url, instruction = "" }) {
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
     push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`);
     await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
-    return await runVideoNews({ files: [j.file], instruction: instruction || "Bu paylaşımdaki olayı tarafsız bir haber olarak anlat.", social: s, related: j.related || [] });
+    return await runVideoNews({ files: [j.file], instruction: instruction || "Bu paylaşımdaki olayı tarafsız bir haber olarak anlat.", social: s, related: j.related || [], publishAt });
   } finally { socialBusy = false; }
 }
+
+// ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu
+// data/scheduled_publish.json'a yazar; panel dakikada bir bakar, saati gelince bağlı hesaplara yayınlar ve WhatsApp'a yazar.
+// Mac uykudaysa uyanınca yayınlar; 12 saatten fazla geciktiyse (haber bayatladı) yayınlamaz, sorar. Log ⏰.
+const PUB_SCHED = path.join(DATA, "scheduled_publish.json");
+const schedItems = () => readJson(PUB_SCHED, []) || [];
+const vidTitle = (name) => { const m = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), {}); return m.publishTitle || m.titles?.A || name; };
+let schedBusy = false;
+async function publishScheduled(item, { late = false } = {}) {
+  writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video));
+  if (!existsSync(path.join(OUT, item.video))) { push(`⏰ planlı yayın: ${item.video} bulunamadı (silinmiş), atlandı`); return { ok: false }; }
+  push(`⏰ planlı yayın zamanı geldi${late ? " (gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 80)} → ${item.platforms.join(", ")}`);
+  const r = await execAction({ type: "publish", video: item.video, platforms: item.platforms });
+  const lines = Object.entries(r.results || {}).map(([k, x]) => x.ok ? `✅ ${k}: ${x.skipped ? "zaten yayında" : (x.url || x.note || "tamam")}` : `❌ ${k}: ${String(x.error || "").slice(0, 140)}`);
+  await sendW(`⏰ *Planlı yayın yapıldı*${late ? " (Mac uykudaydı, gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 90)}\n${lines.join("\n")}`);
+  return r;
+}
+setInterval(async () => {
+  if (schedBusy) return; schedBusy = true;
+  try {
+    for (const it of schedItems().filter((x) => x.at * 1000 <= Date.now())) {
+      const lateH = (Date.now() - it.at * 1000) / 3600000;
+      if (lateH > 12) {
+        writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== it.video));
+        push(`⏰ planlı yayın ${Math.round(lateH)} saat gecikti (Mac kapalı/uykudaydı), haber bayatlamış olabilir: yayınlanmadı — ${it.video}`);
+        await sendW(`⏰ Planlı yayın ${Math.round(lateH)} saat gecikti (Mac kapalı ya da uykudaydı); haber bayatlamış olabileceği için yayınlamadım: ${vidTitle(it.video).slice(0, 80)}. Yine de isterseniz panelden ya da "son videoyu yayınla" ile yayınlayın.`);
+        continue;
+      }
+      await publishScheduled(it, { late: lateH > 0.25 });
+    }
+  } catch (e) { push(`⏰ planlı yayın hatası: ${e.message}`); } finally { schedBusy = false; }
+}, 60000);
+async function scheduledCommand({ cancel = false, now = false } = {}) {
+  const items = schedItems().sort((a, b) => a.at - b.at);
+  if (!items.length) return "Planlı yayın yok.";
+  if (cancel) { writeJson(PUB_SCHED, []); push(`⏰ planlı yayınlar iptal edildi (${items.length})`); return `${items.length} planlı yayın iptal edildi; videolar Mac'te duruyor, isterseniz panelden yayınlayabilirsiniz.`; }
+  if (now) { for (const it of items) await publishScheduled(it); return `${items.length} planlı yayın şimdi yayınlandı.`; }
+  return "⏰ Planlı yayınlar:\n" + items.map((x) => `• ${whenLabel(new Date(x.at * 1000))} — ${vidTitle(x.video).slice(0, 70)} → ${x.platforms.join(", ")}`).join("\n") + "\n(İptal: planlı yayını iptal et · hemen: planlı yayını şimdi yayınla)";
+}
+app.get("/api/scheduled", (_req, res) => res.json({ items: schedItems() }));
 
 // ---------- Günün en çok izlenenleri Instagram hikâyesinde (kullanıcı isteği; scripts/ig_stories.py): her akşam
 // settings.igStories {enabled, hour 21, minute 0, count 3} son 24 saatin en çok izlenen videoları (aynı olay bir kez) +
@@ -1358,7 +1401,7 @@ async function think(text, mode = "chat") {
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
 const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const statusText = async () => {
   const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
@@ -1371,6 +1414,18 @@ const statusText = async () => {
 };
 const wa = await makeWhatsApp({ handleVideo: (v) => waVideoIn(v), videoInstruction: (t) => waVideoText(t), autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
+// WhatsApp bağlantı bekçisi (kullanıcı isteği): 2 dk'da bir; kopuksa yeniden bağlar, takılırsa soketi yeniler. 30 dk'da 5'ten fazla
+// yeniden bağlanma ya da QR beklemesi (oturum düştü) → sağlık uyarısı (log + ses; WhatsApp mesajı bağlanınca kuyruktan gider).
+let waReconnectTimes = [];
+setInterval(async () => {
+  if (!settings().whatsapp?.enabled) return;
+  try {
+    const r = await wa.watchdog();
+    if (r.reconnecting) waReconnectTimes = [...waReconnectTimes.filter((t) => Date.now() - t < 30 * 60000), Date.now()];
+    if (waReconnectTimes.length > 5) healthAlert("wa-unstable", `WhatsApp bağlantısı son 30 dakikada ${waReconnectTimes.length} kez koptu. İnternet bağlantısını ve telefonda WhatsApp'ın açık olduğunu kontrol edin.`, { everyH: 3 }).catch(() => {});
+    if (r.needQr) healthAlert("wa-qr", "WhatsApp oturumu düştü: panelde Ayarlar → WhatsApp'tan QR kodu yeniden okutun.", { everyH: 6 }).catch(() => {});
+  } catch (e) { push(`💬 WhatsApp bekçisi hatası: ${e.message}`); }
+}, 120000);
 app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()));
 app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));
 app.post("/api/whatsapp/logout", async (_req, res) => res.json(await wa.logout()));
@@ -1687,9 +1742,10 @@ async function handleCommand(text, opts = {}) {
     case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
     case "anlik": {
-      const r = await prepareAnlik(cmd.topic, cmd.duration);
+      const r = await prepareAnlik(cmd.topic, cmd.duration, cmd.publishAt ? { publishAt: cmd.publishAt } : {});
       const what = r.title ? `"${r.title.slice(0, 90)}" (${r.source}${r.count > 1 ? `, ${r.count} haberde geçiyor` : ""})` : String(cmd.topic).slice(0, 60);
-      reply = !r.ok ? r.error : `${r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}`;
+      const when = cmd.publishAt ? whenLabel(new Date(cmd.publishAt)) : "";
+      reply = !r.ok ? r.error : `${r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : when ? "Video şimdi hazırlanıyor;" : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}${when ? ` ⏰ ${when}'de yayınlanacak (iptal için: planlı yayını iptal et).` : ""}`;
       if (!r.ok) action = "none"; break;
     }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
@@ -1741,10 +1797,11 @@ async function handleCommand(text, opts = {}) {
       reply = r.ok ? (r.text || "Hikâyeler paylaşıldı.") : `Hikâye paylaşılamadı: ${r.error}`;
       break;
     }
+    case "scheduled": { reply = await scheduledCommand(cmd); break; }
     case "social_video": {
       if (waVideoCfg().enabled === false) { reply = "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)."; break; }
-      socialVideoNews({ url: cmd.url, instruction: cmd.instruction }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
-      reply = "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.";
+      socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
+      reply = "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim." + (cmd.publishAt ? ` ⏰ Video ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
       break;
     }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }

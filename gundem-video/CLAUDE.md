@@ -295,6 +295,25 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   onaylı (userVideo). Telif: başkasının görüntüsü; kaynak gösterilir ama platformlar telif bildirimi yapabilir — kullanıcıya söylendi.
   `wa_video.py` konuşma tanıma çalışmazsa (mlx-whisper ilk ihtiyaçta kendiliğinden kurulur; olmadıysa) logda ve "Kurgu hazır"
   mesajında söyler (`plan.speech`).
+- Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;
+  saat yazmazsam direkt paylaşsın"): `app/when.js parseWhen` Türkçe saat ifadelerini çözer ("18:30'da", "18.30 da", "saat 8'de" —
+  dönemsizse bugünün en yakın gelecekteki 08:00/20:00'ı —, "akşam 9", "sabah 9", "öğlen 12", "öğleden sonra 4", "gece 1", "yarın 10:00",
+  "20 dakika sonra", "2 saat sonra", "yarım saat sonra"; geçmişte kalan saat yarına; "dolar 12.50" gibi noktalı sayı yalnız ek ya da yayın
+  fiiliyle saat sayılır). `commands.js` linkli mesajda (haber linki → `anlik`, sosyal medya → `social_video`) `publishAt` (ISO) ekler;
+  WhatsApp videosunun açıklaması/talimatı da çözülür (`waVideoIn/waVideoText`). `startAnlik({publishAt})` → env `PUBLISH_AT` → meta
+  `publishAt`. Video HEMEN üretilir; `post_pipeline` saat ≥1 dk ilerideyse yayınlamaz, `targets`'ı hiç çalıştırmaz, bağlı TÜM hesapları
+  (kullanıcının açık talimatı: YouTube değer kuralı ve görüntü onayı aranmaz) `data/scheduled_publish.json`a yazar ("⏰ planlı yayın: …"),
+  son JSON satırında `scheduled`. Panel dakikada bir: saati gelen → `execAction publish` + WhatsApp "⏰ Planlı yayın yapıldı" (15 dk'dan
+  geç ise "gecikmeli"); 12 saatten fazla geciktiyse (Mac kapalı/uykuda) yayınlamaz, sorar. `notifyVideo` planlı videoda onay istemez,
+  "⏰ Planlı yayın: bugün 18:30 → …" yazar. Komutlar "planlı yayınlar" / "planlı yayını iptal et" / "planlı yayını şimdi yayınla"
+  (`scheduled` eylemi; genel "iptal" kuralından önce), `GET /api/scheduled`. Mac uykudaysa yayın uyanınca yapılır.
+- WhatsApp bağlantı bekçisi (kullanıcı isteği: "bağlantım düzenli kontrol edilsin, kopma varsa yeniden bağlansın"): `wa.watchdog()`
+  panelden 2 dk'da bir (`whatsapp.enabled`): kopuksa (kullanıcı "durdur" demediyse, oturum varsa) yeniden bağlanır (eski 8 denemelik
+  sınır bekçiyle sıfırlanır); 3 dk'dan uzun "bağlanıyor"da soket yenilenir; bağlı görünürken `sock.onWhatsApp` sorgusu (20 sn), 2 kez üst
+  üste yanıtsızsa bağlantı yeniden kurulur. Her soket yalnız kendi `connection.update` olaylarını işler (`me !== sock` — eski soketin geç
+  kapanma olayı yeni bağlantıyı silmesin). Kopukken `send()` mesajı kuyruğa alır (en çok 30, 12 saat), bağlanınca/başarılı kontrolde
+  gönderilir; `notifyVideo` kopukken kısa metin bildirimini kuyruğa koyar. 30 dk'da 5'ten fazla kopma ya da QR beklemesi → sağlık uyarısı.
+  `status()` lastOkAt, reconnects, outbox.
 - Mynet manşet takibi (`scripts/mynet_watch.py`, `settings.mynet` {enabled, url, count 6, intervalMin 30,
   maxPerDay 3, duration 30}): panel her `intervalMin` dakikada `--check` çalıştırır; manşet bloğu sınıf adına
   bağlı değil (manset/slider/swiper/carousel/headline atası, yoksa görselli ilk haber linkleri; haber linki =

@@ -119,10 +119,39 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     return [p for p in chosen if p in conn], ("anlık" if anlik else ""), why
 
 
+SCHED = DATA / "scheduled_publish.json"  # [{video, at, platforms, created}] — panel zamanı gelince yayınlar
+
+
+def schedule_at(meta: dict) -> float | None:
+    """WhatsApp'ta linkle birlikte yazılan yayın saati (meta publishAt) en az 1 dk ilerideyse epoch, değilse None."""
+    from datetime import datetime
+    try:
+        at = datetime.fromisoformat(str(meta.get("publishAt")).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+    return at if at > time.time() + 60 else None
+
+
 video = sys.argv[1]
 s = settings()
-plats, kind, why = targets(video, s)
-if not plats:
+scheduled = None
+_meta = episode_meta(Path(video).name) or {}
+_at = schedule_at(_meta)
+plats, kind, why = ([], "anlık" if _meta.get("anlik") else "", "") if _at else targets(video, s)
+if _at:
+    # kullanıcının verdiği saat açık yayın talimatıdır: bağlı tüm hesaplar (YouTube değer kuralı ve görüntü onayı aranmaz)
+    plan_plats = connected()
+    label = time.strftime("%d.%m %H:%M", time.localtime(_at))
+    if plan_plats:
+        items = [x for x in (load_json(SCHED, []) or []) if x.get("video") != Path(video).name]
+        items.append({"video": Path(video).name, "at": _at, "platforms": plan_plats, "created": time.time()})
+        save_json(SCHED, items)
+        scheduled = _at
+        print(f"⏰ planlı yayın: {label} → {', '.join(plan_plats)} (video hazır; o saatte yayınlanacak — iptal için \"planlı yayını iptal et\")", flush=True)
+    else:
+        print(f"⏰ planlı yayın saati ({label}) verildi ama bağlı yayın hesabı yok (Ayarlar → Yayın hesapları)", flush=True)
+    plats = []
+elif not plats:
     print(f"📤 otomatik yayın yapılmadı: {why}. WhatsApp'tan \"onay\" yazarak ya da panelden yayınlayabilirsiniz.")
 def publish(plat: str) -> bool:
     r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True)
@@ -163,4 +192,4 @@ if failed:
     if failed:
         print(f"📤 yayınlanamadı: {', '.join(failed)}. WhatsApp'tan \"onay\" yazarak ya da panelden tekrar deneyebilirsiniz.", flush=True)
 subprocess.run([sys.executable, str(ROOT / "scripts/analyze.py")], capture_output=True)
-print(json.dumps({"autopublish": plats, "kind": kind}, ensure_ascii=False))
+print(json.dumps({"autopublish": plats, "kind": kind, **({"scheduled": scheduled} if scheduled else {})}, ensure_ascii=False))

@@ -1,3 +1,4 @@
+import { parseWhen } from "./when.js";
 // Türkçe sesli komutları kural tabanlı çözer. LLM yok, token yok.
 const NUM = { "on beş": 15, onbeş: 15, yirmi: 20, otuz: 30, "kırk beş": 45, kırkbeş: 45, kırk: 40, elli: 50, altmış: 60, yetmiş: 70, seksen: 80, doksan: 90, yüz: 100, "yüz yirmi": 120, "bir dakika": 60, "iki dakika": 120, "bir buçuk dakika": 90 };
 
@@ -48,10 +49,13 @@ export function parseCommand(raw) {
   const link = String(raw).match(/https?:\/\/[^\s<>"']+/i);
   if (link) {
     if (/(^|\s)(aç|göster)(\s|$)/.test(t)) return { action: "open_url", target: link[0], reply: "" };
+    // yayın saati (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim; saat yazmazsam direkt paylaşsın")
+    const when = parseWhen(String(raw).replace(link[0], " "));
+    const publishAt = when.at ? when.at.toISOString() : undefined;
     // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
     if (/^https?:\/\/([\w-]+\.)*(instagram\.com\/(reels?|p|tv)\/|tiktok\.com\/|(x|twitter)\.com\/[^/\s]+\/status\/|youtube\.com\/(shorts\/|watch)|youtu\.be\/|facebook\.com\/(reel|watch|share|[^/\s]+\/videos)|fb\.watch\/)/i.test(link[0]))
-      return { action: "social_video", url: link[0], instruction: String(raw).replace(link[0], " ").replace(/\s+/g, " ").trim(), reply: "" };
-    return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, reply: "" };
+      return { action: "social_video", url: link[0], instruction: when.rest.replace(/\s+/g, " ").trim(), publishAt, reply: "" };
+    return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, reply: "" };
   }
   // İki noktasız: "son dakika Eşref Tek geri dönüyor", "son dakika X ile haber üret", "X hakkında son dakika videosu yap".
   // Soru cümleleri ("son dakika haberleri neler", "son dakika var mı") tetiklemez; konu haber sitelerinde aranır.
@@ -96,6 +100,9 @@ export function parseCommand(raw) {
   // Dinlenmeden çık: "sistemi başlat", "sistemi uyandır", "sisteme devam"
   if (/\bsistem(i|e)? (başlat|uyandır|aç|devam|çalıştır)/.test(t)) return { action: "rest_end", reply: "" };
   if (/^(dur|sus|tamam dur|yeter|kes|sessiz ol|teşekkürler|sağ ol)$/.test(t)) return { action: "stop", reply: "" };
+  // planlı yayınlar (linkle birlikte saat verilen videolar)
+  if (/planl[ıi] yay[ıi]n|zamanlanm[ıi]ş yay[ıi]n|bekleyen yay[ıi]n/.test(t))
+    return { action: "scheduled", cancel: /(iptal|vazgeç|sil|kaldır|durdur)/.test(t), now: /(şimdi|hemen) (yayınla|paylaş)/.test(t), reply: "" };
   if (/(iptal|boş ver|vazgeç)/.test(t)) return { action: "none", reply: "Tamam, iptal." };
   // Instagram hikâyesi (günün en çok izlenenleri): "günün hikayesini paylaş", "hikayeye at", "hikaye paylaşımını kapat"
   if (/(hikaye|hikâye|story|stori)/.test(t) && !/(^| )m[iı]( |$)|m[iı]s[iı]n/.test(t)) {

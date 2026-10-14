@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import QRCode from "qrcode";
 import { HELP_TEXT } from "./help.js";
+import { whenLabel } from "./when.js";
 
 export async function makeWhatsApp({ handleVideo = null, videoInstruction = null, autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
@@ -38,11 +39,17 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     let version; try { ({ version } = await fetchLatestBaileysVersion()); } catch { version = undefined; }
     sock = makeWASocket({ auth: state, version, logger: pino({ level: "silent" }), browser: ["Emixhas", "Chrome", "4.0.0"], printQRInTerminal: false, markOnlineOnConnect: false });
-    st.status = "connecting"; st.error = null;
+    st.status = "connecting"; st.error = null; st.connectingSince = Date.now(); st.userStopped = false;
     sock.ev.on("creds.update", saveCreds);
+    const me = sock; // eski soketin geç gelen olayları (bekçi yenisini kurduktan sonra) yeni bağlantıyı bozmasın
     sock.ev.on("connection.update", async (u) => {
+      if (me !== sock) return;
       if (u.qr) { st.qr = u.qr; st.qrSvg = await QRCode.toString(u.qr, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }); st.status = "qr"; push("💬 WhatsApp: QR hazır, panelden telefonunuzla okutun"); }
-      if (u.connection === "open") { st.status = "connected"; st.qr = st.qrSvg = null; st.retries = 0; st.phone = digits(sock.user?.id?.split(":")[0]); push(`💬 WhatsApp bağlandı: +${st.phone}`); announce("WhatsApp bağlandı."); setTimeout(() => learnOwnerLid(), 3000); }
+      if (u.connection === "open") {
+        st.status = "connected"; st.qr = st.qrSvg = null; st.retries = 0; st.connectingSince = null; st.lastOkAt = Date.now(); st.probeFails = 0;
+        st.phone = digits(sock.user?.id?.split(":")[0]); push(`💬 WhatsApp bağlandı: +${st.phone}`); announce("WhatsApp bağlandı.");
+        setTimeout(() => learnOwnerLid(), 3000); setTimeout(() => flushOutbox().catch(() => {}), 5000);
+      }
       if (u.connection === "close") {
         const code = u.lastDisconnect?.error?.output?.statusCode;
         sock = null; st.status = "disconnected";
@@ -134,7 +141,22 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   }
 
   const remember = (r) => { if (r?.key?.id) { sentIds.add(r.key.id); if (sentIds.size > 500) sentIds.delete(sentIds.values().next().value); } return r; };
-  async function send(jid, text) { if (!sock || st.status !== "connected") throw new Error("WhatsApp bağlı değil"); remember(await sock.sendMessage(jid, { text })); }
+  // bağlantı koptuğunda gönderilemeyen metin mesajları kaybolmasın: kuyruğa girer (en çok 30, 12 saat), bağlanınca sırayla gider
+  const outbox = [];
+  async function send(jid, text) {
+    if (!sock || st.status !== "connected") {
+      if (outbox.length < 30) outbox.push({ jid, text, at: Date.now() });
+      push(`💬 WhatsApp bağlı değil; mesaj kuyruğa alındı (${outbox.length} bekliyor), bağlantı gelince gönderilecek`);
+      return;
+    }
+    remember(await sock.sendMessage(jid, { text }));
+  }
+  async function flushOutbox() {
+    const items = outbox.splice(0).filter((x) => Date.now() - x.at < 12 * 3600000);
+    if (!items.length) return;
+    push(`💬 WhatsApp yeniden bağlandı: kuyruktaki ${items.length} mesaj gönderiliyor`);
+    for (const x of items) { try { remember(await sock.sendMessage(x.jid, { text: x.text })); } catch { outbox.push(x); break; } }
+  }
   async function sendLink(jid, url, title, description, thumb) {
     try {
       remember(await sock.sendMessage(jid, { text: `${title}\n${url}`, linkPreview: { "canonical-url": url, "matched-text": url, title, description, ...(thumb ? { jpegThumbnail: thumb } : {}) } }));
@@ -169,7 +191,13 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
 
   async function notifyVideo(name, { ask = true, summary = null } = {}) {
     const w = settings().whatsapp || {};
-    if (!w.enabled || st.status !== "connected") return { ok: false, error: "WhatsApp bağlı değil" };
+    if (!w.enabled) return { ok: false, error: "WhatsApp kapalı" };
+    if (st.status !== "connected") { // bağlantı kopukken bildirim kaybolmasın: kısa metin kuyruğa girer, bağlanınca gider
+      const v0 = videoInfo(name);
+      if (v0) await send(ownerJid(), `🎬 Yeni video hazır — ${v0.label}\n${v0.segments.filter((x) => x.kind === "haber").slice(0, 5).map((x) => `• ${x.title}`).join("\n")}` +
+        (v0.publishAt && Date.parse(v0.publishAt) > Date.now() ? `\n⏰ Planlı yayın: ${whenLabel(new Date(v0.publishAt))}` : "") + "\n(WhatsApp bağlantısı koptuğu için video dosyası gönderilemedi; panelden izleyebilirsiniz.)");
+      return { ok: false, queued: true, error: "WhatsApp bağlı değil; bildirim kuyruğa alındı" };
+    }
     const v = videoInfo(name); if (!v) return { ok: false, error: "video bulunamadı" };
     const L = await links(name);
     const head = `🎬 *Yeni video hazır* — ${v.label} (${v.duration ?? "?"} sn)`;
@@ -188,8 +216,12 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (!v.anlik && !["gunluk", "haftalik"].includes(v.format) && yp.regularAuto !== false && L.platforms.includes("youtube")) ap.youtube = true;
     // WhatsApp'tan gönderilen görüntüyle yapılan haber: varsayılan onaylı (post_pipeline aynı kuralı uygular)
     if (v.userVideo && !settings().waVideo?.autoPublish) for (const pl of Object.keys(ap)) ap[pl] = false;
+    // linkle birlikte saat yazıldıysa (planlı yayın) onay istenmez; panel o saatte yayınlar
+    const schedAt = v.publishAt && Date.parse(v.publishAt) > Date.now() + 60000 ? new Date(v.publishAt) : null;
+    if (schedAt) for (const pl of Object.keys(ap)) ap[pl] = false;
     const autoPl = L.platforms.filter((pl) => ap[pl] && !already[pl]);      // otomatik yayın açık: onay gerekmez
-    const platforms = L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
+    const platforms = schedAt ? [] : L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
+    const schedLine = schedAt ? `\n\n⏰ Planlı yayın: ${whenLabel(schedAt)} → ${L.platforms.join(", ") || "bağlı hesap yok"} (iptal: *planlı yayını iptal et*)` : "";
     const autoLine = autoPl.length ? `\n\n🚀 Otomatik yayın: ${autoPl.join(", ")} (onay gerekmez, yüklenince bildirilir)` : "";
     const askLine = (ask && w.requireApproval !== false && platforms.length)
       ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*`
@@ -200,7 +232,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       const pub = publishLines(summary);
       const pending = (ask && w.requireApproval !== false && platforms.length) ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")} · ❌ *iptal*` : "";
       const watchLine = `\n\n▶ ${L.tunnel || L.lan}`;
-      let msg = `${head}\n\n${titles}${pub.length ? "\n\n📤 *Yayın*\n" + pub.join("\n") : ""}${pending}${watchLine}`;
+      let msg = `${head}\n\n${titles}${pub.length && !schedAt ? "\n\n📤 *Yayın*\n" + pub.join("\n") : ""}${schedLine}${pending}${watchLine}`;
       if (msg.length > 1000) msg = msg.slice(0, 990) + "…";
       let fileSent = false;
       if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, msg); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
@@ -209,7 +241,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       push(`💬 WhatsApp'a tek mesaj gönderildi: ${v.label}${fileSent ? " (+video)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
       return { ok: true, fileSent, awaitingApproval: !!pending };
     }
-    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${autoLine}${askLine}`;
+    const text = `${head}\n\n📝 *Seslendirme metni*\n\n${words}${schedLine || autoLine}${schedAt ? "" : askLine}`;
     let fileSent = false;
     if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, head); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
     await send(jid, text);
@@ -221,9 +253,44 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     return { ok: true, fileSent, awaitingApproval: !!st.pending };
   }
 
-  async function stop() { stopping = true; try { sock?.end?.(); } catch { /* yok */ } sock = null; st.status = "disconnected"; stopping = false; return status(); }
+  async function stop() { stopping = true; st.userStopped = true; try { sock?.end?.(); } catch { /* yok */ } sock = null; st.status = "disconnected"; stopping = false; return status(); }
+
+  // Bağlantı bekçisi (kullanıcı isteği: "WhatsApp bağlantım düzenli kontrol edilsin, kopma varsa yeniden bağlansın"). Panel 2 dk'da bir
+  // çağırır. Kopuksa (kullanıcı durdurmadıysa ve oturum varsa) yeniden bağlanır; 3 dk'dan uzun "bağlanıyor"da takılırsa soketi yeniler;
+  // bağlı görünürken WhatsApp sunucusuna küçük bir sorgu atar (onWhatsApp), iki kez üst üste yanıt gelmezse bağlantıyı yeniden kurar.
+  async function watchdog() {
+    if (stopping || st.userStopped || !existsSync(AUTH_DIR)) return { ok: true, skipped: true };
+    if (st.status === "qr") return { ok: false, needQr: true };
+    if (!sock || st.status === "disconnected") {
+      st.reconnects = (st.reconnects || 0) + 1; st.retries = 0;
+      push(`💬 WhatsApp bekçisi: bağlantı kopuk${st.error ? ` (${st.error})` : ""}, yeniden bağlanılıyor (${st.reconnects}. kez)`);
+      sock = null; await start(); return { ok: false, reconnecting: true };
+    }
+    if (st.status === "connecting") {
+      if (Date.now() - (st.connectingSince || Date.now()) > 3 * 60000) {
+        push("💬 WhatsApp bekçisi: bağlantı 3 dakikadır kurulamadı, yeniden deneniyor");
+        try { sock.end?.(new Error("bekçi: bağlanma takıldı")); } catch { /* yok */ }
+        sock = null; st.status = "disconnected"; st.retries = 0; await start();
+      }
+      return { ok: false, connecting: true };
+    }
+    try {
+      await Promise.race([sock.onWhatsApp(st.phone ? `${st.phone}@s.whatsapp.net` : ownerJid()), new Promise((_, rej) => setTimeout(() => rej(new Error("yanıt yok")), 20000))]);
+      st.lastOkAt = Date.now(); st.probeFails = 0;
+      if (outbox.length) await flushOutbox();
+      return { ok: true };
+    } catch (e) {
+      st.probeFails = (st.probeFails || 0) + 1;
+      if (st.probeFails < 2) return { ok: false, probeFails: st.probeFails };
+      push(`💬 WhatsApp bekçisi: bağlı görünüyor ama ${st.probeFails} kontrolde yanıt vermedi (${e.message}); bağlantı yenileniyor`);
+      st.reconnects = (st.reconnects || 0) + 1; st.probeFails = 0;
+      try { sock.end?.(new Error("bekçi: yanıt yok")); } catch { /* yok */ }
+      sock = null; st.status = "disconnected"; st.retries = 0; await start();
+      return { ok: false, reconnecting: true };
+    }
+  }
   async function logout() { try { await sock?.logout?.(); } catch { /* yok */ } await stop(); rmSync(AUTH_DIR, { recursive: true, force: true }); st.phone = null; return status(); }
-  const status = () => ({ lastIgnored: st.lastIgnored || null, selfPhone: selfPhone() ? "…" + selfPhone().slice(-4) : null, status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
+  const status = () => ({ lastOkAt: st.lastOkAt || null, reconnects: st.reconnects || 0, outbox: outbox.length, lastIgnored: st.lastIgnored || null, selfPhone: selfPhone() ? "…" + selfPhone().slice(-4) : null, status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
   const clearPending = (video) => { if (st.pending && (!video || st.pending.video === video)) st.pending = null; };
-  return { start, stop, logout, status, send: (t) => send(ownerJid(), t), notifyVideo, clearPending };
+  return { start, stop, logout, status, watchdog, send: (t) => send(ownerJid(), t), notifyVideo, clearPending };
 }
