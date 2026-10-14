@@ -4,6 +4,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 
 ✅ *Yayın onayı*
 • onay / evet — bekleyen videoyu yayınla
+• onay insta / onay youtube / onay tiktok — yalnız o platformda yayınla (ör. *onay insta youtube*); diğerleri beklemede kalır, sonra *onay tiktok* ya da *iptal*
 • iptal — yayınlama
 
 🎬 *Video üret*

@@ -119,15 +119,29 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     const t = text.toLocaleLowerCase("tr-TR").trim();
     if (st.pending && Date.now() - st.pending.at > 6 * 3600 * 1000) { st.pending = null; }  // eski onay isteği düşer
     if (/^(otomatik|tam otomatik)( mod)?u? (aç|başlat|kapat|durdur)/.test(t)) { const on = /(aç|başlat)/.test(t); const r = await automode(on); await send(jid, r.ok ? (on ? `⚡ Tam otomatik mod açık: her ${r.hours} saatte üretim, otomatik yayın → ${r.connected.join(", ") || "bağlı hesap yok"}.` : "⏹ Otomatik üretim ve yayın durduruldu.") : `Olmadı: ${r.error}`); return; }
-    if (st.pending && /^(onay|onayla|evet|yayınla|ok|tamam|paylaş)\b/.test(t) && !/(^|\s)sil/.test(t)) {  // "evet sil" = Instagram temizliği onayı
-      const p = st.pending; st.pending = null;
-      await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${p.platforms.join(", ")}`);
-      const r = await publishVideo(p.video, p.platforms);
-      const lines = Object.entries(r.results || {}).map(([k, v]) => v.ok ? `✅ ${k}: ${v.skipped ? "zaten yayında" : (v.url || v.note || "tamam")}` : `❌ ${k}: ${v.error}`);
-      await send(jid, lines.join("\n") || "Yayınlanacak platform yok.");
-      return;
+    // Yayın onayı (kullanıcı isteği: "onay yazarsam tüm platformlarda, onay insta yazarsam yalnız Instagram'da paylaşsın"):
+    // "onay" / "onay hepsi" → bekleyen tüm platformlar; "onay insta", "onay youtube tiktok", "insta onay", "sadece instagram" → yalnız
+    // yazılanlar, kalanlar beklemede kalır (yalnız açık "onay …" ile yayınlanır; "tamam/evet" artık kalanları yayınlamaz).
+    if (st.pending && !/(^|\s)sil/.test(t)) {  // "evet sil" = Instagram temizliği onayı
+      const plats = pickPlatforms(t);
+      const words = t.split(/\s+/).length;
+      const approve = APPROVE.test(t) || (plats.length && words <= 6 && /(onay|yayınla|yayinla|paylaş|paylas|yükle|yukle)/.test(t)) || (plats.length && /^(sadece|yalnız|yalniz)\s/.test(t));
+      if (approve && !(st.pending.partial && !plats.length && !/^(onay|onayla|yayınla|yayinla|paylaş|paylas)/.test(t))) {
+        const p = st.pending;
+        const chosen = plats.length ? p.platforms.filter((pl) => plats.includes(pl)) : p.platforms;
+        const missing = plats.filter((pl) => !p.platforms.includes(pl));
+        if (!chosen.length) { await send(jid, `${missing.map((pl) => PL[pl]).join(", ")}: bu video için bekleyen yayında yok (hesap bağlı değil ya da zaten yayında). Bekleyen: ${p.platforms.map((pl) => PL[pl]).join(", ")}`); return; }
+        const rest = p.platforms.filter((pl) => !chosen.includes(pl));
+        st.pending = rest.length ? { ...p, platforms: rest, partial: true, at: Date.now() } : null;
+        await send(jid, `⏳ Yayınlanıyor: ${p.label} → ${chosen.map((pl) => PL[pl]).join(", ")}${missing.length ? `\n(${missing.map((pl) => PL[pl]).join(", ")} bekleyen listede yok)` : ""}`);
+        const r = await publishVideo(p.video, chosen);
+        const lines = Object.entries(r.results || {}).map(([k, v]) => v.ok ? `✅ ${PL[k] || k}: ${v.skipped ? "zaten yayında" : (v.url || v.note || "tamam")}` : `❌ ${PL[k] || k}: ${v.error}`);
+        if (rest.length) lines.push(`\n⏸ Beklemede: ${rest.map((pl) => PL[pl]).join(", ")} → ${rest.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")} · bırakmak için *iptal*`);
+        await send(jid, lines.join("\n") || "Yayınlanacak platform yok.");
+        return;
+      }
     }
-    if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)\b/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label} yayınlanmadı.`); return; }
+    if (st.pending && /^(hayır|iptal|yayınlama|vazgeç|no)(\s|$|[.,!])/.test(t)) { const p = st.pending; st.pending = null; await send(jid, `Tamam, ${p.label}${p.partial ? ` kalan platformlarda (${p.platforms.map((pl) => PL[pl]).join(", ")})` : ""} yayınlanmadı.`); return; }
     // talimatı bekleyen WhatsApp videosu: bu mesaj nasıl bir haber istendiğidir ("iptal" vazgeçer)
     if (videoInstruction) { const vr = await videoInstruction(text); if (vr) { if (typeof vr === "string") await send(jid, vr); return; } }
     if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
@@ -172,12 +186,26 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   /** Üretim bitince sahibine metin + linkler (+ dosya) gönderir ve onay bekler. */
   // Tek mesaj modunun yayın satırları (post_pipeline "📤 platform: …") → platform başına son durum, kısa
   const PL = { youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" };
+  const SHORT = { youtube: "youtube", instagram: "insta", tiktok: "tiktok" };
+  const APPROVE = /^(onay|onayla|evet|yayınla|yayinla|ok|tamam|paylaş|paylas)(\s|$|[.,!])/;
+  // mesajdaki platform adları (Türkçe küçük harfte "Insta" → "ınsta" olur; ı → i ile bakılır)
+  function pickPlatforms(t) {
+    const x = ` ${t.replace(/ı/g, "i").replace(/[^a-zçğöşü0-9]+/g, " ")} `;
+    const out = [];
+    if (/ (youtube\w*|yutup\w*|yt|shorts) /.test(x)) out.push("youtube");
+    if (/ (insta\w*|ig|reels?) /.test(x)) out.push("instagram");
+    if (/ (tiktok\w*|tik tok\w*|tt) /.test(x)) out.push("tiktok");
+    return out;
+  }
+  // onay satırı: hepsi için "onay", tek platform için "onay insta" …
+  const approveLine = (platforms) => `\n\n✅ Hepsinde yayınlamak için *onay* → ${platforms.map((pl) => PL[pl]).join(", ")}` +
+    (platforms.length > 1 ? `\n▫️ Yalnız birinde: ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : "") + "\n❌ Yayınlamamak için *iptal*";
   function publishLines(summary) {
     const last = {}; const notes = [];
     for (const l of summary || []) {
       const m = l.match(/^📤 (youtube|instagram|tiktok): (.*)$/);
       if (m) { if (!/hesap bağlı değil/.test(m[2])) last[m[1]] = m[2]; continue; }
-      if (/^📤 otomatik yayın yapılmadı/.test(l)) notes.push("ℹ️ " + l.replace(/^📤 /, "").replace(/ WhatsApp'tan.*$/, ""));
+      if (/^📤 otomatik yayın yapılmadı/.test(l)) notes.push("ℹ️ " + l.replace(/^📤 /, "").replace(/\.? WhatsApp'tan "onay".*$/, ""));
     }
     const out = Object.entries(last).map(([pl, r]) => {
       const name = PL[pl];
@@ -194,8 +222,14 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (!w.enabled) return { ok: false, error: "WhatsApp kapalı" };
     if (st.status !== "connected") { // bağlantı kopukken bildirim kaybolmasın: kısa metin kuyruğa girer, bağlanınca gider
       const v0 = videoInfo(name);
+      const sched0 = v0?.publishAt && Date.parse(v0.publishAt) > Date.now();
+      // linkten/görüntüden yapılan video onaysız yayınlanmaz: bağlantı gelince gidecek mesajda da onay sorulur
+      let ask0 = "";
+      if (v0 && ask && v0.userVideo && !sched0 && !settings().waVideo?.autoPublish) {
+        try { const pl0 = (await links(name)).platforms.filter((pl) => !(v0.published || {})[pl]); if (pl0.length) { ask0 = approveLine(pl0); st.pending = { video: name, label: v0.label, platforms: pl0, at: Date.now() }; } } catch { /* hesap durumu okunamadı */ }
+      }
       if (v0) await send(ownerJid(), `🎬 Yeni video hazır — ${v0.label}\n${v0.segments.filter((x) => x.kind === "haber").slice(0, 5).map((x) => `• ${x.title}`).join("\n")}` +
-        (v0.publishAt && Date.parse(v0.publishAt) > Date.now() ? `\n⏰ Planlı yayın: ${whenLabel(new Date(v0.publishAt))}` : "") + "\n(WhatsApp bağlantısı koptuğu için video dosyası gönderilemedi; panelden izleyebilirsiniz.)");
+        (sched0 ? `\n⏰ Planlı yayın: ${whenLabel(new Date(v0.publishAt))}` : "") + "\n(WhatsApp bağlantısı koptuğu için video dosyası gönderilemedi; panelden izleyebilirsiniz.)" + ask0);
       return { ok: false, queued: true, error: "WhatsApp bağlı değil; bildirim kuyruğa alındı" };
     }
     const v = videoInfo(name); if (!v) return { ok: false, error: "video bulunamadı" };
@@ -223,14 +257,17 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     const platforms = schedAt ? [] : L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
     const schedLine = schedAt ? `\n\n⏰ Planlı yayın: ${whenLabel(schedAt)} → ${L.platforms.join(", ") || "bağlı hesap yok"} (iptal: *planlı yayını iptal et*)` : "";
     const autoLine = autoPl.length ? `\n\n🚀 Otomatik yayın: ${autoPl.join(", ")} (onay gerekmez, yüklenince bildirilir)` : "";
-    const askLine = (ask && w.requireApproval !== false && platforms.length)
-      ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")}\n❌ Yayınlamamak için *iptal*`
+    // Gönderilen görüntü/link videosu (userVideo) hiçbir yerde kendiliğinden yayınlanmaz; "onay iste" ayarı kapalıysa da (tam otomatik
+    // mod kapatır) onay sorulur — yoksa ne yayın olur ne onay (kullanıcı şikâyeti, 14 Ekim).
+    const needAsk = !!(ask && platforms.length && (w.requireApproval !== false || v.userVideo));
+    const askLine = needAsk
+      ? approveLine(platforms)
       : (!autoPl.length && !L.platforms.length ? "\n\n(Yayın için bağlı platform yok; panelden hesap bağlayın.)" : "");
     const jid = ownerJid();
     if (summary) { // tek mesaj: video dosyası + kısa özet aynı mesajda (dosya gönderilmezse düz metin)
       const titles = v.segments.filter((s) => s.kind === "haber").slice(0, 5).map((s) => `• ${s.breaking ? "🔴 " : ""}${s.title}`).join("\n");
-      const pub = publishLines(summary);
-      const pending = (ask && w.requireApproval !== false && platforms.length) ? `\n\n✅ Yayınlamak için *onay* yazın → ${platforms.join(", ")} · ❌ *iptal*` : "";
+      const pub = publishLines(summary).filter((l) => !(needAsk && /^ℹ️ otomatik yayın yapılmadı/.test(l)));  // onay satırı zaten anlatıyor
+      const pending = needAsk ? approveLine(platforms) : "";
       const watchLine = `\n\n▶ ${L.tunnel || L.lan}`;
       let msg = `${head}\n\n${titles}${pub.length && !schedAt ? "\n\n📤 *Yayın*\n" + pub.join("\n") : ""}${schedLine}${pending}${watchLine}`;
       if (msg.length > 1000) msg = msg.slice(0, 990) + "…";
@@ -248,7 +285,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     // Linkler ayrı, önizlemeli mesaj olarak: WhatsApp IP'li yerel adresi düz metin bırakır, önizleme kartı tıklanır.
     await sendLink(jid, L.lan, `▶ ${v.label}`, "Wi-Fi'de izle (Mac ile aynı ağ)", L.thumb);
     if (L.tunnel) await sendLink(jid, L.tunnel, `🌐 ${v.label}`, "Dışarıdan izle (tünel)", L.thumb);
-    if (ask && platforms.length && w.requireApproval !== false) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
+    if (needAsk) st.pending = { video: name, label: v.label, platforms, at: Date.now() };
     push(`💬 WhatsApp'a gönderildi: ${v.label}${fileSent ? " (+dosya)" : ""}${st.pending ? " · onay bekleniyor" : ""}`);
     return { ok: true, fileSent, awaitingApproval: !!st.pending };
   }

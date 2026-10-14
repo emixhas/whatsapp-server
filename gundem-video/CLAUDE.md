@@ -583,6 +583,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kimliği `sentIds`te (kendine-mesajda yanıt döngüsü olmasın). Yanıt her zaman telefon jid'ine (LID'e değil). Sahip
   olmayan göndericiden gelen mesaj dakikada bir loga "💬 WhatsApp: sahip olmayan göndericiden mesaj yok sayıldı (…son 4
   hane / numara gizli)" yazar; `status().lastIgnored`.
+- Platform seçerek onay (kullanıcı isteği, 14 Ekim: "onay yazarsam tüm platformlarda, onay insta yazarsam yalnız Instagram'da paylaşsın";
+  `whatsapp.js` `pickPlatforms`/`approveLine`): "onay" (onayla/evet/yayınla/paylaş/tamam/ok) bekleyen tüm platformlar; "onay insta",
+  "onay youtube tiktok", "insta onay", "instagram'da paylaş", "sadece tiktok" yalnız yazılanlar (insta/ig/reels, youtube/yt/shorts,
+  tiktok/tt; Türkçe küçük harfte ı → i ile bakılır). Kalanlar `partial` beklemede kalır (yalnız açık "onay …" yayınlar, "tamam/evet"
+  yayınlamaz; "iptal" kalanları bırakır). Onay mesajı "✅ Hepsinde … *onay*" + "▫️ Yalnız birinde: *onay youtube* · *onay insta* …".
+  Linkten/WhatsApp görüntüsünden yapılan video (userVideo) "onay iste" ayarı kapalıyken de (tam otomatik mod kapatır) onay sorar —
+  kullanıcı şikâyeti: "link atıyorum, haber yapıyor ama ne paylaşıyor ne onay istiyor"; bağlantı kopukken kuyruğa giren bildirimde de.
 - Video dosyası 60 MB üstündeyse gönderilmez, link kalır. WhatsApp bağlı değilken bildirim loga düşer.
 - libsignal oturum açıp kapatırken oturumun tamamını (özel anahtarlar dahil) `console.info/warn` ile basar; `server.js`
   başındaki `SIGNAL_NOISE` filtresi bu satırları susturur (terminal ve work/panel.log'a gizli anahtar düşmesin). Kaldırma.

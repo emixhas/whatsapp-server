@@ -80,7 +80,7 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     conn = connected()
     # WhatsApp'tan gönderilen görüntüyle yapılan haber: sahibi önce izlesin, "onay" ile yayınlansın (waVideo.autoPublish açılabilir)
     if meta.get("userVideo") and not (s.get("waVideo") or {}).get("autoPublish"):
-        return [], "anlık", "WhatsApp'tan gönderdiğiniz görüntüyle yapılan haber önce size gelir; izleyip \"onay\" yazınca yayınlanır"
+        return [], "anlık", "gönderdiğiniz görüntü ya da sosyal medya linkiyle yapılan haber önce size gelir, onayınızla yayınlanır"
     auto_all = schedule_enabled() or bool(s.get("autoMode"))
     if auto_all:
         extra = [p for p in conn if p not in chosen]
