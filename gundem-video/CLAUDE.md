@@ -465,7 +465,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   normal yazıma. `speakable` (macOS `say` dahil): parti adları kelime olarak okunur (AK Parti → Ak Parti,
   DEM/İYİ/TİP Parti, HÜDA PAR; harf harf değil), kesmeden sonraki büyük ekler küçülür (PARTİ'YE → Parti'ye,
   PKK'NIN → PKK'nın). PKK/THY gibi gerçek kısaltmalar harf harf kalır. Ekranda yazım değişmez. Okunuş sözlüğü
-  `PRONOUNCE` (Mynet → Maynet, PKK → Pekaka, TV → Teve — "tivi" okunmasın; ATV → Ateve, NTV → Enteve, bitişik sayı ayrılır: TV8 → Teve sekiz; ekler korunur, büyük harf kısaltmada bitişik ek de: PKKlı → Pekakalı) + `settings.pronunciations` {"Kelime": "Okunuş"}; değiştirince
+  `PRONOUNCE` (Mynet → Maynet, PKK → Pekaka, TV → Teve — "tivi" okunmasın; ATV → Ateve, NTV → Enteve, bitişik sayı ayrılır: TV8 → Teve sekiz; `SPOKEN_AS` başka adla söylenenler — Amed SFK → "Amed Spor" (kullanıcı isteği, 17 Ekim; ek yeni ada göre yeniden kurulur: SFK'nın → Spor'un, `_reharmonize`); ekler korunur, büyük harf kısaltmada bitişik ek de: PKKlı → Pekakalı) + `settings.pronunciations` {"Kelime": "Okunuş"}; değiştirince
   `server.js` `PRON_VER`'i artır (konuşma önbelleği anahtarına girer, eski okunuşlu sesler kullanılmaz). Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
   (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
 - Isınma önlemi (kullanıcı isteği, geri alma): `reap()` üretim sürmüyorken bizim başlattığımız ağır süreçleri

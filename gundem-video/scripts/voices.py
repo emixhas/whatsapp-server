@@ -194,9 +194,43 @@ PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka", "TV": "Teve", "ATV": "Ateve", "
 _GLUED_NUM = re.compile(r"(?<![\wçğıöşüÇĞİÖŞÜ])(TV)(?=\d)")  # kanal adındaki bitişik sayı ayrılır: TV8 → TV 8 (sayı yazıya çevrilsin)
 
 
+# Seslendirmede başka adla söylenen adlar (yalnız ses; ekranda yazım değişmez). Kesmeden sonraki ek yeni ada göre yeniden
+# kurulur: "Amed SFK'nın" → "Amed Spor'un", "Amed SFK'ya" → "Amed Spor'a" (kullanıcı isteği: "Amed SFK değil Amed Spor").
+SPOKEN_AS = {"Amed SFK": "Amed Spor", "Amed S.F.K.": "Amed Spor", "Amed Sportif Faaliyetler": "Amed Spor"}
+_TR_VOWELS = "aeıioöuü"
+
+
+def _reharmonize(word: str, suf: str) -> str:
+    """Ekin ünlülerini ve kaynaştırma/sertleşme harfini yeni kelimenin son sesine uydurur (genel Türkçe ünlü uyumu)."""
+    w = tr_lower(word)
+    last_v = next((ch for ch in reversed(w) if ch in _TR_VOWELS), "e")
+    back, rounded = last_v in "aıou", last_v in "oöuü"
+    ends_vowel = w[-1] in _TR_VOWELS
+    if not ends_vowel and len(suf) > 1 and ((suf[0] in "ny" and suf[1] in _TR_VOWELS) or suf[:3] in ("yla", "yle")):
+        suf = suf[1:]  # kaynaştırma harfi ünsüzle bitende düşer: 'nın → 'ın, 'ya → 'a, 'yla → 'la
+    out = []
+    for i, ch in enumerate(suf):
+        if ch in "ae":
+            ch = "a" if back else "e"
+        elif ch in "ıiuü":
+            ch = ("u" if back else "ü") if rounded else ("ı" if back else "i")
+        elif i == 0 and ch in "dt":
+            ch = "t" if w[-1] in "pçtkfsşh" else "d"
+        out.append(ch)
+    return "".join(out)
+
+
+def _spoken_as(t: str) -> str:
+    for name, say in sorted(SPOKEN_AS.items(), key=lambda x: -len(x[0])):
+        pat = re.escape(name).replace(r"\ ", r"\s+")
+        t = re.sub(rf"(?<![\wçğıöşüÇĞİÖŞÜ]){pat}(?:['’]([a-zçğıöşü]+))?(?![\wçğıöşüÇĞİÖŞÜ])",
+                   lambda m: say + (f"'{_reharmonize(say, m.group(1))}" if m.group(1) else ""), t, flags=re.IGNORECASE)
+    return t
+
+
 def _pronounce(t: str) -> str:
     words = {**PRONOUNCE, **(settings().get("pronunciations") or {})}
-    t = _GLUED_NUM.sub(r"\1 ", t)
+    t = _GLUED_NUM.sub(r"\1 ", _spoken_as(t))
     for w, say in words.items():
         if not (w and say):
             continue
