@@ -38,6 +38,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • süresi geçenleri liste dışı yap · liste dışı yapılanları geri aç
 • günün hikayesini paylaş — en çok izlenenler Instagram hikâyesine · hikaye paylaşımını kapat / otomatik hikayeyi aç
 • instagramda son 7 günde 1000 izlenmenin altındakileri sil → önce liste gelir, *evet sil* ile silinir, *iptal* ile vazgeçilir (gün ve izlenme sayısı değiştirilebilir; sona "24 saatten eski" eklenebilir)
+• silinecek videolar — otomatik Instagram temizliğinin listesi (5000 izlenme altı, 72 saat sonra) · otomatik silmeyi kapat / aç
 
 📊 *Bilgi ve rapor*
 • durum

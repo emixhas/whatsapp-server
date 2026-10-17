@@ -581,6 +581,69 @@ async function igCleanupRun({ notify = true } = {}) {
   if (notify) { try { await wa.send(text); } catch { push("💬 Instagram temizliği özeti WhatsApp'a gönderilemedi (bağlı değil)"); } }
   return { ok: true, deleted: del, failed: fail, kept, text };
 }
+// Otomatik Instagram temizliği (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim; sayıları panelde göreyim,
+// değiştireyim, silinmeye adayları da göreyim"; kullanıcı kararı: yalnız Instagram, 72 saat bekleme). settings.igAutoClean
+// {enabled, maxViews 5000, waitHours 72, maxAgeDays 30, everyHours 3, keep []}. Her `everyHours` saatte: izlenmeler 30 dk'dan eskiyse
+// senkron → ig_cleanup.py --auto-plan → hazır olanlar --run (silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır).
+// Kayıt data/ig_autoclean.json; log 🗑; WhatsApp'a yalnız sonuç (silinen sayısı) ve sorun.
+const igAutoCfg = () => ({ enabled: true, maxViews: 5000, waitHours: 72, maxAgeDays: 30, everyHours: 3, keep: [], ...(settings().igAutoClean || {}) });
+const IG_AUTO_FILE = path.join(DATA, "ig_autoclean.json");
+let igAutoBusy = false;
+async function igAutoPlan({ sync = true } = {}) {
+  const c = igAutoCfg();
+  const m = readJson(path.join(DATA, "metrics.json"), {});
+  if (sync && (!m.lastSync || Date.now() - Date.parse(m.lastSync) > 30 * 60000)) await execAction({ type: "sync_metrics" }).catch(() => {});
+  return await pyJson(["scripts/ig_cleanup.py", "--auto-plan", "--max", String(Number(c.maxViews) || 5000), "--wait-hours", String(Number(c.waitHours) || 72),
+    "--max-age-days", String(Number(c.maxAgeDays) || 30), "--keep", (c.keep || []).join(",")], 60000).catch((e) => ({ ok: false, error: e.message }));
+}
+async function igAutoRun({ manual = false } = {}) {
+  if (igAutoBusy) return { ok: false, error: "Temizlik zaten sürüyor." };
+  igAutoBusy = true;
+  const st = readJson(IG_AUTO_FILE, {});
+  try {
+    const c = igAutoCfg();
+    const p = await igAutoPlan();
+    if (!p?.ok) { push(`🗑 otomatik Instagram temizliği: liste çıkarılamadı (${p?.error || "yanıt yok"})`); return { ok: false, error: p?.error || "liste çıkarılamadı" }; }
+    st.lastCheck = Date.now();
+    const names = (p.ready || []).map((x) => x.name);
+    if (!names.length) { writeJson(IG_AUTO_FILE, st); if (manual) push("🗑 otomatik Instagram temizliği: silinecek video yok"); return { ok: true, deleted: [], failed: [], kept: [], plan: p }; }
+    push(`🗑 otomatik Instagram temizliği: ${names.length} video ${Number(c.maxViews).toLocaleString("tr-TR")} izlenmenin altında ve ${c.waitHours} saati geçti, siliniyor`);
+    const r = await py("ig_cleanup.py", ["--run", "--names", names.join(","), "--max", String(Number(c.maxViews) || 5000)]);
+    for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🗑")) push(l);
+    const j = r.json || {};
+    const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [];
+    st.lastRun = Date.now(); st.runs = [...(st.runs || []).slice(-30), { at: Date.now(), deleted: del.length, failed: fail.length, kept: kept.length }];
+    writeJson(IG_AUTO_FILE, st);
+    push(`🗑 otomatik Instagram temizliği bitti: ${del.length} silindi, ${fail.length} silinemedi, ${kept.length} bırakıldı (izlenmesi arttı)`);
+    if (del.length || fail.length) {
+      const msg = (del.length ? `🗑 Instagram: ${del.length} düşük izlenen video silindi (${Number(c.maxViews).toLocaleString("tr-TR")} altı, ${c.waitHours} saati geçmiş).` : "") +
+        (fail.length ? `${del.length ? "\n" : ""}❌ ${fail.length} video silinemedi; Instagram uygulamasından elle silin:\n${fail.slice(0, 5).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n")}` : "");
+      try { await wa.send(msg); } catch { /* WhatsApp bağlı değil: log yeterli */ }
+    }
+    return { ok: true, deleted: del, failed: fail, kept, plan: p };
+  } finally { igAutoBusy = false; }
+}
+setInterval(() => {
+  const c = igAutoCfg(); if (!c.enabled || igAutoBusy) return;
+  const st = readJson(IG_AUTO_FILE, {});
+  // ilk açılışta hemen silmez: 2 saat inceleme süresi (panelden "🛡 Koru" ile çıkarılabilir), sayı WhatsApp'a bir kez bildirilir
+  if (!st.armedAt) {
+    st.armedAt = Date.now(); writeJson(IG_AUTO_FILE, st);
+    igAutoPlan().then(async (p) => { const k = (p?.ready || []).length; push(`🗑 otomatik Instagram temizliği açıldı: ilk silme 2 saat sonra${k ? ` (${k} video silinecek)` : ""}; panelden koruyabilirsiniz`);
+      if (k) { try { await wa.send(`🗑 Otomatik Instagram temizliği açık: 2 saat sonra ${k} video silinecek (${Number(c.maxViews).toLocaleString("tr-TR")} izlenme altı, ${c.waitHours} saati geçmiş). Korumak istediğinizi panelde Ayarlar → Yayın hesapları → Instagram'dan "🛡 Koru" ile çıkarın.`); } catch { /* bağlı değil */ } } }).catch(() => {});
+    return;
+  }
+  if (Date.now() - st.armedAt < 2 * 3600000) return;
+  if (Date.now() - (st.lastCheck || 0) < Math.max(1, Number(c.everyHours) || 3) * 3600000) return;
+  igAutoRun().catch((e) => push(`🗑 otomatik Instagram temizliği hatası: ${e.message}`));
+}, 10 * 60000);
+app.get("/api/igclean", async (req, res) => { const p = await igAutoPlan({ sync: req.query.sync === "1" }); const st = readJson(IG_AUTO_FILE, {}); res.json({ cfg: igAutoCfg(), plan: p, lastRun: st.lastRun || null, lastCheck: st.lastCheck || null, runs: (st.runs || []).slice(-5), busy: igAutoBusy }); });
+app.post("/api/igclean/run", async (_req, res) => res.json(await igAutoRun({ manual: true })));
+app.post("/api/igclean/keep", (req, res) => {
+  const name = String(req.body?.name || ""); if (!name) return res.json({ ok: false });
+  const keep = new Set(igAutoCfg().keep || []); req.body?.keep === false ? keep.delete(name) : keep.add(name);
+  patchSettings({ igAutoClean: { keep: [...keep] } }); push(`🛡 ${name} otomatik Instagram temizliğinden ${req.body?.keep === false ? "çıkarıldı (korunmuyor)" : "korunuyor"}`); res.json({ ok: true, keep: [...keep] });
+});
 app.post("/api/instagram/cleanup/plan", async (req, res) => res.json(await igCleanupPlan({ days: Number(req.body?.days) || 7, max: Number(req.body?.max) || 1000, minAgeH: Number(req.body?.minAgeH) || 0 })));
 app.post("/api/instagram/cleanup/run", async (_req, res) => res.json(await igCleanupRun({ notify: true })));
 
@@ -1752,6 +1815,15 @@ async function handleCommand(text, opts = {}) {
   let reply = cmd.reply, action = cmd.action, payload = {}, extra = {};
   if (igCleanupPending && /(iptal|vazgeç|boş ver|silme)/.test(text.toLocaleLowerCase("tr-TR")) && cmd.action !== "ig_cleanup") { igCleanupPending = null; push("🗑 Instagram temizliği iptal edildi"); }
   switch (cmd.action) {
+    case "ig_autoclean": {
+      if (cmd.on != null) { patchSettings({ igAutoClean: { enabled: cmd.on } }); reply = cmd.on ? "🗑 Otomatik Instagram temizliği açık." : "⏸ Otomatik Instagram temizliği kapatıldı; hiçbir şey silinmeyecek."; break; }
+      const c = igAutoCfg(); const p = await igAutoPlan();
+      if (!p?.ok) { reply = `Liste çıkarılamadı: ${p?.error || "yanıt yok"}`; break; }
+      const nn = (x) => Number(x || 0).toLocaleString("tr-TR");
+      reply = `🗑 Otomatik silme ${c.enabled === false ? "KAPALI" : "açık"} (${nn(c.maxViews)} izlenme altı, ${c.waitHours} saat sonra): ${p.ready.length} silinecek, ${p.upcoming.length} karar bekliyor, ${p.kept.length} korunuyor.` +
+        (p.ready.length ? "\n" + p.ready.slice(0, 8).map((x) => `• ${String(x.title).slice(0, 55)} (${nn(x.views)})`).join("\n") : "") + "\nSınırları ve listeyi panelde Ayarlar → Yayın hesapları → Instagram'da değiştirebilirsiniz.";
+      break;
+    }
     case "ig_cleanup": {
       const r = await igCleanupPlan({ days: cmd.days, max: cmd.max, minAgeH: cmd.minAgeH });
       reply = r.text; break;

@@ -4,6 +4,8 @@
   python3 scripts/ig_cleanup.py --plan --days 7 --max 1000 [--min-age-hours 0]
       silinecekleri listeler (hiçbir şey silmez): son `days` gün içinde Instagram'a yüklenmiş, izlenmesi `max`'ın altında,
       en az `min-age-hours` saatlik videolar. İzlenmesi hiç ölçülmemiş video listeye girmez (bilinmeyen = silinmez).
+  python3 scripts/ig_cleanup.py --auto-plan --max 5000 --wait-hours 72 --max-age-days 30 [--keep a.mp4,b.mp4]
+      otomatik temizliğin listesi: ready (silinecek), upcoming (karar saatini bekleyen), kept (korunan); hiçbir şey silmez.
   python3 scripts/ig_cleanup.py --run --names a.mp4,b.mp4 --max 1000
       yalnız verilen videoları siler; silmeden hemen önce Instagram'dan güncel izlenmeyi tekrar okur, bu arada `max`'ı
       geçen video silinmez. Yalnız Instagram gönderisi silinir (YouTube, TikTok ve Mac'teki kopya kalır); metriklerden
@@ -50,6 +52,35 @@ def plan(days: float, max_views: int, min_age_h: float = 0) -> dict:
             out.append({"name": name, "title": title_of(name)[:90], "views": int(ig["views"]), "ageH": round(age, 1), "url": ig.get("url")})
     out.sort(key=lambda x: x["views"])
     return {"ok": True, "items": out, "unknown": unknown, "days": days, "max": max_views, "minAgeH": min_age_h}
+
+
+def auto_plan(max_views: int, wait_h: float, max_age_d: float, keep: list) -> dict:
+    """Otomatik temizlik (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim, sayıları panelde göreyim,
+    değiştireyim, silinmeye adayları da göreyim"): yalnız Instagram. ready = `wait_h` saati geçmiş ve izlenmesi `max_views` altında
+    (silinecek), upcoming = henüz `wait_h` dolmamış ama şu an altında (karar saati gelince yeniden bakılır), kept = korumaya alınanlar.
+    `max_age_d` günden eski gönderilere bakılmaz; izlenmesi ölçülmemiş gönderi silinmez."""
+    ready, upcoming, kept, unknown = [], [], [], []
+    keep = set(keep or [])
+    for name, v in metrics()["videos"].items():
+        ig = v.get("instagram") or {}
+        if not ig.get("id"):
+            continue
+        age = _age_h(ig.get("publishedAt", ""))
+        if age is None or age > max_age_d * 24:
+            continue
+        if ig.get("views") is None:
+            unknown.append(name)
+            continue
+        views = int(ig["views"])
+        item = {"name": name, "title": title_of(name)[:90], "views": views, "ageH": round(age, 1), "url": ig.get("url")}
+        if name in keep:
+            kept.append(item)
+        elif views < max_views:
+            (ready if age >= wait_h else upcoming).append({**item, **({} if age >= wait_h else {"hoursLeft": round(wait_h - age, 1)})})
+    ready.sort(key=lambda x: x["views"])
+    upcoming.sort(key=lambda x: x.get("hoursLeft", 0))
+    return {"ok": True, "ready": ready, "upcoming": upcoming, "kept": kept, "unknown": unknown,
+            "max": max_views, "waitHours": wait_h, "maxAgeDays": max_age_d}
 
 
 def fresh_views(ig: dict) -> int | None:
@@ -106,7 +137,10 @@ if __name__ == "__main__":
     def arg(k, d):
         return a[a.index(k) + 1] if k in a and len(a) > a.index(k) + 1 else d
     try:
-        if "--run" in a:
+        if "--auto-plan" in a:
+            res = auto_plan(int(arg("--max", 5000)), float(arg("--wait-hours", 72)), float(arg("--max-age-days", 30)),
+                            [x for x in arg("--keep", "").split(",") if x])
+        elif "--run" in a:
             res = run([x for x in arg("--names", "").split(",") if x], int(arg("--max", 1000)))
         else:
             res = plan(float(arg("--days", 7)), int(arg("--max", 1000)), float(arg("--min-age-hours", 0)))

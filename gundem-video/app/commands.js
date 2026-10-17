@@ -72,6 +72,10 @@ export function parseCommand(raw) {
   if (/liste dışı/.test(t)) return { action: "expire", restore: /(geri al|geri aç|herkese açık|kaldır)/.test(t), reply: "" };
   // Instagram temizliği: "instagramda son 7 günde 1000 izlenmenin altındakileri sil" → önce liste, "evet sil" ile silinir
   if (/^(evet,? sil|evet sil hepsini|sil onaylıyorum|onaylıyorum sil)$/.test(t)) return { action: "ig_cleanup_confirm", reply: "" };
+  // otomatik Instagram temizliği: "otomatik silmeyi kapat/aç", "silinecek videolar", "silinmeye aday videolar"
+  if (/otomatik (silme|temizli)/.test(t) && /(kapat|durdur|iptal)/.test(t)) return { action: "ig_autoclean", on: false, reply: "" };
+  if (/otomatik (silme|temizli)/.test(t) && /(^| )(aç|başlat|etkinleştir)( |$)/.test(t)) return { action: "ig_autoclean", on: true, reply: "" };
+  if (/(silinecek|silinmeye aday|silinecek olan)( instagram)? (video|gönderi)/.test(t) || /otomatik (silme|temizli)/.test(t)) return { action: "ig_autoclean", reply: "" };
   if (/(instagram|insta)/.test(t) && /(^|\s)sil/.test(t) && /(izlenme|görüntülenme|izlenen)/.test(t)) {
     const days = Number((t.match(/(\d+)\s*gün(?!den eski)/) || [])[1]) || 7;
     const mx = t.match(/(\d[\d.]*)\s*(?:bin\s*)?(?:izlenme|görüntülenme)/);

@@ -833,6 +833,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   satır loga "🗑 Instagram: silindi/SİLİNEMEDİ/SİLİNMEDİ …", kayıt `data/ig_cleanup_log.json`, özet WhatsApp'a (komut WhatsApp'tan
   geldiyse yanıtın kendisi). API reddederse link verilir (uygulamadan elle). Panel Instagram kartı "🗑 Düşük izlenenleri sil"
   (`POST /api/instagram/cleanup/plan`, `/run`).
+- Otomatik Instagram temizliği (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim, sayıları panelde göreyim,
+  değiştireyim, silinmeye adayları da göreyim"; kullanıcı kararları: YALNIZ Instagram, 72 saat bekleme; `settings.igAutoClean` {enabled true,
+  maxViews 5000, waitHours 72, maxAgeDays 30, everyHours 3, keep []}): `ig_cleanup.py --auto-plan` → ready (bekleme dolmuş ve sınır altı),
+  upcoming (sınır altı, karar saatini bekliyor, `hoursLeft`), kept (🛡 korunan), unknown (izlenme ölçülmemiş → silinmez). `server.js`
+  `igAutoRun` her `everyHours`ta (10 dk'lık denetim): izlenmeler 30 dk'dan eskiyse senkron, ready → `--run` (silmeden hemen önce güncel izlenme
+  yeniden okunur, sınırı geçen bırakılır); `data/ig_autoclean.json` {armedAt, lastCheck, lastRun, runs}. İLK AÇILIŞTA 2 saat inceleme süresi
+  (`armedAt`; WhatsApp'a "2 saat sonra N video silinecek"). WhatsApp'a yalnız sonuç ("🗑 Instagram: N düşük izlenen video silindi") ve
+  silinemeyenler. Panel Ayarlar → Yayın hesapları → Instagram kartının altında: anahtar, sınır/bekleme/en eski gün/kontrol aralığı kutuları,
+  üç liste (silinecek / karar bekleyen / korunan; her satırda 🛡 Koru ya da Korumayı kaldır), "🔄 İzlenmeleri tazele", "🗑 Silinecekleri şimdi sil"
+  (`ask()` onayı). `GET /api/igclean[?sync=1]`, `POST /api/igclean/run`, `POST /api/igclean/keep {name, keep}`; komutlar "silinecek videolar",
+  "otomatik silmeyi kapat/aç" (`ig_autoclean`). YouTube/TikTok/Mac kopyası silinmez.
 - WhatsApp komut listesi `app/help.js` (`HELP_TEXT`; "yardım", "komutlar"): yeni kural eklerken buraya da yaz. `commands.js` `norm`
   "ınstagram"ı "instagram"a çevirir (Türkçe küçük harfte I → ı; büyük harfle yazılan Instagram komutları tanınmıyordu).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
