@@ -8,7 +8,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
-import { parseCommand } from "./commands.js";
+import { parseCommand, findLink, videoLink } from "./commands.js";
 import { parseWhen, whenLabel } from "./when.js";
 import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_LEAN, claudeCwd } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
@@ -400,6 +400,24 @@ async function flushValuable() {
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
 async function prepareAnlik(input, duration, opts = {}) {
   input = String(input || "").replace(/\s+/g, " ").trim();
+  // YouTube/sosyal medya video linki haber sayfası değildir (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"):
+  // beyin breaking_news'i ya da panel kartı ile gelse de videosu indirilip kurgulanır (socialVideoNews; talimatta "son dakika" kalır,
+  // fragman analizine dönmez). https:// olmadan yazılmış "youtu.be/…" de; kanal/oynatma listesi linkine Türkçe yanıt.
+  const vlk = findLink(input), vl = vlk ? videoLink(vlk.url) : null;
+  if (vl && vl.kind !== "video") return { ok: false, error: vl.reply };
+  if (vl) {
+    if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
+    if (waVideoCfg().enabled === false) return { ok: false, error: "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)." };
+    // yayın saati ve videodaki konum komut kuralıyla ayrılır ("youtu.be/… 18:30'da paylaş" → publishAt; "12:30'dan itibaren" talimatta kalır;
+    // inceleme, 18 Ekim: saat talimatta kalıp videodaki konum sanılıyordu, yayın planlanmıyordu)
+    const pc = parseCommand(input);
+    const rest = String(pc.action === "social_video" ? pc.instruction || "" : input.replace(vlk.raw, " ")).replace(/\s+/g, " ").trim();
+    const instruction = /^son ?dakika(\s|$)/i.test(rest) ? rest : `son dakika ${rest}`.trim();
+    push(`🔗 ${vl.platform} video linki son dakika haberi olarak alındı (haber sayfası gibi okunmaz): ${vl.url.slice(0, 120)}`);
+    socialVideoNews({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
+    // haber sayfası okunmadı ve süre kurgudan gelir: panel kartı "Haberi okudum … (N sn)" yazmasın (viaLink/duration yok)
+    return { ok: true, social: true, title: `${vl.platform} videosu indiriliyor`, source: vl.platform };
+  }
   const link = (input.match(URL_RE) || [""])[0].replace(/[).,;!?]+$/, "");
   if (link) {
     push(`🔗 haber linki okunuyor: ${link.slice(0, 120)}`);
@@ -1030,6 +1048,92 @@ app.post("/api/sondakika/produce", async (req, res) => {
   res.json(await sondakikaProduce(url, { manual: true, force: !!req.body?.force, item }));
 });
 
+// ---------- Instagram trend radarı (kullanıcı isteği, 18 Ekim: "bazen çok izlenen videolar oluyor, trend; onlara nasıl bir yol
+// izleyebiliriz"; kullanıcı kararları: trendler YALNIZ panelde — WhatsApp mesajı yok, otomatik üretim yok —, kaynak Instagram trendleri).
+// scripts/ig_trends.py: Facebook Girişi varsa resmi API (Business Discovery + hashtag), yoksa herkese açık profil (girişsiz), çerezli
+// yalnız settings.igTrends.useCookies açıksa. Kendi zamanlayıcısı her dakika bakar, intervalMin dolunca tarar (hafif: dinlenmede de
+// tarar, kendi busy bayrağıyla süren taramanın üstüne asla). Log yalnız: elle tarama sonucu, yeni beliren trendler (tek satır), hatalar
+// (otomatik taramada en çok 6 saatte bir). Panel "🎬 Haber yap / Fragman yap" → socialVideoNews (indirme + kurgu; yayın onayı aynı,
+// userVideo), üretime alınanlar data/ig_trends_done.json (7 gün).
+const IGT_FILE = path.join(DATA, "ig_trends.json");
+const IGT_DONE = path.join(DATA, "ig_trends_done.json"); // {url: {at, mode, state: hazırlanıyor|üretildi|hata, error}}
+const IGT_THUMBS = path.join(WORK, "ig_thumbs");
+// ig_trends.py DEFAULTS ile aynı; hesap adları çevrimdışı doğrulanamadı (bulunamayan hesap kartta "bulunamadı" görünür, liste kartta düzenlenir)
+const IGT_DEFAULTS = { enabled: true, intervalMin: 60, accounts: ["cnnturk", "haberturk", "trthaber", "ntv", "ahaber", "anadoluajansi", "onedio", "gzt", "bpthaber", "tv100"],
+  hashtags: ["sondakika", "gundem"], maxAgeHours: 48, minRatio: 2, minViews: 20000, minLikes: 2000, top: 15, useCookies: false };
+const igTrendsCfg = () => { const raw = settings().igTrends; return { ...IGT_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) }; };
+const igtEvery = () => Math.min(1440, Math.max(15, Number(igTrendsCfg().intervalMin) || 60));
+const igtDone = () => { const d = readJson(IGT_DONE, {}); return d && typeof d === "object" && !Array.isArray(d) ? d : {}; };
+// üretim bu süreçte (socialVideoNews) çalışır: açılışta kalan "hazırlanıyor" kaydı yarım kalmıştır (panel üretim sürerken yeniden başladı).
+// "hata" yapılır ki kart yeniden "🎬 Haber yap" göstersin (inceleme, 18 Ekim: 7 gün boyunca yalnız devre dışı "⏳ Hazırlanıyor" kalıyordu)
+{ const d = igtDone(); let n = 0; for (const v of Object.values(d)) if (v?.state === "hazırlanıyor") { v.state = "hata"; v.error = "panel yeniden başladı, üretim yarım kaldı"; n++; } if (n) writeJson(IGT_DONE, d); }
+// son deneme dosyadan: panel yeniden başlayınca hemen yeniden taranmaz (Instagram'ı yormamak için)
+let igtBusy = false, igtLast = Number((readJson(IGT_FILE, {}) || {}).lastTry) || 0, igtErrAt = 0;
+const igtNum = (n) => (n >= 1e6 ? `${(n / 1e6).toLocaleString("tr-TR", { maximumFractionDigits: 1 })} Mn` : n >= 1e4 ? `${Math.round(n / 1e3).toLocaleString("tr-TR")} B` : Number(n || 0).toLocaleString("tr-TR"));
+const igtMetric = (it) => (it.metric === "views" ? `${igtNum(it.views)} izlenme` : `${igtNum(it.likes)} beğeni`);
+const igtMethod = (m) => String(m || "").split("+").filter(Boolean).map((x) => ({ resmi: "resmi API", web: "herkese açık profil", cerez: "çerezli" }[x] || x)).join(" + ") || "—";
+async function igTrendsScan({ manual = false } = {}) {
+  if (igtBusy) return { ok: false, busy: true, error: "Instagram trend taraması zaten sürüyor." };
+  igtBusy = true; igtLast = Date.now();
+  try {
+    const r = (await pyJson(["scripts/ig_trends.py", "--scan"], 6 * 60000)) || { ok: false, error: "yanıt yok" };
+    const accs = Object.values(r.accounts || {}), nf = accs.filter((a) => a.error === "bulunamadı").length;
+    const errs = [...(r.ok ? [] : [r.error || "yanıt yok"]), ...(r.errors || []).filter((e) => e !== r.error)];
+    if (manual && r.ok) {
+      const tn = (r.items || []).filter((x) => x.trend).length;
+      push(`📈 Instagram trendleri tarandı (${igtMethod(r.method)}): ${accs.length} hesap, ${accs.filter((a) => a.ok).length} okundu${nf ? `, ${nf} bulunamadı` : ""} · ${(r.items || []).length} video, ${tn} trend${tn ? " 🔥" : ""}`);
+      for (const e of errs.slice(0, 3)) push(`📈 Instagram trendleri: ${e}`);
+    } else if (manual) push(`📈 Instagram trend taraması başarısız: ${errs[0]}`);
+    else if (errs.length && Date.now() - igtErrAt > 6 * 3600000) { igtErrAt = Date.now(); push(`📈 Instagram trendleri: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} uyarı daha, ayrıntı panelde)` : ""}`); }
+    const nt = r.newTrends || []; // yeni beliren trendler tek satır (aynı video 7 gün yeniden yazılmaz: ig_trends_state.json trendSeen)
+    const minR = Number(igTrendsCfg().minRatio) || 2; // hızla yükselen taze videonun katı düşük olabilir (0,4): onu "kat" diye yazma
+    if (nt.length) push(`🔥 Instagram trendi: ${nt.slice(0, 3).map((it) => `${it.account ? "@" + it.account : it.source} "${String(it.caption || "").slice(0, 50)}" ${igtMetric(it)}${it.ratio >= minR ? ` (hesabın ${it.ratio.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} katı)` : it.fast ? " (hızla yükseliyor)" : ""}`).join(" · ")}${nt.length > 3 ? ` (+${nt.length - 3} daha)` : ""} — panelde 📈 INSTAGRAM TRENDLERİ`);
+    try { for (const f of existsSync(IGT_THUMBS) ? readdirSync(IGT_THUMBS) : []) if (Date.now() - statSync(path.join(IGT_THUMBS, f)).mtimeMs > 3 * 864e5) unlinkSync(path.join(IGT_THUMBS, f)); } catch { /* temizlik */ }
+    return r;
+  } finally { igtBusy = false; }
+}
+setInterval(() => { if (igTrendsCfg().enabled !== false && !igtBusy && Date.now() - igtLast >= igtEvery() * 60000 - 5000) igTrendsScan().catch((e) => push(`📈 Instagram trendleri: ${e.message}`)); }, 60000);
+app.get("/api/igtrends", (_req, res) => {
+  const d = readJson(IGT_FILE, {}) || {}, c = igTrendsCfg(), done = igtDone(), top = Math.min(30, Math.max(1, Number(c.top) || 15));
+  res.json({ cfg: { ...c, intervalMin: igtEvery() }, at: d.at || null, lastTry: d.lastTry || null, method: d.method || null, accounts: d.accounts || {},
+    items: (Array.isArray(d.items) ? d.items : []).slice(0, top).map((it) => ({ ...it, produced: done[it.url] || null })),
+    errors: d.errors || [], notes: d.notes || [], error: d.error || null, pausedUntil: d.pausedUntil > Date.now() ? d.pausedUntil : null, pauseReason: d.pauseReason || null,
+    trailerEnabled: trailerCfg().enabled !== false, scanning: igtBusy, nextScanIn: c.enabled !== false ? Math.max(0, igtLast + igtEvery() * 60000 - Date.now()) : null });
+});
+app.post("/api/igtrends/scan", async (_req, res) => res.json(await igTrendsScan({ manual: true })));
+// Panelden üretim: yalnız Instagram gönderi adresi; indirme + kurgu socialVideoNews'te (yayın önce onaya gelir). Uzun sürer (≤ 8 dk
+// indirme + kurgu): istek hemen döner, sonuç ig_trends_done.json'a ("hazırlanıyor" → "üretildi" / "hata") ve loga.
+app.post("/api/igtrends/produce", (req, res) => {
+  const url = String(req.body?.url || "").trim(), mode = req.body?.mode === "fragman" ? "fragman" : "haber";
+  if (!/^https:\/\/www\.instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]{5,64}\/?$/.test(url)) return res.json({ ok: false, error: "Geçerli bir Instagram gönderi adresi değil." });
+  if (waVideoCfg().enabled === false) return res.json({ ok: false, error: "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)." }); // social_video komutuyla aynı kural
+  if (socialBusy) return res.json({ ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar deneyin." });
+  const it = ((readJson(IGT_FILE, {}) || {}).items || []).find((x) => x.url === url) || {};
+  const mark = (st, extra = {}) => { const d = igtDone(); d[url] = { at: Date.now(), mode, state: st, ...extra }; writeJson(IGT_DONE, Object.fromEntries(Object.entries(d).filter(([, v]) => Date.now() - (v?.at || 0) < 7 * 864e5))); };
+  mark("hazırlanıyor");
+  push(`📈 Instagram trendi ${mode === "fragman" ? "fragman analizine" : "habere"} alındı: ${it.account ? "@" + it.account : it.source || "Instagram"} — ${url}`);
+  // Instagram linkinde fragman kendiliğinden tanınmaz (yalnız YouTube): "" haber, "fragman" fragman analizi (varsayılan analiz talimatı)
+  socialVideoNews({ url, instruction: mode === "fragman" ? "fragman" : "" })
+    .then((r) => mark(r?.ok ? "üretildi" : "hata", r?.ok ? {} : { error: String(r?.error || "üretilemedi").slice(0, 200) }))
+    .catch((e) => { mark("hata", { error: e.message }); push(`📈 Instagram trendinden haber hatası: ${e.message}`); });
+  res.json({ ok: true, started: true });
+});
+// Kapak resmi vekili: Instagram CDN'i başka siteye gömülen resmi engelleyebilir (CORP); kart önce doğrudan dener, olmazsa buradan.
+// Yalnız Instagram/Facebook CDN adresleri (https), ≤ 3 MB resim, work/ig_thumbs/ önbelleği (3 gün).
+app.get("/api/igtrends/thumb", async (req, res) => {
+  let u; try { u = new URL(String(req.query.u || "")); } catch { return res.status(400).end(); }
+  if (u.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(u.hostname)) return res.status(400).end();
+  const f = path.join(IGT_THUMBS, createHash("sha1").update(u.href).digest("hex") + ".jpg");
+  if (existsSync(f)) return res.type("jpg").sendFile(f);
+  try {
+    const r = await fetch(u.href, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(10000) });
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!r.ok || !/^image\//.test(r.headers.get("content-type") || "") || buf.length > 3e6) return res.status(404).end();
+    mkdirSync(IGT_THUMBS, { recursive: true }); writeFileSync(f, buf);
+    res.type("jpg").send(buf);
+  } catch { res.status(404).end(); }
+});
+
 // ---------- günlük uzun özet (yatay, YouTube): her akşam settings.daily.hour:minute'da GUNLUK=1 pipeline.
 // Başka üretim sürüyorsa gün bitene kadar her dakika yeniden denenir; data/daily_last.json günde bir kez üretir.
 const dailyCfg = () => ({ enabled: true, hour: 21, minute: 30, duration: 240, stories: 10, autoPublish: true, ...(settings().daily || {}) });
@@ -1292,7 +1396,7 @@ async function runVideoNews(v) {
   const p = j.plan || {};
   const segLines = (p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.kind === "sesli" ? `🔊 Orijinal ses${s.title ? ` (${s.title})` : ""} — seslendirme susar` : s.title}: ${s.clips.map((c) => `${v.files.length > 1 ? `${c.video}. video ` : ""}${c.start.toFixed(1).replace(".", ",")}–${c.end.toFixed(1).replace(".", ",")} sn`).join(", ")}`).join("\n");
   push(`✂️ kurgu: ${String(p.cuts || "").slice(0, 200)}`);
-  if (!waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  if (!waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   // fragman: etiket plandan (FRAGMAN / YENİ FRAGMAN / HAYRAN FRAGMANI / TANITIM FİLMİ), giriş ve kapanış etikete göre wa_video.py'den
   // ("Yeni fragman." yalnız yeni fragmanda; eski fragmana "yeni" denmez), SON DAKİKA kartı yok; yine onaylı (userVideo), en çok izlenen
   // saat tekrarına girmez (infoKind video)
@@ -1314,12 +1418,20 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
   socialBusy = true;
   try {
     push(`🔗 sosyal medya paylaşımı indiriliyor: ${url}`);
-    const r = await run(PY, ["scripts/social_video.py", "--url", url], { timeout: 8 * 60000 });
-    let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
+    // talimat social_video.py'ye de gider: uzun YouTube videosunda bölüm seçimi ("12:30'dan itibaren", başlık + talimat kelimeleri);
+    // süre: bilgi + altyazı (≤3 dk) + bölüm indirme (≤12 dk) + haber araması
+    const r = await run(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : [])], { timeout: 18 * 60000 });
+    const outLines = String(r.stdout || "").trim().split("\n");
+    for (const l of outLines.slice(0, -1)) if (/^(🔗|📡)/.test(l)) push(l.trim());  // altyazı, uzun video bölümü, canlı yayın kaydı
+    let j = null; try { j = JSON.parse(outLines.pop()); } catch { /* yanıt yok */ }
     if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🔗 paylaşım indirilemedi: ${err}`); await sendW(`❌ Paylaşım indirilemedi: ${err}`); return { ok: false, error: err }; }
     const s = j.social || {};
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
     push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`);
+    // canlı yayın / uzun videonun yalnız bir bölümü alındıysa kullanıcı bilsin (kısa mesaj modunda da tek satır; bölümü değiştirme yolu)
+    const note = String(s.note || ""), Note = note.charAt(0).toLocaleUpperCase("tr-TR") + note.slice(1);
+    if (note && s.live) await sendW(`📡 ${Note}.`);
+    else if (note && s.window) await sendW(`🔗 ${Note}.${s.clip ? "" : ` Başka bölüm için linkin yanına zamanı yazın: "12:30'dan itibaren", "5. dakikadan", "son 3 dakika".`}`);
     // fragman mı: talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser geçiyorsa ya da başlık fragmansa (autoDetect)
     const tc = trailerCfg();
     const news = NEWS_ASK.test(instruction);
@@ -2049,7 +2161,8 @@ app.post("/api/actions", async (req, res) => { const out = []; for (const a of r
 const WA_DIRECT = /^(yardım|komutlar|durum|status|iptal|vazgeç|hayır|evet sil|sil|dur|sus|tamam|teşekkürler|sağ ol)$/;
 async function smartWhatsApp(text) {
   const t = text.toLocaleLowerCase("tr-TR").replace(/[.!?]+$/, "").trim();
-  if (settings().whatsapp?.smart === false || !t || /https?:\/\/|www\./i.test(text) || WA_DIRECT.test(t)) return null;
+  // şemasız video linki de ("youtu.be/… 18:30'da paylaş") hızlı yol: Claude'dan geçince breaking_news yayın saatini kaybediyordu (inceleme, 18 Ekim)
+  if (settings().whatsapp?.smart === false || !t || /https?:\/\/|www\./i.test(text) || findLink(text) || WA_DIRECT.test(t)) return null;
   push(`💬 WhatsApp mesajı Claude'a soruluyor: ${text.slice(0, 80)}`);
   const r = await think(text, "chat", { channel: "whatsapp" });
   if (r.error) { push("💬 Claude'a ulaşılamadı; mesaj kurallarla işleniyor"); return null; }
@@ -2107,7 +2220,7 @@ async function handleCommand(text, opts = {}) {
       const r = await prepareAnlik(cmd.topic, cmd.duration, cmd.publishAt ? { publishAt: cmd.publishAt } : {});
       const what = r.title ? `"${r.title.slice(0, 90)}" (${r.source}${r.count > 1 ? `, ${r.count} haberde geçiyor` : ""})` : String(cmd.topic).slice(0, 60);
       const when = cmd.publishAt ? whenLabel(new Date(cmd.publishAt)) : "";
-      reply = !r.ok ? r.error : `${r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : when ? "Video şimdi hazırlanıyor;" : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}${when ? ` ⏰ ${when}'de yayınlanacak (iptal için: planlı yayını iptal et).` : ""}`;
+      reply = !r.ok ? r.error : `${r.social ? "Video linki alındı" : r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : when ? "Video şimdi hazırlanıyor;" : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}${when ? ` ⏰ ${when}'de yayınlanacak (iptal için: planlı yayını iptal et).` : ""}`;
       if (r.ok && waBrief() && ["whatsapp", "brain"].includes(opts.source)) reply = `🎬 Başladı: ${r.title ? r.title.slice(0, 80) : "son dakika videosu"}${r.queued ? ` (${r.position}. sırada)` : ""}. Bitince video gelecek.${when ? ` ⏰ ${when}'de yayınlanacak.` : ""}`;
       if (!r.ok) action = "none"; break;
     }

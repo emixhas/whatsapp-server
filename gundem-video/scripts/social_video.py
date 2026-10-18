@@ -15,18 +15,36 @@ karakterinde güçlü bir ifade (official trailer, resmi fragman, "85. Bölüm F
 `social.bolum` varsa bölüm ("200. Bölüm"). Haber araması film adıyla yapılır ("<film> fragman", bulunamazsa "<film> film"/"<film>
 dizi"): vizyon tarihi/oyuncular doğrulanmış haberden gelsin. Fragman olmayan paylaşımda davranış aynı.
 
-  python3 scripts/social_video.py --url URL
+YouTube haber linki (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"): önce video indirilmeden bilgi + altyazı
+(elle yazılmış ya da otomatik, tr/en, vtt) alınır (`--skip-download`). Süre ≤ `settings.social.maxSeconds` (600) ise video eskisi
+gibi bütün iner. Daha uzunsa (haber programı, uzun röportaj, biten canlı yayın) en çok `longWindowSeconds` (240) sn'lik bölüm
+`--download-sections` ile iner: talimatta zaman varsa o ("12:30'dan itibaren", "5. dakikadan", "1:02:10", "12:30-16:00 arası",
+"son 3 dakika", "başındaki"; yoksa linkteki t=), yoksa altyazıda başlık + talimat kelimelerine (4 harflik kökler) en çok uyan bölüm
+(bütün altyazı satırlarıyla, cümle ortasından başlamaz), o da yoksa konuşmanın başladığı yer. `maxLongSeconds` (3 saat) üstü video
+yalnız talimatta/linkte zaman verilirse alınır. YouTube klibi (/clip/) normal yolla iner (aralığı yt-dlp keser). Canlı yayında
+yayının son `liveSeconds` (120) sn'si kaydedilir (yt-dlp -g ile HLS adresi, ffmpeg -live_start_index ile geriye dönük), başlamamış
+yayın Türkçe hata. Altyazının bölüme denk gelen satırları bölümün
+başına göre kaydırılıp `social.captions` [[başlangıç, bitiş, metin], …] olarak verilir: wa_video.py konuşma tanıma bir şey
+çıkarmazsa döküm olarak kullanır. YouTube "bot değilim" / giriş / yaş sınırı / üyelere özel / gizli / ülke engeli hatalarında
+Türkçe yol gösterilir (YouTube'a giriş yapılmış tarayıcının çerezleri). Diğer platformlarda akış ve yt-dlp argümanları aynı.
+
+  python3 scripts/social_video.py --url URL [--instruction "TALİMAT"]
   python3 scripts/social_video.py --film "BAŞLIK"      # fragman tanıma + film adı denemesi (ağsız)
 Son satır JSON: {ok, file, social: {platform, handle, uploader, credit, caption, url, views, likes, date, trailer, film, bolum,
-tags}, related: [...]}
+tags; YouTube'da ek olarak captions, captionsLang, sourceDuration, window {start, end, reason} (klipte clip: true) ya da live,
+liveSeconds; note}, related: [...]}. Öncesindeki "🔗"/"📡" satırları ilerleme logudur (panel loga taşır).
 """
+import html
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urljoin
+from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, SECRETS, settings  # noqa: E402
@@ -77,8 +95,41 @@ def ytdlp() -> list | None:
     return [shutil.which("yt-dlp")] if shutil.which("yt-dlp") else None
 
 
+# YouTube çerez yolu (kullanıcı isteği, 18 Ekim: YouTube'un "Sign in to confirm you're not a bot" engeli): YouTube'a giriş yapılmış
+# tarayıcının çerezleri yt-dlp'ye verilir (panel 📡 "Sosyal medya çerezleri" = settings.social.cookiesFromBrowser)
+YT_COOKIES = ("Mac'te YouTube'a giriş yaptığınız tarayıcının adını panelde Ayarlar → 📡 Otomatik içerikler → \"Sosyal medya çerezleri\" "
+              "alanına yazın (chrome ya da safari; ya da secrets/social_cookies.txt) ve linki yeniden gönderin.")
+
+
 def hint(err: str, plat: str) -> str:
     low = err.lower()
+    # tarayıcı çerezi okunamadı (yanlış tarayıcı adı, Safari'de Tam Disk Erişimi yok): giriş istemekle karıştırılmasın
+    if re.search(r"cookies? database|unsupported browser|failed to decrypt|binarycookies|keyring|cookie\w*.{0,120}(operation not permitted|permission denied)", low):
+        return ("Tarayıcı çerezleri okunamadı: panelde \"Sosyal medya çerezleri\" alanındaki tarayıcı adını kontrol edin (chrome, safari, "
+                "firefox, edge, brave; o tarayıcıda giriş yapılmış olmalı). Safari için paneli çalıştıran uygulamaya (Terminal) Sistem Ayarları → "
+                "Gizlilik ve Güvenlik → Tam Disk Erişimi verin ya da secrets/social_cookies.txt kullanın.")
+    if plat == "YouTube":  # YouTube'a özel nedenler (Instagram metni YouTube için yanıltıcıydı)
+        if "not a bot" in low or ("confirm you" in low and "bot" in low):
+            return "YouTube \"bot olmadığınızı doğrulayın\" diyerek giriş istiyor (çok istek ya da IP adresi yüzünden). " + YT_COOKIES
+        if re.search(r"live event will begin|premieres? in|will begin in|is_upcoming|scheduled for|starts in", low):
+            return "Yayın henüz başlamadı; başladığında linki yeniden gönderin (canlı yayının son 2 dakikasını alırım)."
+        if re.search(r"confirm your age|age[- ]restrict|inappropriate for some users|age-gate", low):
+            return "Video yaş sınırlı: YouTube izlemek için yaşı doğrulanmış bir hesapla giriş istiyor. " + YT_COOKIES
+        if re.search(r"members[- ]only|join this channel|channel'?s? members|available to this channel", low):
+            return "Video yalnız kanal üyelerine açık: üye olan bir YouTube hesabıyla giriş gerekir. " + YT_COOKIES
+        if "private video" in low or "video is private" in low:
+            return ("Video gizli (özel): yalnız sahibinin izin verdiği hesaplar izleyebilir. Herkese açık ya da liste dışı bir video linki "
+                    "gönderin; erişimi olan bir hesabınız varsa: " + YT_COOKIES)
+        if re.search(r"(not made this video available|blocked it|not available) in your country|geo[- ]?restrict|geo[- ]?block", low):
+            return "Video bu ülkede gösterilmiyor (yükleyen ya da hak sahibi engellemiş); indirilemiyor. Başka bir kaynaktaki videoyu gönderin."
+        if "http error 429" in low or "too many requests" in low:
+            return "YouTube çok fazla istek yüzünden geçici olarak engelledi (HTTP 429). Biraz sonra yeniden deneyin; sürerse " + YT_COOKIES
+        if re.search(r"video unavailable|has been removed|account .{0,60}terminated|no longer available|does not exist", low):
+            return "Video kaldırılmış ya da erişilemiyor (YouTube: video kullanılamıyor). Linki kontrol edin."
+        if any(k in low for k in ("sign in", "login", "log in", "cookies")):
+            return "YouTube bu videoyu girişsiz vermiyor. " + YT_COOKIES
+    if "does not pass filter" in low:  # yalnız YouTube'da uzun videodan bölüm seçilir
+        return f"Video {round(social_cfg()['maxSeconds'] / 60)} dakikadan uzun; uzun videodan bölüm seçmeyi yalnız YouTube linkinde yapabiliyorum."
     if any(k in low for k in ("login", "log in", "cookies", "rate-limit", "private", "not available", "empty media response")):
         return (f"{plat} bu videoyu girişsiz vermiyor ya da paylaşım gizli. Mac'te Chrome'da {plat}'a giriş yapın ve panelde "
                 f"Ayarlar → 📡 Otomatik içerikler → \"Sosyal medya çerezleri\" alanına chrome yazın (ya da secrets/social_cookies.txt).")
@@ -200,7 +251,325 @@ def related(caption: str, title: str, film: str = "", series: bool = False) -> l
     return _lookup(" ".join(words))
 
 
-def fetch(url: str) -> dict:
+# ---------- YouTube haber linki (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"): uzun video, canlı yayın, altyazı
+SOCIAL_DEFAULTS = {"maxSeconds": 600, "longWindowSeconds": 240, "maxLongSeconds": 3 * 3600, "liveSeconds": 120}
+FMT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b"
+# altyazı/başlık eşleşmesinde sayılmayan kelimeler (topic_news.STOP + haber videolarının kalıp sözleri, zaman ve kurgu talimatı)
+KW_STOP = {"için", "ile", "olan", "olarak", "sonra", "daha", "göre", "yeni", "oldu", "etti", "dedi", "açıkladı", "haber", "son", "dakika",
+           "bugün", "şimdi", "hakkında", "ilgili", "konu", "video", "anlık", "gündem", "olay", "olayı", "kadar", "gibi", "çok", "bir", "iki",
+           "ama", "fakat", "veya", "şu", "bu", "da", "de", "mi", "ne", "nasıl", "haberi", "haberler", "haberleri", "videosu", "videoyu",
+           "videonun", "canlı", "yayın", "yayını", "izle", "özel", "tıkla", "abone", "kanal", "kanalı", "shorts", "the", "and", "for", "with",
+           "yap", "yapın", "hazırla", "üret", "kısım", "kısmı", "kısmını", "bölüm", "bölümü", "bölümünü", "itibaren", "saniye", "arası",
+           "sesi", "sesini", "kapat", "kullan", "kes", "başındaki", "baştaki", "sonundaki", "ortasındaki", "anlat", "tarafsız", "lütfen"}
+
+
+def social_cfg() -> dict:
+    """settings.social: sayı alanları bozuk/0 ise varsayılan (600 sn bütün video, 240 sn bölüm, 3 saat üst sınır, canlıda 120 sn)."""
+    raw = settings().get("social")
+    s = raw if isinstance(raw, dict) else {}
+
+    def num(k: str) -> float:
+        try:
+            x = float(s.get(k))
+        except (TypeError, ValueError):
+            return float(SOCIAL_DEFAULTS[k])
+        return x if math.isfinite(x) and x > 0 else float(SOCIAL_DEFAULTS[k])
+    return {**s, **{k: num(k) for k in SOCIAL_DEFAULTS}}
+
+
+def _low(t: str) -> str:
+    return (t or "").replace("I", "ı").replace("İ", "i").lower()
+
+
+def hms(t: float) -> str:
+    t = int(round(t))
+    return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+
+def dur_text(t: float) -> str:
+    t = int(round(t))
+    if t >= 3600:
+        return f"{t // 3600} sa {t % 3600 // 60} dk" if t % 3600 // 60 else f"{t // 3600} saat"
+    return f"{t // 60} dk" if t >= 60 else f"{t} sn"
+
+
+def span_text(t: float) -> str:
+    return f"{int(t // 60)} dakika" if t >= 60 and t % 60 < 1 else f"{int(round(t))} saniye"
+
+
+def parse_vtt(text: str) -> list:
+    """WebVTT → [(başlangıç, bitiş, metin)]. YouTube otomatik altyazısı kayan iki satırdır (önceki satır tekrar eder, kelime zaman
+    etiketleri <00:00:01.120><c>…</c>, 10 ms'lik geçiş ipuçları): yalnız yeni satır alınır; bitiş sonraki satırın başını geçmez."""
+    ts = re.compile(r"(?:(\d+):)?(\d{1,2}):(\d{2})[.,](\d{3})")
+    sec = lambda m: int(m.group(1) or 0) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) + int(m.group(4)) / 1000  # noqa: E731
+    cues, prev = [], []
+    for block in re.split(r"\n\n+", (text or "").replace("\r", "")):  # yalnız boş satır ayırır: YouTube'un " " satırı ipucunun içindedir
+        lines = block.strip("\n").split("\n")
+        ti = next((i for i, x in enumerate(lines) if "-->" in x), None)
+        if ti is None:
+            continue
+        a, b = (ts.search(x) for x in lines[ti].split("-->", 1))
+        if not a or not b:
+            continue
+        rows = [(re.search(r"<\d{1,2}:\d{2}[:.]|<c[ .>]", x) is not None,
+                 re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]*>", "", x)).replace(chr(0x200B), "")).strip()) for x in lines[ti + 1:]]
+        rows = [(tag, x) for tag, x in rows if x]
+        raw = [x for _, x in rows]
+        if any(tag for tag, _ in rows):  # kelime zamanlı satır yeni söylenendir (aynı cümle art arda söylense de)
+            new = [x for tag, x in rows if tag]
+        else:  # geçiş ipucu ya da elle yazılmış altyazı: önceki ipucunun son satırı tekrar etmez
+            new = [] if raw == prev else raw[1:] if raw and prev and raw[0] == prev[-1] else raw
+        if raw:
+            prev = raw
+        if new:
+            cues.append([sec(a), sec(b), " ".join(new)])
+    for i in range(len(cues) - 1):
+        if cues[i + 1][0] > cues[i][0]:
+            cues[i][1] = min(cues[i][1], cues[i + 1][0])
+    return [(round(a, 2), round(max(b, a + 0.1), 2), t) for a, b, t in cues]
+
+
+def pick_captions(stem: str, info: dict) -> tuple[list, str]:
+    """İnen altyazılardan en iyisi: elle yazılmış tr → elle en → otomatik özgün dil (-orig) → otomatik tr → otomatik en."""
+    manual = set((info.get("subtitles") or {}).keys())
+    files = []
+    for f in INBOX.glob(f"{stem}.*.vtt"):
+        lang = f.name[len(stem) + 1:-4]
+        auto = lang not in manual
+        files.append(((auto, (0 if lang.endswith("-orig") else 1) if auto else 0, 0 if lang.split("-")[0].lower() == "tr" else 1), lang, f))
+    best = ([], "")
+    for _, lang, f in sorted(files):
+        try:
+            cues = parse_vtt(f.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if len(cues) >= 3:
+            best = (cues, f"{lang}{'' if lang in manual else ' (otomatik)'}")
+            break
+    for f in INBOX.glob(f"{stem}.*.vtt"):
+        f.unlink(missing_ok=True)
+    return best
+
+
+_TSP = r"(\d{1,3})[:.](\d{2})(?:[:.](\d{2}))?"
+# aralık: "12:30-16:00", "12:30 ile 16:00", "12:30'dan 16:00'ya kadar" (inceleme, 18 Ekim: Türkçe aralığın sonu yok sayılıyordu);
+# "12:30'dan itibaren" aralık değil
+_RANGE = re.compile(rf"(?<![\d.:]){_TSP}\s*['’]?\s*(?:(?:d[ae]n|t[ae]n)?\s*(?:[-–—]|ile|ila)|(?:d[ae]n|t[ae]n)\s)\s*{_TSP}(?!\d)")
+_FROM = re.compile(rf"(?<![\d.:]){_TSP}\s*['’]?\s*(?:d[ae]n|t[ae]n|d[ae]ki|t[ae]ki|d[ae]|t[ae])(?!\w)")
+_HMS = re.compile(r"(?<![\d.:])(\d{1,2}):(\d{2}):(\d{2})(?!\d)")
+_COLON = re.compile(r"(?<![\d.:])(\d{1,3}):(\d{2})(?![\d:])")
+_ORD = re.compile(r"(?<![\d.,])(\d{1,3})\s*(?:\.|['’]?\s*(?:[ıiuü]nc[ıiuü]|nc[ıiuü]))\s*(dakika|dk|saniye|sn)")
+_FROM_N = re.compile(r"(?<![\d.,])(\d{1,3})\s*(dakika|dk|saniye|sn)\w*?\s*['’]?\s*(?:d[ae]n|t[ae]n|s[ıi]nd[ae]n)\s+(?:itibaren|sonra\w*|başla\w*)")
+_NOT_KEEP = r"(?!\w*\s*['’]?\s*(?:y[ıi]|[ıi]|n[ıi])?\s*(?:kes|at|atla|sil|çıkar|kullanma|alma|gösterme))"
+_LAST = re.compile(rf"(?<!\w)son\s+(\d{{1,3}})\s*(dakika|dk|saniye|sn){_NOT_KEEP}")
+_FIRST = re.compile(rf"(?<!\w)ilk\s+(\d{{1,3}})\s*(dakika|dk|saniye|sn){_NOT_KEEP}")
+_END_W = re.compile(r"(?<!\w)(?:sonundaki|sonunu|son\s+kısm\w*|son\s+bölüm\w*|sonlar[ıi]nd\w*|bitişindeki|kapanıştaki)(?!\w)")
+_START_W = re.compile(r"(?<!\w)(?:başındaki|baştaki|başını|en\s+baştan|baştan\s+itibaren|açılıştaki|girişteki|başlangıcındaki)(?!\w)")
+_MID_W = re.compile(r"(?<!\w)(?:ortasındaki|ortasını|ortalarındaki|orta\s+kısm\w*)(?!\w)")
+
+
+def _ts_sec(a, b, c) -> int:
+    return int(a) * 3600 + int(b) * 60 + int(c) if c is not None else int(a) * 60 + int(b)
+
+
+def _unit(n, u) -> int:
+    return int(n) * (60 if u.startswith("d") else 1)
+
+
+def time_hint(instruction: str, dur: float, window: float, max_s: float) -> dict | None:
+    """Talimattaki zaman → {start, length, reason}. "12:30-16:00 arası" (en çok max_s), "1:02:10", "12:30'dan itibaren", "5. dakikadan",
+    "5 dakikadan itibaren", "son 3 dakika", "ilk 2 dakika", "sonundaki", "başındaki", "ortasındaki". "ilk 5 sn'yi kes", "son 10 saniyeyi
+    kullanma" bölüm seçimi değil (kurgu talimatı); 20 sn'den kısa "son/ilk N" de."""
+    t = _low(instruction)
+    m = _RANGE.search(t)
+    if m:
+        a, b = _ts_sec(*m.group(1, 2, 3)), _ts_sec(*m.group(4, 5, 6))
+        if b - a >= 5:
+            return {"start": a, "length": min(b - a, max_s), "reason": f"talimatta istenen aralık: {m.group(0).strip()}"}
+    for rx in (_HMS, _FROM):
+        m = rx.search(t)
+        if m:
+            return {"start": _ts_sec(*m.groups()[:3]) if rx is _FROM else _ts_sec(*m.groups()), "length": window,
+                    "reason": f"talimatta istenen yer: {m.group(0).strip()}"}
+    m = _COLON.search(t)  # eksiz "45:10": 24'ten büyük dakika yayın saati olamaz
+    if m and int(m.group(1)) >= 24:
+        return {"start": _ts_sec(m.group(1), m.group(2), None), "length": window, "reason": f"talimatta istenen yer: {m.group(0)}"}
+    for rx in (_ORD, _FROM_N):
+        m = rx.search(t)
+        if m:
+            return {"start": _unit(*m.group(1, 2)), "length": window, "reason": f"talimatta istenen yer: {m.group(0).strip()}"}
+    for rx, last in ((_LAST, True), (_FIRST, False)):
+        m = rx.search(t)
+        if m and _unit(*m.group(1, 2)) >= 20:
+            n = min(_unit(*m.group(1, 2)), max_s)
+            return {"start": max(0.0, dur - n) if last else 0.0, "length": n, "reason": f"talimatta istenen: {m.group(0).strip()}"}
+    for rx, where in ((_END_W, "end"), (_START_W, "start"), (_MID_W, "mid")):
+        m = rx.search(t)
+        if m:
+            st = max(0.0, dur - window) if where == "end" else 0.0 if where == "start" else max(0.0, dur / 2 - window / 2)
+            return {"start": st, "length": window, "reason": f"talimatta istenen: {m.group(0)}"}
+    return None
+
+
+def url_time(url: str) -> float | None:
+    """Zaman damgalı YouTube linki (Paylaş → Başlangıç): ?t=1380, &t=23m10s, ?start=90."""
+    m = re.search(r"[?&#](?:t|start|time_continue)=([\dhms.]+)", url or "")
+    if not m:
+        return None
+    v = m.group(1)
+    if re.fullmatch(r"\d+(?:\.\d+)?s?", v):
+        return float(v.rstrip("s"))
+    p = re.fullmatch(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", v)
+    return int(p.group(1) or 0) * 3600 + int(p.group(2) or 0) * 60 + int(p.group(3) or 0) if p and any(p.groups()) else None
+
+
+def kw_stems(t: str) -> set:
+    return {w[:4] for w in re.findall(r"[^\W\d_]{3,}", _low(t)) if w not in KW_STOP}
+
+
+def choose_window(dur: float, window: float, max_s: float, cues: list, title: str, instruction: str, uploader: str = "",
+                  url: str = "") -> dict:
+    """Uzun videodan indirilecek bölüm {start, end, reason}: talimattaki zaman → linkteki t= → altyazıda başlık + talimat kelimeleri
+    (4 harflik kökler; talimat 2 kat, çok geçen kök az ağırlıklı; bölüm bütün altyazı satırlarından, cümle ortasından başlamaz)
+    → konuşmanın başladığı yer (altyazı yoksa baştan)."""
+    h = time_hint(instruction, dur, window, max_s)
+    if not h and url_time(url) is not None:
+        h = {"start": url_time(url), "length": window, "reason": f"linkteki başlangıç zamanı ({hms(url_time(url))})"}
+    if h:
+        st = float(h["start"])
+        if st >= dur - 20:  # videonun sonunu aşan istek: son bölüm
+            st = max(0.0, dur - h["length"])
+        return {"start": round(st, 2), "end": round(min(dur, st + h["length"]), 2), "reason": h["reason"]}
+    best = None
+    if cues:
+        drop = kw_stems(uploader)
+        wts = {k: 1.0 for k in kw_stems(title) - drop}
+        wts.update({k: 2.0 for k in kw_stems(re.sub(r"\d+", " ", instruction or "")) - drop})
+        cst = [kw_stems(c[2]) & wts.keys() for c in cues]
+        df = {k: sum(1 for x in cst if k in x) for k in wts}
+        idf = {k: wts[k] * math.log(1 + len(cues) / (1 + df[k])) for k in wts}
+        need = min(2, len([k for k in wts if df[k]]))
+        for i in range(len(cues)):
+            if not cst[i]:
+                continue
+            seen, hits, j = set(), 0.0, i
+            while j < len(cues) and cues[j][1] - cues[i][0] <= window:
+                seen |= cst[j]
+                hits += sum(idf[k] for k in cst[j])
+                j += 1
+            if len(seen) < need and not (seen & {k for k, w in wts.items() if w > 1}):
+                continue
+            score = (round(sum(idf[k] for k in seen), 6), round(hits, 6))
+            if best is None or score > best[0]:
+                best = (score, i, seen)
+    if best:
+        i = best[1]
+        punct = sum(1 for c in cues if re.search(r"[.!?…]\s*$", c[2])) >= max(3, len(cues) // 20)
+        k = i
+        if punct:  # cümle başına kadar geri (en çok 20 sn)
+            while k > 0 and not re.search(r"[.!?…]\s*$", cues[k - 1][2]) and cues[i][0] - cues[k - 1][0] <= 20:
+                k -= 1
+            if k > 0 and not re.search(r"[.!?…]\s*$", cues[k - 1][2]):
+                k = i
+        elif k > 0 and cues[i][0] - cues[k - 1][0] <= 6:  # noktalama yok (otomatik altyazı): bir satır önceden
+            k -= 1
+        st = cues[k][0]
+        if dur - st < window:  # eşleşme videonun sonunda (kapanış özeti): bölüm geriye kayar, 18 sn yerine bütün pencere iner
+            st = next((c[0] for c in cues if c[0] >= dur - window), st)
+        why = "altyazıda başlık ve talimatla en uyumlu bölüm" if instruction.strip() else "altyazıda başlıkla en uyumlu bölüm"
+        why += f": {', '.join(sorted(best[2]))[:60]}"
+    else:
+        st = next((c[0] for c in cues if c[0] <= 120), 0.0) if cues else 0.0
+        why = "altyazıda başlıkla eşleşen bölüm yok: konuşmanın başladığı yerden" if cues else "altyazı yok: baştan"
+    ends = [c[1] for c in cues if c[0] >= st and c[1] - st <= window]
+    en = ends[-1] + 0.3 if ends and ends[-1] - st >= window * 0.6 else st + window
+    if best and ends:  # noktalamalı altyazıda bölüm cümle sonunda biter (bölümün %70'i kalıyorsa)
+        sent = [c[1] for c in cues if c[0] >= st and c[1] - st <= window and re.search(r"[.!?…]\s*$", c[2])]
+        if sent and sent[-1] - st >= window * 0.7:
+            en = sent[-1] + 0.3
+    return {"start": round(max(0.0, st - 0.2), 2), "end": round(min(dur, en), 2), "reason": why}
+
+
+def retime(cues: list, start: float, end: float) -> list:
+    """Bölümün altyazısı, bölüm başına göre (0'dan)."""
+    return [[round(max(0.0, a - start), 1), round(min(b, end) - start, 1), t] for a, b, t in cues if a >= start - 0.3 and a < end - 0.3][:600]
+
+
+def _live_playlist(url: str, secs: float) -> tuple[str, int | None, float]:
+    """HLS canlı yayın listesi: (ffmpeg girdisi, geriye dönük parça sayısı, listedeki toplam süre). Ana liste (master) ise ≤1080p en iyi
+    alt liste. Okunamazsa (adres, None, 0): ffmpeg canlı uçtan kaydeder."""
+    try:
+        txt = urlopen(url, timeout=20).read(4_000_000).decode("utf-8", "replace")
+    except Exception:
+        return url, None, 0.0
+    if not txt.lstrip().startswith("#EXTM3U"):
+        return url, None, 0.0
+    if "#EXT-X-STREAM-INF" in txt:
+        vs, lines = [], txt.splitlines()
+        for i, x in enumerate(lines):
+            if x.startswith("#EXT-X-STREAM-INF"):
+                h = int((re.search(r"RESOLUTION=\d+x(\d+)", x) or [0, 0])[1])
+                bw = int((re.search(r"BANDWIDTH=(\d+)", x) or [0, 0])[1])
+                nxt = next((y.strip() for y in lines[i + 1:] if y.strip() and not y.startswith("#")), "")
+                if nxt:
+                    vs.append((h <= 1080, h, bw, urljoin(url, nxt)))
+        if not vs:
+            return url, None, 0.0
+        return _live_playlist(max(vs)[3], secs)
+    # bir parça fazlası: kayıt canlı uca varmadan -t dolar (yoksa ffmpeg süreyi bitirmek için yeni parçayı bekler)
+    durs = [float(x) for x in re.findall(r"#EXTINF:\s*([\d.]+)", txt)]
+    total, k = 0.0, 0
+    for d in reversed(durs):
+        k += 1
+        total += d
+        if total >= secs + (durs[-1] if durs else 0):
+            break
+    return url, k or None, sum(durs)
+
+
+def record_live(base: list, auth: list, url: str, stem: str, secs: float) -> tuple[Path | None, str, str]:
+    """Canlı yayının son `secs` sn'si: yt-dlp -g → HLS adresi → ffmpeg -live_start_index (geriye dönük parça) -t secs. (dosya, hata, not)"""
+    try:
+        g = subprocess.run([*base, "-g", "-f", "b[height<=1080]/b", *auth, url], capture_output=True, text=True, timeout=150)
+    except subprocess.TimeoutExpired:
+        return None, "canlı yayın adresi 2,5 dakikada alınamadı", ""
+    urls = [u for u in (g.stdout or "").split() if re.match(r"^[a-z]+://", u)][:2]
+    if not urls:
+        err = (g.stderr or g.stdout or "canlı yayın adresi alınamadı").strip().splitlines()
+        return None, hint(" ".join(err[-3:]), "YouTube"), ""
+    out = INBOX / f"{stem}.mp4"
+    cmd, back = ["ffmpeg", "-y", "-loglevel", "error"], 0.0
+    for u in urls:
+        src, k, total = _live_playlist(u, secs)
+        back = back or total
+        cmd += (["-live_start_index", str(-k)] if k else []) + ["-i", src]
+    cmd += ["-t", str(int(secs))] + (["-map", "0:v:0", "-map", "1:a:0"] if len(urls) > 1 else ["-map", "0:v:0?", "-map", "0:a:0?"])
+    cmd += ["-c", "copy", "-movflags", "+faststart", str(out)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=int(secs) * 2 + 120)
+    except subprocess.TimeoutExpired:
+        return None, "canlı yayın kaydı zamanında bitmedi", ""
+    if not out.exists() or out.stat().st_size < 50_000:
+        out.unlink(missing_ok=True)
+        return None, f"canlı yayın kaydedilemedi ({(r.stderr or '').strip()[-160:] or 'ffmpeg çıktı vermedi'})", ""
+    note = (f"canlı yayından son {span_text(secs)} alındı" if back >= secs - 1
+            else f"canlı yayından {span_text(secs)} kaydedildi (yayının geriye dönük kısmı kısa olduğu için son kısmı canlı kaydedildi)")
+    return out, "", note
+
+
+def _probe_secs(p: Path) -> float | None:
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(p)], capture_output=True, text=True)
+    try:
+        return round(float(r.stdout.strip()), 1)
+    except ValueError:
+        return None
+
+
+def _log(msg: str) -> None:
+    print(msg, flush=True)
+
+
+def fetch(url: str, instruction: str = "") -> dict:
     cmd = ytdlp()
     if not cmd:
         return {"ok": False, "error": "yt-dlp kurulu değil (.venv'de pip install yt-dlp)"}
@@ -211,24 +580,102 @@ def fetch(url: str) -> dict:
             old.unlink(missing_ok=True)
     stem = f"social-{int(time.time())}"
     tmpl = str(INBOX / f"{stem}.%(ext)s")
-    args = [*cmd, "--no-playlist", "--no-warnings", "--socket-timeout", "25", "--max-filesize", "300M", "--match-filter", "duration <? 600",
-            "-f", "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b", "--merge-output-format", "mp4",
-            "--write-info-json", "-o", tmpl]
-    s = settings().get("social") or {}
+    cfg = social_cfg()
+    base = [*cmd, "--no-playlist", "--no-warnings", "--socket-timeout", "25"]
+    args = [*base, "--max-filesize", "300M", "--match-filter", f"duration <? {int(cfg['maxSeconds'])}",
+            "-f", FMT, "--merge-output-format", "mp4", "--write-info-json", "-o", tmpl]
+    auth = []
     if (SECRETS / "social_cookies.txt").exists():
-        args += ["--cookies", str(SECRETS / "social_cookies.txt")]
-    elif s.get("cookiesFromBrowser"):
-        args += ["--cookies-from-browser", str(s["cookiesFromBrowser"]).strip()]
+        auth += ["--cookies", str(SECRETS / "social_cookies.txt")]
+    elif cfg.get("cookiesFromBrowser"):
+        auth += ["--cookies-from-browser", str(cfg["cookiesFromBrowser"]).strip()]
     node = shutil.which("node")
     if node and plat == "YouTube":
-        args += ["--js-runtimes", f"node:{node}", "--remote-components", "ejs:github"]
-    try:
-        r = subprocess.run([*args, url], capture_output=True, text=True, timeout=360)
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "indirme 6 dakikada bitmedi"}
+        auth += ["--js-runtimes", f"node:{node}", "--remote-components", "ejs:github"]
+    args += auth
+    meta, cues, cap_lang, extra, r = {}, [], "", {}, None
+    if plat == "YouTube":  # önce bilgi + altyazı (video inmeden): süre, canlı yayın, altyazı
+        try:
+            m = subprocess.run([*base, "--skip-download", "--ignore-errors", "--ignore-no-formats-error", "--write-info-json", "--write-subs",
+                                "--write-auto-subs", "--sub-langs", "tr.*,en.*", "--sub-format", "vtt/best", "-o", tmpl, *auth, url],
+                               capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "YouTube video bilgisi 3 dakikada alınamadı"}
+        for f in INBOX.glob(f"{stem}*.info.json"):
+            try:
+                meta = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            f.unlink(missing_ok=True)
+        if not meta:
+            for f in INBOX.glob(f"{stem}.*.vtt"):
+                f.unlink(missing_ok=True)
+            err = (m.stderr or m.stdout or "video bilgisi alınamadı").strip().splitlines()
+            return {"ok": False, "error": hint(" ".join(err[-3:]), plat)}
+        cues, cap_lang = pick_captions(stem, meta)
+        if cues:
+            _log(f"🔗 YouTube altyazısı: {cap_lang}, {len(cues)} satır")
+    status = meta.get("live_status")
+    dur = float(meta.get("duration") or 0)
+    # YouTube klibi (/clip/): yt-dlp asıl videonun bilgisini ve klibin aralığını (section_start/end) verir; yalnız o aralık iner
+    cs, ce = meta.get("section_start"), meta.get("section_end")
+    clip = (cs, min(ce, cs + cfg["maxSeconds"])) if isinstance(cs, (int, float)) and isinstance(ce, (int, float)) and ce > cs else None
+    if status == "is_upcoming":  # başlamamış yayın / gala (premiere): planlanan saat varsa yazılır
+        at = meta.get("release_timestamp")
+        msg = hint("is_upcoming", plat)
+        return {"ok": False, "error": msg.replace("başlamadı;", f"başlamadı (planlanan başlangıç {time.strftime('%d.%m %H:%M', time.localtime(at))});", 1)
+                if isinstance(at, (int, float)) else msg}
+    if meta.get("is_live") or status == "is_live":  # canlı yayın: şu andan geriye son liveSeconds sn (talimatta "son 3 dakika" varsa o)
+        secs = cfg["liveSeconds"]
+        lm = _LAST.search(_low(instruction))
+        if lm and _unit(*lm.group(1, 2)) >= 20:
+            secs = min(_unit(*lm.group(1, 2)), cfg["maxSeconds"])
+        _log(f"📡 canlı yayın: son {span_text(secs)} kaydediliyor")
+        video, err, note = record_live(base, auth, url, stem, secs)
+        if not video:
+            return {"ok": False, "error": err}
+        _log(f"📡 {note}")
+        extra = {"live": True, "liveSeconds": int(secs), "note": note}
+    elif status == "post_live" and not dur:
+        return {"ok": False, "error": "Canlı yayın yeni bitti; YouTube kaydı hazırlıyor. Birkaç dakika sonra linki yeniden gönderin."}
+    elif dur > cfg["maxSeconds"] or clip:  # uzun video (haber programı, uzun röportaj, biten canlı yayın) ya da klip: yalnız o bölüm iner
+        explicit = clip or time_hint(instruction, dur, cfg["longWindowSeconds"], cfg["maxSeconds"]) or url_time(url) is not None
+        if dur > cfg["maxLongSeconds"] and not explicit:
+            return {"ok": False, "error": f"Video çok uzun ({dur_text(dur)}); bölümü en çok {dur_text(cfg['maxLongSeconds'])} uzunluğundaki videoda kendim seçiyorum. "
+                                          "Linkin yanına haberin geçtiği zamanı yazın (ör. \"1:02:10'dan itibaren\") ya da videonun o anından "
+                                          "zaman damgalı link gönderin (YouTube'da Paylaş → Başlangıç)."}
+        w = ({"start": round(float(clip[0]), 2), "end": round(float(clip[1]), 2), "reason": "YouTube klibinin kendi aralığı"} if clip else
+             choose_window(dur, cfg["longWindowSeconds"], cfg["maxSeconds"], cues, str(meta.get("title") or ""), instruction,
+                           str(meta.get("uploader") or meta.get("channel") or ""), url))
+        if clip:
+            # klipte aralığı yt-dlp kendisi keser (section_start/end; bilgideki duration klibin süresi). --download-sections klip adresinde
+            # aralığı İKİNCİ kez kaydırıyordu (29+29=58 → bitişi geçen başlangıç, boş dosya; inceleme, 18 Ekim): normal indirme yolu,
+            # altyazı (asıl videonun) klibin aralığına göre kaydırılır
+            what = f"YouTube klibi ({dur_text(dur)}): asıl videonun {hms(w['start'])}–{hms(w['end'])} arası"
+            _log(f"🔗 {what} indiriliyor")
+            try:
+                r = subprocess.run([*args, url], capture_output=True, text=True, timeout=360)
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "error": "indirme 6 dakikada bitmedi"}
+            note = f"{what} alındı"
+        else:
+            _log(f"🔗 uzun video ({dur_text(dur)}): {hms(w['start'])}–{hms(w['end'])} arası indiriliyor ({w['reason']})")
+            try:
+                r = subprocess.run([*base, "-f", FMT, "--merge-output-format", "mp4", "--download-sections", f"*{w['start']:.2f}-{w['end']:.2f}",
+                                    "--force-keyframes-at-cuts", "-o", tmpl, *auth, url], capture_output=True, text=True, timeout=720)
+            except subprocess.TimeoutExpired:
+                return {"ok": False, "error": "videonun bölümü 12 dakikada inmedi"}
+            note = f"uzun video ({dur_text(dur)}): {hms(w['start'])}–{hms(w['end'])} arası alındı ({w['reason']})"
+        cues = retime(cues, w["start"], w["end"])
+        extra = {"window": w, "note": note, **({"clip": True} if clip else {})}
+    else:
+        try:
+            r = subprocess.run([*args, url], capture_output=True, text=True, timeout=360)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "indirme 6 dakikada bitmedi"}
     vids = sorted((p for p in INBOX.glob(f"{stem}.*") if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov")), key=lambda p: p.stat().st_size, reverse=True)
     if not vids:
-        err = (r.stderr or r.stdout or "video bulunamadı").strip().splitlines()
+        err = (((r.stderr or r.stdout) if r else "") or "video bulunamadı").strip().splitlines() or ["video bulunamadı"]
         return {"ok": False, "error": hint(" ".join(err[-3:]), plat)}
     video = vids[0]
     if video.suffix.lower() != ".mp4":  # webm/mkv → mp4 (ffmpeg her birini okur ama dosya adı tutarlı olsun)
@@ -244,6 +691,7 @@ def fetch(url: str) -> dict:
         except Exception:
             pass
         f.unlink(missing_ok=True)
+    info = info or meta
     handle = info.get("uploader_id") or info.get("channel") or info.get("uploader") or ""
     handle = str(handle).lstrip("@")
     caption = str(info.get("description") or "").strip()
@@ -254,6 +702,11 @@ def fetch(url: str) -> dict:
               "title": title[:200], "url": info.get("webpage_url") or url, "views": info.get("view_count"), "likes": info.get("like_count"),
               "comments": info.get("comment_count"), "date": f"{d[6:8]}.{d[4:6]}.{d[:4]}" if len(d) == 8 else None,
               "duration": info.get("duration")}
+    if plat == "YouTube":  # bölüm/canlı: süre inen parçanın süresi; altyazı wa_video'da konuşma tanıma boş kalırsa döküm olur
+        if extra:
+            social.update({"duration": _probe_secs(video), "sourceDuration": None if clip else dur or None, **extra})  # klipte asıl video süresi bilinmez
+        if cues:
+            social.update({"captions": [list(c) for c in cues][:600], "captionsLang": cap_lang})
     # fragman (kullanıcı isteği, 18 Ekim): film adı başlıktan; panel talimata ve fragman ayarına göre fragman analizine geçer. Otomatik
     # tanıma yalnız YouTube'da (yardım ve panel metni): TikTok/X/Facebook haber klibinin açıklamasındaki "trailer" (römork), "fragmanda
     # yoktu" gibi sözler haber videosunu fragman moduna ve film adıyla aramaya çevirmesin; talimatta "fragman" yazılırsa her platformda olur
@@ -275,7 +728,8 @@ if __name__ == "__main__":
             f, b = film_name(t)
             print(json.dumps({"ok": True, "trailer": is_trailer(t), "film": f, "bolum": b}, ensure_ascii=False))
             sys.exit(0)
-        res = fetch(sys.argv[sys.argv.index("--url") + 1]) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}
+        ins = sys.argv[sys.argv.index("--instruction") + 1] if "--instruction" in sys.argv else ""
+        res = fetch(sys.argv[sys.argv.index("--url") + 1], ins) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}
     except Exception as e:
         res = {"ok": False, "error": str(e)[:300]}
     print(json.dumps(res, ensure_ascii=False))

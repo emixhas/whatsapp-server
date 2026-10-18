@@ -278,7 +278,9 @@ def dokum_text(infos: list, srcs: list, film: str, social: dict | None, segs: li
         if len(infos) > 1:
             lines.append(f"— {i}. video —")
         lines.append(f"Konuşma dili: {LANGS.get(str(p)) or 'bilinmiyor'} · {len(info['speech'])} satır · {round(info['duration'], 1)} sn")
-        if SPEECH_OFF:
+        if info.get("captions"):
+            lines.append("Döküm YouTube altyazısından (konuşma tanıma bir şey çıkarmadı).")
+        elif SPEECH_OFF:
             lines.append("Konuşma tanıma çalışmadı (mlx-whisper kurulu değil); döküm yok. Mac'te bir kez: bash scripts/install_align.sh")
         lines += [f"[{mmss(a)} – {mmss(b)}] {t}" for a, b, t in info["speech"]] + [""]
     lines.append("Videonun Türkçe seslendirmesi:")
@@ -479,6 +481,21 @@ def build(job: dict) -> dict:
         else:
             info["scenes"] = scenes(p)
         info["speech"] = (transcript(p, tmp, None) if trailer else transcript(p, tmp)) if info["audio"] else []
+        # YouTube altyazısı (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"): konuşma tanıma bir şey çıkarmadıysa
+        # (kurulu değil ya da boş) social_video.py'nin verdiği, bölüme göre kaydırılmış altyazı satırları döküm olur; diğer işler aynı
+        caps = (social or {}).get("captions") if len(srcs) == 1 and info["audio"] else None
+        if caps and (SPEECH_OFF or not info["speech"]):
+            try:
+                info["speech"] = [(round(float(a), 1), round(float(b), 1), str(t).strip()) for a, b, t in caps
+                                  if str(t).strip() and 0 <= float(a) < info["duration"]]
+            except (TypeError, ValueError):
+                info["speech"] = []
+            if info["speech"]:
+                info["captions"] = True
+                if trailer and not LANGS.get(str(p)) and (social or {}).get("captionsLang"):
+                    LANGS[str(p)] = str(social["captionsLang"]).split("-")[0].split(" ")[0]
+                log(f"🎬 konuşma dökümü YouTube altyazısından: {len(info['speech'])} satır ({(social or {}).get('captionsLang') or 'dil bilinmiyor'}; "
+                    f"konuşma tanıma {'çalışmadı' if SPEECH_OFF else 'konuşma bulamadı'})")
         sheet = tmp / f"kareler-{i}.jpg"
         if trailer:  # hızlı kurgu: her çekimden kare (siyah çekimler hariç), en çok 24, 4 sütun
             info["black"] = blacks(p)
@@ -498,7 +515,10 @@ def build(job: dict) -> dict:
             log(f"🎬 fragman kareleri: {len(info['frames'])} çekimden kare, {len(info['black'])} siyah bölüm ayıklanacak")
             blocks[-1].update({"konusma_dili": LANGS.get(str(p)), "konusma": blocks[-1]["konusma"] + [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][80:120],
                                "siyah_bolumler": [list(x) for x in info["black"][:40]]})
-    if SPEECH_OFF:
+    caps_used = any(i.get("captions") for i in infos)
+    if SPEECH_OFF and caps_used:
+        log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): döküm YouTube altyazısından — Mac'te bir kez 'bash scripts/install_align.sh'")
+    elif SPEECH_OFF:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): kurgu yalnız kareler ve sahne geçişleriyle yapılacak — Mac'te bir kez 'bash scripts/install_align.sh'")
     tpl = (ROOT / "prompts" / ("fragman.md" if trailer else "montaj.md")).read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
     if trailer:  # fragman: girdi fragmanın kendi bilgisi (başlık, açıklama, etiketler) + film adıyla bulunan haberler
@@ -680,7 +700,9 @@ def build(job: dict) -> dict:
            "soundFull": full_sound, "sourceSeconds": src_secs,
            "plan": {"label": label, "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
                     "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
-                    "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF}}
+                    "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF or caps_used,
+                    # speechOff: panel "konuşma tanıma kurulu değil" ile "konuşma bulamadı"yı ayırsın (inceleme, 18 Ekim)
+                    **({"speechSource": "youtube", "speechOff": SPEECH_OFF} if caps_used else {})}}
     if trailer:
         res["trailer"] = True
         res["plan"].update({"trailer": True, "film": film, "intro": intro, "outro": outro, "speechLang": next((LANGS[str(p)] for p in srcs if LANGS.get(str(p))), None),

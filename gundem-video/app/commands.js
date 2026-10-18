@@ -29,6 +29,67 @@ const extractQuery = (t) => {
   return q.replace(/\s+/g, " ").trim();
 };
 
+// Video sitesi linkleri (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"). WhatsApp'ta "youtu.be/…",
+// "www.youtube.com/watch?v=…", "instagram.com/reel/…" çoğu zaman https:// olmadan gelir: bilinen video sitelerinde şemasız adres de
+// link sayılır ve https:// ile tamamlanır (önünde harf/nokta/@ olan "notyoutube.com" ya da e-posta değil). Şemasız adres yalnız video,
+// kanal ya da oynatma listesi adresiyse link sayılır ("instagram.com/hesap" gibi diğerleri eskisi gibi düz metin).
+const VIDEO_HOSTS = String.raw`(?:[\w-]+\.)*(?:youtube\.com|youtu\.be|youtube-nocookie\.com|instagram\.com|tiktok\.com|x\.com|twitter\.com|facebook\.com|fb\.watch)`;
+const LINK_RE = new RegExp(String.raw`https?:\/\/[^\s<>"'’]+|(?<![\w.@\/-])` + VIDEO_HOSTS + String.raw`\/[^\s<>"'’]*`, "i");
+// videosu indirilip kurgulanan paylaşımlar; YouTube'da canlı yayın (/live/, kanalın /@kanal/live sayfası), gömülü oynatıcı (/embed/,
+// youtube-nocookie.com/embed/) ve klip (/clip/) de video linkidir (eskiden haber sayfası sanılıp okunamıyordu)
+const SOCIAL_RE = /^https?:\/\/([\w-]+\.)*(instagram\.com\/(reels?|p|tv)\/|tiktok\.com\/|(x|twitter)\.com\/[^/\s]+\/status\/|youtube\.com\/(shorts\/|watch|live\/|embed\/|v\/|clip\/)|youtube-nocookie\.com\/embed\/|youtu\.be\/|facebook\.com\/(reel|watch|share|[^/\s]+\/videos)|fb\.watch\/)/i;
+const YT_LIVE_TAB = /^https?:\/\/([\w-]+\.)*youtube\.com\/(@[^/?#\s]+|(channel|c|user)\/[^/?#\s]+)\/live\/?([?#]|$)/i;
+const YT_CHANNEL = /^https?:\/\/([\w-]+\.)*youtube\.com\/(@|(channel|c|user)\/)/i;
+const YT_PLAYLIST = /^https?:\/\/([\w-]+\.)*youtube\.com\/playlist\b/i;
+const YT_OTHER = /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be)(\/|$)/i;
+const PLATFORM = [[/instagram\.com/i, "Instagram"], [/tiktok\.com/i, "TikTok"], [/(^|\.)(x|twitter)\.com/i, "X"], [/youtube|youtu\.be/i, "YouTube"], [/facebook\.com|fb\.watch/i, "Facebook"]];
+const VIDEO_ASK = "haberin video linkini gönderin (videoda Paylaş → Kopyala: youtu.be/… ya da youtube.com/watch?v=…)";
+// şemasız TikTok adresi yalnız video yoluysa link (inceleme, 18 Ekim: düz metindeki "tiktok.com/@hesap" profil sayfası video indirmeye gidiyordu)
+const TT_VIDEO = /^https?:\/\/(?:(?:vm|vt)\.tiktok\.com\/[\w-]|([\w-]+\.)*tiktok\.com\/(@[^/?#\s]+\/(video|photo)\/|t\/|v\/|embed\/))/i;
+// Mesajdaki ilk link: {raw: yazıldığı gibi, url: https:// ile tamamlanmış ve sondaki noktalama atılmış}; yoksa null.
+// WhatsApp biçimi de atılır: *kalın*, ~üstü çizili~ (sondaki * ~), _italik_ (sondaki _ yalnız link _ ile başlıyorsa; kısa kodun son harfi olabilir).
+export function findLink(text) {
+  const s = String(text || ""), m = s.match(LINK_RE);
+  if (!m) return null;
+  let url = (/^https?:\/\//i.test(m[0]) ? m[0] : "https://" + m[0]).replace(/[).,;:!?*~]+$/, "");
+  if (s[m.index - 1] === "_") url = url.replace(/[_).,;:!?*~]+$/, "");
+  if (!/^https?:\/\//i.test(m[0])) {  // şemasız: yalnız video, kanal ya da oynatma listesi adresi ("youtube.com/feed/trending" düz metin)
+    const v = videoLink(url);
+    if (!v || !["video", "channel", "playlist"].includes(v.kind) || (v.platform === "TikTok" && !TT_VIDEO.test(url))) return null;
+  }
+  return { raw: m[0], url };
+}
+// Link türü: {kind: "video" | "channel" | "playlist" | "page", platform, url, reply?}; video sitesi değilse null.
+// YouTube kanal/oynatma listesi/diğer sayfa haber videosu değildir: haber sayfası gibi okunmaya çalışılmaz, Türkçe yanıt verilir.
+export function videoLink(url) {
+  url = String(url || "").trim();
+  const platform = (PLATFORM.find(([re]) => re.test(url.replace(/^https?:\/\//i, "").split("/")[0])) || [])[1];
+  if (!platform) return null;
+  if (SOCIAL_RE.test(url) || YT_LIVE_TAB.test(url)) return { kind: "video", platform, url };
+  if (YT_PLAYLIST.test(url)) return { kind: "playlist", platform, url, reply: `Bu bir YouTube oynatma listesi linki; ${VIDEO_ASK}.` };
+  if (YT_CHANNEL.test(url)) return { kind: "channel", platform, url, reply: `Bu bir YouTube kanal linki; ${VIDEO_ASK}. Kanalın canlı yayını için kanal adresinin sonuna /live ekleyin (youtube.com/@kanal/live).` };
+  if (YT_OTHER.test(url)) return { kind: "page", platform, url, reply: `Bu bir YouTube sayfası, video linki değil; ${VIDEO_ASK}.` };
+  return null;
+}
+// Videodaki konum (kullanıcı isteği, 18 Ekim; uzun YouTube videosunda hangi bölümün alınacağı, scripts/social_video.py okur):
+// "12:30'dan itibaren", "12:30'daki", "1:02:10", "12:30-16:00 arası", "12:30'dan 16:00'ya kadar" yayın saati değildir: parseWhen'e
+// gitmeden gizlenir, talimatta kalır. Eksiz "18:30", "18:30'da", "saat 18:30'dan itibaren paylaş" ve "18:30'dan sonra/itibaren
+// paylaş|yayınla|gönder|yükle|yayına al|atar mısın" eskisi gibi yayın saati. Konum yalnız YouTube'da ayrılır (social_video.py yalnız
+// orada bölüm seçer); Instagram/TikTok/X'te "18:30'dan itibaren paylaş" eskisi gibi yayın saati (inceleme, 18 Ekim).
+const TS = String.raw`\d{1,2}(?:[:.]\d{2}){1,2}`;
+const POS_RE = new RegExp(String.raw`(?<![\d.:])(?<!saat\s)(?:${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n)\s+${TS}\s*['’]?\s*y?[ae]\s+kadar|${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n)?\s*(?:[-–—]|ile)\s*${TS}|${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n|d[ae]ki|t[ae]ki)(?![\p{L}])(?!\s+(?:sonra|itibaren)\s+(?:paylaş|yayın|yayım|gönder|yükle|at(?:ar|ır|ın|sın|sana|abilir)?(?![\p{L}])))|\d{1,2}:\d{2}:\d{2})(?!\d)`, "giu");
+const whenKeepingPositions = (text, keep = true) => {
+  const saved = [];
+  const w = parseWhen(keep ? text.replace(POS_RE, (m) => { saved.push(m); return `⟪POS${String.fromCharCode(65 + saved.length - 1)}⟫`; }) : text);
+  // linke bitişik ek ("youtu.be/…'yi haber yap") talimata girmez
+  return { ...w, rest: w.rest.replace(/⟪POS([A-Z])⟫/g, (_, c) => saved[c.charCodeAt(0) - 65] ?? "").replace(/^\s*['’]\p{L}{0,6}(?=\s|$)/u, "") };
+};
+// Video linkinde yalnız açma isteği ("youtu.be/… oynat", "şunu açar mısın youtu.be/…"): linkin dışında başka söz kalmamalı. Ses talimatı
+// ("haber yap, kendi sesiyle oynat", "sesiyle çal", "videonun sesini açın") haber isteğidir (inceleme, 18 Ekim: tarayıcıda açılıyordu)
+const OPEN_ONLY = /^(?:(?:şunu|bunu|şu|bu|videoyu|linki|lütfen|hemen)\s+)*(?:aç|çal|oynat|göster)(?:ar|ır|ın|sana|abilir)?(?:\s+(?:mısın|mısınız|misin|misiniz|lütfen))*$/;
+// talimatta harf/rakam yoksa (linkin çevresindeki parantez, tırnak, WhatsApp *kalın* işareti) talimat boştur: varsayılan haber talimatı geçer
+const insOf = (s) => { const x = String(s || "").replace(/\s+/g, " ").trim(); return /[\p{L}\p{N}]/u.test(x) ? x : ""; };
+
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
@@ -36,8 +97,11 @@ export function parseCommand(raw) {
   // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
   // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider. Kibar/ekli emir biçimleri yine açar ("açar mısın",
   // "çalar mısın", "oynatır mısın", "açsana", "açın", "açabilir misin"; STRIP_WORDS'teki açma istekleri).
-  const hasLink = /https?:\/\//i.test(raw);
-  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && (hasLink ? /(^| )(aç|çal|oynat|başlat)(ar|ır|ın|sana|abilir)?( |$)/ : /(aç|çal|oynat|başlat)/).test(t)) {
+  // Video sitesi linkiyle gelen açma isteği aşağıda o linki tarayıcıda açar (eskiden linkin harfleri YouTube'da aranıyordu).
+  const lk = findLink(raw);
+  const hasLink = !!lk;
+  const vl = lk ? videoLink(lk.url) : null;
+  if (!vl && /(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && (hasLink ? /(^| )(aç|çal|oynat|başlat)(ar|ır|ın|sana|abilir)?( |$)/ : /(aç|çal|oynat|başlat)/).test(t)) {
     const q = extractQuery(t);
     if (q.length > 1) return { action: "open_youtube", query: q, reply: "" };
     return { action: "none", reply: "Hangi şarkıyı açayım?" };
@@ -69,17 +133,27 @@ export function parseCommand(raw) {
   // Anlık haber: "son dakika: <konu>" / "anlık haber: <konu>" → o konuda tek konulu son dakika videosu.
   // İki nokta (ya da tire) zorunlu: "son dakika haberleri neler" gibi sorular tetiklemesin.
   const an = String(raw).trim().match(/^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)(?: videosu)?(?: (?:üret|yap|hazırla|çek))?\s*[:\-–]\s*([\s\S]{8,})$/i);
+  // "son dakika: <YouTube/sosyal medya video linki>" haber sayfası değil, videodan son dakika haberidir (talimatta "son dakika" kalır:
+  // fragman analizine dönmez); kanal/oynatma listesi linkine Türkçe yanıt
+  if (an && vl && an[1].includes(lk.raw)) {
+    if (vl.kind !== "video") return { action: "none", reply: vl.reply };
+    const w = whenKeepingPositions(an[1].replace(lk.raw, " "), vl.platform === "YouTube");
+    return { action: "social_video", url: vl.url, instruction: `son dakika ${w.rest}`.replace(/\s+/g, " ").trim(), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
+  }
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
   // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)
-  const link = String(raw).match(/https?:\/\/[^\s<>"']+/i);
-  if (link) {
-    if (/(^|\s)(aç|göster)(\s|$)/.test(t)) return { action: "open_url", target: link[0], reply: "" };
-    // yayın saati (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim; saat yazmazsam direkt paylaşsın")
-    const when = parseWhen(String(raw).replace(link[0], " "));
+  if (lk) {
+    // video linkinde yalnız açma isteği varsa çal/oynat ve kibar biçimleri de açar ("şunu açar mısın", OPEN_ONLY); "12:30'dan oynat",
+    // "kendi sesiyle oynat" haber talimatıdır
+    if (/(^|\s)(aç|göster)(\s|$)/.test(t) || (vl && OPEN_ONLY.test(norm(String(raw).replace(lk.raw, " ")))))
+      return { action: "open_url", target: lk.url, reply: "" };
+    // yayın saati (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim; saat yazmazsam direkt paylaşsın"); YouTube video
+    // linkinde videodaki konum ("12:30'dan itibaren") yayın saati sanılmaz, talimatta kalır
+    const when = vl?.kind === "video" ? whenKeepingPositions(String(raw).replace(lk.raw, " "), vl.platform === "YouTube") : parseWhen(String(raw).replace(lk.raw, " "));
     const publishAt = when.at ? when.at.toISOString() : undefined;
     // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
-    if (/^https?:\/\/([\w-]+\.)*(instagram\.com\/(reels?|p|tv)\/|tiktok\.com\/|(x|twitter)\.com\/[^/\s]+\/status\/|youtube\.com\/(shorts\/|watch)|youtu\.be\/|facebook\.com\/(reel|watch|share|[^/\s]+\/videos)|fb\.watch\/)/i.test(link[0]))
-      return { action: "social_video", url: link[0], instruction: when.rest.replace(/\s+/g, " ").trim(), publishAt, reply: "" };
+    if (vl?.kind === "video") return { action: "social_video", url: vl.url, instruction: insOf(when.rest), publishAt, reply: "" };
+    if (vl?.reply) return { action: "none", reply: vl.reply };  // YouTube kanal / oynatma listesi / diğer sayfa
     return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, reply: "" };
   }
   // İki noktasız: "son dakika Eşref Tek geri dönüyor", "son dakika X ile haber üret", "X hakkında son dakika videosu yap".
