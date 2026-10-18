@@ -126,6 +126,9 @@ def by_silence(words: list, wav: Path, pad: float) -> list:
 
 _WHISPER = None
 LAST_COVERAGE = None  # son konuşma tanıma hizalamasında sesle doğrudan eşlenen kelime oranı (log için)
+# son tanımada algılanan dil (run(path, language=None) ile otomatik algılamada; fragman analizi, kullanıcı isteği, 18 Ekim:
+# "fragmanı analiz edip kelimelere döküp" — fragman çoğu zaman İngilizce)
+_LAST_LANG = None
 
 
 def _auto_install(c: dict) -> None:
@@ -153,7 +156,8 @@ def _auto_install(c: dict) -> None:
 
 
 def _whisper():
-    """mlx-whisper (ya da faster-whisper) kuruluysa tanıma fonksiyonu; değilse None."""
+    """mlx-whisper (ya da faster-whisper) kuruluysa tanıma fonksiyonu; değilse None. run(path, language="tr"):
+    language=None dili kendisi algılar, algılanan dil `_LAST_LANG`a yazılır."""
     global _WHISPER
     if _WHISPER is not None:
         return _WHISPER or None
@@ -168,16 +172,18 @@ def _whisper():
         # (ilk kullanımda ~1,6 GB iner). Yüklenemezse bir kez small'a düşer.
         models = [c.get("whisperModel") or "mlx-community/whisper-large-v3-turbo", "mlx-community/whisper-small-mlx"]
 
-        def run(path):
+        def run(path, language="tr"):
+            global _LAST_LANG
             while True:
                 try:
-                    r = mlx_whisper.transcribe(str(path), path_or_hf_repo=models[0], language="tr", word_timestamps=True, verbose=None)
+                    r = mlx_whisper.transcribe(str(path), path_or_hf_repo=models[0], language=language, word_timestamps=True, verbose=None)
                     break
                 except Exception as e:
                     if len(models) < 2:
                         raise
                     print(f"  ! konuşma tanıma modeli {models[0]} açılamadı ({str(e)[:80]}); {models[1]} kullanılıyor", file=sys.stderr)
                     models.pop(0)
+            _LAST_LANG = r.get("language") or language
             return [(w["word"], float(w["start"]), float(w["end"])) for s in r.get("segments", []) for w in s.get("words", [])]
         _WHISPER = run
     except Exception:
@@ -185,8 +191,10 @@ def _whisper():
             from faster_whisper import WhisperModel
             m = WhisperModel(c.get("fasterWhisperModel") or "small", compute_type="int8")
 
-            def run(path):
-                segs, _ = m.transcribe(str(path), language="tr", word_timestamps=True)
+            def run(path, language="tr"):
+                global _LAST_LANG
+                segs, info = m.transcribe(str(path), language=language, word_timestamps=True)
+                _LAST_LANG = getattr(info, "language", None) or language
                 return [(w.word, float(w.start), float(w.end)) for s in segs for w in (s.words or [])]
             _WHISPER = run
         except Exception:

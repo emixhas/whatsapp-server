@@ -299,6 +299,7 @@ function startAnlik(topic, duration, opts = {}) {
   // şablon video (deprem/maç/piyasa/takvim): senaryo ve bilgi kartları work/jobs/<ad>/ içinde hazır, Claude çağrılmaz
   if (opts.templateDir) env.TEMPLATE_DIR = String(opts.templateDir);
   if (opts.userVideo) env.USER_VIDEO = "1"; // WhatsApp'tan gönderilen video: yayın onayla (waVideo.autoPublish)
+  if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
   if (opts.publishAt) env.PUBLISH_AT = String(opts.publishAt); // WhatsApp'ta yazılan yayın saati: video hemen üretilir, o saatte yayınlanır
   if (opts.info) { const i = opts.info; env.INFO_KIND = i.kind || ""; env.INFO_LABEL = i.label || ""; if (i.intro) env.INFO_INTRO = i.intro; if (i.outro) env.INFO_OUTRO = i.outro; if (i.breaking === false) env.INFO_BREAKING = "0"; }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
@@ -1215,6 +1216,16 @@ app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({
 // (albüm) 8 sn beklenip TEK haberde birleştirilir. wa_video.py çözümler (konuşma, sahneler, kareler), Claude kurgu planını yazar,
 // parçalar kesilir → şablon iş klasörü → startAnlik({templateDir, userVideo}). Yayın varsayılan ONAYLA (waVideo.autoPublish false).
 const waVideoCfg = () => ({ enabled: true, autoPublish: false, duration: 30, waitMin: 30, ...(settings().waVideo || {}) });
+// Fragman analizi (kullanıcı isteği, 18 Ekim: "youtube videosunun linkini göndersem analiz edip kelimelere döküp çarpıcı bir kancalı
+// giriş ile fragmanda ne anlatıldı gibi 40 saniyelik video"): talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser
+// geçerse ya da (autoDetect) YouTube başlığı fragmansa wa_video.py fragman modunda çalışır (prompts/fragman.md). Açık haber isteği
+// ("bu fragmanı haber yap") fragman kelimesinden önce gelir: "haber yap" diye yeniden gönderilen link yine fragman olmasın.
+const trailerCfg = () => ({ enabled: true, autoDetect: true, duration: 40, maxSoundSeconds: 8, ...(settings().trailer || {}) });
+// JS'de \b Türkçe harfte çalışmaz; yalnız Türkçe ekler (fragmanı, fragmanda…; "fragmantasyon" değil)
+const TRAILER_ASK = /(^|[^\p{L}])(fragman([ıiae]\p{L}*|l[ae]r\p{L}*|d[ae]\p{L}*)?|trailer(s|[ıi]\p{L}*)?|teaser(s|[ıi]\p{L}*)?)(?![\p{L}])/iu;
+const NEWS_ASK = /(^|[^\p{L}])(haber(i|ini)? (yap|olarak|gibi|hazırla|üret|çek)\p{L}*|haber olarak|son ?dakika)(?![\p{L}])/iu;
+// fragman süresi: talimattaki "N saniye" önce gelir (wa_video.py ile aynı kural, 20-60); yanıt ve log söz verilen süreyi doğru yazsın
+const trailerSecs = (instruction) => Math.min(60, Math.max(20, Number((String(instruction || "").toLowerCase().match(/(\d{2,3})\s*(?:saniye|sn(?![\p{L}\p{N}_]))/u) || [])[1]) || Number(trailerCfg().duration) || 40));
 let waVid = null; // {files, instruction, at, timer, asked}
 async function waVideoIn({ file, caption }) {
   const c = waVideoCfg();
@@ -1254,11 +1265,13 @@ const sendW = async (t) => { try { await wa.send(t); } catch { /* WhatsApp bağl
 const waBrief = () => settings().whatsapp?.brief !== false;
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
 async function runVideoNews(v) {
-  push(`🎬 video haberi hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${v.instruction.slice(0, 120)}`);
-  if (!waBrief()) await sendW(`🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
+  push(`🎬 ${v.trailer ? "fragman analizi" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${v.instruction.slice(0, 120)}`);
+  if (!waBrief()) await sendW(v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
+    : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
   else if (!v.social) await sendW("🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.");
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
-  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [] }); // süre talimatta yazmıyorsa settings.waVideo.duration
+  // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
+  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "" } : {}) });
   const r = await run(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: 25 * 60000 });
   rmSync(jobFile, { force: true });
   for (const l of String(r.stdout || "").split("\n")) if (/^(🎬|✂️|  !)/.test(l)) push(l.trim());
@@ -1267,9 +1280,14 @@ async function runVideoNews(v) {
   const p = j.plan || {};
   const segLines = (p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.kind === "sesli" ? `🔊 Orijinal ses${s.title ? ` (${s.title})` : ""} — seslendirme susar` : s.title}: ${s.clips.map((c) => `${v.files.length > 1 ? `${c.video}. video ` : ""}${c.start.toFixed(1).replace(".", ",")}–${c.end.toFixed(1).replace(".", ",")} sn`).join(", ")}`).join("\n");
   push(`✂️ kurgu: ${String(p.cuts || "").slice(0, 200)}`);
-  if (!waBrief()) await sendW(`✂️ *Kurgu hazır* — ${p.titles?.A || p.hook}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
-  const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info: { kind: "video", label: p.label || "SON DAKİKA", intro: "Son dakika." },
-    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}) });
+  if (!waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  // fragman: etiket plandan (FRAGMAN / YENİ FRAGMAN / HAYRAN FRAGMANI / TANITIM FİLMİ), giriş ve kapanış etikete göre wa_video.py'den
+  // ("Yeni fragman." yalnız yeni fragmanda; eski fragmana "yeni" denmez), SON DAKİKA kartı yok; yine onaylı (userVideo), en çok izlenen
+  // saat tekrarına girmez (infoKind video)
+  const info = v.trailer ? { kind: "video", label: p.label || "FRAGMAN", intro: p.intro || "Fragman analizi.", outro: p.outro || "Yeni fragmanları kaçırmamak için takip etmeyi unutma.", breaking: false }
+    : { kind: "video", label: p.label || "SON DAKİKA", intro: "Son dakika." };
+  const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
+    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}) });
   if (!res.ok) await sendW(`❌ Üretim başlatılamadı: ${res.error}`);
   else if (res.queued) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`);
   return res;
@@ -1290,6 +1308,21 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     const s = j.social || {};
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
     push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`);
+    // fragman mı: talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser geçiyorsa ya da başlık fragmansa (autoDetect)
+    const tc = trailerCfg();
+    const news = NEWS_ASK.test(instruction);
+    const asked = !news && TRAILER_ASK.test(instruction);
+    const trailer = tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer));
+    if (trailer) {
+      // başlıktan ayıklanan ad yalnız başlık fragman diye tanındıysa film adıdır ("fragman: <link>" ile istenen Instagram videosunda
+      // başlık "Video by …" olabilir); tanınmadıysa Claude adı karelerden ve açıklamadan okur
+      const film = (s.trailer && s.film) || s.title || "fragman";
+      const secs = trailerSecs(instruction);
+      push(`🎬 fragman analizi: ${film} (${asked ? "talimatta istendi" : "başlıktan tanındı"}; ${secs} sn, ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı, yalnız fragman ve açıklaması kullanılacak"})`);
+      if (!asked) await sendW(`🎬 Bu bir fragman: *${film}*. ${secs} saniyelik fragman analizi hazırlanıyor (haber olarak isterseniz linki "haber yap" diye yeniden gönderin).`);
+      // talimat yoksa "fragman yap": wa_video.py bunu varsayılan analiz talimatına (TRAILER_TALIMAT) çevirir
+      return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "" });
+    }
     if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
     return await runVideoNews({ files: [j.file], instruction: instruction || "Bu paylaşımdaki olayı tarafsız bir haber olarak anlat.", social: s, related: j.related || [], publishAt });
   } finally { socialBusy = false; }
@@ -2118,7 +2151,12 @@ async function handleCommand(text, opts = {}) {
     case "social_video": {
       if (waVideoCfg().enabled === false) { reply = "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)."; break; }
       socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
-      reply = (waBrief() ? "🎬 Başladı: paylaşım indiriliyor, haber videosu hazırlanıyor. Bitince video gelecek." : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
+      // talimatta fragman geçiyorsa (açık haber isteği yoksa; socialVideoNews ile aynı öncelik) yanıt fragman analizi der (başlıktan
+      // tanınan fragmanı socialVideoNews ayrıca bildirir); süre talimattaki "N saniye"den
+      const fr = trailerCfg().enabled !== false && TRAILER_ASK.test(cmd.instruction || "") && !NEWS_ASK.test(cmd.instruction || "");
+      const frSecs = trailerSecs(cmd.instruction);
+      reply = (fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
+        : waBrief() ? "🎬 Başladı: paylaşım indiriliyor, haber videosu hazırlanıyor. Bitince video gelecek." : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
       break;
     }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }

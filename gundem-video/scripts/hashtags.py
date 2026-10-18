@@ -9,7 +9,7 @@ MAX_TAGS = 12
 
 CATEGORY_TAGS = {"finans": "#ekonomi", "siyaset": "#siyaset", "parti": "#siyaset", "asayis": "#asayiş", "spor": "#spor",
                  "hava": "#havadurumu", "toplum": "#toplum", "egitim": "#eğitim", "teknoloji": "#teknoloji",
-                 "saglik": "#sağlık", "dunya": "#dünya"}
+                 "saglik": "#sağlık", "dunya": "#dünya", "sinema": "#sinema #film"}  # boşlukla birden çok etiket olabilir
 VALUE_TAGS = {"can kaybı": "#sondakika", "kaza/afet": "#kaza", "emekli/memur maaşı": "#emekli",
               "zam/fiyat/vergi": "#zam", "tatil/izin": "#tatil", "kamu duyurusu": "#duyuru", "güvenlik": "#güvenlik",
               "para ve destek": "#ekonomi", "sağlık ve gıda": "#sağlık", "milli başarı": "#millitakım",
@@ -50,7 +50,8 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
             add("#futbol")
     for s in meta.get("segments", []):
         if s.get("kind") == "haber" and s.get("category") in CATEGORY_TAGS:
-            add(CATEGORY_TAGS[s["category"]])
+            for t in CATEGORY_TAGS[s["category"]].split():
+                add(t)
     for t in (base or "").split():
         if t.lower() == "#shorts" and meta.get("format") in ("gunluk", "haftalik"):  # yatay uzun video Shorts değil
             continue

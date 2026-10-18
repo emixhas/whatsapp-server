@@ -118,7 +118,7 @@ PLAYLIST_FILE = DATA / "youtube_playlists.json"  # {liste adı: playlistId}
 # kategori → liste adı (kanal adı önek olarak eklenir); format listeleri: anlık → Son Dakika, düzenli → 5 saatlik özet
 PLAYLIST_BY_CATEGORY = {"finans": "Ekonomi", "siyaset": "Siyaset", "parti": "Siyaset", "asayis": "Asayiş ve Kaza",
                         "hava": "Hava ve Afet", "egitim": "Eğitim", "saglik": "Sağlık", "dunya": "Dünya",
-                        "spor": "Spor", "teknoloji": "Teknoloji", "toplum": "Toplum"}
+                        "spor": "Spor", "teknoloji": "Teknoloji", "toplum": "Toplum", "sinema": "Sinema"}
 
 
 # ---------------- YouTube
@@ -426,11 +426,13 @@ def yt_retry_thumbs(yt=None, limit: int = 50) -> dict:
 
 
 def playlist_names(meta: dict) -> list:
-    """Videonun gireceği listeler: format (Son Dakika / Her 5 Saatte Gündem / Günlük Özet) + ilk haberin kategorisi."""
+    """Videonun gireceği listeler: format (Son Dakika / Her 5 Saatte Gündem / Günlük Özet) + ilk haberin kategorisi. Fragman analizi
+    (kullanıcı isteği, 18 Ekim; meta trailer) format listesine girmez: fragman son dakika haberi değil, yalnız kategori listesi (· Sinema)."""
     from common import settings
     ch = settings().get("channelName", "Türkiye Gündemi")
     fmt = meta.get("format")
-    names = [f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
+    names = [] if meta.get("trailer") else [
+             f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"
              else f"{ch} · Haftanın Özeti (uzun)" if fmt == "haftalik"
              else f"{ch} · Her 5 Saatte Gündem"]

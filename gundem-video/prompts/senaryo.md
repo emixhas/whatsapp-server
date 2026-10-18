@@ -34,12 +34,14 @@ KURALLAR
 - Kaynak haberde olmayan hiçbir bilgiyi ekleme. Rakam ve isimleri aynen koru.
 - "source" alanına haberin geldiği kaynak adını yaz.
 - "category" alanına şu listeden TAM OLARAK birini yaz: finans, siyaset, parti, spor, hava,
-  toplum, egitim, teknoloji, saglik, dunya, asayis, genel.
+  toplum, egitim, teknoloji, saglik, dunya, asayis, sinema, genel.
   Şehit, saldırı, terör, patlama, cinayet, silahlı/bıçaklı olay, kaza, yangın, kaçırma, gasp,
   polis/jandarma olayı → asayis (siyaset DEĞİL; şehit haberi her zaman asayis).
   Parti değişimi/istifa/transfer/atama → parti; okul/öğrenci/sınav/MEB → egitim;
   Ekonomi/piyasa/vergi/fiyat → finans; hükümet/meclis/seçim/yargı → siyaset;
   meteoroloji/deprem/sel/afet → hava; yurt dışı olaylar → dunya; ulaşım/kent/yaşam → toplum;
+  film, dizi, fragman, sinema/gişe, film festivali ve ödül törenleri → sinema (ünlülerin özel hayatı değil;
+  fragmanın konusu cinayet, savaş ya da kaza olsa da asayis değil);
   emin değilsen genel. Dört haberin kategorileri mümkünse farklı olsun.
   Listede gerçekten uyan kategori yoksa en yakınını "category" olarak yaz ve ayrıca
   "categorySuggestion" alanına önerdiğin yeni kategori adını küçük harfle yaz (ör. "kultur", "otomotiv").

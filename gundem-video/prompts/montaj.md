@@ -54,7 +54,9 @@ METİN KURALLARI
 - Kanca (hook): ekrana 2-4 kelimelik başlık ("title", en çok 24 karakter, anlamı tam) + tek cümlelik seslendirme (en çok 10 kelime).
 - Haber segmentleri: 1-3 segment; her biri 12-30 kelime ("sesli" bölümler bu sayıya ve kelime sınırına girmez). Toplam seslendirme (kanca + haberler) en çok __KELIME__ kelime
   (hedef video süresi __SURE__ sn).
-- Kategori şunlardan biri: finans, siyaset, asayis, spor, hava, toplum, teknoloji, saglik, dunya, parti, egitim, genel.
+- Kategori şunlardan biri: finans, siyaset, asayis, spor, hava, toplum, teknoloji, saglik, dunya, parti, egitim, sinema, genel.
+  Film, dizi, fragman, sinema/gişe, film festivali ve ödül törenleri → sinema (ünlülerin özel hayatı değil;
+  fragmanın konusu cinayet, savaş ya da kaza olsa da asayis değil).
 - "source": haberin kaynağı; talimatta yazmıyorsa "Türkiye Gündemi" (sosyal medya paylaşımında boş "").
 - "breaking": yalnız gerçekten büyük bir son dakika olayıysa ilk habere true.
 - "firstComment": videoya kanal adına yazılacak ilk yorum; habere özel tarafsız kısa soru (en çok 110 karakter; can kaybında

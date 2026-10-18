@@ -17,7 +17,8 @@ from common import DATA  # noqa: E402
 
 PLAT = {"youtube": ("YouTube", "yt_views"), "instagram": ("Instagram", "ig_views"), "tiktok": ("TikTok", "tt_views")}
 CAT = {"finans": "Ekonomi", "siyaset": "Siyaset", "parti": "Siyaset", "asayis": "Asayiş", "spor": "Spor", "hava": "Hava",
-       "toplum": "Toplum", "egitim": "Eğitim", "teknoloji": "Teknoloji", "saglik": "Sağlık", "dunya": "Dünya", "genel": "Gündem"}
+       "toplum": "Toplum", "egitim": "Eğitim", "teknoloji": "Teknoloji", "saglik": "Sağlık", "dunya": "Dünya", "sinema": "Sinema",
+       "genel": "Gündem"}
 
 
 def fmt(n):

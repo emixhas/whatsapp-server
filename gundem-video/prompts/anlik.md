@@ -32,8 +32,10 @@ KURALLAR
 - "source": bilgi bir ilgili haberden geliyorsa o kaynağın adı; yalnızca editörün yazdığı bilgiyse
   "Türkiye Gündemi".
 - "category" şu listeden TAM OLARAK biri: finans, siyaset, parti, spor, hava, toplum, egitim, teknoloji,
-  saglik, dunya, asayis, genel. Şehit, saldırı, terör, patlama, cinayet, kaza, yangın, çökme, polis
+  saglik, dunya, asayis, sinema, genel. Şehit, saldırı, terör, patlama, cinayet, kaza, yangın, çökme, polis
   olayı → asayis. Deprem, sel, afet → hava. Yurt dışı → dunya. Tüm segmentlerde aynı kategori olabilir.
+  Film, dizi, fragman, sinema/gişe, film festivali ve ödül törenleri → sinema (ünlülerin özel hayatı değil;
+  fragmanın konusu cinayet, savaş ya da kaza olsa da asayis değil).
 - ÇOKLU SON DAKİKA: veride "coklu_haberler" varsa video bu haberlerin HEPSİNİ birlikte verir ve "tek konu" kuralı
   geçmez. Kanca en önemli haberden. "haber" segmentlerini haberlere paylaştır (önemliden başla, her habere en az bir
   segment); her "hook" ve "haber" segmentine anlattığı haberin "no" değerini "item" alanına yaz (ör. "item": 2) ve

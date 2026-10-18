@@ -64,7 +64,7 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
                 images={seg.imagesTall?.length ? seg.imagesTall : seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} words={seg.words} durationInFrames={dur} />
             ) : seg.kind === "intro" ? (
               <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} dayLabel={episode.dayLabel}
-                slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} words={seg.words} />
+                slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} trailer={episode.trailer} words={seg.words} />
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} />
             ) : seg.kind === "sesli" || seg.fullFrame ? (

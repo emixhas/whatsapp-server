@@ -11,8 +11,9 @@ import { Genel } from "./illustrations/Genel";
 import { Parti } from "./illustrations/Parti";
 import { Egitim } from "./illustrations/Egitim";
 import { Asayis } from "./illustrations/Asayis";
+import { Sinema } from "./illustrations/Sinema";
 
-export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "genel"] as const;
+export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "genel"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type CategoryStyle = {
@@ -36,6 +37,8 @@ export const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
   parti:     { label: "SİYASET",   accent: "#E30A17", sfx: "sfx/tokmak.wav",   sfxVolume: 0.5,  Illustration: Parti },
   egitim:    { label: "EĞİTİM",    accent: "#FFB020", sfx: "sfx/okul.wav",     sfxVolume: 0.5,  Illustration: Egitim },
   asayis:    { label: "ASAYİŞ",    accent: "#3D7BFF", sfx: "sfx/siren.wav",    sfxVolume: 0.4,  Illustration: Asayis },
+  // film, dizi, fragman, gişe, festival ve ödül törenleri (kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip … video")
+  sinema:    { label: "SİNEMA",    accent: "#E040FB", sfx: "sfx/sinema.wav",   sfxVolume: 0.5,  Illustration: Sinema },
   genel:     { label: "GÜNDEM",    accent: "#FFFFFF", sfx: "sfx/bildirim.wav", sfxVolume: 0.45, Illustration: Genel },
 };
 

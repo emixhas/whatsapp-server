@@ -32,8 +32,11 @@ const extractQuery = (t) => {
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
-  // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat"
-  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && /(aç|çal|oynat|başlat)/.test(t)) {
+  // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat". Linkli mesajda fiil tam kelime olmalı: YouTube linkinin yanına
+  // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
+  // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider.
+  const hasLink = /https?:\/\//i.test(raw);
+  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && (hasLink ? /(^| )(aç|çal|oynat|başlat)( |$)/ : /(aç|çal|oynat|başlat)/).test(t)) {
     const q = extractQuery(t);
     if (q.length > 1) return { action: "open_youtube", query: q, reply: "" };
     return { action: "none", reply: "Hangi şarkıyı açayım?" };

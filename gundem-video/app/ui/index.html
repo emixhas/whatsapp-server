@@ -253,6 +253,8 @@
         <label class="row"><span class="sw" id="waVidPub"></span><span>…bu videolar onay beklemeden bağlı hesaplarda yayınlansın (kapalıyken önce size gelir, <b>onay</b> yazınca yayınlanır)</span></label>
         <label class="row"><span class="sw" id="socialSound"></span><span>🔊 Sosyal medya linkinden indirilen video baştan sona kendi sesiyle oynasın (kanca + kısa giriş → video → kısa kapanış; en çok 150 sn, daha uzunsa en önemli bölüm). Talimata "sesi kapat" yazarsanız o videoda uygulanmaz</span></label>
         <label class="row"><span>🔗 Sosyal medya çerezleri (Instagram/TikTok/X linkinden video indirmek için; Instagram çoğu videoyu girişsiz vermez): <select id="socialCookies" class="inl"><option value="">yok</option><option value="chrome">Chrome</option><option value="safari">Safari</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Edge</option></select> — seçtiğiniz tarayıcıda Instagram'a giriş yapılı olmalı</span></label>
+        <label class="row"><span class="sw" id="trailerOn"></span><span>🎬 Fragman analizi: YouTube fragman linki gönderin ("fragman" yazmanız da yeter) → konuşması kelimelere dökülür, çekimlerden kareler çıkarılır, çarpıcı bir kancayla <input id="trailerDur" type="number" min="20" max="60" class="inl" style="width:56px"> sn'lik "fragmanda ne anlatılıyor" videosu (fragmanın kendi sesi kullanılmaz; önce size gelir, <b>onay</b> ile yayınlanır)</span></label>
+        <label class="row"><span class="sw" id="trailerAuto"></span><span>…başlıktan otomatik tanı: başlıkta fragman/trailer/teaser geçiyorsa "fragman" yazmasanız da fragman analizi (talimata "haber yap" yazarsanız normal haber olur)</span></label>
         <label class="row"><span class="sw" id="storiesOn"></span><span>📸 Instagram hikâyesi: her akşam <input id="storiesTime" type="time" class="inl"> son 24 saatin en çok izlenen <input id="storiesCount" type="number" min="1" max="5" class="inl" style="width:48px"> haberi (önce sıralama kartı, sonra videolar; 60 sn'den uzunsa kesilir)</span></label>
         <div class="acts"><button class="ghost" id="storiesNow">📸 Hikâyeyi şimdi paylaş</button></div>
         <label class="row"><span class="sw" id="expireOn"></span><span>🙈 Süresi geçen videoları YouTube'da liste dışı yap (silinmez, listelerden çıkar): piyasa ve zam/rekor 2 gün sonra, takvim olay günü geçince, meteoroloji uyarısı bitince; diğer haberler <input id="expireNews" type="number" min="0" max="60" class="inl" style="width:56px"> gün sonra (0 = hiç; deprem, maç ve derleme hariç)</span></label>
@@ -789,7 +791,8 @@ async function loadInfo(){const i=await api('/api/info');if(!i)return;const S=st
   $('#weatherOn').classList.toggle('on',i.weather?.enabled!==false);$('#alarmOn').classList.toggle('on',i.market.alarm!==false);$('#wtopOn').classList.toggle('on',i.weeklyTop?.enabled!==false);
   $('#expireOn').classList.toggle('on',S.expire?.enabled!==false);if(document.activeElement!==$('#expireNews'))$('#expireNews').value=S.expire?.newsDays??0;
   if(document.activeElement!==$('#socialCookies'))$('#socialCookies').value=S.social?.cookiesFromBrowser||'';
-  $('#socialSound').classList.toggle('on',S.social?.fullSound!==false);  $('#waVidOn').classList.toggle('on',S.waVideo?.enabled!==false);$('#waVidPub').classList.toggle('on',!!S.waVideo?.autoPublish);
+  $('#socialSound').classList.toggle('on',S.social?.fullSound!==false);
+  {const tc={enabled:true,autoDetect:true,duration:40,...(S.trailer||{})};$('#trailerOn').classList.toggle('on',tc.enabled!==false);$('#trailerAuto').classList.toggle('on',tc.autoDetect!==false);if(document.activeElement!==$('#trailerDur'))$('#trailerDur').value=tc.duration;}  $('#waVidOn').classList.toggle('on',S.waVideo?.enabled!==false);$('#waVidPub').classList.toggle('on',!!S.waVideo?.autoPublish);
   {const sc={hour:21,minute:0,count:3,...(S.igStories||{})};$('#storiesOn').classList.toggle('on',sc.enabled!==false);if(document.activeElement!==$('#storiesTime'))$('#storiesTime').value=String(sc.hour).padStart(2,'0')+':'+String(sc.minute||0).padStart(2,'0');if(document.activeElement!==$('#storiesCount'))$('#storiesCount').value=sc.count;}
   $('#retitleOn').classList.toggle('on',S.retitle?.enabled!==false);$('#fcOn').classList.toggle('on',S.firstComment?.enabled!==false);
   const hm=(c)=>String(c.hour).padStart(2,'0')+':'+String(c.minute||0).padStart(2,'0');
@@ -816,6 +819,10 @@ $('#expireUndo').onclick=async()=>{if(!await ask('Liste dışı yaptığım tüm
 $('#socialCookies').onchange=()=>infoSet({social:{cookiesFromBrowser:$('#socialCookies').value}});
 $('#waVidOn').onclick=()=>infoSet({waVideo:{enabled:!$('#waVidOn').classList.contains('on')}});
 $('#socialSound').onclick=()=>infoSet({social:{fullSound:!$('#socialSound').classList.contains('on')}});
+// fragman analizi (kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip … 40 saniyelik video"): settings.trailer
+$('#trailerOn').onclick=()=>infoSet({trailer:{enabled:!$('#trailerOn').classList.contains('on')}});
+$('#trailerAuto').onclick=()=>infoSet({trailer:{autoDetect:!$('#trailerAuto').classList.contains('on')}});
+$('#trailerDur').onchange=()=>infoSet({trailer:{duration:Math.min(60,Math.max(20,Number($('#trailerDur').value)||40))}});
 $('#waVidPub').onclick=()=>infoSet({waVideo:{autoPublish:!$('#waVidPub').classList.contains('on')}});
 $('#storiesOn').onclick=()=>infoSet({igStories:{enabled:!$('#storiesOn').classList.contains('on')}});
 $('#storiesTime').onchange=()=>hmSet('#storiesTime','igStories');

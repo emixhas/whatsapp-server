@@ -5,7 +5,7 @@ import { InstagramIcon, TikTokIcon, YouTubeIcon } from "./Outro";
 
 type Props = {
   dateLabel: string; episodeOfDay: number; timeLabel: string; formatLabel?: string;
-  dayLabel?: string; slotLabel?: string; timeRange?: string; scheduleHours?: number; anlik?: boolean;
+  dayLabel?: string; slotLabel?: string; timeRange?: string; scheduleHours?: number; anlik?: boolean; trailer?: boolean;
   words?: { w: string; s: number; e: number }[];
 };
 
@@ -20,15 +20,16 @@ const FOLLOW = [
 /**
  * INTRO (kancadan sonra, ~3 sn): "GÜNE BAŞLARKEN · SON 5 SAATİN · TÜRKİYE GÜNDEMİ", ortada gün, tarih, saat ve
  * saat aralığı; altta YouTube / Instagram / TikTok takip et animasyonu (sırayla gelir, dokunma vuruşu).
- * Anlık haberde "SON DAKİKA" ve üretim saati gösterilir.
+ * Anlık haberde "SON DAKİKA" ve üretim saati gösterilir. Fragman analizinde (kullanıcı isteği, 18 Ekim: "fragmanda ne anlatıldı
+ * gibi 40 saniyelik video") SON DAKİKA değil fragman etiketi (slotLabel: YENİ FRAGMAN, FRAGMAN…); seslendirme de etikete göre ("Yeni fragman.", "Fragman analizi.").
  */
-export const Intro = ({ dateLabel, timeLabel, formatLabel, dayLabel, slotLabel, timeRange, scheduleHours = 5, anlik }: Props) => {
+export const Intro = ({ dateLabel, timeLabel, formatLabel, dayLabel, slotLabel, timeRange, scheduleHours = 5, anlik, trailer }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const sp = (d: number, cfg = { damping: 12, stiffness: 150 }) => spring({ frame: frame - d, fps, config: cfg });
   const pill = sp(0), small = sp(4), big = sp(8, { damping: 10, stiffness: 170 }), line = interpolate(frame, [12, 26], [0, 1], clamp);
   const date = sp(14), follow = (i: number) => sp(20 + i * 4, { damping: 9, stiffness: 160 });
-  const label = trUpper(anlik ? "Son Dakika" : formatLabel || "Gündem");
+  const label = trUpper(trailer ? slotLabel || "Fragman" : anlik ? "Son Dakika" : formatLabel || "Gündem");
   const day = trUpper(dayLabel || dateLabel || "");
   const year = (dateLabel || "").match(/\d{4}/)?.[0];
   const tap = frame > 34 ? (frame - 34) % 30 : -1; // takip düğmelerine dokunma vuruşu

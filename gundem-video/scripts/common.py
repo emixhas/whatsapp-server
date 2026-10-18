@@ -131,6 +131,15 @@ INFO_HEAD = {"deprem": "🔴 SON DAKİKA DEPREM", "mac": "⚽ MAÇ SONUCU", "piy
              "meteo": "🌧 METEOROLOJİ UYARISI", "alarm": "🔴 SON DAKİKA PİYASA", "derleme": "🏆 HAFTANIN EN ÇOK İZLENENLERİ"}
 
 
+def trailer_tags(meta: dict, base: str) -> list:
+    """Fragman analizi (kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip…"): #fragman eklenir, #sondakika hiç olmaz
+    (kanalın ortak etiketlerinde olsa da; fragman son dakika haberi değil). Film olmayan tanıtım filminde (etiket TANITIM FİLMİ:
+    parti, belediye, ürün tanıtımı) #fragman da eklenmez."""
+    from hashtags import for_meta
+    promo = meta.get("slotLabel") == "TANITIM FİLMİ"
+    return [t for t in for_meta(meta, base, [] if promo else ["#fragman"]) if t != "#sondakika" and not (promo and t == "#fragman")]
+
+
 def build_caption(video_name: str, max_len: int = 2000):
     """Yayın başlığı ve açıklaması senaryo meta'sından üretilir: gün, kaçıncı 5 saat, saat aralığı ve
     her haberin başlığı + seslendirme metni + kaynağı (açıklamada tam haber ayrıntısı)."""
@@ -162,6 +171,11 @@ def build_caption(video_name: str, max_len: int = 2000):
         head = INFO_HEAD.get(meta.get("infoKind") or "", "🔴 SON DAKİKA")
         if meta.get("infoKind") == "video" and meta.get("slotLabel"):  # WhatsApp görüntüsü: etiket kurgu planından (ÖZEL HABER…)
             head = f"🔴 {meta['slotLabel']}"
+        if meta.get("trailer"):  # fragman analizi: son dakika değil → "🎬 FRAGMAN: …" (etiket kurgu planından: YENİ FRAGMAN…)
+            head = f"🎬 {meta.get('slotLabel') or 'FRAGMAN'}"
+            room = 100 - len(f"{head}:  | {s['channelName']} #Shorts")  # uzun başlık kanal adını ve #Shorts'u kesmesin
+            if len(first) > room:
+                first = first[:room].rsplit(" ", 1)[0].rstrip(" ,;:-–") or first[:room]
         title = f"{head}: {first} | {s['channelName']} #Shorts"
         lines = [f"{head} · {s['channelName']} · {day} · {rng}", ""]
     else:
@@ -182,8 +196,10 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl") and not social_src:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
-    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
+    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
+    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if meta.get("trailer") and meta.get("slotLabel") == "TANITIM FİLMİ"
+              else "Yeni fragmanlar ve film, dizi haberleri için takip et, abone ol." if meta.get("trailer")
+              else "Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"
               else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
@@ -202,7 +218,7 @@ def caption_tags(video_name: str) -> list:
     meta = episode_meta(video_name) or {}
     s = settings()
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    tags = for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
     try:
         import censor
         return censor.clean_tags(tags)

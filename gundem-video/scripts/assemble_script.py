@@ -19,8 +19,15 @@ DURATION = int(os.environ.get("DURATION", "30"))
 MAX_WORDS_TOTAL = int(os.environ.get("WORDS", str(DURATION * 24 // 10))) + 6   # küçük tolerans
 _H = int(os.environ.get("HABER", str(max(2, DURATION // 8))))
 HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
-CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "genel"}
+CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "genel"}
 # Asayiş zorlaması: Claude ne derse desin bu kalıplar geçen yurt içi haber "asayis" olur (şehit haberi siyasete düşmesin)
+# Zorlanmayanlar: dunya, hava ve sinema (fragmanın konusu cinayet/patlama/çatışma olabilir; kullanıcı isteği, 18 Ekim:
+# "bir filmin fragmanını analiz edip …" → film haberi asayiş kartına düşmesin). Fragman analizinde (TRAILER=1) hiç zorlanmaz (oyun
+# fragmanı "teknoloji", tanıtım filmi "siyaset"/"genel" olabilir); fragman dışında "sinema" etiketli gerçek zarar ("Dizi setinde kaza:
+# genç oyuncu hayatını kaybetti") yine asayiş olur (GERCEK_OLAY; Claude ne derse desin)
+ASAYIS_MUAF = ("asayis", "dunya", "hava", "sinema")
+TRAILER = os.environ.get("TRAILER") == "1"
+GERCEK_OLAY = re.compile(r"(hayatını kaybet|yaralandı|can verdi|şehit|gözaltına|tutuklandı)", re.I)
 ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza(?!n)|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
 # Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
 OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."
@@ -239,6 +246,25 @@ def topic_hashtags(data: dict) -> list:
     return out[:6]
 
 
+def sinema_value(v: dict, magazin: bool = True) -> dict:
+    """Fragman analizinde (kullanıcı isteği, 18 Ekim: fragman videoları; yalnız TRAILER=1) fragmanın konusu (cinayet, patlama, savaş…)
+    gerçek olay değildir: bu gruplar değer gerekçesi ve hashtag (#kaza, #asayiş, #sondakika) olmaz. Film/dizi fragmanı (`magazin`:
+    tüm segmentler sinema) "magazin ve ünlüler" sayılır (kullanıcı kararı: "Ünlü oyuncu yeni dizisini tanıttı tarzı haberleri de
+    değerli sayalım"); oyun fragmanı ya da tanıtım filminde yalnız olay grupları atılır."""
+    from news_value import GROUPS
+    olay = {"can kaybı", "kaza/afet", "güvenlik", "suç ve vahşet", "kayıp ve arama", "dünya ve savaş", "acı olay", "adli olay", "magazin/spor"}
+    hits = [r for r in v.get("reasons", []) if r not in olay]
+    if magazin and "magazin ve ünlüler" not in hits:
+        hits.append("magazin ve ünlüler")
+    weight = {name: w for name, w, _ in GROUPS}
+    imp = v.get("importance")
+    reason = ", ".join(hits) + (f" · önem {imp}/5" if imp is not None else "") if hits else (f"önem {imp}/5" if imp else "sıradan haber")
+    total = sum(weight.get(r, 3) for r in hits)
+    # news_value.score ile aynı kural: magazin grubu varken model 1-2 demediyse değerli; değilse önem 4-5 ya da puan ≥3 ve önem ≥3
+    return {**v, "reasons": hits, "reason": reason, "score": total,
+            "valuable": (imp is None or imp >= 3) if magazin else ((imp is not None and imp >= 4) or (total >= 3 and (imp is None or imp >= 3)))}
+
+
 def news_value(data: dict, segs: list) -> dict:
     """Anlık videonun YouTube değeri (scripts/news_value.py): anahtar kelime + modelin verdiği önem."""
     from news_value import score
@@ -247,6 +273,8 @@ def news_value(data: dict, segs: list) -> dict:
     topic = DATA.parent / "work" / "anlik_topic.txt"  # konunun başı (başlık + özet); uzun gövde yanlış pozitif yapar
     text += " " + (topic.read_text(encoding="utf-8")[:300] if topic.exists() else "")
     v = score(text, pol.get("extraKeywords"), data.get("importance"))
+    if TRAILER:  # fragman dışında sinema etiketli haberin olay grupları kalır (setteki gerçek kaza #kaza almalı)
+        v = sinema_value(v, {s.get("category") for s in segs if s.get("kind") in ("hook", "haber")} == {"sinema"})
     n = int(os.environ.get("ANLIK_SOURCE_COUNT") or 1)  # breaking_watch: bu olayı veren farklı site sayısı
     if n > 1:
         v["reasons"].append(f"{n} kaynakta")
@@ -387,7 +415,9 @@ def main(src: str, dst: str):
         if s["kind"] in ("haber", "hook") and s.get("category") not in CATEGORIES:
             print(f"  ! bilinmeyen kategori {s.get('category')!r}, 'genel' kullanıldı", file=sys.stderr)
             s["category"] = "genel"
-        if s["kind"] in ("haber", "hook") and s.get("category") not in ("asayis", "dunya", "hava") and ASAYIS.search(f"{s.get('title', '')} {s['narration']}"):
+        txt = f"{s.get('title', '')} {s['narration']}"
+        if s["kind"] in ("haber", "hook") and not TRAILER and ASAYIS.search(txt) and (
+                s.get("category") not in ASAYIS_MUAF or (s.get("category") == "sinema" and GERCEK_OLAY.search(txt))):
             print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
             s["category"] = "asayis"
     if ANLIK and haber and os.environ.get("INFO_BREAKING", "") != "0":
@@ -474,6 +504,7 @@ def main(src: str, dst: str):
         "anlik": ANLIK,
         "infoKind": INFO_KIND or None,  # şablon video türü: deprem | mac | piyasa | takvim
         "userVideo": os.environ.get("USER_VIDEO") == "1" or None,
+        "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)
         "expiresAt": data.get("expiresAt") or None,  # bilgi bu andan sonra eskir: expire_videos.py YouTube'da liste dışı yapar
         "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum

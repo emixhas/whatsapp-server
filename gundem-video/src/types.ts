@@ -62,6 +62,8 @@ export type Episode = {
   timeRange?: string;    // "09:00–14:00"
   scheduleHours?: number;
   anlik?: boolean;
+  /** fragman analizi (assemble meta trailer): intro'da SON DAKİKA yerine fragman etiketi (slotLabel) */
+  trailer?: boolean;
   segments: Segment[];
 };
 

@@ -20,7 +20,9 @@ KURALLAR
   ("Ekonomide ise…", "Dünyadan…") ama her haber kendi başına anlaşılır kalsın.
 - Bilgi kaynağı yalnızca verilen başlık ve özetler. Olmayan bilgi, rakam, isim ekleme; tahmin ve yorum yok.
 - "source": haberin kaynağı ("k"). "category": finans, siyaset, parti, spor, hava, toplum, egitim, teknoloji,
-  saglik, dunya, asayis, genel listesinden TAM OLARAK biri (şehit, saldırı, kaza, yangın → asayis; deprem, sel → hava).
+  saglik, dunya, asayis, sinema, genel listesinden TAM OLARAK biri (şehit, saldırı, kaza, yangın → asayis; deprem, sel → hava).
+  Film, dizi, fragman, sinema/gişe, film festivali ve ödül törenleri → sinema (ünlülerin özel hayatı değil;
+  fragmanın konusu cinayet, savaş ya da kaza olsa da asayis değil).
 - Haftanın açık ara en büyük haberine "breaking": true ver (en fazla bir, ilk haber). Sıradan günde hiçbirine verme.
 - Outro sabittir: "Bu haftanın Türkiye gündemi buydu. Her beş saatte bir kısa haberlerle, her akşam günün özetiyle,
   her pazar haftanın özetiyle buradayız. Abone olmayı unutma."

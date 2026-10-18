@@ -151,6 +151,23 @@ def main():
         (tone(880, 0.35, decay=0.2, harmonics=(1, 0.3)), 0),
         (tone(1175, 0.6, decay=0.35, harmonics=(1, 0.3)), 0.13),
     ))
+    # Sinema (kullanıcı isteği, 18 Ekim: fragman videoları): 0,2 sn'de klaket "tak" (Sinema.tsx'teki ilk çarpma karesi),
+    # ardından projektör motor uğultusu + saniyede 24 kare tıkırtısı. En sonda: rastgele sıra değişmesin, diğer sesler aynı kalsın.
+    # Tak sesi tanh ile sıkıştırılır: tek tepeli kısa vuruş tepe normalizasyonunda çok kısık kalıyordu (diğer seslerle aynı
+    # duyulan yükseklik: en gür 100 ms ≈ -12 dBFS, ortalama ≈ -20 dBFS).
+    snap = mix(
+        (noise(0.06, amp=0.6, cutoff=0.7, attack=0.0005, decay=0.03), 0),
+        (tone(1250, 0.16, decay=0.08, amp=0.8, harmonics=(1, 0.6, 0.3), attack=0.0005), 0),
+        (tone(640, 0.16, decay=0.08, amp=0.6, harmonics=(1, 0.3), attack=0.0005), 0.002),
+        (tone(190, 0.22, decay=0.12, amp=0.9, harmonics=(1, 0.4), attack=0.001), 0),
+    )
+    clicks = [(noise(0.014, amp=0.7 * (1 - k / 26), cutoff=0.5, attack=0.001, decay=0.008), 0.32 + k / 24) for k in range(20)]
+    save("sinema.wav", mix(
+        ([math.tanh(3 * s) for s in snap], 0.2),
+        (tone(96, 0.85, decay=1.0, amp=0.45, harmonics=(1, 0.7, 0.4, 0.2), vibrato=0.01, vib_rate=24, attack=0.12), 0.3),
+        (noise(0.85, amp=0.5, cutoff=0.06, attack=0.12, decay=1.0), 0.3),
+        *clicks,
+    ))
 
 
 if __name__ == "__main__":

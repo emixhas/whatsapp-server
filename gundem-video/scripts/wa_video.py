@@ -11,10 +11,19 @@ istersem hazırla, o videoyu kesmen gereken yerlerinden kes, montaj yap").
    kartı 1280x780; oranı uymayan görüntü kırpılmaz, aynı görüntünün bulanık hali zemin olur. Her segmente kare (kapak/yedek).
    İş klasörü `work/jobs/video-<zaman>/` (info_card şablon düzeni: claude_out.json + cards.json {video, image, tall}).
 
+Fragman modu (`job.trailer`; kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip kullanıcıların aşırı dikkatini çekecek
+yapıda kurmamız lazım, videodan kareler, fragmanın özet videosu gibi"): süre `settings.trailer.duration` (40; talimattaki "N saniye"
+önce gelir), videonun tamamı kendi sesiyle OYNAMAZ (sesli bölüm yalnız talimat açıkça isterse, toplam en çok `maxSoundSeconds` 8 sn),
+konuşma dili kendiliğinden algılanır (fragman çoğu zaman İngilizce), kareler çekimlerden (TÜM sahne geçişleri arası, siyah çekimler
+hariç, en çok 24, tüm fragmana yayılmış), siyah bölümler parçalardan ayıklanır, `prompts/fragman.md`; döküm iş klasörüne `fragman_dokum.txt`.
+Etiket, giriş ve kapanış `trailer_label()` (eski fragmana "yeni" denmez), geçersiz parçanın yedeği baştaki logolardan sonra başlar.
+
   python3 scripts/wa_video.py --job IS.json     # IS.json: {"videos": [yol, ...], "instruction": "...", "duration": 30}
+                                                # fragman: {..., "trailer": true, "film": "Dune: Part Three", "social": {...}}
 Son satır JSON: {ok, job, plan: {label, hook, titles, cuts, segments: [{kind, title, clips}]}, duration}
 """
 import json
+import math
 import os
 import re
 import shutil
@@ -37,7 +46,9 @@ WANT_SOUND = re.compile(r"(orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|s
 # 1 dakikadan uzun olabilir, mümkünse hepsini orijinal sesiyle paylaşsın"); talimat açıkça seslendirme/sessiz isterse uygulanmaz
 NO_SOUND = re.compile(r"ses(?:i|ini)?\s+(?:kapat(?!ma)|kıs(?!ma)|olmasın|gitsin\b|istemiyorum|kullanma)|sessiz|orijinal\s+ses\w*\s+(?:olmasın|kullanma|istemiyorum)|"
                       r"(?:yalnız|sadece|hep)\s+seslendir|kısa\s+(?:kes|parça|tut)|özetle", re.I)
-CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "genel"}
+CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "sinema", "genel"}
+LANGS: dict = {}  # video yolu → konuşma tanımanın algıladığı dil (fragmanda dil kendiliğinden algılanır)
+TRAILER_TALIMAT = "Bu fragmanı analiz et: ne anlatıldığını ve en çarpıcı anlarını dikkat çeken ama doğru bir fragman özeti olarak anlat."
 
 
 def log(msg: str) -> None:
@@ -63,8 +74,8 @@ def scenes(p: Path, limit: int = 40) -> list:
     return ts[:limit]
 
 
-def transcript(p: Path, tmp: Path) -> list:
-    """[(başlangıç, bitiş, metin)] — konuşma tanıma kurulu değilse ya da ses yoksa boş."""
+def transcript(p: Path, tmp: Path, language: str | None = "tr") -> list:
+    """[(başlangıç, bitiş, metin)] — konuşma tanıma kurulu değilse ya da ses yoksa boş. language=None: dil algılanır (fragman)."""
     try:
         import align
         run = align._whisper()
@@ -78,10 +89,12 @@ def transcript(p: Path, tmp: Path) -> list:
     if subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(p), "-vn", "-ac", "1", "-ar", "16000", str(wav)]).returncode:
         return []
     try:
-        words = run(wav)
+        words = run(wav) if language == "tr" else run(wav, language=language)
     except Exception as e:
         log(f"  ! konuşma tanıma: {str(e)[:120]}")
         return []
+    if language != "tr":
+        LANGS[str(p)] = getattr(align, "_LAST_LANG", None) or language
     WORDS[str(p)] = [(str(w).strip(), float(a), float(b)) for w, a, b in words if str(w).strip()]
     lines, cur = [], []
     for w, s, e in words:
@@ -97,10 +110,11 @@ def transcript(p: Path, tmp: Path) -> list:
     return [(round(a, 1), round(b, 1), t) for a, b, t in lines if t.strip()]
 
 
-def contact_sheet(p: Path, dur: float, out: Path, tmp: Path) -> list:
-    """Videodan eşit aralıklı kareler → tek resim (4 sütun). Karelerin saniyeleri döner."""
-    n = 16 if dur > 40 else 12 if dur > 15 else 8
-    times = [round((i + 0.5) * dur / n, 1) for i in range(n)]
+def contact_sheet(p: Path, dur: float, out: Path, tmp: Path, times: list | None = None) -> list:
+    """Videodan eşit aralıklı (ya da verilen saniyelerdeki) kareler → tek resim (4 sütun). Karelerin saniyeleri döner."""
+    if not times:
+        n = 16 if dur > 40 else 12 if dur > 15 else 8
+        times = [round((i + 0.5) * dur / n, 1) for i in range(n)]
     fr = tmp / f"fr-{p.stem}"
     fr.mkdir(parents=True, exist_ok=True)
     for i, t in enumerate(times):
@@ -115,7 +129,128 @@ def contact_sheet(p: Path, dur: float, out: Path, tmp: Path) -> list:
     return times[:len(got)] if out.exists() else []
 
 
-def claude(prompt: str, cwd: Path, images: bool) -> tuple[int, str]:
+def blacks(p: Path) -> list:
+    """Siyah bölümler [(başlangıç, bitiş)]: fragmanda çekimler arası kararma, baştaki/sondaki boş kareler (ffmpeg blackdetect).
+    pic_th 0.998: yalnız neredeyse tamamen siyah kare siyah sayılır; siyah zeminli beyaz yazı kartı ("IN THEATERS DECEMBER 18", film adı)
+    varsayılan 0.98 ile siyah sayılıp kare çizelgesinden düşüyordu, vizyon tarihi karede okunamıyordu."""
+    r = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(p), "-vf", "scale=320:-2,blackdetect=d=0.1:pix_th=0.10:pic_th=0.998", "-an", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    return [(round(float(a), 2), round(float(b), 2)) for a, b in re.findall(r"black_start:\s*([\d.]+)\s+black_end:\s*([\d.]+)", r.stderr)]
+
+
+def shot_times(dur: float, sc: list, blk: list, n: int = 24) -> list:
+    """Fragman kare çizelgesi (kullanıcı isteği, 18 Ekim: "videodan kareler"): fragman hızlı kesilir, eşit aralıklı kare çekimleri
+    kaçırır. Sahne geçişlerinden çekimler çıkarılır, çoğu siyah olan çekim atlanır; çekim n'den çoksa n hedef zamana en yakın çekimler
+    (tüm fragmana yayılır), azsa her çekime bir kare ve kalanlar en uzun çekimlere. Geçiş yoksa eşit aralıklı. En çok n (24) kare."""
+    n = min(n, max(8, int(dur / 1.5)))
+    cuts = sorted({round(float(t), 2) for t in sc if 0.2 < float(t) < dur - 0.2})
+    edges = [0.0, *cuts, round(dur, 2)]
+    shots = []
+    for a, b in zip(edges, edges[1:]):
+        for x, y in blk:  # çekimin başındaki/sonundaki kararma kareye girmesin (sahne geçişi siyahtan sonra gelmeyebilir)
+            if x <= a + 0.05 < y:
+                a = y
+            if x < b - 0.05 <= y:
+                b = x
+        if b - a >= 0.35:
+            shots.append((a, b))
+
+    def dark(a: float, b: float) -> bool:
+        return sum(max(0.0, min(b, y) - max(a, x)) for x, y in blk) >= (b - a) * 0.6
+    shots = [x for x in shots if not dark(*x)] or shots
+    if not shots:
+        return [round((i + 0.5) * dur / n, 1) for i in range(n)]
+    if len(shots) > n:
+        picked: list = []
+        for i in range(n):
+            t = (i + 0.5) * dur / n
+            picked.append(min((x for x in shots if x not in picked), key=lambda x: abs((x[0] + x[1]) / 2 - t)))
+        return [round((a + b) / 2, 1) for a, b in sorted(picked)]
+    k = [1] * len(shots)
+    for _ in range(n - len(shots)):
+        j = max(range(len(shots)), key=lambda i: (shots[i][1] - shots[i][0]) / (k[i] + 1))
+        k[j] += 1
+    return [round(a + (b - a) * (q + 0.5) / kk, 1) for (a, b), kk in zip(shots, k) for q in range(kk)]
+
+
+def skip_black(clips: list, infos: list) -> list:
+    """Fragman: parçadaki siyah bölüm (çekimler arası kararma) kesilip atılır. Kalan parçalar en az 0,8 sn; hiçbiri o kadar değilse
+    en uzunu (≥0,5 sn, hızlı kesimde yeter), tamamı siyah parça atılır. En çok 8 parça; hiç kalmazsa Claude'un parçaları."""
+    out = []
+    for c in clips:
+        pieces = [(c["start"], c["end"])]
+        for x, y in infos[c["video"] - 1].get("black") or []:
+            nxt = []
+            for a, b in pieces:
+                if y <= a or x >= b:
+                    nxt.append((a, b))
+                    continue
+                nxt += [(a, x - 0.04), (y + 0.04, b)]
+            pieces = [(a, b) for a, b in nxt if b - a > 0.05]
+        keep = [(a, b) for a, b in pieces if b - a >= 0.8] or [x for x in sorted(pieces, key=lambda x: x[0] - x[1])[:1] if x[1] - x[0] >= 0.5]
+        out += [{**c, "start": round(a, 2), "end": round(b, 2)} for a, b in keep]
+    return out[:8] or clips
+
+
+def sound_window(lines: list, dur: float, secs: float, avoid: list) -> dict:
+    """Fragmanda Claude sesli bölüm eklemediyse: en çok `secs` saniyelik, BÜTÜN döküm satırlarından [(başlangıç, bitiş, metin)] oluşan
+    pencere (fragman.md: "Konuşmayı cümle ortasında kesme"); önce sığan, sonra diğer segmentlerin parçalarıyla (`avoid`) en az çakışan
+    ("Aynı saniyeleri iki kez kullanma"), sonra en çok kelimeli pencere. Konuşma yoksa ortası."""
+    best = None
+    for i, (a0, _, _) in enumerate(lines):
+        j = i
+        while j + 1 < len(lines) and lines[j + 1][1] - a0 <= secs - 0.4:
+            j += 1
+        s, e = max(0.0, a0 - 0.2), min(dur - 0.05, lines[j][1] + 0.2)
+        fits, e = e - s <= secs, min(e, s + secs)  # tek satır bile uzunsa kesilir (başka pencere yoksa)
+        over = sum(max(0.0, min(e, y) - max(s, x)) for x, y in avoid)
+        key = (fits, -round(over, 1), sum(len(x[2].split()) for x in lines[i:j + 1]))
+        if not best or key > best[0]:
+            best = (key, s, e)
+    if not best:
+        s = max(0.0, dur / 2 - secs / 2)
+        return {"start": round(s, 2), "end": round(min(dur - 0.05, s + secs), 2)}
+    return {"start": round(best[1], 2), "end": round(best[2], 2)}
+
+
+def trailer_label(label: str, date) -> tuple:
+    """Fragman etiketi, giriş ve kapanış cümlesi (kullanıcı isteği, 18 Ekim: "fragmanda ne anlatıldı gibi 40 saniyelik video"): "Yeni
+    fragman." yalnız yeni fragmanda (yükleme 30 günden eskiyse YENİ FRAGMAN → FRAGMAN; eski fragmana "yeni" denmez), hayran yapımında
+    "Hayran yapımı fragman.", film olmayan tanıtım filminde "Tanıtım filmi.", diğerlerinde "Fragman analizi."."""
+    key = label.replace("i", "İ").replace("ı", "I").upper().strip()
+    try:
+        old = (time.time() - time.mktime(time.strptime(str(date), "%d.%m.%Y"))) / 86400 > 30
+    except (TypeError, ValueError, OverflowError):
+        old = False
+    if old and key == "YENİ FRAGMAN":
+        key = "FRAGMAN"
+    intro = ("Yeni fragman." if key in ("YENİ FRAGMAN", "DİZİ FRAGMANI") and not old else "Hayran yapımı fragman." if key == "HAYRAN FRAGMANI"
+             else "Tanıtım filmi." if key == "TANITIM FİLMİ" else "Fragman analizi.")
+    outro = "Takip etmeyi unutma." if key == "TANITIM FİLMİ" else "Yeni fragmanları kaçırmamak için takip etmeyi unutma."
+    return key[:30] or "FRAGMAN", intro, outro  # Türkçe büyük harf: açıklama başlığı ve etiket karşılaştırmaları ("TANITIM FİLMİ") tutarlı
+
+
+def dokum_text(infos: list, srcs: list, film: str, social: dict | None, segs: list) -> str:
+    """fragman_dokum.txt (kullanıcı isteği: "kelimelere döküp"): zaman damgalı konuşma dökümü + videonun Türkçe seslendirmesi."""
+    so = social or {}
+    mmss = lambda t: f"{int(t // 60)}:{t % 60:04.1f}"  # noqa: E731
+    lines = [f"Fragman dökümü — {film or so.get('title') or 'fragman'}"]
+    meta = [f"Başlık: {so['title']}" if so.get("title") else "", f"Kanal: {so.get('uploader') or so.get('handle')}" if so.get("uploader") or so.get("handle") else "",
+            f"Yükleme: {so['date']}" if so.get("date") else "", so.get("url") or ""]
+    lines += [" · ".join(x for x in meta if x), ""]
+    for i, (info, p) in enumerate(zip(infos, srcs), 1):
+        if len(infos) > 1:
+            lines.append(f"— {i}. video —")
+        lines.append(f"Konuşma dili: {LANGS.get(str(p)) or 'bilinmiyor'} · {len(info['speech'])} satır · {round(info['duration'], 1)} sn")
+        if SPEECH_OFF:
+            lines.append("Konuşma tanıma çalışmadı (mlx-whisper kurulu değil); döküm yok. Mac'te bir kez: bash scripts/install_align.sh")
+        lines += [f"[{mmss(a)} – {mmss(b)}] {t}" for a, b, t in info["speech"]] + [""]
+    lines.append("Videonun Türkçe seslendirmesi:")
+    lines += [f"• {s.get('title') or s['kind']}: {s['narration']}" for s in segs if s["kind"] != "sesli"]
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def claude(prompt: str, cwd: Path, images: bool, kind: str = "montaj") -> tuple[int, str]:
     """(çıkış kodu, metin). Kod: 0 tamam, 2 kalıcı (kullanım sınırı/oturum), diğer: hata."""
     r = subprocess.run(["bash", "scripts/find_claude.sh"], cwd=ROOT, capture_output=True, text=True)
     binp = r.stdout.strip()
@@ -134,7 +269,7 @@ def claude(prompt: str, cwd: Path, images: bool) -> tuple[int, str]:
         return 1, "Claude zaman aşımı"
     raw, res = cwd / "claude_raw.json", cwd / "claude_plan.txt"
     raw.write_text(out.stdout or "", encoding="utf-8")
-    rc = subprocess.run([sys.executable, str(ROOT / "scripts/claude_result.py"), str(raw), str(res), "montaj"], capture_output=True, text=True)
+    rc = subprocess.run([sys.executable, str(ROOT / "scripts/claude_result.py"), str(raw), str(res), kind], capture_output=True, text=True)
     text = res.read_text(encoding="utf-8") if res.exists() else ""
     if rc.returncode:
         return rc.returncode, (rc.stdout.strip() or out.stderr.strip() or "Claude yanıt vermedi")[-300:]
@@ -192,9 +327,9 @@ def still(src: Path, t: float, w: int, h: int, out: Path) -> bool:
     return r.returncode == 0 and out.exists()
 
 
-def clean_clips(raw, infos: list, need: float, used_until: dict) -> list:
+def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float = 0.0) -> list:
     """Claude'un parçalarını doğrular (video numarası, sınırlar, en az 0,8 sn); hiç geçerli parça yoksa videonun
-    henüz kullanılmamış kısmından seslendirme kadar bir parça verir."""
+    henüz kullanılmamış kısmından seslendirme kadar bir parça verir (video biterse `start0`dan; fragmanda logolardan sonrası)."""
     out = []
     for c in raw or []:
         try:
@@ -215,7 +350,7 @@ def clean_clips(raw, infos: list, need: float, used_until: dict) -> list:
     d = infos[0]["duration"]
     s = used_until.get(v, min(0.5, d / 10))
     if s + 1.5 > d:
-        s = 0.0
+        s = start0
     e = min(d - 0.05, s + max(2.0, need))
     used_until[v] = e
     return [{"video": v, "start": round(s, 2), "end": round(e, 2)}]
@@ -251,13 +386,22 @@ def build(job: dict) -> dict:
     if not srcs:
         return {"ok": False, "error": "video dosyası bulunamadı"}
     instruction = str(job.get("instruction") or "").strip()
+    trailer = bool(job.get("trailer"))  # fragman analizi (kullanıcı isteği, 18 Ekim: "fragmanda ne anlatıldı gibi 40 saniyelik video")
+    tr_cfg = {"duration": 40, "maxSoundSeconds": 8, **(settings().get("trailer") or {})}
     m = re.search(r"(\d{2,3})\s*(?:saniye\w*|sn\b)", instruction.lower())
-    dur = int(job.get("duration") or (int(m.group(1)) if m else 0) or (settings().get("waVideo") or {}).get("duration") or 30)
+    dur = int(job.get("duration") or (int(m.group(1)) if m else 0)
+              or (tr_cfg.get("duration") if trailer else (settings().get("waVideo") or {}).get("duration")) or 30)
     dur = max(20, min(60, dur))
     social, rel = job.get("social") or None, job.get("related") or []
     soc_cfg = settings().get("social") or {}
     max_sound = float(soc_cfg.get("maxSoundSeconds") or 150)  # kanca + haberler + kapanışla toplam ≤ ~3 dk (YouTube Shorts sınırı)
     full_sound = bool(social) and soc_cfg.get("fullSound") is not False and not NO_SOUND.search(instruction)
+    # film adı: panel yalnız başlık fragman diye tanındıysa verir; "fragman: <link>" ile istenen başka başlıktaki ("Video by …") ad
+    # ayıklaması film adı sayılmaz, Claude adı karelerden ve açıklamadan okur
+    film = str(job["film"] if "film" in job else ((social or {}).get("film") if (social or {}).get("trailer") else "") or "").strip()
+    if trailer:  # fragman baştan sona kendi sesiyle oynamaz: sesli bölüm yalnız açıkça istenirse, toplam en çok 8 sn
+        full_sound = False
+        max_sound = float(tr_cfg.get("maxSoundSeconds") or 8)
     if full_sound and not m:  # video kendi sesiyle oynayacak: seslendirme kısa (kanca + giriş + devam)
         dur = 25
     name = f"video-{time.strftime('%Y%m%d-%H%M%S')}"
@@ -269,33 +413,63 @@ def build(job: dict) -> dict:
         info = probe(p)
         if info["duration"] < 1.5:
             return {"ok": False, "error": f"{i}. video çok kısa ya da okunamadı"}
-        info["scenes"] = scenes(p)
-        info["speech"] = transcript(p, tmp) if info["audio"] else []
+        if trailer:  # TÜM geçişler kare seçimine; isteme en çok 150, eşit aralıklı (yalnız ilk 150 değil: sondaki doruk ve ad kartı görünsün)
+            info["cuts"] = scenes(p, 1000)
+            info["scenes"] = info["cuts"][::max(1, math.ceil(len(info["cuts"]) / 150))]
+        else:
+            info["scenes"] = scenes(p)
+        info["speech"] = (transcript(p, tmp, None) if trailer else transcript(p, tmp)) if info["audio"] else []
         sheet = tmp / f"kareler-{i}.jpg"
-        info["frames"] = contact_sheet(p, info["duration"], sheet, tmp)
+        if trailer:  # hızlı kurgu: her çekimden kare (siyah çekimler hariç), en çok 24, 4 sütun
+            info["black"] = blacks(p)
+            info["frames"] = contact_sheet(p, info["duration"], sheet, tmp, shot_times(info["duration"], info["cuts"], info["black"]))
+        else:
+            info["frames"] = contact_sheet(p, info["duration"], sheet, tmp)
         info["sheet"] = sheet.name if info["frames"] else None
         infos.append(info)
-        log(f"🎬 video {i}: {round(info['duration'], 1)} sn, {info['width']}x{info['height']}, {len(info['scenes'])} sahne geçişi, "
+        log(f"🎬 video {i}: {round(info['duration'], 1)} sn, {info['width']}x{info['height']}, {len(info.get('cuts') or info['scenes'])} sahne geçişi, "
             f"{len(info['speech'])} konuşma satırı{'' if info['frames'] else ', kare çizelgesi yok'}")
         blocks.append({"video": i, "sure": round(info["duration"], 1), "boyut": f"{info['width']}x{info['height']}",
                        "sahne_gecisleri": info["scenes"], "konusma": [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][:80],
                        "kareler_dosyasi": info["sheet"], "kareler": info["frames"]})
+        if trailer:
+            if info["audio"] and not SPEECH_OFF:
+                log(f"🎬 fragman konuşması: {len(info['speech'])} satır, dil: {LANGS.get(str(p)) or 'bilinmiyor'}")
+            log(f"🎬 fragman kareleri: {len(info['frames'])} çekimden kare, {len(info['black'])} siyah bölüm ayıklanacak")
+            blocks[-1].update({"konusma_dili": LANGS.get(str(p)), "konusma": blocks[-1]["konusma"] + [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][80:120],
+                               "siyah_bolumler": [list(x) for x in info["black"][:40]]})
     if SPEECH_OFF:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): kurgu yalnız kareler ve sahne geçişleriyle yapılacak — Mac'te bir kez 'bash scripts/install_align.sh'")
-    tpl = (ROOT / "prompts" / "montaj.md").read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
-    inp = {"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}
-    if social:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
+    tpl = (ROOT / "prompts" / ("fragman.md" if trailer else "montaj.md")).read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
+    if trailer:  # fragman: girdi fragmanın kendi bilgisi (başlık, açıklama, etiketler) + film adıyla bulunan haberler
+        so = social or {}
+        bare = re.sub(r"fragman\w*|trailer\w*|teaser\w*|analiz\w*|özet\w*|video\w*|yap\w*|hazırla\w*|üret\w*|\bet\b|[\W\d_]", "", instruction, flags=re.I)
+        inp = {"talimat": instruction if len(bare) >= 3 else TRAILER_TALIMAT, "videolar": blocks,
+               "fragman": {"film": film, "baslik": so.get("title"), "kanal": so.get("uploader") or so.get("handle"),
+                           "aciklama": str(so.get("caption") or "")[:1500], "yukleme_tarihi": so.get("date"), "bugun": time.strftime("%d.%m.%Y"),
+                           "izlenme": so.get("views"),
+                           "etiketler": so.get("tags") or [], **({"bolum": so["bolum"]} if so.get("bolum") else {})},
+               "ilgili_haberler": rel[:5]}
+        if WANT_SOUND.search(instruction):
+            inp["orijinal_ses_istegi"] = {"en_fazla_saniye": int(max_sound)}
+    else:
+        inp = {"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}
+    if social and not trailer:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
         inp["kaynak_paylasim"] = {k: social.get(k) for k in ("platform", "credit", "uploader", "caption", "title", "views", "likes", "comments", "date")}
         inp["ilgili_haberler"] = rel[:5]
     if full_sound:
         inp["orijinal_ses_tamami"] = {"video_suresi": round(max(i["duration"] for i in infos), 1), "en_fazla_saniye": int(max_sound)}
     prompt = tpl + json.dumps(inp, ensure_ascii=False, indent=1)
     log("🎬 kurgu planı yazılıyor (Claude görüntüleri ve konuşmayı inceliyor)")
-    rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] for b in blocks))
+    kind = "fragman" if trailer else "montaj"
+    rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] for b in blocks), kind=kind)
     if rc not in (0, 2):  # resim aracı açılamadıysa ya da geçersiz yanıt: resimsiz bir kez daha
         log(f"  ! ilk deneme olmadı ({text[:120]}); kare resimleri olmadan yeniden deneniyor")
-        rc, text = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", "Resimleri açamıyorsan dökümden ve sahne geçişlerinden karar ver")
-                          + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False)
+        # fragmanda resimsiz denemede görüntü tarif ettirilmez (fragman.md "KARELERİ AÇAMIYORSAN"): yoksa sahneler uydurulur
+        see = ('KARELERİ GÖREMİYORSUN (Read aracı kapalı); "KARELERİ AÇAMIYORSAN" kuralını uygula. Görebilseydin bakacağın şeyler' if trailer
+               else "Resimleri açamıyorsan dökümden ve sahne geçişlerinden karar ver")
+        rc, text = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", see)
+                          + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind=kind)
     if rc:
         return {"ok": False, "error": f"kurgu planı yazılamadı: {text[:200]}", "limit": rc == 2}
     try:
@@ -317,17 +491,32 @@ def build(job: dict) -> dict:
         v = max(range(len(infos)), key=lambda i: (len(infos[i]["speech"]), infos[i]["duration"]))
         dv = infos[v]["duration"]
         at = next(i for i, x in enumerate(segs) if x["kind"] == "haber") + 1
-        segs.insert(at, {"kind": "sesli", "title": "", "clips": [{"video": v + 1, "start": min(0.3, dv / 10), "end": max(1.0, dv - 0.2)}]})
+        clip = {"video": v + 1, "start": min(0.3, dv / 10), "end": max(1.0, dv - 0.2)}
+        if trailer:  # fragman: bütün döküm satırlarından en çok 8 sn, diğer segmentlerin saniyeleriyle çakışmayan (logolar değil)
+            avoid = []
+            for x in segs:
+                for c in x.get("clips") or []:
+                    try:
+                        if int(c.get("video", 1)) == v + 1:
+                            avoid.append((float(c["start"]), float(c["end"])))
+                    except (TypeError, ValueError, KeyError, AttributeError):
+                        continue
+            clip = {"video": v + 1, **sound_window(infos[v]["speech"], dv, max_sound, avoid)}
+        segs.insert(at, {"kind": "sesli", "title": "", "clips": [clip]})
         log("🔊 talimatta orijinal ses istendi: videonun kendi sesiyle oynayan bölüm eklendi")
     if full_sound:  # tek sesli bölüm, videonun tamamı (Claude kısa kestiyse tamamlanır)
         firsts = [x for x in segs if x["kind"] == "sesli"]
         for x in firsts[1:]:
             segs.remove(x)
         firsts[0]["clips"] = full_clips(firsts[0].get("clips"), infos, max_sound)
+    # fragman: geçersiz parçanın yedeği 0,5 sn'den (stüdyo/dağıtımcı logosu; kanca logoyla açılıyordu) değil, ilk %10'dan (en çok 8 sn)
+    # sonraki ilk çekimden başlar
+    d1 = infos[0]["duration"]
+    seed = {1: next((t for t in infos[0].get("cuts") or [] if t >= min(8.0, d1 * 0.1)), min(8.0, d1 * 0.1))} if trailer else {}
     src_secs, sound_left = round(max(i["duration"] for i in infos), 1), max_sound
     for x in segs:  # orijinal ses toplamı en çok max_sound sn (videonun toplamı ~3 dk'yı geçmesin)
         if x["kind"] == "sesli":
-            x["clips"] = cap_clips(clean_clips(x.get("clips"), infos, 6.0, {}), sound_left)
+            x["clips"] = cap_clips(clean_clips(x.get("clips"), infos, 6.0, dict(seed), seed.get(1, 0.0)), sound_left)
             sound_left -= sum(c["end"] - c["start"] for c in x["clips"])
     if full_sound:
         got = sum(c["end"] - c["start"] for x in segs if x["kind"] == "sesli" for c in x["clips"])
@@ -339,12 +528,14 @@ def build(job: dict) -> dict:
     # montaj: her segmentin parçaları → kanca ve sesli bölüm dikey tam ekran, haber kartı yatay (dikey videoda tam ekran)
     d = tmp / "parcalar"
     d.mkdir(exist_ok=True)
-    cards, used_until, plan_out = [], {}, []
+    cards, used_until, plan_out = [], dict(seed), []
     has_audio = [bool(i["audio"]) for i in infos]
     for k, s in enumerate(segs):
         sesli = s["kind"] == "sesli"
         need = 0.0 if sesli else len(s["narration"].split()) / 2.4 + 0.5
-        clips = clean_clips(s.get("clips"), infos, need or 6.0, used_until)
+        clips = clean_clips(s.get("clips"), infos, need or 6.0, used_until, seed.get(1, 0.0))
+        if trailer:  # çekimler arası kararma ekranda görünmesin
+            clips = skip_black(clips, infos)
         hook = s["kind"] == "hook"
         full = hook or sesli or vertical
         vid = d / f"seg-{k}.mp4"
@@ -376,20 +567,29 @@ def build(job: dict) -> dict:
         for x in segs:
             x["source"] = ""
     # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru (kaynak yalnız açıklamada)
-    first = str(plan.get("firstComment") or "").strip()[:160] or "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
+    first = str(plan.get("firstComment") or "").strip()[:160] or ("Fragmanı nasıl buldunuz? İzleyecek misiniz? Yorumlara yazın 👇" if trailer
+                                                                  else "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇")
+    label = str(plan.get("label") or ("FRAGMAN" if trailer else "SON DAKİKA"))[:30]
+    intro, outro, cats, gen = "Son dakika.", "", CATS, "genel"  # geçersiz kategori → genel
+    if trailer:  # etiket, giriş ve kapanış etikete göre (panel startAnlik'e bunları verir)
+        label, intro, outro = trailer_label(label, (social or {}).get("date"))
+        # fragman.md'nin izin verdiği kategoriler; "asayis", "dunya" gibi etiket fragman konusunu gerçek olay gibi gösterir (polis
+        # sireni kartı, #asayiş): fragmanda sinema, film olmayan tanıtım filminde genel
+        cats, gen = {"sinema", "teknoloji", "siyaset", "genel"}, "genel" if label == "TANITIM FİLMİ" else "sinema"
     script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
-              "importanceReason": plan.get("importanceReason", "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
+              "importanceReason": plan.get("importanceReason", "Fragman analizi" if trailer else "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,
-                            "category": segs[0].get("category") if segs[0].get("category") in CATS else "genel"},
-                           {"kind": "intro", "narration": "Son dakika."}]
+                            "category": segs[0].get("category") if segs[0].get("category") in cats else gen},
+                           {"kind": "intro", "narration": intro}]
               + [({"kind": "sesli", "title": s.get("title", ""), "narration": "", "source": s.get("source") or src, "category": (
-                     s.get("category") if s.get("category") in CATS else "genel"), "soundDuration": s["soundDuration"], "soundWords": s["soundWords"]}
+                     s.get("category") if s.get("category") in cats else gen), "soundDuration": s["soundDuration"], "soundWords": s["soundWords"]}
                   if s["kind"] == "sesli" else
                   {"kind": "haber", "title": s.get("title", ""), "narration": s["narration"], "source": s.get("source") or src,
-                   "category": s.get("category") if s.get("category") in CATS else "genel", **({"breaking": True} if s.get("breaking") else {})})
+                   "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer else {})})
                  for s in segs[1:]]
               + [{"kind": "outro", "narration": "Takip etmeyi unutma."}]}
-    job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs]})
+    job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs],
+                                         **({"trailer": True, "film": film} if trailer else {})})
     jd = ROOT / job_dir
     for i, c in enumerate(cards):  # parçaları iş klasörüne taşı (new_job klasörü yeniden kurdu)
         for key, suf in (("video", ".mp4"), ("image", ".jpg"), ("tall", "-tall.jpg")):
@@ -397,14 +597,22 @@ def build(job: dict) -> dict:
             shutil.copyfile(c[key], dst)
             c[key] = str(dst.relative_to(ROOT))
     (jd / "cards.json").write_text(json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8")
+    if trailer:  # kelimelere dökme (kullanıcı isteği): zaman damgalı döküm + Türkçe seslendirme iş klasöründe
+        (jd / "fragman_dokum.txt").write_text(dokum_text(infos, srcs, film, social, segs), encoding="utf-8")
+        log(f"🎬 fragman dökümü (kelimelere dökme): {job_dir / 'fragman_dokum.txt'}")
     shutil.rmtree(tmp, ignore_errors=True)
     words = sum(len(s.get("narration", "").split()) for s in segs if s["kind"] != "sesli")
-    return {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)), "vertical": vertical,
-            "soundSeconds": round(sum(x["soundDuration"] for x in segs if x["kind"] == "sesli"), 1),
-            "soundFull": full_sound, "sourceSeconds": src_secs,
-            "plan": {"label": str(plan.get("label") or "SON DAKİKA")[:30], "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
-                     "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
-                     "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF}}
+    res = {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)), "vertical": vertical,
+           "soundSeconds": round(sum(x["soundDuration"] for x in segs if x["kind"] == "sesli"), 1),
+           "soundFull": full_sound, "sourceSeconds": src_secs,
+           "plan": {"label": label, "hook": segs[0].get("title", ""), "titles": plan.get("titles") or {},
+                    "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out,
+                    "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF}}
+    if trailer:
+        res["trailer"] = True
+        res["plan"].update({"trailer": True, "film": film, "intro": intro, "outro": outro, "speechLang": next((LANGS[str(p)] for p in srcs if LANGS.get(str(p))), None),
+                            "transcriptFile": str(job_dir / "fragman_dokum.txt")})
+    return res
 
 
 if __name__ == "__main__":
