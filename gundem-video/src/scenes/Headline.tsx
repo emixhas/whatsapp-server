@@ -6,9 +6,9 @@ import { fitFontSize, textWidth } from "../fit";
 import { theme } from "../theme";
 
 type Props = {
-  categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string; video?: string; videoDuration?: number; infoCard?: boolean };
+  categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string; images?: string[]; video?: string; videoDuration?: number; videoStart?: number; infoCard?: boolean };
 
-export const Headline = ({ categoryLabel, index, total, title, narration, source, category, breaking, durationInFrames, words, image, video, videoDuration, infoCard }: Props) => {
+export const Headline = ({ categoryLabel, index, total, title, narration, source, category, breaking, durationInFrames, words, image, images, video, videoDuration, videoStart, infoCard }: Props) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const st = styleFor(category);
@@ -40,11 +40,11 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
         <div style={{ fontSize: 40, fontWeight: 700, color: theme.muted }}>{index + 1} / {total}</div>
       </div>
 
-      {/* görsel alanı: kaynak fotoğrafı varsa yavaş yakınlaşan fotoğraf + köşede illüstrasyon rozeti; yoksa illüstrasyon */}
+      {/* görsel alanı: kaynak videosu ya da fotoğrafları varsa (birden çoksa slayt) + köşede illüstrasyon rozeti; yoksa illüstrasyon */}
       <div style={{ position: "absolute", top: 220, left: 80, width: 920, height: 560, borderRadius: 32, background: theme.card, overflow: "hidden", transform: `scale(${0.9 + 0.1 * illuIn})`, opacity: illuIn }}>
-        {image || video ? (
+        {image || video || images?.length ? (
           <>
-            <MediaBg image={image} video={video} videoDuration={videoDuration} durationInFrames={durationInFrames} />
+            <MediaBg image={image} images={images} video={video} videoDuration={videoDuration} videoStart={videoStart} durationInFrames={durationInFrames} />
             {/* bilgi kartı (deprem haritası, skor, piyasa): kendi yazısı var, karartma/simge/kaynak etiketi binmez */}
             {infoCard ? null : <>
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,.85) 100%)" }} />

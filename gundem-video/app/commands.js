@@ -41,6 +41,27 @@ export function parseCommand(raw) {
   const rawl = raw.toLocaleLowerCase("tr-TR").replace(/[’']/g, "'").trim();
   if (/^(.+?)\s*(sitesini|sayfasını|adresini)\s*aç$/.test(rawl)) return { action: "open_url", target: rawl.replace(/\s*(sitesini|sayfasını|adresini)\s*aç$/, "").trim(), reply: "" };
   if (/^(google ?da|googleda|internette)\s+(.+?)\s+(ara|arat)$/.test(t)) return { action: "open_url", target: "https://www.google.com/search?q=" + encodeURIComponent(t.replace(/^(google ?da|googleda|internette)\s+/, "").replace(/\s+(ara|arat)$/, "")), reply: "" };
+  // sondakika.com takibi: "sondakika.com'u kontrol et", "sondakika takibini kapat/aç", "sondakika.com takibi açık mı?".
+  // Anlık haber ("son dakika <konu>") ve genel "iptal/kapat" kurallarından ÖNCE: "son dakika takibini kapat" konu sanılmasın.
+  // Açık anlık haber biçimi ("son dakika: …", "anlık haber: …") hiç buraya girmez: konuda sondakika.com ya da "iptal" geçebilir.
+  // Takip adları tam kelime (takibi/takibini/takibine/takip/izleyicisi…): "son dakika takibe alınan şüpheli…", "izleyicileri şok eden…"
+  // haber konusudur. Kapat/aç fiili de tam kelime: "kapatıldı", "durduruldu", "iptal edildi" takibi kapatmaz.
+  // Sitenin ana sayfa linki de takip komutudur (ana sayfadan haber videosu yapılmaz); habere giden link aşağıda anlık habere gider.
+  const sdLink = (String(raw).match(/https?:\/\/[^\s<>"']+/i) || [""])[0].replace(/[).,;!?]+$/, "");
+  const sdHome = !sdLink || /^https?:\/\/(www\.)?sondakika\.com\/?(son-dakika\/?)?$/i.test(sdLink);
+  const sdExplicit = /^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)(?: videosu)?(?: (?:üret|yap|hazırla|çek))?\s*[:\-–]/i.test(String(raw).trim());
+  const sdSite = /(^| )son ?dakika com( |\/|$)/.test(t) || /(^| )sondakika (sitesi|adresi|sayfası)\S*( |$)/.test(t);
+  const sdTrack = /(^| )(son ?dakika( com)?|sondakika (sitesi|sitesinin)) (takibi|takibini|takibine|takip|izleyicisi|izleyicisini|izlemesi|izlemesini)( |$)/.test(t);
+  const sdOff = /(^| )(kapat|kapatın|kapatır|kapa|durdur|durdurun|durdurur|iptal et|devre dışı bırak)( |$)/.test(t);
+  const sdOn = /(^| )(aç|açın|açar|başlat|başlatır|etkinleştir|devam|devam et)( |$)/.test(t);
+  const sdQ = /\?\s*$/.test(String(raw).trim()) || /(^| )(mı|mi|mu|mü|mısın|misin|neden|niye|nasıl|durum\S*)( |$)/.test(t);
+  const sdLook = /(^| )(kontrol|tara|bak|yokla|ne var|yeni haber)/.test(t);
+  // takip ya da site adı + bir niyet (aç/kapat, kontrol, soru); ana sayfa linki tek başına da kontrol demektir
+  if (!sdExplicit && sdHome && (sdSite || sdTrack) && (sdLink || sdOff || sdOn || sdQ || sdLook) && (sdLink || t.split(" ").length <= 10) && !(sdLink && /(^| )(aç|göster)( |$)/.test(t) && !sdTrack)) {
+    if (sdOff) return { action: "sondakika", on: false, reply: "" };
+    if (sdOn) return { action: "sondakika", on: true, reply: "" };
+    return { action: "sondakika", check: !sdQ || sdLook, reply: "" };
+  }
   // Anlık haber: "son dakika: <konu>" / "anlık haber: <konu>" → o konuda tek konulu son dakika videosu.
   // İki nokta (ya da tire) zorunlu: "son dakika haberleri neler" gibi sorular tetiklemesin.
   const an = String(raw).trim().match(/^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)(?: videosu)?(?: (?:üret|yap|hazırla|çek))?\s*[:\-–]\s*([\s\S]{8,})$/i);

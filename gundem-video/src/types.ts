@@ -27,10 +27,16 @@ export type Segment = {
   displayIndex?: number;
   /** 1080x1920 dikey sürüm: fotoğrafın tamamı keskin, arkası bulanık (kanca ve dikey kapak). */
   imageTall?: string;
+  /** Video yoksa slayt: birbirinden FARKLI fotoğraflar (1840x1120 kart), ilki `image` ile aynı. fetch_images.py doldurur. */
+  images?: string[];
+  /** Slaytın 1080x1920 dikey sürümleri (kanca), ilki `imageTall` ile aynı. */
+  imagesTall?: string[];
   /** Haber videosu (public/ altına göre, sessiz); varsa fotoğrafın yerine oynar. */
   video?: string;
   /** Video klibinin saniye cinsinden süresi (döngü için). */
   videoDuration?: number;
+  /** Aynı haberin videosu başka bölümde de oynuyorsa bu bölümün başladığı saniye (birebir aynı görünmesin). */
+  videoStart?: number;
   /** "sesli" bölüm: videonun kendi sesi çalar, seslendirme yok (WhatsApp/sosyal medya görüntüsü). */
   sound?: boolean;
   /** dikey tam ekran haber (FullFrame.tsx): WhatsApp'tan gelen dikey video kart yerine tüm kareyi kaplar. */

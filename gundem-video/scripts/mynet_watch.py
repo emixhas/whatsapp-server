@@ -143,11 +143,13 @@ def headlines(page: str, base: str, count: int) -> list:
 
 
 def _meta(page: str, *names) -> str:
-    for tag in re.findall(r"<meta\b[^>]*>", page, re.I):
-        k = re.search(r'(?:property|name)\s*=\s*["\']([^"\']+)', tag, re.I)
-        v = re.search(r'content\s*=\s*["\']([^"\']*)', tag, re.I)
-        if k and v and k.group(1).lower() in names and v.group(1).strip():
-            return html.unescape(v.group(1)).strip()
+    # değer açılış tırnağıyla kapanır: content="Kadıköy'de …" kesme işaretinde kesilmez (Türkçe başlıklarda çok sık; eskiden
+    # og:title "Kadıköy" olarak okunuyordu — Mynet, son dakika siteleri ve haber araması başlık/özetleri)
+    for tag in re.findall(r"<meta\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", page, re.I):
+        k = re.search(r'(?:property|name)\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
+        v = re.search(r'content\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
+        if k and v and k.group(2).lower() in names and v.group(2).strip():
+            return html.unescape(v.group(2)).strip()
     return ""
 
 

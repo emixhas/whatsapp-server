@@ -6,7 +6,7 @@ import { Captions } from "./Captions";
 import { MediaBg } from "./MediaBg";
 
 type Props = {
-  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; video?: string; videoDuration?: number; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
+  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; images?: string[]; video?: string; videoDuration?: number; videoStart?: number; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
 
 const YELLOW = "#FFD400";
 const TICK = "SON DAKİKA   •   ";
@@ -20,12 +20,13 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
  *  ilk 14 karede ve 32-35. karelerde RGB kayması (kırmızı/camgöbeği hayalet), 18-40. kareler arası ışık süpürmesi
  *  dönen ışık huzmeleri, tarama çizgileri, kenar vinyeti; SON DAKİKA ise altta kayan kırmızı bant.
  */
-export const Hook = ({ categoryLabel, title, narration, category, breaking, image, video, videoDuration, words, durationInFrames }: Props) => {
+export const Hook = ({ categoryLabel, title, narration, category, breaking, image, images, video, videoDuration, videoStart, words, durationInFrames }: Props) => {
   const frame = useCurrentFrame();
   const { fps, width } = useVideoConfig();
   const st = styleFor(category);
   const accent = breaking ? theme.red : st.accent;
   const label = breaking ? "SON DAKİKA" : categoryLabel || st.label;
+  const media = !!(image || video || images?.length);
   const TICK_W = textWidth(TICK, 56, 900, theme.font, 6); // kayan bandın kesintisiz dönmesi için bir tekrarın genişliği
 
   // flaşlar ve şok dalgası
@@ -75,15 +76,15 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white, opacity: fadeOut, backgroundColor: theme.bg }}>
       {/* sahne (sarsıntılı) */}
       <AbsoluteFill style={{ transform: `translate(${shake}px, ${shakeY}px)` }}>
-        {image || video ? (
+        {media ? (
           <AbsoluteFill style={{ transform: `scale(${mediaScale})`, filter: `blur(${mediaBlur}px) saturate(1.25) contrast(1.12)` }}>
-            <MediaBg image={image} video={video} videoDuration={videoDuration} durationInFrames={durationInFrames} zoomFrom={1.0} zoomTo={1.1} />
+            <MediaBg image={image} images={images} video={video} videoDuration={videoDuration} videoStart={videoStart} durationInFrames={durationInFrames} zoomFrom={1.0} zoomTo={1.1} />
           </AbsoluteFill>
         ) : (
           <AbsoluteFill style={{ background: `radial-gradient(circle at 50% 38%, ${accent}55 0%, ${theme.bgAccent} 45%, #04060c 100%)` }} />
         )}
         {/* dönen ışık huzmeleri */}
-        <AbsoluteFill style={{ background: `repeating-conic-gradient(from ${frame * 0.6}deg at 50% 42%, ${accent}26 0deg 5deg, transparent 5deg 16deg)`, mixBlendMode: "screen", opacity: image || video ? 0.45 : 0.8 }} />
+        <AbsoluteFill style={{ background: `repeating-conic-gradient(from ${frame * 0.6}deg at 50% 42%, ${accent}26 0deg 5deg, transparent 5deg 16deg)`, mixBlendMode: "screen", opacity: media ? 0.45 : 0.8 }} />
         {/* okunurluk karartması */}
         <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(4,6,12,.55) 0%, rgba(4,6,12,.25) 25%, rgba(4,6,12,.55) 55%, rgba(4,6,12,.95) 100%)" }} />
 

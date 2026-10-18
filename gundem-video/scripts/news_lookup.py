@@ -11,7 +11,7 @@ başlık + kaynak; linki yönlendirme olduğu için okunmaz, ilgili haber olarak
 haber sayılmaz. Eşleşme: konudaki anlamlı kelimelerin 4 harflik kökleri; kelimelerin en az %60'ı başlık ya da
 özette geçmeli (tek kelimelik konuda o kelime). Çıktı JSON:
   {"ok": true, "found": true, "best": {title, description, body, site, url}, "related": [{k, b, o, s}],
-   "pages": [{url, source}]}   pages = okunabilen haber sayfaları (en çok 4): video segmentleri fotoğraf ve videoyu
+   "pages": [{url, source}]}   pages = okunabilen haber sayfaları (en çok 4, `--pages` ile 8): video segmentleri fotoğraf ve videoyu
    bu sayfalardan sırayla alır (kanca + ilk haber ana haberden), böylece görüntüler farklı sitelerden gelir.
 Bulunamazsa found=false; panel o zaman kısa konuyla video üretmez, link ya da ayrıntı ister.
 """

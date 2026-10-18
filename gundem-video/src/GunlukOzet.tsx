@@ -68,7 +68,7 @@ const WideHook = ({ seg, e, dur }: { seg: Segment; e: Episode; dur: number }) =>
   const size = fitFontSize({ text: seg.title || "", maxWidth: 1600, base: 170, min: 80, maxLines: 2 });
   return (
     <AbsoluteFill style={{ fontFamily: theme.font, color: theme.white }}>
-      {seg.image || seg.video ? <MediaBg image={seg.image} video={seg.video} videoDuration={seg.videoDuration} durationInFrames={dur} zoomFrom={1.2} zoomTo={1.05} /> : <Centered scale={1.7} opacity={0.4}><st.Illustration /></Centered>}
+      {seg.image || seg.video ? <MediaBg image={seg.image} images={seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} durationInFrames={dur} zoomFrom={1.2} zoomTo={1.05} /> : <Centered scale={1.7} opacity={0.4}><st.Illustration /></Centered>}
       <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(11,15,26,.35) 0%, rgba(11,15,26,.9) 80%)" }} />
       <AbsoluteFill style={{ background: "#fff", opacity: flash }} />
       <div style={{ position: "absolute", top: 200, left: 0, right: 0, textAlign: "center" }}>
@@ -124,7 +124,7 @@ const WideNews = ({ seg, index, total, dur }: { seg: Segment; index: number; tot
       <div style={{ position: "absolute", left: 48, top: 110, width: 1060, height: 840, borderRadius: 26, overflow: "hidden", background: theme.card, transform: `scale(${0.94 + 0.06 * inn})`, opacity: inn }}>
         {seg.image || seg.video ? (
           <>
-            <MediaBg image={seg.image} video={seg.video} videoDuration={seg.videoDuration} durationInFrames={dur} />
+            <MediaBg image={seg.image} images={seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} durationInFrames={dur} />
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(11,15,26,0) 60%, rgba(11,15,26,.8) 100%)" }} />
             <div style={{ position: "absolute", left: 24, bottom: 18, fontSize: 24, color: "rgba(255,255,255,.8)", letterSpacing: 2 }}>{seg.video ? "VİDEO" : "FOTOĞRAF"}: {(seg.source || "KAYNAK").toUpperCase()}</div>
           </>

@@ -201,7 +201,7 @@
       <h2 style="margin-top:14px">EN İYİ YAYIN SAATİ</h2><div class="conninfo" id="bestHours">Veri bekleniyor…</div>
       <h2 style="margin-top:14px">👀 İZLEYİCİ NEREDE AYRILIYOR</h2><div class="bars" id="retBars"></div><div class="conninfo" id="retInfo">YouTube Analytics verisi bekleniyor (yayından ~2 gün sonra gelir).</div>
       <h2 style="margin-top:14px">🕘 EN ÇOK İZLENEN SAATLERDE TEKRAR</h2>
-      <div class="conninfo"><label class="row"><span class="sw" id="peakOn"></span><span>En çok izlenen 3 saatte, günün en çok izlenen haberi sırasıyla farklı senaryo ve farklı görsellerle 30 saniyelik yeniden yayınlansın (üretim saatten 20 dk önce başlar)</span></label>
+      <div class="conninfo"><label class="row"><span class="sw" id="peakOn"></span><span>En çok izlenen 3 saatte, günün en çok izlenen haberi sırasıyla farklı senaryo, kanca, kapak ve farklı görsellerle 30 saniyelik yeniden yayınlansın (üretim saatten 20 dk önce başlar) · her gün sabit saat: <input id="peakFixed" class="inl" style="width:70px" placeholder="20"> (virgülle birden çok, boş = yok)</span></label>
         <div id="peakInfo" style="margin-top:6px">Hesaplanıyor…</div><div class="acts"><button class="ghost" id="peakRun">🔁 Şimdi yap</button></div></div>
       <h2 style="margin-top:14px">EN İYİ VİDEOLAR</h2><div id="top"></div>
       <h2 style="margin-top:14px">SENARYOYA GİDEN İPUCU</h2><div class="md" id="hint" style="color:var(--mut)"></div>
@@ -227,6 +227,10 @@
         <label class="row"><span class="sw" id="waStages"></span><span>Her aşamayı WhatsApp'a bildir (yalnız tek mesaj kapalıyken: üretim, ses, render, yükleme, yayın)</span></label>
       </details>
       <details class="grp"><summary>📡 Otomatik içerikler <span class="sum" id="infoSum"></span></summary>
+        <label class="row"><span class="sw" id="sdkOn"></span><span>🔴 sondakika.com takibi: her <input id="sdkEvery" type="number" min="2" max="60" class="inl" style="width:52px"> dakikada bir bakılır; düşen her yeni haber için anında, onaysız son dakika videosu üretilip bağlı tüm hesaplarda yayınlanır (görüntüde önce video, yoksa farklı fotoğraflar). Günde en çok <input id="sdkMax" type="number" min="1" max="200" class="inl" style="width:60px"> video; aynı olay 12 saatte bir kez. Sistem durdurulmuşsa yeni haber için uyanır</span></label>
+        <div class="conninfo" id="sdkInfo">Yükleniyor…</div>
+        <div id="sdkList" style="display:grid;gap:6px;margin:6px 0;font-size:13px"></div>
+        <div class="acts"><button class="ghost" id="sdkCheck">🔄 Şimdi kontrol et</button></div>
         <div class="conninfo">Bilgisi kesin veriden gelen videolar: senaryo şablondan yazılır (Claude kullanılmaz), görsel olarak harita / skor / tablo kartı çizilir. Sistem durdurulmuşsa bunlar için uyanır.</div>
         <label class="row"><span class="sw" id="quakeOn"></span><span>🌍 Deprem: <input id="quakeMin" type="number" step="0.1" min="3" max="8" class="inl" style="width:64px"> ve üstü deprem olunca (AFAD, yedek Kandilli; 2 dakikada bir bakılır) dakikalar içinde harita kartlı video</span></label>
         <div class="acts"><button class="ghost" id="quakeNow">🌍 Depremleri şimdi kontrol et</button></div>
@@ -768,13 +772,15 @@ function renderBestHours(b){const el=$('#bestHours');if(!b){el.textContent='Veri
 // en çok izlenen saatlerde tekrar (scripts/peak_remake.py): saatler, bugün yapılanlar, aç/kapat, şimdi yap
 async function loadPeak(){const p=await api('/api/peak');if(!p)return;const hh=h=>String(h).padStart(2,'0')+':00';
   $('#peakOn').classList.toggle('on',p.cfg?.enabled!==false);
-  const det=(p.plan?.detail||[]).map(d=>`<b>${hh(d.hour)}</b> (ort. ${d.avg.toLocaleString('tr-TR')} izlenme)`).join(' · ');
+  if(document.activeElement!==$('#peakFixed'))$('#peakFixed').value=(p.cfg?.fixedHours??[20]).join(', ');
+  const det=(p.plan?.detail||[]).map(d=>`<b>${hh(d.hour)}</b> ${d.fixed?'(sabit saat)':`(ort. ${d.avg.toLocaleString('tr-TR')} izlenme)`}`).join(' · ');
   const today=(p.today||[]).map(d=>`<div>${d.hour==null?'elle':hh(d.hour)}: ${d.name?`✅ ${esc((d.title||'').slice(0,70))} (${(d.views||0).toLocaleString('tr-TR')} izlenme)`:d.pending?'⏳ hazırlanıyor':`⏭ ${esc(d.reason||'atlandı')}`}</div>`).join('');
   $('#peakInfo').innerHTML=`<div>Saatler (${esc(p.plan?.source||'…')}): ${det||(p.plan?.hours||[]).map(h=>`<b>${hh(h)}</b>`).join(', ')||'henüz yok'}</div>`
     +(p.plan?.note?`<div style="color:var(--mut)">${esc(p.plan.note)}</div>`:'')
     +(p.next?`<div style="color:var(--mut)">Sıradaki: ${new Date(p.next.at).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})}'de başlar</div>`:'')
     +(today?`<div style="margin-top:4px">Bugün:</div>${today}`:'');}
 $('#peakOn').onclick=async()=>{const on=!$('#peakOn').classList.contains('on');await post('/api/settings',{peakRemake:{enabled:on}});loadPeak();};
+$('#peakFixed').onchange=async()=>{const hs=[...new Set($('#peakFixed').value.split(/[,\s]+/).map(x=>parseInt(x,10)).filter(h=>h>=0&&h<=23))];await post('/api/settings',{peakRemake:{fixedHours:hs}});await api('/api/peak?refresh=1');loadPeak();};
 $('#peakRun').onclick=async()=>{if(!await ask('Son 24 saatin en çok izlenen (henüz tekrarlanmamış) haberi farklı senaryo ve görsellerle 30 sn yeniden üretilip yayınlansın mı?'))return;const r=await post('/api/peak/run',{});toast(r.ok?'Yeniden üretiliyor: '+(r.title||'').slice(0,60):(r.error||'Yapılamadı'),!r.ok);loadPeak();};
 // otomatik içerikler (deprem, maç, piyasa, takvim, başlık değiştirme, ilk yorum): /api/info + settings
 async function loadInfo(){const i=await api('/api/info');if(!i)return;const S=status.settings||{};
@@ -791,7 +797,7 @@ async function loadInfo(){const i=await api('/api/info');if(!i)return;const S=st
   if(document.activeElement!==$('#marketTime'))$('#marketTime').value=hm(i.market);if(document.activeElement!==$('#calTime'))$('#calTime').value=hm(i.calendar);
   if(document.activeElement!==$('#calExtra'))$('#calExtra').value=(i.calendar.extra||[]).join('\n');
   const st=i.state||{};const err=[...(st.quake?.errors||[]),...(st.match?.errors||[]),...(st.weather?.errors||[]),...(st.alarm?.errors||[])];
-  $('#infoSum').textContent=[i.quake.enabled!==false&&'deprem',i.match.enabled!==false&&'maç',i.market.enabled!==false&&'piyasa',i.calendar.enabled!==false&&'takvim',i.weather?.enabled!==false&&'meteoroloji',i.market.alarm!==false&&'zam/rekor',i.weeklyTop?.enabled!==false&&'derleme'].filter(Boolean).join(' · ');
+  $('#infoSum').textContent=[S.sondakika?.enabled!==false&&'sondakika.com',i.quake.enabled!==false&&'deprem',i.match.enabled!==false&&'maç',i.market.enabled!==false&&'piyasa',i.calendar.enabled!==false&&'takvim',i.weather?.enabled!==false&&'meteoroloji',i.market.alarm!==false&&'zam/rekor',i.weeklyTop?.enabled!==false&&'derleme'].filter(Boolean).join(' · ');
   $('#calUpcoming').innerHTML=(i.upcoming||[]).length?'Yaklaşan: '+i.upcoming.map(e=>`<b>${new Date(e.date).toLocaleDateString('tr-TR',{day:'numeric',month:'short'})}</b> ${esc(e.title)}`).join(' · '):'Önümüzdeki 45 günde takvim olayı yok.';
   if(err.length)$('#calUpcoming').innerHTML+=`<div style="color:var(--amber,#f5b041);margin-top:4px">Servis uyarısı: ${esc(err.join(' · '))}</div>`;}
 const infoSet=async(patch)=>{await post('/api/settings',patch);await refreshStatus();loadInfo();};
@@ -828,6 +834,33 @@ const infoRun=async(k,msg)=>{toast(msg);const r=await post(`/api/info/${k}/run`,
 $('#quakeNow').onclick=()=>infoRun('quake','Depremler kontrol ediliyor…');$('#matchNow').onclick=()=>infoRun('match','Maçlar kontrol ediliyor…');
 $('#marketNow').onclick=()=>infoRun('market','Piyasa verisi alınıyor…');$('#calNow').onclick=()=>infoRun('calendar','Takvim kontrol ediliyor…');
 setTimeout(loadInfo,1500);
+// sondakika.com takibi: her N dakikada yeni haber → onaysız son dakika videosu (/api/sondakika); son 8 haber ve durumları
+let sdkItems=[];
+async function loadSdk(){try{const s=await api('/api/sondakika');const c=s.cfg||{};const escA=t=>esc(t).replace(/"/g,'&quot;');
+  $('#sdkOn').classList.toggle('on',c.enabled!==false);
+  if(document.activeElement!==$('#sdkEvery'))$('#sdkEvery').value=c.intervalMin||5;if(document.activeElement!==$('#sdkMax'))$('#sdkMax').value=c.maxPerDay||40;
+  const hm=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+  const via=s.method==='rss'?'RSS':s.method==='html'?'ana sayfa':'—';
+  const next=c.enabled===false?'kapalı':s.scanning?'şimdi taranıyor':s.nextCheckIn!=null?Math.ceil(s.nextCheckIn/60000)+' dk sonra':'—';
+  const all=s.producedToday||[],auto=all.filter(x=>!x.manual).length;
+  $('#sdkInfo').innerHTML=`Son kontrol: <b>${s.lastCheck?hm(s.lastCheck):'henüz yok'}</b> · yöntem: <b title="${escA(s.source||'')}">${via}</b> · sonraki: ${next} · bugün üretilen: ${auto}/${c.maxPerDay}${all.length>auto?` (+${all.length-auto} elle)`:''}`;
+  sdkItems=(s.items||[]).slice(0,8);
+  // sırada bekleyen haber "üretildi" gösterilmez (iptal edilirse video hiç yapılmaz)
+  const queued=it=>it.status?.state==='sırada';
+  const stTxt=it=>queued(it)?`⏳ ${esc(it.status.why||'sırada')}`:it.produced||it.status?.state==='üretildi'?'<span style="color:#2ECC71">✅ üretildi</span>':it.status?.state==='atlandı'?`⏭ atlandı: ${esc(it.status.why)}`:it.dup?'aynı olayın videosu var':'';
+  $('#sdkList').innerHTML=sdkItems.map((it,i)=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between"><span style="min-width:0">${it.valuable?`<span class="tag brk" title="${escA(it.valueReason)}">⭐</span> `:''}${esc(it.title||'(başlık sayfadan okunacak)')}<br><small style="color:var(--mut)">${it.published?hm(it.published)+' · ':''}${(it.sources||[]).length>1?it.sources.length+' sitede · ':''}${stTxt(it)}</small></span><button class="ghost" style="flex:none;padding:4px 9px;font-size:12px" data-si="${i}"${queued(it)?' disabled':''}>${queued(it)?'⏳ Sırada':it.produced?'✓ Üretildi':'🎬 Video üret'}</button></div>`).join('')||'<div class="conninfo">Henüz haber yok. "Şimdi kontrol et"e basın (ilk kontrol mevcut haberleri kaydeder, video üretmez).</div>';
+}catch{$('#sdkInfo').textContent='sondakika.com bilgisi alınamadı.';}}
+$('#sdkList').onclick=async e=>{const b=e.target.closest('[data-si]');if(!b)return;const it=sdkItems[Number(b.dataset.si)];if(!it)return;const again=!!it.produced;
+  if(!await ask(again?`Bu haber için bugün zaten video üretildi:\n\n${it.title}\n\nYine de yeni video üretilsin mi?`:`Bu haber için son dakika videosu üretilsin ve bağlı hesaplarda paylaşılsın mı?\n\n${it.title||it.url}`))return;
+  b.disabled=true;b.textContent='Hazırlanıyor…';const r=await post('/api/sondakika/produce',{url:it.url,force:again});
+  toast(r.ok?(r.queued?'Sıraya alındı ⏳':'Video üretiliyor ⚡'):(r.error||'Üretilemedi'),!r.ok);if(r.ok)addMsg('j',`Son dakika videosu ${r.queued?'sıraya alındı':'üretiliyor'}: ${r.title}. Bitince bağlı hesaplarda paylaşılacak.`);loadSdk();refreshStatus();};
+const sdkSet=async p=>{await post('/api/settings',{sondakika:p});await refreshStatus();loadSdk();loadInfo();};
+$('#sdkOn').onclick=()=>sdkSet({enabled:!$('#sdkOn').classList.contains('on')});
+$('#sdkEvery').onchange=()=>sdkSet({intervalMin:Math.min(60,Math.max(2,Number($('#sdkEvery').value)||5))});
+$('#sdkMax').onchange=()=>sdkSet({maxPerDay:Math.min(200,Math.max(1,Number($('#sdkMax').value)||40))});
+$('#sdkCheck').onclick=async()=>{$('#sdkInfo').textContent='Kontrol ediliyor…';const r=await post('/api/sondakika/check');
+  toast(r.ok?(r.first?`Takip başladı: ${r.items?.length||0} haber kaydedildi`:`${r.items?.length||0} haber, ${r.new?.length||0} yeni${r.produced?.length?`, ${r.produced.length} video üretiliyor`:''}`):(r.error||'Kontrol başarısız'),!r.ok);loadSdk();};
+setTimeout(loadSdk,1600);setInterval(loadSdk,60000);
 async function loadInsights(){loadPeak();const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
   $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
   const bp=i.byPlatform||{};

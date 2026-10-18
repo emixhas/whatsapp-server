@@ -60,7 +60,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             {/* geçiş: sahneler arası whoosh (ilk sahne hariç) */}
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH_FRAMES}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.35} /></Sequence> : null}
             {seg.kind === "hook" ? (
-              <Hook title={seg.title ?? ""} narration={seg.narration} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} image={seg.imageTall || seg.image} video={seg.video} videoDuration={seg.videoDuration} words={seg.words} durationInFrames={dur} />
+              <Hook title={seg.title ?? ""} narration={seg.narration} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} image={seg.imageTall || seg.image}
+                images={seg.imagesTall?.length ? seg.imagesTall : seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} words={seg.words} durationInFrames={dur} />
             ) : seg.kind === "intro" ? (
               <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} dayLabel={episode.dayLabel}
                 slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} words={seg.words} />
@@ -71,7 +72,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
                 category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words}
                 video={seg.video} videoDuration={seg.videoDuration} sound={seg.kind === "sesli"} />
             ) : (
-              <Headline index={seg.displayIndex != null ? seg.displayIndex - 1 : haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image} video={seg.video} videoDuration={seg.videoDuration} infoCard={seg.infoCard} />
+              <Headline index={seg.displayIndex != null ? seg.displayIndex - 1 : haberIndex} total={haberler.length} title={seg.title ?? ""} narration={seg.narration} source={seg.source} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words} image={seg.image}
+                images={seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} infoCard={seg.infoCard} />
             )}
           </Sequence>
         );

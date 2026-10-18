@@ -172,6 +172,7 @@ function stopAll({ quiet = false } = {}) {
   if (pipelineProc) { n += killTree(pipelineProc.pid); }
   const lock = path.join(WORK, "pipeline.lock", "pid");
   if (existsSync(lock)) { try { const pid = Number(readFileSync(lock, "utf8").trim()); process.kill(pid, 0); n += killTree(pid); } catch { /* eski kilit */ } }
+  for (const q of anlikQueue) if (q.opts?.sondakika) sondakikaUnqueue(q); // sırada bekleyen sondakika.com haberi "üretildi" görünmesin
   anlikQueue.length = 0;
   const r = reap({ minAgeSec: 0, reason: "durduruldu", force: true });
   try { stopTts(); } catch { /* yok */ }
@@ -267,7 +268,7 @@ function startAnlik(topic, duration, opts = {}) {
   // Elle verilen konuda sitelerde bulunan diğer haberler (topic_news ilgili haberlerin başına koyar) ve görüntü sayfaları
   // (assemble her kartı başka sitenin sayfasına bağlar); her başlangıçta yazılır ki önceki işten kalmasın.
   writeJson(path.join(WORK, "anlik_related.json"), Array.isArray(opts.related) ? opts.related.slice(0, 8) : []);
-  writeJson(path.join(WORK, "anlik_pages.json"), Array.isArray(opts.pages) ? opts.pages.slice(0, 4) : []);
+  writeJson(path.join(WORK, "anlik_pages.json"), Array.isArray(opts.pages) ? opts.pages.slice(0, 8) : []);
   writeJson(path.join(WORK, "remake.json"), opts.remake || {}); // yeniden yayın: eski senaryo + kaçınılacak görsel kaynakları
   const env = { ANLIK: "1" };
   if (opts.remake?.of) { env.REMAKE = "1"; env.REMAKE_OF = String(opts.remake.of); }
@@ -280,8 +281,14 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
   if (opts.url) env.ANLIK_URL = String(opts.url);
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
-  return { ...startPipeline(duration, env, { auto: !!opts.auto }), anlik: true };
+  const r = startPipeline(duration, env, { auto: !!opts.auto });
+  if (r.ok) anlikNow = { titles: anlikTitles({ topic, opts }), at: state.startedAt };
+  return { ...r, anlik: true };
 }
+// Sıradaki ya da çalışan anlık işin başlık(lar)ı (aynı olay denetimi için): opts.title, yoksa konu metninin ilk cümlesi.
+// Konunun tamamı (başlık + özet + gövde) değil: uzun metinde ilgisiz haberler 3 ortak kök bulup "aynı olay" çıkıyordu.
+const anlikTitles = (q) => q.multi ? q.multi.map((x) => x.title) : [q.opts?.title || String(q.topic || "").split(/\.\s|\n/)[0].slice(0, 160)];
+let anlikNow = null; // çalışan anlık üretim {titles, at: state.startedAt}; at üretimin başlangıcıyla eşitse hâlâ o iş sürüyor
 // Aynı anda düşen 2-3 değerli manşet tek videoda: work/anlik_items.json [{source, url, title, text}] + ANLIK_MULTI=n.
 // Süre 30 + 15 sn/ek haber (2 → 45, 3 → 60). Prompt her habere segment ayırır, assemble her segmente kendi sayfasını verir.
 function startAnlikMulti(items, { auto = true } = {}) {
@@ -300,13 +307,16 @@ function startAnlikMulti(items, { auto = true } = {}) {
   writeJson(path.join(WORK, "anlik_items.json"), items.map(({ source, url, title, text }) => ({ source, url, title, text: String(text || "").slice(0, 1500) })));
   push(`⚡ ${items.length} değerli son dakika haberi TEK videoda (${duration} sn): ${items.map((x) => `${x.title.slice(0, 50)} (${x.source})`).join(" | ")}`);
   const env = { ANLIK: "1", ANLIK_MULTI: String(items.length), ANLIK_SOURCE_COUNT: String(Math.max(...items.map((x) => x.sourceCount || 1))) };
-  return { ...startPipeline(duration, env, { auto }), anlik: true, multi: items.length };
+  const r = startPipeline(duration, env, { auto });
+  if (r.ok) anlikNow = { titles: items.map((x) => x.title), at: state.startedAt };
+  return { ...r, anlik: true, multi: items.length };
 }
 setInterval(() => {
   if (!anlikQueue.length || pipelineBusy()) return;
   const q = anlikQueue.shift();
   if (q.multi) { startAnlikMulti(q.multi, q.opts || {}); return; }
-  push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); startAnlik(q.topic, q.duration, q.opts || {});
+  push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); const r = startAnlik(q.topic, q.duration, q.opts || {});
+  if (q.opts?.sondakika) { if (r.ok) sondakikaMark(q.opts.sondakika, "üretildi"); else sondakikaUnqueue(q, r.error || "başlatılamadı"); } // panel kartındaki "sırada" durumu
 }, 10000);
 
 // ---------- Değerli manşet toplayıcı: Mynet ve son dakika taramalarından gelen DEĞERLİ haberler 20 sn biriktirilir.
@@ -316,6 +326,23 @@ const VALUE_BATCH_MS = 20000;
 let valueBatch = [], valueTimer = null;
 const eventStems = (t) => new Set(String(t || "").toLocaleLowerCase("tr").match(/[\p{L}\d]{5,}/gu)?.map((w) => w.slice(0, 5)) || []);
 const sameEvent = (a, b) => { const x = eventStems(a), y = eventStems(b); let n = 0; for (const w of x) if (y.has(w)) n++; return n >= 3 || (n >= 2 && n / Math.max(1, Math.min(x.size, y.size)) >= 0.5); };
+// Haberin TÜM kaynakları (kullanıcı kararı, 18 Ekim: "düşen haberler tüm sitelerden eksiksiz alınsın; önce video, yoksa çoklu
+// görsel, yoksa tek görsel"): otomatik son dakikada (Mynet, son dakika siteleri, sondakika.com, değerli haber toplayıcısı) ana
+// sayfanın yanında aynı haberi veren diğer siteler de bulunur (news_lookup --topic, en çok 8 farklı site). related → topic_news
+// bilgiyi tamamlar (Claude'a ilgili haberler olarak gider), pages → assemble kartları farklı sitelere bağlar, fetch_images video ve
+// farklı fotoğrafları bu sayfaların hepsinden arar. Arama 75 sn'de bitmezse yalnız ana sayfayla devam edilir (haber gecikmesin).
+// settings.allSources: false kapatır.
+const hostOf = (u) => { try { return new URL(u).hostname.replace(/^(www\d?|m|amp|mobil)\./, ""); } catch { return ""; } };
+async function allSources(title, url, source) {
+  const main = url ? [{ url, source }] : [];
+  if (settings().allSources === false || !String(title || "").trim()) return { pages: main, related: [] };
+  const f = await pyJson(["scripts/news_lookup.py", "--topic", String(title).slice(0, 160), "--pages", "8"], 75000).catch(() => null);
+  if (!f?.ok || !f.found) { push(`🔎 "${String(title).slice(0, 60)}" başka sitelerde bulunamadı; yalnız ${source || "ana kaynak"} kullanılacak`); return { pages: main, related: f?.related || [] }; }
+  const seen = new Set(main.map((x) => hostOf(x.url)));
+  const pages = [...main, ...(f.pages || []).filter((x) => { const h = hostOf(x.url); if (!x.url || !h || seen.has(h)) return false; seen.add(h); return true; })].slice(0, 8);
+  push(`🔎 aynı haber ${pages.length} sitede (${pages.map((x) => x.source).slice(0, 6).join(", ")}${pages.length > 6 ? "…" : ""}): bilgi, video ve fotoğraflar hepsinden toplanacak`);
+  return { pages, related: f.related || [] };
+}
 function queueValuable(item) { // {title, text, source, url, sourceCount, duration, onStarted(r)}
   const twin = valueBatch.find((x) => sameEvent(x.title, item.title));
   if (twin) { twin.sourceCount = Math.max(twin.sourceCount || 1, (item.sourceCount || 1) + 1); push(`⭐ aynı olay iki kaynakta: "${item.title.slice(0, 60)}" (${item.source}) tek haber sayıldı`); item.onStarted?.({ ok: true, merged: true }); return; }
@@ -330,8 +357,9 @@ async function flushValuable() {
   if (valueBatch.length) valueTimer = setTimeout(() => flushValuable().catch(() => {}), VALUE_BATCH_MS);
   if (!items.length) return;
   if (resting()) restEnd(`değerli haber düştü: ${items[0].title.slice(0, 60)}${items.length > 1 ? ` ve ${items.length - 1} haber daha` : ""}`);
+  const src = items.length === 1 ? await allSources(items[0].title, items[0].url, items[0].source) : null; // tek haber: tüm kaynakları
   const r = items.length === 1
-    ? startAnlik([items[0].title, items[0].text].filter(Boolean).join(". ").slice(0, 1500), items[0].duration, { source: items[0].source, url: items[0].url, sourceCount: items[0].sourceCount || 1, auto: true })
+    ? startAnlik([items[0].title, items[0].text].filter(Boolean).join(". ").slice(0, 1500), items[0].duration, { source: items[0].source, url: items[0].url, sourceCount: items[0].sourceCount || 1, pages: src.pages, related: src.related, title: items[0].title, auto: true })
     : startAnlikMulti(items);
   for (const it of items) { try { await it.onStarted?.(r); } catch { /* kayıt */ } }
 }
@@ -380,7 +408,7 @@ async function remakeVideo(name, opts = {}) {
   const firstHaber = segs.find((x) => x.kind === "haber") || segs[0];
   const story = meta.anlik ? segs : segs.filter((x) => x.kind === "hook" || x === firstHaber);
   const title = firstHaber?.title || meta.titles?.A || "";
-  const avoid = [...new Set([meta.sourceUrl, ...story.flatMap((x) => [x.articleUrl, x.videoSrc, x.imageSrc])].filter(Boolean))];
+  const avoid = [...new Set([meta.sourceUrl, ...story.flatMap((x) => [x.articleUrl, x.videoSrc, x.imageSrc, ...(x.imageSrcs || [])])].filter(Boolean))]; // çoklu görselin hepsi
   const facts = story.map((x) => [x.title, x.narration].filter(Boolean).join(": ")).join(" ");
   push(`🔁 yeniden yayın hazırlanıyor: ${title.slice(0, 80)} (${name}) — haber sitelerde yeniden aranıyor, farklı görseller seçilecek`);
   const f = await pyJson(["scripts/news_lookup.py", "--topic", title], 120000).catch(() => null);
@@ -704,7 +732,7 @@ setInterval(async () => {
   if (h != null) peakRemake({ hour: h }).catch((e) => push(`🕘 en çok izlenen saat tekrarı hatası: ${e.message}`));
 }, 60000);
 setTimeout(() => { peakHours(true).catch(() => {}); }, 20000);
-app.get("/api/peak", async (_req, res) => { const p = await peakHours(); res.json({ cfg: peakCfg(), plan: p, today: peakToday(), next: peakNext() }); });
+app.get("/api/peak", async (req, res) => { const p = await peakHours(req.query.refresh === "1"); res.json({ cfg: { fixedHours: [20], ...peakCfg() }, plan: p, today: peakToday(), next: peakNext() }); });
 app.post("/api/peak/run", async (_req, res) => res.json(await peakRemake({ manual: true })));
 app.post("/api/anlik", async (req, res) => res.json(await prepareAnlik(req.body?.topic, req.body?.duration)));
 app.get("/api/anlik", (_req, res) => res.json({ queue: anlikQueue, running: state.running }));
@@ -739,7 +767,8 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
     return { ok: true, batched: true, title: a.title };
   }
   push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
-  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1, auto: !manual });
+  const src = await allSources(a.title, url, "Mynet");
+  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1, pages: src.pages, related: src.related, title: a.title, auto: !manual });
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {});
   if (r.ok) { done[day] = [...list, url]; for (const d of Object.keys(done)) if (d < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete done[d]; writeFileSync(MYNET_DONE, JSON.stringify(done, null, 2)); }
   return { ...r, title: a.title };
@@ -788,7 +817,8 @@ async function breakingCheck({ manual = false } = {}) {
       continue;
     }
     if (resting()) { push(`⏸ sistem durduruldu: "${c.title.slice(0, 70)}" için video üretilmedi (değerli değil; kartta 🎬 Video üret ile elle üretebilirsiniz)`); continue; }
-    const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count, auto: true });
+    const src = await allSources(c.title, c.url, c.source);
+    const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count, pages: src.pages, related: src.related, title: c.title, auto: true });
     if (res.ok) { await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); list.push(c.title); done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)))); }
   }
   return r;
@@ -805,7 +835,7 @@ async function watchScan() {
     py("standings.py", []).then((r) => { const l = String(r.stdout || "").trim().split("\n").pop(); if (l && l !== lastStandings) { lastStandings = l; push(l); } }).catch(() => {});
   } finally { watchScanning = false; }
 }
-setInterval(() => { if ((mynetCfg().enabled || breakingCfg().enabled) && Date.now() - watchLast >= watchMin() * 60000) watchScan(); }, 60000);
+setInterval(() => { if ((mynetCfg().enabled || breakingCfg().enabled) && !sondakikaBusy && Date.now() - watchLast >= watchMin() * 60000) watchScan(); }, 60000); // sondakika.com taraması sürerken bekler
 app.get("/api/breaking", async (_req, res) => { const l = await pyJson(["scripts/breaking_watch.py", "--list"]); res.json({ ...breakingCfg(), ...(l || {}), trends: (readJson(path.join(DATA, "trends.json"), {}).items || []).slice(0, 10), producedToday: readJson(BREAKING_DONE, {})[today()] || [], nextCheckIn: breakingCfg().enabled ? Math.max(0, watchLast + watchMin() * 60000 - Date.now()) : null }); });
 app.post("/api/breaking/check", async (_req, res) => res.json(await breakingCheck({ manual: true })));
 // Paneldeki "🎬 Video üret": son haberlerden seçilen için otomatik adayla aynı yol (haber sayfası okunur, anlık video,
@@ -820,9 +850,126 @@ app.post("/api/breaking/produce", async (req, res) => {
   const a = c.link ? await pyJson(["scripts/mynet_watch.py", "--article", c.link]) : null;
   const topic = [c.title, a?.ok !== false && a?.description, (a?.ok !== false && a?.body) || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   push(`🎬 son dakika (elle): ${c.title.slice(0, 90)} (${(c.sources || [c.source]).join(", ")}) → video üretiliyor`);
-  const r = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.link, sourceCount: (c.sources || []).length || 1 });
+  const src = await allSources(c.title, c.link, c.source);
+  const r = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.link, sourceCount: (c.sources || []).length || 1, pages: src.pages, related: src.related, title: c.title });
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {});
   res.json({ ...r, title: c.title });
+});
+
+// ---------- sondakika.com takibi (kullanıcı isteği, 17 Ekim: "5 dk'da bir kontrol edelim, düşen haberleri anında son dakika olarak
+// onaysız yayınlayalım"; scripts/sondakika_watch.py: RSS → son dakika sayfası + ana sayfa). Ortak watchScan'den ayrı kendi
+// zamanlayıcısı (her dakika bakılır, intervalMin dolunca tarama: 5 dk garanti) ve kendi busy bayrağı (iki tarama birbirini ezmesin).
+// Her YENİ haber, değerli olsun olmasın, hemen tek konulu anlık video olur (üretim sonrası dinlenmedeyse uyandırır; elle "⏸ Tüm sistemi
+// durdur" yapıldıysa yalnız değerli haber uyandırır). Atlanır ve loglanır: aynı olay son 12 saatte üretildi (dup; --check'te ve sayfa
+// okununca yeniden), günlük sınır (maxPerDay), tarama başına sınır (maxPerCheck), anlık sırası maxQueue'ya ulaştı (birikmiş haber
+// bayatlamasın), yayın zamanı (sayfadaki, yoksa akıştaki) maxAgeHours'tan eski, aynı olay şu an üretimde/sırada/toplayıcıda.
+// Ortak tarama (Mynet + son dakika siteleri) ile sırayla çalışır: biri sürerken diğeri bekler, aynı olay iki kez üretilmesin.
+// Yayın anlikAutoPublish ile bağlı tüm hesaplara onaysız.
+const SONDAKIKA_DONE = path.join(DATA, "sondakika_daily.json");     // {gün: [{url, title, at, manual}]}
+const SONDAKIKA_STATUS = path.join(DATA, "sondakika_status.json");  // {url: {state, why, at}} — panelde haberin üretildi/sırada/atlandı durumu
+const sondakikaCfg = () => ({ enabled: true, intervalMin: 5, maxPerCheck: 3, maxPerDay: 40, maxQueue: 6, duration: 30, maxAgeHours: 3, ...(settings().sondakika || {}) });
+const sondakikaEvery = () => Math.min(60, Math.max(2, Number(sondakikaCfg().intervalMin) || 5));
+const sondakikaDone = () => readJson(SONDAKIKA_DONE, {});
+function sondakikaMark(url, state, why = "") {
+  const s = readJson(SONDAKIKA_STATUS, {}); s[url] = { state, why, at: Date.now() };
+  writeJson(SONDAKIKA_STATUS, Object.fromEntries(Object.entries(s).sort((a, b) => b[1].at - a[1].at).slice(0, 100)));
+}
+// Sırada beklerken iptal edilen (⏸ durdur / ⏹ hepsini durdur) ya da başlatılamayan haber: video yapılmadı; panelde "atlandı",
+// günlük kayıttan ve aynı olay işaretinden (breaking_produced.json) çıkarılır ki 12 saat boyunca hiçbir kaynaktan engellenmesin
+function sondakikaUnqueue(q, why = "sistem durduruldu, sıradaki iş iptal edildi") {
+  const url = q.opts.sondakika, title = String(q.opts.title || ""), since = (q.at || 0) - 5000;
+  sondakikaMark(url, "atlandı", why);
+  const d = sondakikaDone(); for (const k of Object.keys(d)) d[k] = (d[k] || []).filter((x) => !(x.url === url && x.at >= since)); writeJson(SONDAKIKA_DONE, d);
+  const P = path.join(DATA, "breaking_produced.json"), marks = readJson(P, []);
+  if (title && Array.isArray(marks)) writeJson(P, marks.filter((p) => !(p.title === title && Number(p.at) * 1000 >= since)));
+  push(`🔴 sondakika.com: "${(title || url).slice(0, 70)}" sıradan çıkarıldı — ${why}`);
+}
+// Aynı olay şu an üretimde, anlık sırada ya da değerli haber toplayıcısında mı (başlık ile başlık): Mynet ya da son dakika siteleri
+// aynı olayın videosunu saniyeler önce başlatmış olabilir (işaretleri --check'ten sonra yazılır)
+const sondakikaBusyWith = (t) => valueBatch.some((x) => sameEvent(x.title, t)) || anlikQueue.some((q) => anlikTitles(q).some((x) => sameEvent(x, t)))
+  || (!!anlikNow && state.running && anlikNow.at === state.startedAt && anlikNow.titles.some((x) => sameEvent(x, t)));
+let sondakikaBusy = false, sondakikaLast = 0;
+// Tek haber: sayfa okunur (başlık + açıklama + gövde, yayın zamanı, sayfada video var mı), anlık video başlar, aynı olay işaretlenir.
+// Elle (panel "🎬 Video üret") günlük sınıra ve sıra sınırına takılmaz, sayaca girmez; aynı haber günde bir (force ile yine).
+async function sondakikaProduce(url, { manual = false, force = false, item = null } = {}) {
+  url = String(url || "").trim();
+  if (!/^https?:\/\//i.test(url)) return { ok: false, error: "Haber adresi yok." };
+  const c = sondakikaCfg(), day = today(), list = sondakikaDone()[day] || [];
+  const skip = (why, title = item?.title || url) => { sondakikaMark(url, "atlandı", why); push(`🔴 sondakika.com: "${String(title).slice(0, 70)}" atlandı — ${why}`); return { ok: false, skipped: true, error: why }; };
+  const fail = (error) => { push(`🔴 sondakika.com (elle): ${error} — ${url}`); return { ok: false, error }; }; // elle yolda da her sonuç loglanır
+  if (list.some((x) => x.url === url) && !force) { push(`🔴 sondakika.com${manual ? " (elle)" : ""}: "${String(item?.title || url).slice(0, 70)}" için bugün zaten video üretildi`); return { ok: false, produced: true, error: "Bu haber için bugün zaten video üretildi." }; }
+  if (!manual) {
+    if (item?.dup) return skip("aynı olay için son 12 saatte zaten video üretildi");
+    const autoCount = list.filter((x) => !x.manual).length;
+    if (autoCount >= Number(c.maxPerDay)) return skip(`günlük sınır (${c.maxPerDay}) doldu`);
+    if (anlikQueue.length >= Number(c.maxQueue)) return skip(`anlık sırada ${anlikQueue.length} iş bekliyor (en çok ${c.maxQueue}), haber bayatlamasın diye`);
+    // elle "⏸ Tüm sistemi durdur" (ısınma) sürerken sıradan haber sistemi uyandırmaz; değerli haber uyandırır (toplayıcıyla aynı kural).
+    // Üretim sonrası kendiliğinden dinlenmede her yeni haber uyandırır (kullanıcı "anında" dedi).
+    if (resting() && restInfo().reason === "elle durduruldu" && !item?.valuable) return skip("sistem elle durduruldu, yalnız değerli haber uyandırır (kartta 🎬 Video üret ile elle üretilebilir)");
+  }
+  const a = await pyJson(["scripts/sondakika_watch.py", "--article", url], 60000);
+  if (!a || a.ok === false || !a.title) return manual ? fail(`Haber sayfası okunamadı (${a?.error || "başlık yok"}).`) : skip(`haber sayfası okunamadı (${a?.error || "başlık yok"})`);
+  if (!manual && a.dup) return skip("aynı olay için son 12 saatte zaten video üretildi", a.title); // --check'ten bu yana başka kaynak üretmiş olabilir
+  const pub = a.published || item?.published; // sayfada yayın zamanı yoksa akıştaki (RSS pubDate)
+  const ageH = pub ? (Date.now() - Date.parse(pub)) / 3600000 : 0;
+  if (!manual && ageH > Number(c.maxAgeHours)) return skip(`haber ${Math.round(ageH)} saat önce yayınlanmış (bayat)`, a.title);
+  if (!manual && sondakikaBusyWith(a.title)) return skip("aynı olay zaten üretimde ya da sırada", a.title);
+  const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
+  // kaynak: makalenin site adı (og:site_name); boş, uzun ya da genel "Son Dakika" ise Sondakika.com
+  const source = a.site && a.site.length <= 30 && !/^son ?dakika( haber(ler)?i?)?$/i.test(a.site.trim()) ? a.site.trim() : "Sondakika.com";
+  if (!manual && resting()) restEnd(`sondakika.com'da yeni haber: ${a.title.slice(0, 60)}`); // kullanıcı "anında" dedi: dinlenme beklenmez
+  push(`🔴 sondakika.com${manual ? " (elle)" : ": yeni haber"}: ${a.title.slice(0, 90)}${a.video ? " (haber sayfasında video var)" : ""} → video üretiliyor`);
+  // title: aynı olay denetimi başlıkla yapılsın; sondakika: sıradan çıkınca/iptalde panel durumu güncellensin
+  const src = await allSources(a.title, url, source); // haberin tüm kaynakları: bilgi + video + farklı fotoğraflar
+  const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: item?.sources?.length || 1, auto: !manual, title: a.title, sondakika: url });
+  if (r.ok) {
+    await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {}); // Mynet/son dakika siteleri aynı olayı tekrar üretmesin
+    const d = sondakikaDone(); d[day] = [...(d[day] || []), { url, title: a.title, at: Date.now(), manual }];
+    const cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+    writeJson(SONDAKIKA_DONE, Object.fromEntries(Object.entries(d).filter(([k]) => k >= cut)));
+    sondakikaMark(url, r.queued ? "sırada" : "üretildi", r.queued ? `${r.position}. sırada` : "");
+  } else if (!manual) sondakikaMark(url, "atlandı", r.error || "başlatılamadı");
+  else fail(`video başlatılamadı (${r.error || "bilinmeyen hata"})`);
+  return { ...r, title: a.title };
+}
+async function sondakikaCheck({ manual = false } = {}) {
+  if (sondakikaBusy) return { ok: false, busy: true, error: "sondakika.com taraması zaten sürüyor." };
+  sondakikaBusy = true; sondakikaLast = Date.now();
+  try {
+    // ortak tarama (Mynet + son dakika siteleri) sürüyorsa bitmesi beklenir (en çok 2 dk): aynı olayı iki taraf aynı dakikada
+    // üretmesin (onların işaretleri tarama bitince yazılmış olur); ortak tarama da bu tarama sürerken başlamaz
+    for (let i = 0; watchScanning && i < 60; i++) await new Promise((ok) => setTimeout(ok, 2000));
+    const c = sondakikaCfg();
+    const r = await pyJson(["scripts/sondakika_watch.py", "--check"], 150000);
+    if (!r?.ok) { push(`🔴 sondakika.com kontrolü başarısız: ${r?.error || "yanıt yok"}`); return r || { ok: false, error: "yanıt yok" }; }
+    const via = r.method === "rss" ? "RSS" : "ana sayfa";
+    if (r.first) {
+      push(`🔴 sondakika.com takibi ${r.sourceChanged ? `yeni kaynakla (${via}) yeniden ` : ""}başladı: ${r.items.length} haber kaydedildi (${via}); bundan sonra düşen her yeni haber için anında son dakika videosu üretilecek`);
+      return { ...r, produced: [] };
+    }
+    if (manual || r.new.length) push(`🔴 sondakika.com kontrol edildi (${via}): ${r.items.length} haber, ${r.new.length} yeni`);
+    const produced = [];
+    for (const it of r.new || []) { // en yeniden eskiye; tarama başına en çok maxPerCheck
+      if (produced.length >= Number(c.maxPerCheck)) { sondakikaMark(it.url, "atlandı", `tarama başına sınır (${c.maxPerCheck})`); push(`🔴 sondakika.com: "${String(it.title || it.url).slice(0, 70)}" atlandı — tarama başına en çok ${c.maxPerCheck} haber`); continue; }
+      const res = await sondakikaProduce(it.url, { item: it }).catch((e) => ({ ok: false, error: e.message }));
+      if (res.ok) produced.push(res.title);
+    }
+    return { ...r, produced };
+  } finally { sondakikaBusy = false; }
+}
+setInterval(() => { if (sondakikaCfg().enabled !== false && !sondakikaBusy && Date.now() - sondakikaLast >= sondakikaEvery() * 60000 - 5000) sondakikaCheck().catch((e) => push(`🔴 sondakika.com: ${e.message}`)); }, 60000);
+app.get("/api/sondakika", (_req, res) => {
+  const st = readJson(path.join(DATA, "sondakika_state.json"), {}) || {}, stat = readJson(SONDAKIKA_STATUS, {}), c = sondakikaCfg(), done = sondakikaDone();
+  const made = new Set(Object.values(done).flat().map((x) => x.url));
+  // sırada bekleyen haber "üretildi" sayılmaz (sıradan çıkarılırsa günlük kayıttan da silinir)
+  res.json({ cfg: { ...c, intervalMin: sondakikaEvery() }, items: (Array.isArray(st.items) ? st.items : []).map((it) => ({ ...it, status: stat[it.url] || null, produced: made.has(it.url) && stat[it.url]?.state !== "sırada" })),
+    lastCheck: st.lastCheck || null, method: st.method || null, source: st.source || null, producedToday: done[today()] || [], scanning: sondakikaBusy,
+    nextCheckIn: c.enabled !== false ? Math.max(0, sondakikaLast + sondakikaEvery() * 60000 - Date.now()) : null });
+});
+app.post("/api/sondakika/check", async (_req, res) => res.json(await sondakikaCheck({ manual: true })));
+app.post("/api/sondakika/produce", async (req, res) => {
+  const url = String(req.body?.url || ""), item = ((readJson(path.join(DATA, "sondakika_state.json"), {}) || {}).items || []).find((x) => x.url === url) || null;
+  res.json(await sondakikaProduce(url, { manual: true, force: !!req.body?.force, item }));
 });
 
 // ---------- günlük uzun özet (yatay, YouTube): her akşam settings.daily.hour:minute'da GUNLUK=1 pipeline.
@@ -1834,6 +1981,25 @@ async function handleCommand(text, opts = {}) {
     }
     case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
+    case "sondakika": { // sondakika.com takibi: "sondakika.com'u kontrol et", "sondakika takibini kapat/aç"
+      if (cmd.on != null) {
+        patchSettings({ sondakika: { enabled: cmd.on } }); push(`🔴 sondakika.com takibi ${cmd.on ? "açıldı" : "kapatıldı"}`);
+        reply = cmd.on ? `sondakika.com takibi açık: her ${sondakikaEvery()} dakikada bir bakıyorum; düşen her yeni haber için onaysız son dakika videosu üretip bağlı hesaplarda yayınlıyorum.` : "sondakika.com takibi kapatıldı; yeni haberler için video üretilmeyecek.";
+        break;
+      }
+      if (!cmd.check) {
+        const st = readJson(path.join(DATA, "sondakika_state.json"), {}) || {}, c = sondakikaCfg();
+        reply = `sondakika.com takibi ${c.enabled === false ? "kapalı" : `açık, her ${sondakikaEvery()} dakikada bir`}. ${st.lastCheck ? `Son kontrol ${hhmm(st.lastCheck)} (${st.method === "rss" ? "RSS" : "ana sayfa"})` : "Henüz kontrol edilmedi"}; bugün ${(sondakikaDone()[today()] || []).length} video.`;
+        break;
+      }
+      const r = await sondakikaCheck({ manual: true });
+      reply = r.busy ? "sondakika.com taraması zaten sürüyor; sonuç birazdan logda." : !r.ok ? `sondakika.com kontrol edilemedi: ${r.error}`
+        : r.first ? `sondakika.com takibi başladı: ${r.items.length} haber kaydedildi; bundan sonra düşen yeni haberler için video üreteceğim.`
+        : r.new.length ? `sondakika.com'da ${r.new.length} yeni haber var${r.produced.length ? `; ${r.produced.length} tanesi için son dakika videosu üretiliyor: ${r.produced.map((t) => t.slice(0, 50)).join(" · ")}` : "; video üretilmedi (nedenler logda)"}.`
+        : `sondakika.com kontrol edildi (${r.method === "rss" ? "RSS" : "ana sayfa"}): ${r.items.length} haber, yeni haber yok.`;
+      if (r.ok && sondakikaCfg().enabled === false) reply += " Otomatik takip kapalı; açmak için: sondakika takibini aç.";
+      break;
+    }
     case "anlik": {
       const r = await prepareAnlik(cmd.topic, cmd.duration, cmd.publishAt ? { publishAt: cmd.publishAt } : {});
       const what = r.title ? `"${r.title.slice(0, 90)}" (${r.source}${r.count > 1 ? `, ${r.count} haberde geçiyor` : ""})` : String(cmd.topic).slice(0, 60);
@@ -1994,6 +2160,7 @@ const STAGE_VOICE = [
   [/^⚠️ sağlık: (?!Video üretimi)/, "Dikkat, bir sistem uyarısı var. Ayrıntıyı WhatsApp'a gönderdim."],
   [/^🔊 ses modeli sorunsuz başlatıldı/, "Ses modeli sorunsuz başlatıldı."],
   [/^📰 Mynet: yeni manşet/, "Mynet manşetine yeni bir haber girdi, video hazırlanıyor."],
+  [/^🔴 sondakika\.com: yeni haber/, "Son dakika sitesine yeni haber düştü, video hazırlanıyor."],
   [/^(🧹 |⏹ hepsi durduruldu)/, "Modeller sorunsuz durduruldu. Bilgisayarınız ısınmasın diye kapatıldı."],
   [/^🔥 VİRAL/, "Bir video viral oluyor. Ayrıntıyı WhatsApp'a gönderdim."],
   [/^⏸ SİSTEM DURDURULDU/, "Sistem durduruldu. Bilgisayarınız ısınmasın diye tüm modeller kapatıldı. Bir sonraki planlı üretime ya da sizin talimatınıza kadar hiçbir şey başlamayacak."],

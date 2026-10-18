@@ -30,6 +30,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • yarının takvim hatırlatmasını üret
 • haftanın en çok izlenenlerini üret
 • en çok izlenen saatler · altın saat tekrarını aç / kapat / şimdi yap
+• sondakika.com'u kontrol et · sondakika takibini aç / kapat — 5 dakikada bir bakılır, düşen her yeni haber onaysız son dakika videosu olur
 
 📤 *Yayın ve hesaplar*
 • instagram'a yayınla · tiktok'a yayınla · youtube'a yayınla (son video)
