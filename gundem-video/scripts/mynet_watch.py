@@ -142,9 +142,10 @@ def headlines(page: str, base: str, count: int) -> list:
     return out
 
 
-# meta etiketi: tırnaklı değerin içindeki > ya da kesme işareti etiketi bölmez; tırnaklı değer < geçemez, bozuk etiket (kaçmamış
-# tırnak: content="Bakan: "Vergi…">) eski düz bölmeyle ilk >'de biter, sonraki og:title/og:image etiketlerini yutmaz
-_META_TAG = re.compile(r"<meta\b(?:[^<>\"']|\"[^\"<]*\"|'[^'<]*')*>|<meta\b[^>]*>", re.I)
+# meta etiketi: tırnaklı değerin içindeki <, > ya da kesme işareti etiketi bölmez (content="<CANLI> …" tam okunur); tırnaklı değer
+# yalnız "<meta" geçemez, bozuk etiket (kaçmamış tırnak: content="Bakan: "Vergi…">) eski düz bölmeyle ilk >'de biter, sonraki
+# og:title/og:image etiketlerini yutmaz
+_META_TAG = re.compile(r"<meta\b(?:[^<>\"']|\"(?:[^\"<]|<(?!meta\b))*\"|'(?:[^'<]|<(?!meta\b))*')*>|<meta\b[^>]*>", re.I)
 
 
 def _meta(page: str, *names, keys: str = "property|name") -> str:

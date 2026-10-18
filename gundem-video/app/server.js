@@ -199,7 +199,11 @@ async function nextPlanned() {
   try { cands.push(...infoNext()); } catch { /* henüz tanımlı değil */ }
   return cands.sort((a, b) => a.at - b.at)[0] || null;
 }
+// Biten üretim yalnız yoldaki haber yüzünden dinlenmeye geçmediyse nedeni; o haber üretime, sıraya ya da toplayıcıya girmeden
+// düşerse (sayfa okunamadı, aynı olay, bayat) restRecheck dinlenmeyi şimdi başlatır (yoksa sonraki üretim bitene kadar uyanık kalırdı)
+let restPending = null;
 async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
+  restPending = null;
   const r = stop ? stopAll({ quiet: true }) : reap({ minAgeSec: 0, reason, force: false });
   const next = await nextPlanned();
   writeJson(REST_FILE, { on: true, since: Date.now(), reason, until: next?.at || null, untilWhat: next?.what || null });
@@ -210,6 +214,7 @@ async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
 }
 function restEnd(why) {
   if (!resting()) return false;
+  restPending = null;
   writeJson(REST_FILE, { on: false, endedAt: Date.now(), endedWhy: why });
   push(`▶ SİSTEM YENİDEN ÇALIŞIYOR: ${why}`);
   return true;
@@ -218,11 +223,15 @@ function restEnd(why) {
 let lastFinishAt = 0;
 function finishProduction(reason = "üretim bitti") {
   if (Date.now() - lastFinishAt < 30000 || pipelineBusy()) return;
-  lastFinishAt = Date.now();
+  lastFinishAt = Date.now(); restPending = null;
   const waiting = anlikQueue.length + anlikInflight.size; // yoldaki haber (sayfası/diğer siteleri okunuyor) da sıradaki iş sayılır
-  if (waiting) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı`); return; }
+  if (waiting) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı`); if (!anlikQueue.length) restPending = reason; return; }
   if (settings().restAfterProduction !== false) restStart({ reason, stop: false }).catch(() => {});
   else reap({ minAgeSec: 0, reason, announceIdle: true });
+}
+function restRecheck() { // yoldaki kayıt çıktı: başka iş yoksa ertelenen dinlenme kararı yeniden verilir
+  if (!restPending || anlikInflight.size || anlikQueue.length || valueBatch.length || pipelineBusy() || resting()) return;
+  const why = restPending; restPending = null; lastFinishAt = 0; finishProduction(why);
 }
 // planlı zaman geldi: dinlenme biter (launchd üretimi zaten kendiliğinden başlar, günün özeti panel başlatır)
 setInterval(() => { const r = restInfo(); if (r.on && r.until && Date.now() >= r.until) restEnd(`planlı iş zamanı geldi (${r.untilWhat || "üretim"})`); }, 30000);
@@ -241,6 +250,7 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   const formatDuration = duration === "format"; // zamanlanmış üretimin telafisi: süreyi saate göre format seçer (launchd gibi)
   duration = formatDuration ? null : extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
+  restPending = null; // dinlenme kararını bu üretimin sonu verir
   push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, ...(formatDuration ? {} : { DURATION: String(duration) }), ...extraEnv } });
   pipelineProc = child;
@@ -253,15 +263,17 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
 // ---------- Anlık haber: editörün yazdığı konuda tek konulu son dakika videosu
 // Başka üretim sürüyorsa istek sıraya girer ve o bitince kendiliğinden başlar (zamanlayıcı üretimi dahil).
 const anlikQueue = []; // sırayla üretilecek anlık haber istekleri
-// Yoldaki haber: üretimine karar verilmiş, sayfası ya da diğer siteleri okunuyor (allSources en çok 75 sn), henüz ne sırada ne
-// üretimde. Bu sürede biten üretim sistemi dinlenmeye almasın (finishProduction; yoksa otomatik haber reddedilip kaybolurdu) ve
-// aynı olay başka kaynaktan ikinci kez başlamasın (busyWith, queueValuable) diye sayılır. {title, item?}; startAnlik'ten hemen
-// sonra (araya await girmeden) çıkarılır.
+// Yoldaki haber: sayfası ya da diğer siteleri okunuyor (allSources en çok 75 sn), henüz ne sırada ne üretimde. Bu sürede biten
+// üretim sistemi dinlenmeye almasın diye (finishProduction; yoksa otomatik haber reddedilip kaybolurdu) her kayıt sayılır. Aynı olay
+// başka kaynaktan ikinci kez başlamasın diye (anlikBusyWith, queueValuable) yalnız kendi denetimlerini (okuma, tekrar, bayat, meşgul)
+// geçmiş kayda (firm) yol verilir ya da onunla birleşilir; denetimde düşebilecek habere bağlanan olay kaybolmasın.
+// {title, firm, item: {sourceCount}}: yoldaki aynı olayla birleşen ikiz kaynak sayısını artırır (YouTube değer kuralı: 3+ kaynak).
+// startAnlik'ten hemen sonra (araya await girmeden) çıkarılır; çıkınca ertelenen dinlenme yeniden denenir (restRecheck).
 const anlikInflight = new Set();
-async function inflight(title, fn) {
-  const tok = { title: String(title || "") };
+async function inflight(title, fn, { firm = false, sourceCount = 1 } = {}) {
+  const tok = { title: String(title || ""), firm, item: { sourceCount } };
   anlikInflight.add(tok);
-  try { return await fn(tok); } finally { anlikInflight.delete(tok); }
+  try { return await fn(tok); } finally { anlikInflight.delete(tok); restRecheck(); }
 }
 const pipelineBusy = () => { if (state.running) return true; const lock = path.join(WORK, "pipeline.lock", "pid"); if (!existsSync(lock)) return false; try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return true; } catch { return false; } };
 function startAnlik(topic, duration, opts = {}) {
@@ -357,8 +369,8 @@ async function allSources(title, url, source) {
 function queueValuable(item) { // {title, text, source, url, sourceCount, duration, onStarted(r)}
   const twin = valueBatch.find((x) => sameEvent(x.title, item.title));
   if (twin) { twin.sourceCount = Math.max(twin.sourceCount || 1, (item.sourceCount || 1) + 1); push(`⭐ aynı olay iki kaynakta: "${item.title.slice(0, 60)}" (${item.source}) tek haber sayıldı`); item.onStarted?.({ ok: true, merged: true }); return; }
-  const fly = [...anlikInflight].find((x) => sameEvent(x.title, item.title)); // aynı olayın videosu başlamak üzere (diğer siteleri okunuyor)
-  if (fly) { if (fly.item) fly.item.sourceCount = Math.max(fly.item.sourceCount || 1, (item.sourceCount || 1) + 1); push(`⭐ aynı olay iki kaynakta: "${item.title.slice(0, 60)}" (${item.source}) zaten üretime alınıyor, tek haber sayıldı`); item.onStarted?.({ ok: true, merged: true }); return; }
+  const fly = [...anlikInflight].find((x) => x.firm && sameEvent(x.title, item.title)); // aynı olayın videosu başlamak üzere (diğer siteleri okunuyor)
+  if (fly) { fly.item.sourceCount = Math.max(fly.item.sourceCount || 1, (item.sourceCount || 1) + 1); push(`⭐ aynı olay iki kaynakta: "${item.title.slice(0, 60)}" (${item.source}) zaten üretime alınıyor, tek haber sayıldı`); item.onStarted?.({ ok: true, merged: true }); return; }
   valueBatch.push(item);
   push(`⭐ değerli haber yakalandı: ${item.title.slice(0, 80)} (${item.source}) → ${Math.round(VALUE_BATCH_MS / 1000)} sn içinde düşen diğerleriyle birlikte üretilecek`);
   if (!valueTimer) valueTimer = setTimeout(() => flushValuable().catch((e) => push(`⭐ değerli haber üretimi: ${e.message}`)), VALUE_BATCH_MS);
@@ -376,7 +388,7 @@ async function flushValuable() {
       tok.item = one;
       const src = await allSources(one.title, one.url, one.source);
       return startAnlik([one.title, one.text].filter(Boolean).join(". ").slice(0, 1500), one.duration, { source: one.source, url: one.url, sourceCount: one.sourceCount || 1, pages: src.pages, related: src.related, title: one.title, auto: true });
-    })
+    }, { firm: true })
     : startAnlikMulti(items);
   for (const it of items) { try { await it.onStarted?.(r); } catch { /* kayıt */ } }
 }
@@ -774,7 +786,7 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   if (!manual && item?.dup) { push(`📰 Mynet: "${(item.title || "").slice(0, 70)}" için son 12 saatte zaten video üretildi, atlandı`); return { ok: false, error: "aynı olay zaten üretildi" }; }
   if (!manual && !item?.valuable && resting()) { push(`⏸ sistem durduruldu: sıradan Mynet manşeti için video üretilmedi (${(item?.title || "").slice(0, 70)}); değerli haber gelirse sistem kendiliğinden başlar`); return { ok: false, resting: true, error: "dinlenmede" }; }
   if (item?.valuable) push(`⭐ Mynet: değerli manşet (${item.valueReason}) — video YouTube'a da gidecek`);
-  return inflight(item?.title || url, (tok) => mynetStart(url, { manual, item, day, list, done, tok }));
+  return inflight(item?.title || url, (tok) => mynetStart(url, { manual, item, day, list, done, tok }), { sourceCount: item?.sources?.length || 1 });
 }
 async function mynetStart(url, { manual, item, day, list, done, tok }) {
   const a = await pyJson(["scripts/mynet_watch.py", "--article", url]);
@@ -789,10 +801,12 @@ async function mynetStart(url, { manual, item, day, list, done, tok }) {
     return { ok: true, batched: true, title: a.title };
   }
   if (!manual && anlikBusyWith(a.title, tok)) { push(`📰 Mynet: "${a.title.slice(0, 70)}" atlandı — aynı olay zaten üretimde ya da sırada`); return { ok: false, error: "aynı olay zaten üretimde ya da sırada" }; }
+  tok.firm = true; // kendi denetimleri geçti: bundan sonra aynı olay buna yol verir
   push(`📰 Mynet: yeni manşet: ${a.title.slice(0, 90)} → video üretiliyor`);
   const src = await allSources(a.title, url, "Mynet");
   if (!manual && anlikBusyWith(a.title, tok)) { push(`📰 Mynet: "${a.title.slice(0, 70)}" atlandı — aynı olay bu sırada başka kaynaktan üretime alındı`); return { ok: false, error: "aynı olay zaten üretimde ya da sırada" }; }
-  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: item?.sources?.length || 1, pages: src.pages, related: src.related, title: a.title, auto: !manual });
+  const r = startAnlik(topic, mynetCfg().duration, { source: "Mynet", url, sourceCount: tok.item.sourceCount, pages: src.pages, related: src.related, title: a.title, auto: !manual });
+  anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {});
   if (r.ok) { done[day] = [...list, url]; for (const d of Object.keys(done)) if (d < new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)) delete done[d]; writeFileSync(MYNET_DONE, JSON.stringify(done, null, 2)); }
   return { ...r, title: a.title };
@@ -830,7 +844,7 @@ async function breakingCheck({ manual = false } = {}) {
     // sıradan (çok kaynaklı) adaylar günde maxPerDay (4); değerli haberler ayrı ve yüksek sınır (15): değerli haber kaçmasın
     const cap = c.valuable ? Number(breakingCfg().valuableMaxPerDay) : Number(breakingCfg().maxPerDay);
     if (list.length >= cap) { push(`🗞 günlük ${c.valuable ? "değerli " : ""}son dakika sınırı (${cap}) doldu: "${c.title.slice(0, 70)}" atlandı`); continue; }
-    const tok = { title: c.title }; anlikInflight.add(tok); // sayfası ve diğer siteleri okunurken yolda (finishProduction, aynı olay)
+    const tok = { title: c.title, firm: false, item: { sourceCount: c.count || 1 } }; anlikInflight.add(tok); // sayfası ve diğer siteleri okunurken yolda (finishProduction, aynı olay)
     try {
       const a = c.url ? await pyJson(["scripts/mynet_watch.py", "--article", c.url]) : null;
       const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
@@ -845,12 +859,13 @@ async function breakingCheck({ manual = false } = {}) {
       }
       if (resting()) { push(`⏸ sistem durduruldu: "${c.title.slice(0, 70)}" için video üretilmedi (değerli değil; kartta 🎬 Video üret ile elle üretebilirsiniz)`); continue; }
       if (anlikBusyWith(c.title, tok)) { push(`🗞 son dakika: "${c.title.slice(0, 70)}" atlandı — aynı olay zaten üretimde ya da sırada`); continue; }
+      tok.firm = true; // kendi denetimleri geçti
       const src = await allSources(c.title, c.url, c.source);
       if (anlikBusyWith(c.title, tok)) { push(`🗞 son dakika: "${c.title.slice(0, 70)}" atlandı — aynı olay bu sırada başka kaynaktan üretime alındı`); continue; }
-      const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: c.count, pages: src.pages, related: src.related, title: c.title, auto: true });
+      const res = startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.url, sourceCount: tok.item.sourceCount, pages: src.pages, related: src.related, title: c.title, auto: true });
       anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
       if (res.ok) { await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {}); list.push(c.title); done[day] = list; writeJson(BREAKING_DONE, Object.fromEntries(Object.entries(done).filter(([d]) => d >= new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10)))); }
-    } finally { anlikInflight.delete(tok); }
+    } finally { anlikInflight.delete(tok); restRecheck(); }
   }
   return r;
 }
@@ -881,10 +896,10 @@ app.post("/api/breaking/produce", async (req, res) => {
   const a = c.link ? await pyJson(["scripts/mynet_watch.py", "--article", c.link]) : null;
   const topic = [c.title, a?.ok !== false && a?.description, (a?.ok !== false && a?.body) || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   push(`🎬 son dakika (elle): ${c.title.slice(0, 90)} (${(c.sources || [c.source]).join(", ")}) → video üretiliyor`);
-  const r = await inflight(c.title, async () => {
+  const r = await inflight(c.title, async (tok) => {
     const src = await allSources(c.title, c.link, c.source);
-    return startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.link, sourceCount: (c.sources || []).length || 1, pages: src.pages, related: src.related, title: c.title });
-  });
+    return startAnlik(topic, breakingCfg().duration, { source: c.source, url: c.link, sourceCount: tok.item.sourceCount, pages: src.pages, related: src.related, title: c.title });
+  }, { firm: true, sourceCount: (c.sources || []).length || 1 });
   if (r.ok) await pyJson(["scripts/breaking_watch.py", "--mark", c.title]).catch(() => {});
   res.json({ ...r, title: c.title });
 });
@@ -919,9 +934,9 @@ function sondakikaUnqueue(q, why = "sistem durduruldu, sıradaki iş iptal edild
 }
 // Aynı olay şu an üretimde, anlık sırada ya da değerli haber toplayıcısında mı (başlık ile başlık): Mynet ya da son dakika siteleri
 // aynı olayın videosunu saniyeler önce başlatmış olabilir (işaretleri --check'ten sonra yazılır)
-// ya da yolda (sayfası/diğer siteleri okunuyor; `self` kendi kaydı, sayılmaz)
+// ya da yolda (kendi denetimlerini geçmiş, sayfası/diğer siteleri okunuyor; `self` kendi kaydı, sayılmaz)
 const anlikBusyWith = (t, self = null) => valueBatch.some((x) => sameEvent(x.title, t)) || anlikQueue.some((q) => anlikTitles(q).some((x) => sameEvent(x, t)))
-  || [...anlikInflight].some((x) => x !== self && sameEvent(x.title, t))
+  || [...anlikInflight].some((x) => x !== self && x.firm && sameEvent(x.title, t))
   || (!!anlikNow && state.running && anlikNow.at === state.startedAt && anlikNow.titles.some((x) => sameEvent(x, t)));
 let sondakikaBusy = false, sondakikaLast = 0;
 // Tek haber: sayfa okunur (başlık + açıklama + gövde, yayın zamanı, sayfada video var mı), anlık video başlar, aynı olay işaretlenir.
@@ -942,7 +957,7 @@ async function sondakikaProduce(url, { manual = false, force = false, item = nul
     // Üretim sonrası kendiliğinden dinlenmede her yeni haber uyandırır (kullanıcı "anında" dedi).
     if (resting() && restInfo().reason === "elle durduruldu" && !item?.valuable) return skip("sistem elle durduruldu, yalnız değerli haber uyandırır (kartta 🎬 Video üret ile elle üretilebilir)");
   }
-  return inflight(item?.title || url, (tok) => sondakikaStart(url, { manual, item, c, day, skip, fail, tok }));
+  return inflight(item?.title || url, (tok) => sondakikaStart(url, { manual, item, c, day, skip, fail, tok }), { sourceCount: item?.sources?.length || 1 });
 }
 async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok }) {
   const a = await pyJson(["scripts/sondakika_watch.py", "--article", url], 60000);
@@ -953,6 +968,7 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok }) {
   const ageH = pub ? (Date.now() - Date.parse(pub)) / 3600000 : 0;
   if (!manual && ageH > Number(c.maxAgeHours)) return skip(`haber ${Math.round(ageH)} saat önce yayınlanmış (bayat)`, a.title);
   if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay zaten üretimde ya da sırada", a.title);
+  tok.firm = true; // kendi denetimleri (okuma, tekrar, bayat, meşgul) geçti: bundan sonra aynı olay buna yol verir
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   // kaynak: makalenin site adı (og:site_name); boş, uzun ya da genel "Son Dakika" ise Sondakika.com
   const source = a.site && a.site.length <= 30 && !/^son ?dakika( haber(ler)?i?)?$/i.test(a.site.trim()) ? a.site.trim() : "Sondakika.com";
@@ -961,7 +977,8 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok }) {
   // title: aynı olay denetimi başlıkla yapılsın; sondakika: sıradan çıkınca/iptalde panel durumu güncellensin
   const src = await allSources(a.title, url, source); // haberin tüm kaynakları: bilgi + video + farklı fotoğraflar
   if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay bu sırada başka kaynaktan üretime alındı", a.title);
-  const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: item?.sources?.length || 1, auto: !manual, title: a.title, sondakika: url });
+  const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: tok.item.sourceCount, auto: !manual, title: a.title, sondakika: url });
+  anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
   if (r.ok) {
     await pyJson(["scripts/breaking_watch.py", "--mark", a.title]).catch(() => {}); // Mynet/son dakika siteleri aynı olayı tekrar üretmesin
     const d = sondakikaDone(); d[day] = [...(d[day] || []), { url, title: a.title, at: Date.now(), manual }];

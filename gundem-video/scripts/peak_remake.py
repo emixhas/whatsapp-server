@@ -17,6 +17,7 @@ Seçim ("sırasıyla"): son 24 saatte üretilmiş, en az `minViews` izlenmeli vi
 bu özellikle ya da elle yeniden yayınlanmış haberler (aynı olay, `breaking_watch.same_event`) atlanır. Böylece 1. saatte
 günün 1 numaralı haberi, 2. saatte henüz tekrarlanmamış en çok izlenen haber… Kayıt `data/peak_remake.json` (panel yazar).
 """
+import itertools
 import json
 import sys
 import time
@@ -70,10 +71,28 @@ def plan() -> dict:
                 hours.append(h)
         return hours
 
+    def complete(hours, key):  # sırayla doldurma eksik bıraktıysa (ör. count 5, sabit 22): kurala uyan en büyük küme, en iyisi key'e göre
+        if len(hours) >= n_want:
+            return hours
+        rest = [h for h in allowed if h not in fixed]
+
+        def valid(comb):
+            sel = list(fixed)
+            for h in comb:
+                if not gap_ok(h, sel):
+                    return False
+                sel.append(h)
+            return True
+        for k in range(n_want - len(fixed), len(hours) - len(fixed), -1):
+            ok = [cb for cb in itertools.combinations(rest, k) if valid(cb)]
+            if ok:
+                return list(fixed) + list(max(ok, key=key))
+        return hours
+
     if len(rows) < int(c["minVideos"]):
         # varsayılan saatler sabit saate çok yakınsa (17 ve 20 ↔ sabit 18) eksik kalmasın: izinli saatlerden varsayılana en yakını
         hours = fill(fill(list(fixed), sorted(defs)), sorted(allowed, key=lambda h: (near(h), h)))
-        hours = sorted(hours)
+        hours = sorted(complete(hours, lambda cb: (-sum(near(h) for h in cb), cb)))
         return {"hours": hours, "fixed": fixed, "source": "varsayılan", "videos": len(rows),
                 "note": f"İzlenme verili {len(rows)} video var; en az {c['minVideos']} olunca saatler verinizden hesaplanır. Şimdilik öğle arası ve akşam saatleri."}
     mean = {h: sum(v) / len(v) for h, v in by.items()}
@@ -88,6 +107,7 @@ def plan() -> dict:
     hours = fill(list(fixed), [h for _, h in scored])  # sabit saatler (20:00) her zaman; kalanlar veriden
     hours = fill(hours, sorted(defs))  # veri yetmezse varsayılanla tamamla
     hours = fill(hours, sorted(allowed, key=lambda h: (-(smooth(h) or 0), near(h), h)))  # yine eksikse izinli saatlerden
+    hours = complete(hours, lambda cb: (sum(smooth(h) or 0 for h in cb), -sum(near(h) for h in cb)))
     detail = [{"hour": h, "avg": round(smooth(h) or 0), "n": len(by.get(h, [])), **({"fixed": True} if h in fixed else {})} for h in sorted(hours)]
     return {"hours": sorted(hours), "fixed": fixed, "source": f"izlenme verisi, {window}", "videos": len(rows), "detail": detail}
 
