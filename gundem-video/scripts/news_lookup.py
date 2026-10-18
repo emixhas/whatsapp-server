@@ -3,7 +3,7 @@
 
 Kullanım:
   python3 scripts/news_lookup.py --url URL       haber linki: sayfayı okur (başlık, özet, metin, site adı)
-  python3 scripts/news_lookup.py --topic "KONU"   kısa konu: haberi arar, en iyi eşleşenin sayfasını okur
+  python3 scripts/news_lookup.py --topic "KONU" [--pages 8]   kısa konu: haberi arar, en iyi eşleşenin sayfasını okur
 
 --topic şu kaynaklarda arar: son çekilen RSS (work/news.json), son dakika siteleri ve Mynet manşeti
 (breaking_watch.recent_items), Bing Haberler RSS (doğrudan haber linki verir) ve Google Haberler RSS (yalnız
@@ -117,7 +117,7 @@ def local_items() -> list:
     return out
 
 
-def search(topic: str) -> dict:
+def search(topic: str, max_pages: int = 4) -> dict:
     kw = stems(topic)
     if not kw:
         return {"ok": True, "found": False, "related": [], "errors": ["konu çok kısa"]}
@@ -141,9 +141,17 @@ def search(topic: str) -> dict:
             scored.append((s, it))
     scored.sort(key=lambda x: (x[0], x[1]["direct"]), reverse=True)
     related = [{"k": it["source"], "b": it["title"], "o": it["summary"][:300], "s": ""} for _, it in scored[:8]]
-    # En iyi 4 doğrudan linkin sayfası aynı anda okunur: ilki ana haber, hepsi fotoğraf/video kaynağı (pages)
-    cands = [it for _, it in scored if it["direct"] and it["url"]][:4]
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    # En iyi N (varsayılan 4; otomatik son dakikada 8 — "haberin tüm kaynakları") doğrudan linkin sayfası aynı anda okunur:
+    # ilki ana haber, hepsi fotoğraf/video kaynağı (pages); aynı siteden ikinci sayfa alınmaz (farklı siteler, farklı görüntü)
+    cands, hosts = [], set()
+    for _, it in scored:
+        host = site_name(it["url"]) if it["direct"] and it["url"] else ""
+        if host and host not in hosts:
+            hosts.add(host)
+            cands.append(it)
+        if len(cands) >= max_pages:
+            break
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(cands)))) as ex:
         reads = list(ex.map(lambda it: (it, read(it["url"])), cands))
     best, pages = None, []
     for it, a in reads:
@@ -170,7 +178,8 @@ if __name__ == "__main__":
         if "--url" in sys.argv:
             out = read(sys.argv[sys.argv.index("--url") + 1])
         elif "--topic" in sys.argv:
-            out = search(sys.argv[sys.argv.index("--topic") + 1])
+            mp = int(sys.argv[sys.argv.index("--pages") + 1]) if "--pages" in sys.argv else 4
+            out = search(sys.argv[sys.argv.index("--topic") + 1], max(1, min(8, mp)))
         else:
             out = {"ok": False, "error": "kullanım: --url URL | --topic KONU"}
     except Exception as e:

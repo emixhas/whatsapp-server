@@ -30,7 +30,9 @@ STATE = DATA / "peak_remake.json"
 
 
 def cfg() -> dict:
-    return {"enabled": True, "count": 3, "defaultHours": [12, 18, 21], "fromHour": 8, "toHour": 23, "minGapHours": 3,
+    # fixedHours: her gün kesin tekrar saatleri (kullanıcı kararı, 18 Ekim: "tutan haber aynı gün 20:00'da farklı kanca ve kapakla
+    # tekrar yayınlansın"); diğer saatler veriden ya da varsayılandan, sabit saatlere en az minGapHours uzaklıkta seçilir
+    return {"enabled": True, "count": 3, "fixedHours": [20], "defaultHours": [12, 17, 20], "fromHour": 8, "toHour": 23, "minGapHours": 3,
             "minVideos": 12, "minPerHour": 2, "windowDays": 7, "minViews": 10, "duration": 30, "leadMin": 20, **(settings().get("peakRemake") or {})}
 
 
@@ -51,9 +53,17 @@ def plan() -> dict:
     for r in rows:
         by[r["hour"]].append(r["views"])
     allowed = [h for h in range(24) if int(c["fromHour"]) <= h <= int(c["toHour"])]
+    fixed = sorted({int(h) % 24 for h in (c.get("fixedHours") or [])})[:n_want]
+    gap_ok = lambda h, hs: all(min(abs(h - x), 24 - abs(h - x)) >= int(c["minGapHours"]) for x in hs)
     if len(rows) < int(c["minVideos"]):
-        hours = sorted(int(h) for h in c["defaultHours"])[:n_want]
-        return {"hours": hours, "source": "varsayılan", "videos": len(rows),
+        hours = list(fixed)
+        for h in sorted(int(x) for x in c["defaultHours"]):
+            if len(hours) >= n_want:
+                break
+            if h not in hours and gap_ok(h, hours):
+                hours.append(h)
+        hours = sorted(hours)
+        return {"hours": hours, "fixed": fixed, "source": "varsayılan", "videos": len(rows),
                 "note": f"İzlenme verili {len(rows)} video var; en az {c['minVideos']} olunca saatler verinizden hesaplanır. Şimdilik öğle arası ve akşam saatleri."}
     mean = {h: sum(v) / len(v) for h, v in by.items()}
 
@@ -64,19 +74,19 @@ def plan() -> dict:
 
     # yalnız kendi verisi olan saat aday olur (en az minPerHour video); komşular puanı yumuşatır
     scored = sorted(((smooth(h), h) for h in allowed if len(by.get(h, [])) >= int(c["minPerHour"])), reverse=True)
-    hours = []
+    hours = list(fixed)  # sabit saatler (20:00) her zaman; kalanlar veriden
     for sc, h in scored:
-        if all(min(abs(h - x), 24 - abs(h - x)) >= int(c["minGapHours"]) for x in hours):
-            hours.append(h)
-        if len(hours) == n_want:
+        if len(hours) >= n_want:
             break
+        if h not in hours and gap_ok(h, hours):
+            hours.append(h)
     for h in sorted(int(x) for x in c["defaultHours"]):  # veri yetmezse varsayılanla tamamla
         if len(hours) >= n_want:
             break
-        if all(min(abs(h - x), 24 - abs(h - x)) >= int(c["minGapHours"]) for x in hours):
+        if h not in hours and gap_ok(h, hours):
             hours.append(h)
-    detail = [{"hour": h, "avg": round(smooth(h) or 0), "n": len(by.get(h, []))} for h in hours]
-    return {"hours": sorted(hours), "source": f"izlenme verisi, {window}", "videos": len(rows), "detail": detail}
+    detail = [{"hour": h, "avg": round(smooth(h) or 0), "n": len(by.get(h, [])), **({"fixed": True} if h in fixed else {})} for h in sorted(hours)]
+    return {"hours": sorted(hours), "fixed": fixed, "source": f"izlenme verisi, {window}", "videos": len(rows), "detail": detail}
 
 
 def _made_at(name: str, meta: dict) -> float:
