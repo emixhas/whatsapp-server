@@ -82,16 +82,26 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   echo "!! eski kilit bulundu, temizleniyor"; rm -rf "$LOCK"; mkdir "$LOCK"
 fi
 echo $$ > "$LOCK/pid"
-RESERVED=""
+RESERVED=""; VIDEO_OK=0; RUN_T0=$(date +%s); STOPPED=0
 cleanup() {
   rc=$?
   rm -rf "$LOCK"; [ -n "$RESERVED" ] && rm -f "$RESERVED"
-  # zamanlayıcı üretiminde de panel hatayı görsün (sağlık uyarısı); 3 = başka üretim sürüyordu
-  if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then echo "✖ üretim hata ile bitti (kod $rc)"; fi
+  # üretilen haber hafızası (kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım"): assemble kayıtları render'dan önce
+  # yazar; video çıkmadan biten üretimde (hata, ⏸/⏹ durdurma — SIGTERM'de de çalışır, rc o zaman 0 olabilir) bu çalıştırmanın kayıtları
+  # silinir, video yokken haber 48 saat engellenmesin
+  if [ -n "$RESERVED" ] && [ "$VIDEO_OK" != "1" ]; then
+    D=$($PY scripts/news_memory.py --drop "$(basename "$RESERVED" .reserved)" --since "$RUN_T0" 2>/dev/null || true)
+    case "$D" in *'"dropped": '[1-9]*) echo "  üretilen haber hafızası: video üretilmediği için bu üretimin kayıtları silindi" || true ;; esac
+  fi
+  # zamanlayıcı üretiminde de panel hatayı görsün (sağlık uyarısı); 3 = başka üretim sürüyordu; ⏸/⏹ durdurma (SIGTERM) hata değil
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ] && [ "$STOPPED" != "1" ]; then echo "✖ üretim hata ile bitti (kod $rc)"; fi
 }
 trap cleanup EXIT
 LOG="work/pipeline-$(date +%Y%m%d-%H%M%S).log"
-exec > >(tee -a "$LOG") 2>&1
+# tee SIGTERM'i yok sayar: panelin ⏸/⏹ durdurması (killTree: tüm ağaca SIGTERM) tee'yi öldürünce bash'in "Terminated" satırı ölü
+# boruya yazıp SIGPIPE ile cleanup'ı (kilit, rezerve ad, hafıza kayıtları) çalıştırmadan ölüyordu; tee yazan kalmayınca kendisi biter
+exec > >(trap '' TERM INT HUP; exec tee -a "$LOG") 2>&1
+trap 'STOPPED=1; exit 143' TERM
 [ "$ANLIK" = "1" ] && echo "⚡ ANLIK HABER: $(head -c 160 work/anlik_topic.txt | tr '\n' ' ')"
 echo "== $(date '+%Y-%m-%d %H:%M:%S') üretim başladı (format ${FORMAT} · ${FORMAT_LABEL}, hedef ${DURATION} sn, ${HABER} haber, ≤${WORDS} kelime)"
 
@@ -170,6 +180,7 @@ COMP="GundemVideo"; [ "$GUNLUK" = "1" ] && COMP="GunlukOzet"  # günlük özet y
 npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 --log error
 # Ses seviyesini YouTube standardına getir (-14 LUFS, tepe -1 dB); görüntüye dokunmaz
 ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
+VIDEO_OK=1  # video var: hafıza kayıtları kalır
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
 # altyazı denetimi: son videonun sesi konuşma tanımayla dinlenir, altyazı zamanlarıyla karşılaştırılır (kurulu değilse atlanır)

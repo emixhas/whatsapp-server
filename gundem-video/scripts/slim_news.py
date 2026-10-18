@@ -4,8 +4,10 @@
 - Önem (p): 3 sert haber (can kaybı, saldırı, savaş, afet, büyük kaza), 2 önemli karar, 1 diğer.
 - Kapsam (c): aynı olayı kaç farklı kaynak veriyor. Başlıklar benzerlikle kümelenir, kümenin en yeni
   sürümü kalır. Yüksek c = en çok konuşulan haber ("en çok merak edilen" için yerel ölçü).
-- Tekrar engeli: data/used_news.json içindeki son 48 saatte videoya girmiş haberler elenir. Elenince
-  yeterli haber kalmazsa (HABER×2'den az) elenenler "e":1 işaretiyle geri eklenir ve p bir düşer.
+- Tekrar engeli: data/used_news.json içindeki son 48 saatte videoya girmiş haberler (bizim başlık + seslendirme kelimeleri)
+  ve üretilen haber hafızasıyla (news_memory: anlık/sosyal medya/şablon videolarının kaynak başlığı, adresi ve içeriği; başka
+  sitede başka sözlerle yazılmış aynı haber) eşleşenler elenir. Elenince yeterli haber kalmazsa (HABER×2'den az) elenenler
+  "e":1 işaretiyle geri eklenir ve p bir düşer.
 Sıra: p → c → yenilik. Çıktı: {"aciklama": ..., "haberler": [{p,c,k,b,o,s[,e]}]}
 """
 import json
@@ -79,11 +81,25 @@ def main():
         else:
             clusters.append({"item": it, "w": set(it["_w"]), "sources": {it.get("source")}, "p": it["_p"]})
 
-    # Tekrar engeli: önceki videolarda kullanılan haberler
+    # Tekrar engeli: önceki videolarda kullanılan haberler (used_news) + üretilen haber hafızası (kullanıcı isteği, 18 Ekim:
+    # "ürettiğimiz haberi tekrar yakalamayalım": anlık videonun kaynağı RSS'te başka başlıkla dursa da tanınsın)
     used = used_recent()
+    try:
+        from breaking_watch import already_produced
+        from news_memory import cfg as mem_cfg
+        if not mem_cfg()["enabled"]:  # ayar kapalı: eski davranış (5 saatlik seçim yalnız used_news'a bakardı)
+            already_produced = None
+    except Exception:
+        already_produced = None
+
+    def produced(it):
+        try:
+            return bool(already_produced) and already_produced(it.get("title", ""), it.get("summary") or "", it.get("link") or "")
+        except Exception:
+            return False
     fresh, old = [], []
     for cl in clusters:
-        if seen_before(cl["item"]["_w"], used):
+        if seen_before(cl["item"]["_w"], used) or produced(cl["item"]):
             if cl["p"] == 3:  # gelişen sert haber (can kaybı artışı vb.): listede kalır, e=1 ile işaretlenir
                 cl["old"] = True
                 fresh.append(cl)

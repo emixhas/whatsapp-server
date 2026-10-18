@@ -283,14 +283,6 @@ def news_value(data: dict, segs: list) -> dict:
         v["reason"] += f" · {n} kaynakta"
         if n >= 3 and (v.get("importance") or 3) >= 3:  # çok konuşulan haber YouTube için de değerli
             v["valuable"] = True
-    try:  # çoklu son dakika takibi aynı olay için ikinci video üretmesin
-        from breaking_watch import mark_produced
-        mark_produced(" ".join([data.get("titles", {}).get("A") or "", *(s.get("title", "") for s in segs if s.get("kind") == "haber")][:3]))
-        if os.environ.get("ANLIK_MULTI"):  # çoklu videoda her haber ayrı olay olarak kaydedilir
-            for m in load_json(DATA.parent / "work" / "anlik_items.json", []):
-                mark_produced(m.get("title") or "")
-    except Exception as e:
-        print(f"  ! üretilen haber kaydı yazılamadı: {e}")
     if data.get("importanceReason"):
         v["importanceReason"] = str(data["importanceReason"])[:200]
     print(f"  haber değeri: {'DEĞERLİ' if v['valuable'] else 'sıradan'} ({v['reason']})")
@@ -535,6 +527,17 @@ def main(src: str, dst: str):
         "segments": segs,
     }
     record_used_news(segs, f"{date}-{ep_n}")  # tekrar engeli özgün başlıklarla
+    # Üretilen haber hafızası (kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım"; scripts/news_memory.py):
+    # HER videonun hikâyeleri (düzenli, anlık, çoklu, sosyal medya/WhatsApp, fragman, deprem/maç/meteoroloji) kaynak başlığı,
+    # adresi ve metniyle kaydedilir; Mynet/son dakika/sondakika.com otomatik yakalaması aynı haberi başka sözlerle de tanır.
+    # piyasa/takvim/alarm/derleme ve günün/haftanın özeti yazılmaz. Hassas kelime yıldızlamasından önce (özgün başlıklar).
+    try:
+        from news_memory import record_episode
+        n_mem = record_episode(out, segs, f"{date}-{ep_n}")
+        if n_mem:
+            print(f"  üretilen haber hafızasına {n_mem} haber yazıldı (otomatik yakalama bunları tekrar üretmez)")
+    except Exception as e:
+        print(f"  ! üretilen haber hafızası yazılamadı: {e}")
     # Hassas kelimeler (censor.py): ekrandaki başlıklar, kapak ve yayın başlığı yıldızlı yazılır (int*har, s*lah);
     # seslendirme metni özgün kalır, tts.py o kelimelerin yerine bip koyar ve altyazıyı yıldızlı üretir.
     try:

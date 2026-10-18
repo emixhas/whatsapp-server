@@ -4,7 +4,7 @@
 Kullanım:
   python3 scripts/mynet_watch.py --list            manşetteki haberler (JSON)
   python3 scripts/mynet_watch.py --check           yeni girenler; ilk çalıştırmada mevcutları "görüldü" sayar
-  python3 scripts/mynet_watch.py --article URL     haberin başlığı, özeti, metni ve görseli (JSON)
+  python3 scripts/mynet_watch.py --article URL     haberin başlığı, özeti, metni, görseli ve dup (videosu üretildi mi) (JSON)
 
 Sayfa yapısı değişebileceği için tek bir sınıf adına bağlı değildir:
   1. Sınıfı/kimliği manşet, slider, swiper, carousel, headline içeren ilk blok (en az 3 haber linki) seçilir.
@@ -131,14 +131,17 @@ def headlines(page: str, base: str, count: int) -> list:
     # haber değeri (YouTube kuralı ve üretim önceliği): ölüm, kaza, asgari ücret, zam… → valuable
     from news_value import score
     kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
-    from breaking_watch import already_produced, source_count
+    from breaking_watch import match_produced, source_count
     for x in out:
         srcs = sorted(set(source_count(x["title"])) | {"Mynet"})
         v = score(x["title"], kw)
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
-        x["dup"] = already_produced(x["title"])  # aynı olayın videosu son 12 saatte üretildi
+        # bu haberin videosu üretildi mi (üretilen haber hafızası; manşette özet yok: başlık + adres). Panel burada yalnız adres
+        # eşleşmesinde atlar (genel başlık aynı ildeki başka olayı da tutar); sayfa okununca --article başlık + açıklama + gövdeyle karar verir
+        m = match_produced(x["title"], url=x["url"])
+        x["dup"], x["dupInfo"] = bool(m), m
     return out
 
 
@@ -227,10 +230,18 @@ def check() -> dict:
     return {"ok": True, "first": first, "items": items, "new": new}
 
 
+def with_dup(a: dict) -> dict:
+    """Okunan habere tekrar engeli: başlık + açıklama + gövde + adresle üretilen haber hafızasına bakılır (kullanıcı isteği,
+    18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım"); panel otomatik yolda dup ise üretmez."""
+    from breaking_watch import match_produced
+    m = match_produced(a.get("title") or "", " ".join(x for x in (a.get("description"), a.get("body")) if x), a.get("url") or "") if a.get("title") else None
+    return {**a, "dup": bool(m), "dupInfo": m}
+
+
 if __name__ == "__main__":
     try:
         if "--article" in sys.argv:
-            out = article(sys.argv[sys.argv.index("--article") + 1])
+            out = with_dup(article(sys.argv[sys.argv.index("--article") + 1]))
         elif "--list" in sys.argv:
             out = {"ok": True, "items": headlines(get(CFG["url"]), CFG["url"], int(CFG["count"]))}
         else:

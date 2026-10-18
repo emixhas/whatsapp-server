@@ -4,14 +4,17 @@ aynı olayı veren kaynakları birleştirir (tek video) ve video adayı seçer. 
 
 Aday kuralı (settings.breaking): haber değerliyse (news_value) YA DA en az `minSources` (3) farklı sitede çıktıysa
 (çok konuşulan). 3+ kaynak ayrıca YouTube için değerli sayılır (ANLIK_SOURCE_COUNT → assemble_script).
-Aynı olay için son 12 saatte video üretildiyse (data/breaking_produced.json; her anlık üretimde assemble_script
-yazar) aday olmaz. İlk çalıştırmada her kaynağın mevcut haberleri "görüldü" sayılır.
+Videosu üretilmiş haber aday olmaz: üretilen haber hafızası (scripts/news_memory.py, data/breaking_produced.json; HER
+videoda assemble_script yazar, pencere settings.dedup.hours, varsayılan 48) adres, başlık ve içerikle (başlık + özet)
+karşılaştırır. Burada yalnız adres eşleşmesi (ya da bağlantısız haber) adaydan düşer; başlık/özet eşleşmesi adayda dup +
+dupInfo olarak kalır, panel sayfayı okuyunca gövdeyle yeniden bakar (aynı ildeki başka olay başlıktan ayrılamaz), sayfa
+okunamazsa bu karara uyar. İlk çalıştırmada her kaynağın mevcut haberleri "görüldü" sayılır.
 
-  python3 scripts/breaking_watch.py --check          # {"ok", "sources": {ad: {ok, count, error}}, "candidates": [...]}
+  python3 scripts/breaking_watch.py --check          # {"ok", "sources": {ad: {ok, count, error}}, "candidates": [...], "dups": [...]}
   python3 scripts/breaking_watch.py --list           # panel için son haberler ve kaynak durumu
   python3 scripts/breaking_watch.py --item LINK      # paneldeki "Video üret" düğmesinin haberi
   python3 scripts/breaking_watch.py --count "başlık" # bu olayı kaç farklı kaynak verdi (son 12 saat)
-  python3 scripts/breaking_watch.py --mark "başlık"  # bu olay için video üretiliyor (tekrar engeli)
+  python3 scripts/breaking_watch.py --mark "başlık" [--url ADRES] [--text METİN]  # bu haber üretime alındı (sıradayken tekrar yakalanmasın)
 """
 import json
 import re
@@ -24,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA, load_json, save_json, settings  # noqa: E402
 
 STATE = DATA / "breaking_state.json"       # {seen: {link: ts}, recent: [{source, title, link, at}], status: {...}}
-PRODUCED = DATA / "breaking_produced.json"  # [{title, at}] — üretilmiş anlık videolar (tekrar engeli)
-RECENT_H = 12
+PRODUCED = DATA / "breaking_produced.json"  # üretilen haber hafızası (news_memory.py; eski [{title, at}] de okunur)
+RECENT_H = 12  # son dakika sitelerindeki haberlerin tutulduğu süre (kaynak sayımı); üretilen haber penceresi settings.dedup.hours
 DEFAULT_SOURCES = [
     {"name": "Hürriyet", "url": "https://www.hurriyet.com.tr/rss/anasayfa"},
     {"name": "Sözcü", "url": "https://www.sozcu.com.tr/feeds-son-dakika"},
@@ -79,15 +82,22 @@ def source_count(title: str, st=None) -> list:
     return sorted({i["source"] for i in recent_items(st) if same_event(title, i.get("title", ""))})
 
 
-def already_produced(title: str) -> bool:
-    return any(_now() - p.get("at", 0) < RECENT_H * 3600 and same_event(title, p.get("title", ""))
-               for p in load_json(PRODUCED, []))
+def match_produced(title: str, text: str = "", url: str = "", hours=None, mode: str = "full", exclude=None):
+    """Bu haberin videosu üretildi mi: {video, title, kind, reason, at, ago} ya da None (kullanıcı isteği, 18 Ekim: "ürettiğimiz
+    haberi tekrar yakalamayalım"; kurallar scripts/news_memory.py). text: özet/gövde, url: haber adresi — ne kadar bağlam
+    verilirse başka sözlerle yazılmış aynı haber o kadar iyi tanınır. mode "title": yalnız başlık, exclude: bu videonun kendi
+    kayıtları sayılmaz (viral devam haberi)."""
+    from news_memory import match
+    return match(title, text, url, hours, mode, exclude)
 
 
-def mark_produced(title: str) -> None:
-    lst = [p for p in load_json(PRODUCED, []) if _now() - p.get("at", 0) < 48 * 3600]
-    lst.append({"title": title, "at": _now()})
-    save_json(PRODUCED, lst)
+def already_produced(title: str, text: str = "", url: str = "", hours=None, mode: str = "full", exclude=None) -> bool:
+    return match_produced(title, text, url, hours, mode, exclude) is not None
+
+
+def mark_produced(title: str, url: str = "", text: str = "") -> None:
+    from news_memory import mark
+    mark(title, url, text)
 
 
 def fetch_source(src: dict, n: int) -> list:
@@ -132,7 +142,7 @@ def check() -> dict:
     save_json(STATE, st)
     kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
     # aynı olayı veren yeni haberleri tek adayda topla
-    clusters = []
+    clusters, dups = [], []
     for f in fresh:
         hit = next((cl for cl in clusters if same_event(cl["title"], f["title"])), None)
         if hit:
@@ -140,15 +150,21 @@ def check() -> dict:
         srcs = source_count(f["title"], st)
         v = score(f"{f['title']} {f['summary'][:200]}", kw)
         multi = len(srcs) >= int(c["minSources"])
-        if already_produced(f["title"]):
-            continue
         if not (v["valuable"] or multi):
+            continue
+        # videosu üretilmiş haber aday olmaz (başlık + özet + adres). Yalnız adres eşleşmesi (ya da sayfası okunamayacak bağlantısız
+        # haber) burada düşer; başlık/özet eşleşmesi adayda kalır (dup), panel sayfa gövdesiyle karar verir: genel başlık ("Konya'da
+        # yolcu otobüsü devrildi") aynı ildeki başka olayı da tutar, kullanıcı isteği 18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım"
+        m = match_produced(f["title"], f["summary"], f["link"])
+        if m and (m["reason"] == "aynı haber adresi" or not f["link"]):  # panel loga yazar ("… atlandı — …"); aynı video için bir kez
+            if not any(d["video"] == m["video"] and d["matched"] == m["title"] for d in dups):
+                dups.append({"title": f["title"], "source": f["source"], "video": m["video"], "matched": m["title"], "ago": m["ago"], "reason": m["reason"]})
             continue
         clusters.append({"title": f["title"], "url": f["link"], "source": f["source"], "summary": f["summary"],
                          "sources": srcs, "count": len(srcs), "valuable": v["valuable"],
-                         "valueReason": v["reason"] + (f" · {len(srcs)} kaynakta" if len(srcs) > 1 else "")})
+                         "valueReason": v["reason"] + (f" · {len(srcs)} kaynakta" if len(srcs) > 1 else ""), "dup": bool(m), "dupInfo": m})
     clusters.sort(key=lambda x: (x["valuable"], x["count"]), reverse=True)
-    return {"ok": True, "sources": status, "fresh": len(fresh), "candidates": clusters}
+    return {"ok": True, "sources": status, "fresh": len(fresh), "candidates": clusters, "dups": dups[:5]}
 
 
 def listing() -> dict:
@@ -158,26 +174,30 @@ def listing() -> dict:
     kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
     items = [i for i in rec if i["source"] != "Mynet"][:20]
     out = []
-    for i in items:  # panelde her haberin yanında: değerli mi, kaç sitede, bu olay için video var mı
+    for i in items:  # panelde her haberin yanında: değerli mi, kaç sitede, bu haberin videosu var mı (hangisi, ne zaman)
         v = score(f"{i['title']} {(i.get('summary') or '')[:200]}", kw)
+        m = match_produced(i["title"], i.get("summary") or "", i.get("link") or "")
         out.append({"source": i["source"], "title": i["title"], "link": i["link"], "valuable": v["valuable"], "valueReason": v["reason"],
-                    "sources": source_count(i["title"], st), "produced": already_produced(i["title"])})
+                    "sources": source_count(i["title"], st), "produced": bool(m), "producedInfo": m})
+    marks = load_json(PRODUCED, [])
     return {"ok": True, "sources": st.get("status", {}), "lastCheck": st.get("lastCheck"), "recent": out,
-            "produced": load_json(PRODUCED, [])[-10:]}
+            "produced": [{k: p.get(k) for k in ("title", "at", "video", "kind")} for p in (marks if isinstance(marks, list) else [])[-10:] if isinstance(p, dict)]}
 
 
 def find_recent(link: str):
     """Panelden seçilen haber (bağlantısıyla); başlık ve özet istemciden değil kayıttan alınır."""
     for i in recent_items():
         if i["source"] != "Mynet" and link and i.get("link") == link:
-            return {**i, "sources": source_count(i["title"]), "produced": already_produced(i["title"])}
+            m = match_produced(i["title"], i.get("summary") or "", link)
+            return {**i, "sources": source_count(i["title"]), "produced": bool(m), "producedInfo": m}
     return None
 
 
 if __name__ == "__main__":
     try:
         if "--mark" in sys.argv:  # panel bir adayı üretime aldığında (kuyrukta beklerken tekrar seçilmesin)
-            mark_produced(sys.argv[sys.argv.index("--mark") + 1])
+            arg = lambda k: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else ""  # noqa: E731
+            mark_produced(arg("--mark"), arg("--url"), arg("--text"))
             out = {"ok": True}
         elif "--count" in sys.argv:
             t = sys.argv[sys.argv.index("--count") + 1]

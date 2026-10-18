@@ -681,8 +681,11 @@ def build(job: dict) -> dict:
                    "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer else {})})
                  for s in segs[1:]]
               + [{"kind": "outro", "narration": "Takip etmeyi unutma."}]}
+    # social: paylaşımın başlığı/açıklaması ve adresi üretilen haber hafızasına girer (assemble_script → news_memory): aynı olay
+    # sonra bir haber sitesinde başka sözlerle düşerse otomatik yakalama onu tekrar üretmez
+    so_mem = {"title": str(social.get("title") or "")[:200], "caption": str(social.get("caption") or "")[:600], "url": social.get("url") or ""} if social else None
     job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs],
-                                         **({"trailer": True, "film": film} if trailer else {})})
+                                         **({"trailer": True, "film": film} if trailer else {}), **({"social": so_mem} if so_mem else {})})
     jd = ROOT / job_dir
     for i, c in enumerate(cards):  # parçaları iş klasörüne taşı (new_job klasörü yeniden kurdu)
         for key, suf in (("video", ".mp4"), ("image", ".jpg"), ("tall", "-tall.jpg")):

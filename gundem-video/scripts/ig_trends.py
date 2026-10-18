@@ -6,6 +6,7 @@ kullanıcı kararı: YALNIZ panelde gösterilir — WhatsApp mesajı yok, otomat
 Kullanım:
   python3 scripts/ig_trends.py --scan    hesapları (+ resmi API varsa hashtag'leri) tarar, data/ig_trends.json yazar
   python3 scripts/ig_trends.py --list    son tarama sonucu (data/ig_trends.json)
+  python3 scripts/ig_trends.py --produced  son listedeki trendlerden haberi bizde üretilmiş olanlar {url: {video, at, ago}}
 Son satır her zaman tek satır JSON'dur; tamamen başarısız taramada {ok:false, error} (Türkçe), çıkış kodu yine 0.
 
 Yöntem sırası:
@@ -717,6 +718,26 @@ def finish(prev, state, now, results, groups, errors, notes, used, c, fail=None)
     return {**cache, "newTrends": [{k: it[k] for k in ("account", "source", "url", "caption", "views", "likes", "metric", "ratio", "fast")} for it in new]}
 
 
+def produced_map(items) -> dict:
+    """Trend videonun haberi bizde üretildi mi (kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım"; panel
+    kartta "✓ Bu haber üretildi" gösterir, "Haber yap" düğmesi kalır): açıklamanın ilk cümlesi başlık, devamı metin, gönderi
+    adresi (bu reels'ten video yaptıysak adres kuralı) üretilen haber hafızasıyla karşılaştırılır. {url: {video, at, ago, reason}}"""
+    from breaking_watch import match_produced
+    out = {}
+    for it in items or []:
+        if not isinstance(it, dict) or not it.get("url"):
+            continue
+        cap = re.sub(r"\s+", " ", re.sub(r"[#@][\w.]+", " ", str(it.get("caption") or ""))).strip()
+        head = re.split(r"(?<=[.!?])\s|\s[|•–—]\s", cap)[0][:160]
+        try:
+            m = match_produced(head, cap[len(head):], it["url"])
+        except Exception:
+            m = None
+        if m:
+            out[it["url"]] = {k: m.get(k) for k in ("video", "at", "ago", "reason", "title")}
+    return out
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if "--scan" in argv:
@@ -728,9 +749,15 @@ def main(argv=None):
     elif "--list" in argv:
         d = load_json(OUT, {})
         print(json.dumps(d if isinstance(d, dict) and d else {"ok": False, "error": "Henüz tarama yapılmadı."}, ensure_ascii=False))
+    elif "--produced" in argv:  # panel kartı: son listedeki trendlerden haberi bizde üretilmiş olanlar (her istekte güncel hafızayla)
+        d = load_json(OUT, {})
+        try:
+            print(json.dumps({"ok": True, "produced": produced_map((d or {}).get("items") if isinstance(d, dict) else [])}, ensure_ascii=False))
+        except Exception as e:
+            print(json.dumps({"ok": False, "error": str(e)[:200], "produced": {}}, ensure_ascii=False))
     else:
         print(__doc__)
-        print(json.dumps({"ok": False, "error": "kullanım: --scan | --list"}, ensure_ascii=False))
+        print(json.dumps({"ok": False, "error": "kullanım: --scan | --list | --produced"}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

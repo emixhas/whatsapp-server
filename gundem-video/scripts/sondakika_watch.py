@@ -381,8 +381,10 @@ def discover() -> dict:
 
 
 def annotate(items: list) -> list:
-    """Haber değeri (YouTube kuralı), bu olayı veren diğer siteler ve son 12 saatte üretildi mi (tekrar engeli)."""
-    from breaking_watch import STATE as BSTATE, already_produced, source_count
+    """Haber değeri (YouTube kuralı), bu olayı veren diğer siteler ve videosu üretildi mi (üretilen haber hafızası: başlık +
+    açıklama + adres; dupInfo hangi video, ne zaman). Panel burada yalnız adres eşleşmesinde atlar; başlık/açıklama eşleşmesine
+    sayfa okununca (--article) gövdeyle bakar (HTML'den okunan haberde açıklama boştur, başlık aynı ildeki başka olayı da tutar)."""
+    from breaking_watch import STATE as BSTATE, match_produced, source_count
     from news_value import score
     kw = (settings().get("youtubePolicy") or {}).get("extraKeywords")
     bst = load_json(BSTATE, {})
@@ -392,7 +394,8 @@ def annotate(items: list) -> list:
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
-        x["dup"] = bool(x["title"]) and already_produced(x["title"])
+        m = match_produced(x["title"], x.get("description") or "", x.get("url") or "") if x["title"] else None
+        x["dup"], x["dupInfo"] = bool(m), m
     return items
 
 
@@ -472,9 +475,9 @@ def _video(page: str, base: str) -> str:
 
 
 def article(url: str) -> dict:
-    """mynet_watch.article ile aynı biçim + published (yayın zamanı, UTC ISO), video (sayfadaki video adresi) ve dup (bu
-    olay için son 12 saatte video üretildi mi: --check'ten bu yana başka kaynak üretmiş olabilir, üretimden hemen önce yeniden)."""
-    from breaking_watch import already_produced
+    """mynet_watch.article ile aynı biçim + published (yayın zamanı, UTC ISO), video (sayfadaki video adresi) ve dup/dupInfo (bu
+    haberin videosu üretildi mi — başlık + açıklama + gövde + adresle: --check'ten bu yana başka kaynak üretmiş olabilir,
+    üretimden hemen önce yeniden)."""
     page = fetch(url)
     orig = mw.get
     mw.get = lambda _u: page  # article() sayfayı get() ile alır; aynı sayfa ikinci kez indirilmesin
@@ -488,8 +491,7 @@ def article(url: str) -> dict:
         if v and len(v) > len(cur) and v.startswith(cur):
             a[k] = v
     a["published"], a["video"] = _published(page), _video(page, url)
-    a["dup"] = bool(a.get("title")) and already_produced(a["title"])
-    return a
+    return mw.with_dup(a)
 
 
 if __name__ == "__main__":

@@ -64,9 +64,21 @@ def main():
         if cfg["followUp"] and titles:
             try:
                 from breaking_watch import already_produced, recent_items, same_event
+                from news_memory import name_conflict, new_info
+                told = " ".join(f"{s.get('title', '')} {s.get('narration', '')}" for s in meta.get("segments", []) if s.get("kind") in ("hook", "haber"))
                 pub_ts = r["pub"].timestamp()
-                cands = [i for i in recent_items() if i.get("at", 0) > pub_ts and any(same_event(t, i.get("title", "")) for t in titles[:2])
-                         and not already_produced(i.get("title", ""))]
+                # devam haberi: videodan SONRA düşen, aynı olayla ilgili (başka il/kişi değil: "Malatya depremi" ↔ "Manisa depremi") ve
+                # henüz videosu yapılmamış gelişme. Üretilen haber hafızasına eskisi gibi YALNIZ BAŞLIKLA bakılır ve viral videonun kendi
+                # kayıtları sayılmaz (eskiden düzenli videolar hafızada yoktu; kendi haber başlıkları devam haberini hep engellerdi; videonun
+                # üretime alınış işaretini assemble siler, kalan işaret 3 saatten sonra sayılmaz). Başka videolar (ör. daha önce yapılmış devam
+                # videosu) ve sıradaki işlerin işaretleri sayılır; içerik kuralı
+                # kullanılmaz, yeni gelişmeyi eski habere benzetip devam videosunu engelleyebilirdi. Başlığında videoda anlatılmamış bir
+                # bilgi olmayan haber aynı haberin tekrarıdır (Mynet manşetindeki ilk haberin zamanı yok, hep "yeni" görünür), seçilmez
+                vid = r["name"].replace(".mp4", "")
+                cands = [i for i in recent_items() if i.get("at", 0) > pub_ts
+                         and any(same_event(t, i.get("title", "")) and not name_conflict(t, i.get("title", ""), i.get("summary") or "") for t in titles[:2])
+                         and new_info(i.get("title", ""), told, vid)
+                         and not already_produced(i.get("title", ""), mode="title", exclude=vid)]
                 if cands:
                     c = cands[-1]
                     item["followUp"] = {"title": c["title"], "source": c.get("source"), "url": c.get("link"),
