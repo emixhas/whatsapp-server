@@ -142,11 +142,16 @@ def headlines(page: str, base: str, count: int) -> list:
     return out
 
 
-def _meta(page: str, *names) -> str:
+# meta etiketi: tırnaklı değerin içindeki > ya da kesme işareti etiketi bölmez; tırnaklı değer < geçemez, bozuk etiket (kaçmamış
+# tırnak: content="Bakan: "Vergi…">) eski düz bölmeyle ilk >'de biter, sonraki og:title/og:image etiketlerini yutmaz
+_META_TAG = re.compile(r"<meta\b(?:[^<>\"']|\"[^\"<]*\"|'[^'<]*')*>|<meta\b[^>]*>", re.I)
+
+
+def _meta(page: str, *names, keys: str = "property|name") -> str:
     # değer açılış tırnağıyla kapanır: content="Kadıköy'de …" kesme işaretinde kesilmez (Türkçe başlıklarda çok sık; eskiden
     # og:title "Kadıköy" olarak okunuyordu — Mynet, son dakika siteleri ve haber araması başlık/özetleri)
-    for tag in re.findall(r"<meta\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", page, re.I):
-        k = re.search(r'(?:property|name)\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
+    for tag in _META_TAG.findall(page):
+        k = re.search(rf'(?:{keys})\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
         v = re.search(r'content\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
         if k and v and k.group(2).lower() in names and v.group(2).strip():
             return html.unescape(v.group(2)).strip()

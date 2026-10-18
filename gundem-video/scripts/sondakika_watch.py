@@ -432,14 +432,8 @@ def check() -> dict:
 
 # ---------- haber sayfası
 def _meta_q(page: str, *names) -> str:
-    """_meta gibi ama değeri açılış tırnağıyla kapatır: content="İstanbul'da …" kesmeden okunur
-    (mynet_watch._meta ilk ' ya da " işaretinde durur; Türkçe başlıklarda kesme işareti çok sık)."""
-    for tag in re.findall(r"<meta\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>", page, re.I):
-        k = re.search(r'(?:property|name|itemprop)\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
-        v = re.search(r'content\s*=\s*(["\'])(.*?)\1', tag, re.I | re.S)
-        if k and v and k.group(2).lower() in names and v.group(2).strip():
-            return html.unescape(v.group(2)).strip()
-    return ""
+    """mynet_watch._meta (değer açılış tırnağıyla kapanır, bozuk etiket sonrakileri yutmaz) + itemprop anahtarı."""
+    return mw._meta(page, *names, keys="property|name|itemprop")
 
 
 def _published(page: str) -> str:
@@ -488,7 +482,7 @@ def article(url: str) -> dict:
         a = mw.article(url)
     finally:
         mw.get = orig
-    # kesme işaretinde kesilmiş meta değerleri ("Kadıköy'de …" → "Kadıköy") tam haliyle düzeltilir
+    # mw.article'ın bulamadığı itemprop meta değerleri; kısa kalmış değer (eski sürümlerde kesme işaretinde kesilirdi) uzunuyla düzeltilir
     for k, names in (("title", ("og:title", "twitter:title")), ("description", ("og:description", "description", "twitter:description")), ("site", ("og:site_name",))):
         v, cur = _meta_q(page, *names), a.get(k) or ""
         if v and len(v) > len(cur) and v.startswith(cur):

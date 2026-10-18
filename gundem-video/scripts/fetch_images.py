@@ -623,7 +623,8 @@ _NEWS = None
 
 
 def same_story_pages(seg: dict, own: str) -> list:
-    """Aynı olayı veren diğer sitelerin haber sayfaları (en uyumlu 4)."""
+    """Aynı olayı veren diğer sitelerin haber sayfaları: anlıkta panelin bulduğu sitelerin HEPSİ (work/anlik_pages.json, en çok 8;
+    "haberin tüm kaynakları"), ardından work/news.json'dan en uyumlu 4."""
     global _NEWS
     if _NEWS is None:
         try:
@@ -636,19 +637,20 @@ def same_story_pages(seg: dict, own: str) -> list:
         except Exception:
             pass
     kw = _stems(f"{seg.get('title', '')} {seg.get('narration', '')}")
-    out = []
+    anlik, out = [], []
     for it in _NEWS:
         link = it.get("link") or ""
         if not link.startswith("http") or link == own:
             continue
         if it.get("anlik") and (os.environ.get("ANLIK") == "1"):
-            out.append((99, link))
+            anlik.append(link)
             continue
         s = len(kw & _stems(f"{it.get('title', '')} {(it.get('summary') or '')[:300]}"))
         if s >= max(2, int(len(kw) * 0.35)):
             out.append((s, link))
     out.sort(key=lambda x: -x[0])
-    return [l for l in dict.fromkeys(l for _, l in out) if l not in AVOID][:4]
+    anlik = [l for l in dict.fromkeys(anlik) if l not in AVOID]
+    return anlik + [l for l in dict.fromkeys(l for _, l in out) if l not in AVOID and l not in anlik][:4]
 
 
 def searched_pages(query: str) -> list:
@@ -701,8 +703,13 @@ def youtube_search(query: str, dst: Path, w: int, h: int, secs: float, used: dic
     return 0.0, ""
 
 
+_NO_VIDEO: set = set()  # bu çalışmada videosu çıkmayan sayfalar (kanca ve ilk haber aynı 8 siteyi yeniden denemesin)
+
+
 def video_from_page(page: str, pages: dict, dst: Path, w: int, h: int, secs: float) -> float:
     """Bir haber sayfasından video: yt-dlp, sayfadaki video dosyaları, gömülü oynatıcılar."""
+    if page in _NO_VIDEO:
+        return 0.0
     d = fetch_video_ytdlp(page, dst, w, h, secs)
     if d:
         return d
@@ -715,6 +722,8 @@ def video_from_page(page: str, pages: dict, dst: Path, w: int, h: int, secs: flo
             d = fetch_video_ytdlp(emb, dst, w, h, secs)
             if d:
                 break
+    if not d:
+        _NO_VIDEO.add(page)
     return d
 
 

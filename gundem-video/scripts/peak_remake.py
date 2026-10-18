@@ -9,7 +9,9 @@ farklı şekilde, mümkünse farklı görsellerle yeniden 30 saniyelik yayınlas
 Saatler: son `windowDays` (7) günün (yetmezse tüm geçmişin) uzun olmayan (Shorts) videolarının yayın saatine göre toplam izlenme ortalaması, komşu saatlerle yumuşatılır
 (0,5 · önceki + sonraki); aday saat kendi verisi olan (en az `minPerHour` 2 video) saattir, 24 saatten genç videolar
 (izlenmesi oturmadı) sayılmaz. `fromHour`-`toHour` (08-23) arasındaki en iyi `count` (3) saat, aralarında en az
-`minGapHours` (3) saat; eksik kalırsa varsayılanlarla tamamlanır. İzlenme verili video `minVideos`ten (12) azsa `defaultHours` (12, 18, 21: öğle arası ve akşam) kullanılır.
+`minGapHours` (3) saat; eksik kalırsa varsayılanlarla, o da yetmezse izinli saatlerden tamamlanır. İzlenme verili video `minVideos`ten (12) azsa
+`defaultHours` (12, 17, 20: öğle arası ve akşam) kullanılır. `fixedHours` (20) her gün kesin tekrar saatidir, plana hep girer
+(count'u geçse de); diğer saatler ona en az `minGapHours` uzaklıkta seçilir.
 
 Seçim ("sırasıyla"): son 24 saatte üretilmiş, en az `minViews` izlenmeli videolardan en çok izleneni; bugün (son 24 saat)
 bu özellikle ya da elle yeniden yayınlanmış haberler (aynı olay, `breaking_watch.same_event`) atlanır. Böylece 1. saatte
@@ -53,15 +55,24 @@ def plan() -> dict:
     for r in rows:
         by[r["hour"]].append(r["views"])
     allowed = [h for h in range(24) if int(c["fromHour"]) <= h <= int(c["toHour"])]
-    fixed = sorted({int(h) % 24 for h in (c.get("fixedHours") or [])})[:n_want]
+    # sabit saatler (20:00) her zaman: count yalnız veriden seçilen ek saatleri sınırlar (sabit saat sayısı count'u geçerse hepsi kalır)
+    fixed = sorted({int(h) % 24 for h in (c.get("fixedHours") or [])})[:5]
+    n_want = max(n_want, len(fixed))
     gap_ok = lambda h, hs: all(min(abs(h - x), 24 - abs(h - x)) >= int(c["minGapHours"]) for x in hs)
-    if len(rows) < int(c["minVideos"]):
-        hours = list(fixed)
-        for h in sorted(int(x) for x in c["defaultHours"]):
+    defs = [int(x) for x in c["defaultHours"]] or [12]
+    near = lambda h: min(min(abs(h - d), 24 - abs(h - d)) for d in defs)
+
+    def fill(hours, order):  # boşluk kuralına uyan sırayla eklenir
+        for h in order:
             if len(hours) >= n_want:
                 break
             if h not in hours and gap_ok(h, hours):
                 hours.append(h)
+        return hours
+
+    if len(rows) < int(c["minVideos"]):
+        # varsayılan saatler sabit saate çok yakınsa (17 ve 20 ↔ sabit 18) eksik kalmasın: izinli saatlerden varsayılana en yakını
+        hours = fill(fill(list(fixed), sorted(defs)), sorted(allowed, key=lambda h: (near(h), h)))
         hours = sorted(hours)
         return {"hours": hours, "fixed": fixed, "source": "varsayılan", "videos": len(rows),
                 "note": f"İzlenme verili {len(rows)} video var; en az {c['minVideos']} olunca saatler verinizden hesaplanır. Şimdilik öğle arası ve akşam saatleri."}
@@ -74,17 +85,9 @@ def plan() -> dict:
 
     # yalnız kendi verisi olan saat aday olur (en az minPerHour video); komşular puanı yumuşatır
     scored = sorted(((smooth(h), h) for h in allowed if len(by.get(h, [])) >= int(c["minPerHour"])), reverse=True)
-    hours = list(fixed)  # sabit saatler (20:00) her zaman; kalanlar veriden
-    for sc, h in scored:
-        if len(hours) >= n_want:
-            break
-        if h not in hours and gap_ok(h, hours):
-            hours.append(h)
-    for h in sorted(int(x) for x in c["defaultHours"]):  # veri yetmezse varsayılanla tamamla
-        if len(hours) >= n_want:
-            break
-        if h not in hours and gap_ok(h, hours):
-            hours.append(h)
+    hours = fill(list(fixed), [h for _, h in scored])  # sabit saatler (20:00) her zaman; kalanlar veriden
+    hours = fill(hours, sorted(defs))  # veri yetmezse varsayılanla tamamla
+    hours = fill(hours, sorted(allowed, key=lambda h: (-(smooth(h) or 0), near(h), h)))  # yine eksikse izinli saatlerden
     detail = [{"hour": h, "avg": round(smooth(h) or 0), "n": len(by.get(h, [])), **({"fixed": True} if h in fixed else {})} for h in sorted(hours)]
     return {"hours": sorted(hours), "fixed": fixed, "source": f"izlenme verisi, {window}", "videos": len(rows), "detail": detail}
 
