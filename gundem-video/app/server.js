@@ -1220,12 +1220,24 @@ const waVideoCfg = () => ({ enabled: true, autoPublish: false, duration: 30, wai
 // giriş ile fragmanda ne anlatıldı gibi 40 saniyelik video"): talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser
 // geçerse ya da (autoDetect) YouTube başlığı fragmansa wa_video.py fragman modunda çalışır (prompts/fragman.md). Açık haber isteği
 // ("bu fragmanı haber yap") fragman kelimesinden önce gelir: "haber yap" diye yeniden gönderilen link yine fragman olmasın.
-const trailerCfg = () => ({ enabled: true, autoDetect: true, duration: 40, maxSoundSeconds: 8, ...(settings().trailer || {}) });
+// settings.trailer biçimi denetlenir (beyin/elle düzenleme true, false, "false" yazabilir): nesne değilse varsayılan, false → kapalı;
+// enabled/autoDetect "false" ya da 0 da kapalı sayılır; bozuk ya da 0 süre → 40 (trailerSecs; wa_video.py tr_settings ile aynı)
+const trailerCfg = () => {
+  const raw = settings().trailer;
+  const t = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : raw === false || raw === "false" ? { enabled: false } : {};
+  const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
+  return { duration: 40, maxSoundSeconds: 8, ...t, enabled: !off(t.enabled), autoDetect: !off(t.autoDetect) };
+};
 // JS'de \b Türkçe harfte çalışmaz; yalnız Türkçe ekler (fragmanı, fragmanda…; "fragmantasyon" değil)
 const TRAILER_ASK = /(^|[^\p{L}])(fragman([ıiae]\p{L}*|l[ae]r\p{L}*|d[ae]\p{L}*)?|trailer(s|[ıi]\p{L}*)?|teaser(s|[ıi]\p{L}*)?)(?![\p{L}])/iu;
-const NEWS_ASK = /(^|[^\p{L}])(haber(i|ini)? (yap|olarak|gibi|hazırla|üret|çek)\p{L}*|haber olarak|son ?dakika)(?![\p{L}])/iu;
-// fragman süresi: talimattaki "N saniye" önce gelir (wa_video.py ile aynı kural, 20-60); yanıt ve log söz verilen süreyi doğru yazsın
-const trailerSecs = (instruction) => Math.min(60, Math.max(20, Number((String(instruction || "").toLowerCase().match(/(\d{2,3})\s*(?:saniye|sn(?![\p{L}\p{N}_]))/u) || [])[1]) || Number(trailerCfg().duration) || 40));
+// Olumsuz istek haber isteği değildir: "haber yapma", "haber hazırlamayın", "haber yapmadan", "haber gibi olmasın", "son dakika yazma",
+// "haber olarak değil fragman olarak paylaş" fragman analizine gider
+const NEWS_ASK = /(^|[^\p{L}])(haber(i|ini)? (yap|olarak|gibi|hazırla|üret|çek)(?!(ma|me)(y[ıi]n|s[ıi]n|z|d[ae]n)?(?![\p{L}]))\p{L}*|haber olarak|son ?dakika)(?![\p{L}])(?!\s*(olarak\s+)?(değil|olmasın|olmasin|yazma|koyma|deme|istemiyorum))/iu;
+// fragman süresi (wa_video.py SURE_RE/trailer_secs ile aynı kural, 20-60): talimattaki "N saniye/sn" ya da "N dakika/dk" (× 60); yoksa
+// trailer.duration. Belirtme/çıkma ekli sayı süre değildir ("baştaki 15 saniyeyi kullanma", "ilk 5 sn'yi kes", "15 sn'den sonra");
+// "40 saniyelik", "40 sn'lik", "40 saniyede", "1 dakikalık" süredir. Yanıt ve log söz verilen süreyi doğru yazsın
+const SURE_RE = /(?:(\d{2,3})\s*(?:saniye(?:lik|de|ye)?|sn)|(\d{1,2})\s*(?:dakika(?:l[ıi]k|da|ya)?|dk))(?![\p{L}\p{N}_]|['’](?:y[ıi]|d[ae]n|t[ae]n))/u;
+const trailerSecs = (instruction) => { const m = String(instruction || "").toLocaleLowerCase("tr-TR").match(SURE_RE); return Math.min(60, Math.max(20, m ? (m[1] ? Number(m[1]) : Number(m[2]) * 60) : Math.trunc(Number(trailerCfg().duration)) || 40)); };
 let waVid = null; // {files, instruction, at, timer, asked}
 async function waVideoIn({ file, caption }) {
   const c = waVideoCfg();
@@ -1316,10 +1328,11 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     if (trailer) {
       // başlıktan ayıklanan ad yalnız başlık fragman diye tanındıysa film adıdır ("fragman: <link>" ile istenen Instagram videosunda
       // başlık "Video by …" olabilir); tanınmadıysa Claude adı karelerden ve açıklamadan okur
-      const film = (s.trailer && s.film) || s.title || "fragman";
+      // ad yoksa (başlık boş, fragman açıklamadan tanındı) "fragman" ad diye yazılmaz
+      const film = (s.trailer && s.film) || s.title || "";
       const secs = trailerSecs(instruction);
-      push(`🎬 fragman analizi: ${film} (${asked ? "talimatta istendi" : "başlıktan tanındı"}; ${secs} sn, ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı, yalnız fragman ve açıklaması kullanılacak"})`);
-      if (!asked) await sendW(`🎬 Bu bir fragman: *${film}*. ${secs} saniyelik fragman analizi hazırlanıyor (haber olarak isterseniz linki "haber yap" diye yeniden gönderin).`);
+      push(`🎬 fragman analizi: ${film || "(ad yok)"} (${asked ? "talimatta istendi" : s.title ? "başlıktan tanındı" : "açıklamadan tanındı"}; ${secs} sn, ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı, yalnız fragman ve açıklaması kullanılacak"})`);
+      if (!asked) await sendW(`🎬 Bu bir fragman${film ? `: *${film}*` : ""}. ${secs} saniyelik fragman analizi hazırlanıyor (haber olarak isterseniz linki "haber yap" diye yeniden gönderin).`);
       // talimat yoksa "fragman yap": wa_video.py bunu varsayılan analiz talimatına (TRAILER_TALIMAT) çevirir
       return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "" });
     }

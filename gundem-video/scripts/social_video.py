@@ -49,7 +49,10 @@ _DESC_TRAILER = re.compile(r"(?<!\w)(?:official\s+(?:trailer|teaser)|teaser\s+tr
                            r"\d+\s*\.\s*b[öo]l[üu]m\s+(?:\d+\s*\.\s*)?fragman\w*)(?!\w)", re.I)
 # fragman kelimesinin yanındaki sıfatlar (yalnız bitişikken atılır: "Final Destination", "The Final Reckoning" adın parçası kalır)
 _MODS = (r"(?:official|offical|final|new|first|full|main|international|ultimate|exclusive|extended|teaser|resmi|yeni|ilk|son|"
-         r"t[üu]rk[çc]e|altyaz[ıi]l[ıi]|dublajl[ıi]|orijinal|uzun|k[ıi]sa|tam|hd|4k)")
+         r"t[üu]rk[çc]e|altyaz[ıi]l[ıi]|dublajl[ıi]|orijinal|uzun|k[ıi]sa|tam|hd|4k|"
+         r"concept|fan[\s-]?made|unofficial|ai|parody|parodi|hayran\s+yap[ıi]m[ıi])")  # hayran yapımı: "Concept Trailer", "AI Trailer"
+# yalnız "hayran yapımı" işareti olan başlık parçası film adı değildir ("FAN MADE | Spider-Man 4 Trailer" → "Spider-Man 4")
+_FAN = re.compile(r"^(?:fan[\s-]?made|unofficial|concept|parod[iy]|ai(?:\s+generated)?|hayran\s+yap[ıi]m[ıi])$", re.I)
 _PHRASE = re.compile(rf"(?<!\w)(?:\d+\s*\.\s*)?(?:{_MODS}\s+)*{_TWORD}(?!\w)(?:\s*#?\s*\d+(?!\w))?(?:\s+{_MODS}(?!\w))*", re.I)
 _QUALITY = re.compile(r"(?<!\w)(?:4k|8k|u?hd|fhd|full\s+hd|1080p|720p|2160p|imax)(?!\w)|#\d+", re.I)
 _PLATFORM = re.compile(r"^(?:netflix|prime\s+video|amazon\s+prime(?:\s+video)?|disney\+?|hbo(?:\s+max)?|max|apple\s+tv\+?|blutv|tod|exxen|gain|"
@@ -92,11 +95,23 @@ def clean_caption(t: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+# tırnak içindeki replik ("Ne oldu sana?") soru başlığı sayılmaz; Türkçe kesme işareti (Netflix'te, Dune'un) tırnak değildir
+_QUOTED = re.compile(r"[\"“”«»][^\"“”«»]*[\"“”«»]|(?<!\w)['‘’][^'‘’]*['‘’](?!\w)")
+
+
+def _trailer_part(x: str) -> bool:
+    """Başlık parçası fragman mı: fragman kelimesi geçer ve kelimeden SONRA (tırnak dışında) soru işareti yoktur. "GTA 6 fragmanı ne
+    zaman çıkacak?" soru başlığıdır; "Who Killed Sara? Season 3 Trailer", "Bu Şehri Kim Yaktı? Resmi Fragman" ve "… 2. Fragman "Ne
+    oldu sana?"" fragmandır."""
+    m = TRAILER.search(x)
+    return bool(m) and "?" not in _QUOTED.sub(" ", x[m.end():])
+
+
 def is_trailer(title: str, description: str = "") -> bool:
-    """Başlıkta fragman/trailer/teaser geçiyor mu (römork anlamı ve soru içeren başlık parçası hariç; "Bu Şehri Kim Yaktı? | Resmi
-    Fragman" fragmandır, "GTA 6 fragmanı ne zaman çıkacak?" değil) ya da açıklamanın ilk ~200 karakterinde güçlü fragman ifadesi."""
+    """Başlıkta fragman/trailer/teaser geçiyor mu (römork anlamı ve fragmandan soru olarak söz eden başlık parçası hariç, `_trailer_part`)
+    ya da açıklamanın ilk ~200 karakterinde güçlü fragman ifadesi."""
     parts = re.split(r"\s*[|｜•·]\s*|\s+[-–—]\s+|:\s+", _VEHICLE.sub(" ", title or ""))
-    return any(TRAILER.search(x) and "?" not in x for x in parts) or bool(_DESC_TRAILER.search(_VEHICLE.sub(" ", (description or "")[:200])))
+    return any(_trailer_part(x) for x in parts) or bool(_DESC_TRAILER.search(_VEHICLE.sub(" ", (description or "")[:200])))
 
 
 def _strip(t: str) -> str:
@@ -137,7 +152,7 @@ def film_name(title: str, uploader: str = "") -> tuple[str, str]:
             before, after = _strip(_QUALITY.sub(" ", part[:m.start()])), _strip(_QUALITY.sub(" ", part[m.end():]))
             cand = before if len(re.sub(r"[\W\d_]", "", before)) >= 2 else after
         cand = _strip(_QUALITY.sub(" ", _PHRASE.sub(" ", cand)))
-        if len(re.sub(r"[\W\d_]", "", cand)) < 2 or _PLATFORM.match(cand) or (up and cand.casefold() == up):
+        if len(re.sub(r"[\W\d_]", "", cand)) < 2 or _PLATFORM.match(cand) or (up and cand.casefold() == up) or _FAN.match(cand):
             continue
         chosen = cand
         break
@@ -239,9 +254,11 @@ def fetch(url: str) -> dict:
               "title": title[:200], "url": info.get("webpage_url") or url, "views": info.get("view_count"), "likes": info.get("like_count"),
               "comments": info.get("comment_count"), "date": f"{d[6:8]}.{d[4:6]}.{d[:4]}" if len(d) == 8 else None,
               "duration": info.get("duration")}
-    # fragman (kullanıcı isteği, 18 Ekim): film adı başlıktan; panel talimata ve fragman ayarına göre fragman analizine geçer
+    # fragman (kullanıcı isteği, 18 Ekim): film adı başlıktan; panel talimata ve fragman ayarına göre fragman analizine geçer. Otomatik
+    # tanıma yalnız YouTube'da (yardım ve panel metni): TikTok/X/Facebook haber klibinin açıklamasındaki "trailer" (römork), "fragmanda
+    # yoktu" gibi sözler haber videosunu fragman moduna ve film adıyla aramaya çevirmesin; talimatta "fragman" yazılırsa her platformda olur
     try:
-        trailer = is_trailer(title, caption)
+        trailer = plat == "YouTube" and is_trailer(title, caption)
         film, bolum = film_name(title, str(social["uploader"] or ""))
     except Exception:  # ad ayıklama hiçbir zaman indirmeyi düşürmesin
         trailer, film, bolum = False, "", ""

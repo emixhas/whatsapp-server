@@ -329,43 +329,62 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   bunla ilgili çarpıcı bir kancalı giriş ile fragmanda ne anlatıldı gibi bir 40 saniyelik video üretebilir miyiz — amaç bir filmin
   fragmanını analiz edip kullanıcıların aşırı dikkatini çekecek yapıda kurmamız lazım, videodan kareler, fragmanın özet videosu gibi";
   `scripts/social_video.py`, `server.js socialVideoNews/runVideoNews`, `scripts/wa_video.py` fragman modu, `prompts/fragman.md`,
-  `settings.trailer` {enabled true, autoDetect true, duration 40, maxSoundSeconds 8}): sosyal medya linki yolunun üstüne kurulu.
-  Tanıma (yalnız otomatik tanıma; talimatta "fragman" yazılırsa her video fragman modu): `social_video.TRAILER` (fragman + Türkçe ekleri
-  — "fragmantasyon" değil —, trailer, teaser; re.I Türkçe I/ı eşler) YouTube başlığında → `social.trailer`. Yanlış pozitif ayıklanır
+  `settings.trailer` {enabled true, autoDetect true, duration 40, maxSoundSeconds 8}; biçimi denetlenir: nesne değilse varsayılan, `false`
+  → kapalı, enabled/autoDetect "false"/0 kapalı, bozuk ya da 0 süre → 40 — `server.js trailerCfg()`, `wa_video.tr_settings()`, panel aynı
+  kural; fragman olmayan wa_video işi bu ayarı hiç okumaz): sosyal medya linki yolunun üstüne kurulu.
+  Tanıma (yalnız otomatik tanıma ve YALNIZ YouTube linkinde; talimatta "fragman" yazılırsa her platformda her video fragman modu):
+  `social_video.TRAILER` (fragman + Türkçe ekleri — "fragmantasyon" değil —, trailer, teaser; re.I Türkçe I/ı eşler) YouTube başlığında
+  → `social.trailer` (TikTok/X/Facebook haber klibinin açıklamasındaki "abandoned trailer", "fragmanda yoktu" gibi sözler haber videosunu
+  fragman moduna ve film adıyla aramaya çevirmesin; orada `trailer` hep false, haber araması açıklama kelimeleriyle). Yanlış pozitif ayıklanır
   (inceleme, 18 Ekim): "tanıtım filmi" sayılmaz (parti, belediye, ürün, üniversite tanıtım filmi film fragmanı değil), römork anlamı
   (`_VEHICLE`: truck and trailer, trailer park, travel trailer, tractor-trailer…) atılır, başlık ayraçlarla (| • · – — :) parçalanır ve
-  soru içeren parça sayılmaz ("Fragman yayınlandı mı? Bakanlık açıklama yaptı", "GTA 6 fragmanı ne zaman çıkacak?" değil; "Bu Şehri Kim
-  Yaktı? | Resmi Fragman" fragman). Açıklamanın ilk 200 karakterinde yalnız güçlü ifade (`_DESC_TRAILER`: official trailer/teaser,
+  fragman kelimesinden SONRA, tırnak dışında soru işareti olan parça sayılmaz (`_trailer_part`; "Fragman yayınlandı mı? Bakanlık açıklama
+  yaptı", "GTA 6 fragmanı ne zaman çıkacak?" değil; "Bu Şehri Kim Yaktı? | Resmi Fragman", "Who Killed Sara? Season 3 Trailer", "What
+  If...? Official Trailer", '… 98. Bölüm 2. Fragman "Ne oldu sana?"' fragman; Türkçe kesme işareti tırnak sayılmaz). Açıklamanın ilk 200 karakterinde yalnız güçlü ifade (`_DESC_TRAILER`: official trailer/teaser,
   teaser trailer, resmi fragman, "85. Bölüm Fragmanı"). `film_name()`
   başlıktan film/dizi adını ayıklar (güçlü ayraçlar | • · ile parçalar, fragman ifadesi + bitişik sıfatlar Official/Final/Resmi/Yeni/Türkçe
   Altyazılı/#2 atılır, ifadeden önce ad varsa o — yoksa sonrası —, platform/stüdyo/kanal adı parçaları, "(2026)" "(Türkçe Altyazılı)"
-  parantezleri, 4K/HD, emoji ve hashtag atılır, "200. Bölüm" `social.bolum`a ayrılır, TAMAMI BÜYÜK HARF ad düzeltilir); `social.tags`
+  parantezleri, 4K/HD, emoji ve hashtag atılır, hayran yapımı işaretleri — Concept/Fan Made/Unofficial/AI/Parody/Hayran Yapımı — fragman
+  kelimesinin sıfatı gibi atılır ve yalnız bu işaretten oluşan parça ad sayılmaz ("FAN MADE | Spider-Man 4 Trailer" → Spider-Man 4),
+  "200. Bölüm" `social.bolum`a ayrılır, TAMAMI BÜYÜK HARF ad düzeltilir); `social.tags`
   (ilk 15 etiket). Fragmanda haber araması film adıyla: "<film> fragman", bulunamazsa "<film> film" ya da (bölüm/sezon geçiyorsa)
   "<film> dizi" (75 sn sınır): vizyon tarihi/oyuncu doğrulanmış haberden gelsin. `--film "BAŞLIK"` ağsız dener. Fragman olmayan
   paylaşımda hiçbir şey değişmez. Karar (`server.js`, `trailerCfg()`): enabled && talimat açıkça haber istemez ("haber yap", "haber
-  olarak", "haberi yap", "son dakika" `NEWS_ASK`; fragman kelimesinden ÖNCE gelir: "bu fragmanı haber yap" haber olur) && (talimatta
+  olarak", "haberi yap", "son dakika" `NEWS_ASK`; fragman kelimesinden ÖNCE gelir: "bu fragmanı haber yap" haber olur; olumsuzu haber
+  isteği değildir: "haber yapma/yapmayın/yapmadan", "haber hazırlama", "haber gibi olmasın", "son dakika yazma", "haber olarak değil
+  fragman olarak paylaş" fragman analizine gider) && (talimatta
   fragman/trailer/teaser geçer `TRAILER_ASK` || (autoDetect && social.trailer)); `handleCommand` ilk yanıtı aynı öncelikle. Film adı
   (`film`) yalnız başlık fragman diye tanındıysa verilir ("fragman: <Instagram linki>" başlığı "Video by …" film adı sayılmaz; Claude
-  adı karelerden okur; `wa_video` da `social.film`i yalnız `social.trailer`da kullanır). Süre `trailerSecs(talimat)`: talimattaki
-  "N saniye" (20-60), yoksa `trailer.duration`. Log "🎬 fragman analizi: <film> (talimatta istendi / başlıktan tanındı; N sn, …)";
-  başlıktan tanındıysa WhatsApp'a tek satır "🎬 Bu bir fragman: …" (haber isteniyorsa linki "haber yap" ile yeniden gönderin); talimatta
+  adı karelerden okur; `wa_video` da `social.film`i yalnız `social.trailer`da kullanır). Süre `trailerSecs(talimat)` (`SURE_RE`;
+  `wa_video.trailer_secs` aynı kural): talimattaki "N saniye/sn" ya da "N dakika/dk" (× 60; "1 dakikalık" → 60), belirtme/çıkma ekli sayı
+  süre değildir ("baştaki 15 saniyeyi kullanma", "ilk 5 sn'yi kes", "15 sn'den sonra"; "40 saniyelik", "40 sn'lik", "40 saniyede" süredir),
+  20-60, yoksa `trailer.duration`. Log "🎬 fragman analizi: <film> (talimatta istendi / başlıktan tanındı / açıklamadan tanındı; N sn,
+  …)"; otomatik tanındıysa WhatsApp'a tek satır "🎬 Bu bir fragman: *ad*. …" (ad yoksa — başlık boş — ad yazılmaz; haber isteniyorsa
+  linki "haber yap" ile yeniden gönderin); talimatta
   fragman varsa ilk yanıt "🎬 Başladı: fragman indiriliyor…". Talimatsız link wa_video'ya "fragman yap" olarak gider (varsayılan analiz
   talimatı `TRAILER_TALIMAT`; eskiden "kısa, dikkat çekici" cümlesi en öncelikli talimat oluyordu).
   `commands.js`: "fragman: <link>" ve "<link> fragman yap" `social_video`ya gider; linkli mesajda YouTube açma kuralı yalnız tam kelime
-  aç/çal/oynat/başlat ile çalışır ("amaç", "kaç", "açıkla" geçen fragman talimatı müzik açmaya gidiyordu). `wa_video.py` (`job.trailer`,
-  `job.film`): süre `trailer.duration` (talimattaki "N saniye" önce gelir; 20-60); `orijinal_ses_tamami`/`fullSound` YOK, "sesli" bölüm yalnız
-  talimat açıkça isterse (`WANT_SOUND`; girdide `orijinal_ses_istegi`), toplam en çok `maxSoundSeconds` (8) sn — Claude eklemezse
+  aç/çal/oynat/başlat ya da kibar/ekli emir biçimi (-ar/-ır/-ın/-sana/-abilir: "açar mısın", "çalar mısın", "oynatır mısın", "açsana",
+  "açın") ile çalışır ("amaç", "kaç", "açıkla", "çalışmalarını", "başlattığı" geçen talimat müzik açmaya gidiyordu). `wa_video.py`
+  (`job.trailer`, `job.film`): süre `trailer.duration` (talimattaki süre önce gelir, `trailer_secs`; 20-60); `orijinal_ses_tamami`/
+  `fullSound` YOK, "sesli" bölüm yalnız talimat açıkça isterse ve fragmanın ses izi varsa (`WANT_SOUND`; girdide `orijinal_ses_istegi`;
+  sessiz fragmanda "ORİJİNAL SES" rozetli sessiz bölüm olmasın), toplam en çok `maxSoundSeconds` (8) sn ve kod zorlar: bütçe bitince
+  fazla sesli bölüm atılır, bütçeden uzun tek parça ("0-55") baştan (stüdyo logosu) kırpılmaz, o parçanın içinden `sound_window` ile
+  bütün-cümle penceresi seçilir (`trailer_sound_clips`) — Claude eklemezse
   `sound_window`: BÜTÜN döküm satırlarından en çok 8 sn'lik pencere (cümle ortasında kesmez; önce sığan, sonra diğer segmentlerin
   parçalarıyla en az çakışan, sonra en çok kelimeli); konuşma dili kendiliğinden algılanır (`align._whisper()` run(path, language=None),
   algılanan dil `align._LAST_LANG`; varsayılan "tr" çağıranlar değişmedi), log "🎬 fragman konuşması: N satır, dil: en", girdide video
   başına `konusma_dili` ve en çok 120 döküm satırı; sahne geçişlerinin TÜMÜ (`info.cuts`, 1000'e kadar) kare seçimine, isteme en çok
-  150 eşit aralıklı (eskiden ilk 150: uzun hızlı kesimli fragmanın sonu görünmüyordu); `blacks()` (ffmpeg blackdetect, 320 px,
-  pic_th 0.998: yalnız neredeyse tamamen siyah kare; siyah zeminli "IN THEATERS DECEMBER 18" ya da ad kartı siyah sayılmaz, karede
-  okunur) siyah bölümler → girdide `siyah_bolumler`, parçalardaki siyah kesilip atılır (`skip_black`: kalan parça ≥0,8 sn, yoksa en uzunu
+  150 eşit aralıklı (eskiden ilk 150: uzun hızlı kesimli fragmanın sonu görünmüyordu); `blacks()` (ffmpeg blackdetect, karenin ortadaki
+  %70'i — kararma boyunca köşede duran kanal logosu/yaş rozeti siyahı gizlemesin —, 320 px, pic_th 0.998: yalnız neredeyse tamamen siyah
+  kare; siyah zeminli "IN THEATERS DECEMBER 18" ya da ad kartı siyah sayılmaz, karede okunur, bu yüzden siyah zeminli bitiş kartı
+  parçalardan kendiliğinden kesilmez — fragman.md yasaklar) siyah bölümler → girdide `siyah_bolumler`, parçalardaki siyah kesilip atılır (`skip_black`: kalan parça ≥0,8 sn, yoksa en uzunu
   ≥0,5 sn; en çok 8); kare çizelgesi çekimlerden
   (`shot_times`: sahne geçişleri arası çekimler, çoğu siyah olan atlanır; çekim 24'ten çoksa 24 hedef zamana en yakın çekimler — tüm
   fragmana yayılır —, azsa her çekime bir kare ve kalanlar en uzun çekimlere; geçiş yoksa eşit aralıklı; en çok 24, 4 sütun). Geçersiz
-  parçanın yedeği 0,5 sn'den (stüdyo logosu) değil, ilk %10'dan (en çok 8 sn) sonraki ilk çekimden başlar (`seed`, `clean_clips(start0)`).
+  parçanın yedeği 0,5 sn'den (stüdyo logosu) değil, ilk %10'dan (en çok 8 sn) sonraki ilk çekimden başlar; aranan geçiş açılışla sınırlı
+  (en geç %25 ya da +4 sn, yoksa %10 noktası): seyrek kesimli teaser'da sondaki "coming soon" kartına atlayıp her yedeği aynı kartla
+  doldurmasın (`seed`, `clean_clips(start0)`).
   Girdi {talimat (yalnız "fragman yap" gibiyse varsayılan analiz talimatı), videolar, fragman {film, baslik, kanal, aciklama ≤1500,
   yukleme_tarihi, bugun, izlenme, etiketler, bolum}, ilgili_haberler}; Claude kullanım türü "fragman"; resimsiz ikinci denemede "KARELERİ
   GÖREMİYORSUN … kuralını uygula". `prompts/fragman.md` (__SURE__, __KELIME__ montaj.md gibi; şema montaj.md ile aynı): talimat yapı,
@@ -384,8 +403,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kartı en çok bir kez; kısa teaser'da (kullanılabilir görüntü < süre) fragmanın yarısından fazlası kullanılmaz, kelime görüntüye göre
   azalır; sesli bölüm varsa seslendirme sesli saniye × 2,4 kelime kısalır; kategori "sinema"; hashtag #fragman + #film/#dizi + ad;
   titles.A ≤55 karakter ve "fragman" kelimesi yok; label YENİ FRAGMAN yalnız yükleme 30 günden yeniyse ("bugun" girdide) / DİZİ
-  FRAGMANI / HAYRAN FRAGMANI / TANITIM FİLMİ / FRAGMAN. Senaryo: `trailer_label()` etiketi Türkçe büyük harfe çevirir, yükleme 30
-  günden eskiyse YENİ FRAGMAN → FRAGMAN ve giriş/kapanışı etiketten seçer (YENİ FRAGMAN, DİZİ FRAGMANI: "Yeni fragman."; HAYRAN
+  FRAGMANI / HAYRAN FRAGMANI / TANITIM FİLMİ / FRAGMAN. Senaryo: `trailer_label()` etiketi düzler (Türkçe büyük harf, emoji/noktalama
+  atılır, boşluk tekleşir: "🎬 YENİ FRAGMAN!" → YENİ FRAGMAN; ASCII yazım bilinen etikete: YENI FRAGMAN, DIZI FRAGMANI, TANITIM FILMI;
+  "Hayran Yapımı Fragman" → HAYRAN FRAGMANI; uzun etiket kelime sınırında ≤30 karakter, plan etiketi kesilmeden verilir), yükleme 30
+  günden eskiyse "YENİ" geçen etiket → FRAGMAN ve giriş/kapanışı etiketten seçer (YENİ FRAGMAN, DİZİ FRAGMANI: "Yeni fragman."; HAYRAN
   FRAGMANI: "Hayran yapımı fragman."; TANITIM FİLMİ: "Tanıtım filmi.", kapanış "Takip etmeyi unutma."; diğer: "Fragman analizi.");
   kategori yalnız sinema/teknoloji/siyaset/genel (diğeri ve geçersiz → sinema, tanıtım filminde genel; "asayis" etiketli fragman
   segmenti polis kartı ve #asayiş almasın), `breaking` yok, importanceReason "Fragman analizi", ilk yorum varsayılanı fragman sorusu.
@@ -397,7 +418,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   info {kind video, label plan || "FRAGMAN", intro `plan.intro`, outro `plan.outro`, breaking false} + `trailer: true` → env `TRAILER=1` →
   assemble meta `trailer` (asayiş zorlaması yok, `sinema_value`) → Remotion intro'da SON DAKİKA yerine etiket (`episode.trailer`) →
   `common.build_caption` başlık "🎬 FRAGMAN: …" ("🔴" değil; etiket plandan; uzun başlık kanal adı ve #Shorts sığacak şekilde kelime
-  sınırında kısalır), `trailer_tags`: #fragman eklenir (TANITIM FİLMİ'nde eklenmez), #sondakika hiç yok (kanal ortak etiketlerinden de
+  sınırında kısalır), `trailer_tags`: #fragman eklenir (TANITIM FİLMİ'nde eklenmez), #dizi varsa sinema kategorisinin #film'i atılır
+  (fragman.md "#film ya da #dizi"), #sondakika hiç yok (kanal ortak etiketlerinden de
   atılır; `caption_tags` aynı), kapanış satırı fragmana göre (tanıtım filminde genel); "Kaynak: YouTube / @kanal" en alttaki satır aynen;
   YouTube'da "· Son Dakika" listesine girmez. Yayın onaylı (userVideo), en çok izlenen saat tekrarına girmez (infoKind video). "✂️ Fragman kurgusu hazır" (kısa mesaj modu
   kapalıyken) film adını ve konuşma dilini yazar. Panel 📡 grubunda "🎬 Fragman analizi" anahtarı + süre (20-60 sn) + "başlıktan otomatik
@@ -418,7 +440,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   oyun fragmanında (teknoloji) asayiş zorlaması ve #kaza yok, fragman dışında setteki gerçek ölüm asayiş + #kaza, oynatma listesi
   yalnız "· Sinema", başlık sığdırma, tanıtım filminde #fragman yok, pipeline render'ında intro "YENİ FRAGMAN"; fragman olmayan 3 iş
   (sosyal medya, WhatsApp, sesli; konuşma tanımalı/tanımasız) HEAD ve yeni wa_video.py ile: log, Claude argümanları ve iş klasörü aynı,
-  istem yalnız montaj.md'nin sinema satırlarıyla farklı. Gerçek YouTube indirmesi, mlx-whisper'ın dil algılaması ve Claude'un kare
+  istem yalnız montaj.md'nin sinema satırlarıyla farklı. Son inceleme turu (18 Ekim) düzeltmeleri de sandbox'ta denendi: c7fc57e /
+  c63076d / düzeltilmiş ağaçta aynı senaryolarla assemble (anlıkta setteki ölüm/yaralı/silahlı saldırı yine asayiş, tek olaylı videoda
+  tüm kartlar asayiş, zararsız set kazası ve çoklu anlıktaki ayrı film haberi sinema, sinema dışı girdiler c7fc57e ile aynı), sahte
+  yt-dlp ile X/TikTok "trailer/fragman" açıklamalı haber klibi (fragman değil, arama açıklama kelimeleriyle; YouTube fragmanı yine
+  tanınıyor), 66 mesajlık komut karşılaştırması (yalnız amaç/kaç/açıkla/çalışmalarını/başlattığı farklı), 10 + 36 + 27 başlık ve
+  20.000 rastgele başlık, 25 yönlendirme + 18 süre + 15 ayar biçimi, köşe logolu kararmada 4 siyah bölüm (diğer sentetik videolarda
+  sonuç aynı), 15 sn teaser'da yedeğin 1,5 sn'den başlaması, iki sesli bölümde toplam 7,8 sn, "0-55" sesli bölümde 31,8-33,9 bütün
+  cümle, sessiz fragmanda sesli bölüm yok, bozuk settings.trailer (true, false, süre "abc"/0, maxSoundSeconds "x") ile fragman olmayan
+  iş ve fragman işi; fragman olmayan 18 wa_video işi (sosyal medya, WhatsApp, sesli, çoklu, dikey; konuşma tanımalı/tanımasız) c7fc57e
+  ile: log, Claude argümanları ve iş klasörü aynı (sinema planında yalnız kategori genel → sinema), istem yalnız montaj.md'nin sinema
+  satırlarıyla farklı. Gerçek YouTube indirmesi, mlx-whisper'ın dil algılaması ve Claude'un kare
   okuması Mac'te DENENMEDİ.
 - Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;
   saat yazmazsam direkt paylaşsın"): `app/when.js parseWhen` Türkçe saat ifadelerini çözer ("18:30'da", "18.30 da", "saat 8'de" —
@@ -1058,8 +1090,12 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
 - `assemble_script.py: ASAYIS` kalıbı (şehit, saldırı, terör, kaza, yangın, cinayet…) geçen yurt içi haber
   Claude'un seçimine bakılmaksızın `asayis` olur (`ASAYIS_MUAF`: dunya/hava/sinema hariç; sinema: fragman ya da filmin konusu gerçek
   olay değildir). Fragman analizinde (`TRAILER=1`) hiç zorlanmaz; fragman dışında sinema etiketli haber gerçek zarar anlatıyorsa
-  (`GERCEK_OLAY`: hayatını kaybetti, yaralandı, can verdi, şehit, gözaltına, tutuklandı — "Dizi setinde kaza: genç oyuncu hayatını
-  kaybetti") yine asayis olur. Şehit haberi asla siyaset değildir.
+  (`GERCEK_OLAY`: hayatını kaybet-, can verdi, şehit, öldü — "öldürdü" değil —, ölü, öldürül-, yaralan-, yaralı, gözaltı, tutuklan-,
+  kaçırıl-, rehin; ekli ve edilgen biçimler: "oyuncu öldü", "2 yaralı", "yaralanarak", "bıçaklanarak öldürüldü"; etken fiil — "filmde
+  katil kurbanını öldürdü", filmin konusu — sayılmaz) yine asayis olur. Tek konulu anlık videoda (`ANLIK=1`, çoklu değil) karar olay
+  başınadır (`real_story`): bir sinema kartı gerçek zarar anlatıyorsa aynı olayın diğer sinema kartları da asayiş olur ("Dizi setinde
+  yangın: 3 kişi yaralandı" + "İtfaiye yangını söndürdü" ikinci kartta klaketli SİNEMA olmasın). Zararsız set kazası ("dekor devrildi,
+  kimse zarar görmedi") ve çoklu son dakikadaki ayrı film haberi sinema kalır. Şehit haberi asla siyaset değildir.
 - Ses efektleri harici dosya değildir: `python3 scripts/make_sfx.py` hepsini yeniden üretir.
   Bir sesi değiştirmek için o betikteki parametreleri değiştir, dışarıdan dosya ekleme.
 

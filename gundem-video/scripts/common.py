@@ -134,10 +134,12 @@ INFO_HEAD = {"deprem": "🔴 SON DAKİKA DEPREM", "mac": "⚽ MAÇ SONUCU", "piy
 def trailer_tags(meta: dict, base: str) -> list:
     """Fragman analizi (kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip…"): #fragman eklenir, #sondakika hiç olmaz
     (kanalın ortak etiketlerinde olsa da; fragman son dakika haberi değil). Film olmayan tanıtım filminde (etiket TANITIM FİLMİ:
-    parti, belediye, ürün tanıtımı) #fragman da eklenmez."""
+    parti, belediye, ürün tanıtımı) #fragman da eklenmez. Dizi fragmanında (#dizi) sinema kategorisinin #film etiketi atılır
+    (fragman.md: "#film ya da #dizi")."""
     from hashtags import for_meta
     promo = meta.get("slotLabel") == "TANITIM FİLMİ"
-    return [t for t in for_meta(meta, base, [] if promo else ["#fragman"]) if t != "#sondakika" and not (promo and t == "#fragman")]
+    tags = [t for t in for_meta(meta, base, [] if promo else ["#fragman"]) if t != "#sondakika" and not (promo and t == "#fragman")]
+    return [t for t in tags if t != "#film"] if "#dizi" in tags else tags
 
 
 def build_caption(video_name: str, max_len: int = 2000):

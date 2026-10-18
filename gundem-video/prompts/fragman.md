@@ -38,8 +38,9 @@ DOĞRULUK (en önemli kural)
   hafızandan ya da genel bilgiden ekleme.
 - Resmi mi: başlıkta, açıklamada ya da etiketlerde "concept trailer", "fan made", "fanmade", "fan film", "fan trailer", "parody",
   "parodi", "hayran yapımı", "AI trailer", "AI generated", "made with AI", "yapay zekâ ile", "unofficial", "not official" geçiyorsa bu
-  RESMİ fragman DEĞİLDİR (bu kelimeler fragmanın nasıl yapıldığını söylemeli; filmin konusu yapay zekâysa sayılmaz): kancada ve ilk
-  segmentte açıkça "hayran yapımı, resmi olmayan bir fragman" de; "resmi", "yayınlandı", "yeni fragman geldi", vizyon tarihi, platform
+  RESMİ fragman DEĞİLDİR (bu kelimeler fragmanın nasıl yapıldığını söylemeli; filmin konusu yapay zekâysa sayılmaz): ilk segmentte
+  resmi olmadığını açıkça belirt (örneğin "stüdyonun değil, bir hayranın hazırladığı bir çalışma"; giriş cümlesi "Hayran yapımı
+  fragman." otomatik eklenir, onu aynen tekrarlama); "resmi", "yayınlandı", "yeni fragman geldi", vizyon tarihi, platform
   ve oyuncu bilgisi yazma (başlıktaki yıl, platform ya da oyuncu adı doğrulama sayılmaz); "label": "HAYRAN FRAGMANI"; "cuts" alanına
   nedenini yaz.
 - Kanal stüdyo, dağıtımcı, yayın platformu ya da televizyon kanalı değilse "baslik" ve "aciklama" doğrulanmış bilgi değildir: tarih,
@@ -52,7 +53,8 @@ DOĞRULUK (en önemli kural)
   karşılığı olmayan bir şey vaat etmez.
 
 YAPI (hedef __SURE__ saniye; toplam seslendirme — kanca + haber segmentleri — en çok __KELIME__ kelime, en az bunun onda dokuzu;
-aşağıdaki kısa fragman ve sesli bölüm kuralları bu sayıyı düşürür)
+aşağıdaki kısa fragman ve sesli bölüm kuralları ile "KARELERİ AÇAMIYORSAN" kuralının 2 segmentli durumu bu sayıyı düşürür: o durumda
+kanca + 2 segment, her biri en çok 35 kelime; doğrulanmış bilgi azsa kısa tut, süreyi doldurmak için uydurma)
 Kancadan sonra etikete göre sabit bir giriş cümlesi ("YENİ FRAGMAN" ve "DİZİ FRAGMANI"nda "Yeni fragman.", "FRAGMAN"da "Fragman
 analizi.", "HAYRAN FRAGMANI"nda "Hayran yapımı fragman.", "TANITIM FİLMİ"nde "Tanıtım filmi.") ve en sonda kapanış cümlesi otomatik
 eklenir; onları yazma, ilk segmentte tekrarlama.
@@ -70,7 +72,7 @@ eklenir; onları yazma, ilk segmentte tekrarlama.
    c) "Gözden kaçan detaylar / en çarpıcı sahneler": 2-3 somut an (ne göründüğünü tarif et; her an için tam o saniyelerin parçası).
       Seçtiğin repliği buraya koyabilirsin.
    d) Kapanış: izleyiciye fragmanla ilgili bir soru ("Sizce … ?"), yorumlara davet.
-   Kısa fragmanda b ve c birleşebilir (3 segment).
+   Kısa fragman ya da teaser'da (KURGU KURALLARI'ndaki tanım) 2 segment: a ile b birleşik, c ile d birleşik (soruyla biter).
 - Ton: enerjik, sinematik, akıcı; kısa cümleler. Türkçe, kısaltma yok (ABD → Amerika gibi açık yaz). Film adını özgün yazımıyla
   yaz; Türkçe adını ancak kaynaklarda geçiyorsa kullan.
 - Seslendirmede ve ekran başlıklarında kanal, yükleyen hesap ya da YouTube adı GEÇMEZ (kaynak açıklamanın en altına ayrıca yazılır);

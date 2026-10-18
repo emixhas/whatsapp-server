@@ -24,10 +24,12 @@ CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "sagli
 # Zorlanmayanlar: dunya, hava ve sinema (fragmanın konusu cinayet/patlama/çatışma olabilir; kullanıcı isteği, 18 Ekim:
 # "bir filmin fragmanını analiz edip …" → film haberi asayiş kartına düşmesin). Fragman analizinde (TRAILER=1) hiç zorlanmaz (oyun
 # fragmanı "teknoloji", tanıtım filmi "siyaset"/"genel" olabilir); fragman dışında "sinema" etiketli gerçek zarar ("Dizi setinde kaza:
-# genç oyuncu hayatını kaybetti") yine asayiş olur (GERCEK_OLAY; Claude ne derse desin)
+# genç oyuncu hayatını kaybetti") yine asayiş olur (GERCEK_OLAY; Claude ne derse desin). GERCEK_OLAY ekli ve edilgen biçimleri kapsar
+# (öldü, 2 yaralı, yaralanarak, öldürüldü, rehin alındı); etken fiil ("katil öldürdü": filmin konusu) sayılmaz. Tek konulu anlık
+# videoda karar haber başına değil olay başınadır (main: real_story): bir kartta gerçek zarar varsa tüm sinema kartları asayiş olur
 ASAYIS_MUAF = ("asayis", "dunya", "hava", "sinema")
 TRAILER = os.environ.get("TRAILER") == "1"
-GERCEK_OLAY = re.compile(r"(hayatını kaybet|yaralandı|can verdi|şehit|gözaltına|tutuklandı)", re.I)
+GERCEK_OLAY = re.compile(r"(hayatını kaybet|can verdi|şehit|öldü(?!r)|ölü\b|öldürül|yaralan|yaralı|gözaltı|tutuklan|kaçırıl|rehin)", re.I)
 ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza(?!n)|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
 # Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
 OUTRO_TEXT = "Son beş saatin Türkiye gündemi buydu. Her beş saatte bir son dakika haberleriyle buradayız, takip etmeyi unutma."
@@ -397,6 +399,14 @@ def main(src: str, dst: str):
     hk["title"] = tr_upper(short_title(hk.get("title") or " ".join(hk["narration"].split()[:3])))
     if hk.get("category") not in CATEGORIES:
         hk["category"] = next((x.get("category") for x in segs if x.get("kind") == "haber" and x.get("category") in CATEGORIES), "genel")
+
+    def _txt(x):
+        return f"{x.get('title', '')} {x.get('narration', '')}"
+    # tek konulu anlık video (çoklu değil) tek olaydır: bir sinema kartı gerçek zarar anlatıyorsa ("Dizi setinde yangın: 3 kişi
+    # yaralandı") aynı olayın diğer sinema kartları da asayiş olur ("İtfaiye yangını söndürdü" klaketli SİNEMA kartına düşmesin)
+    real_story = ANLIK and not os.environ.get("ANLIK_MULTI") and not TRAILER and any(
+        x.get("kind") in ("hook", "haber") and x.get("category") == "sinema" and ASAYIS.search(_txt(x)) and GERCEK_OLAY.search(_txt(x))
+        for x in segs)
     for s in segs:
         if s.get("kind") == "sesli":  # WhatsApp/sosyal medya görüntüsü kendi sesiyle oynar: seslendirme yok, süre klipten
             if float(s.get("soundDuration") or 0) <= 0:
@@ -416,8 +426,9 @@ def main(src: str, dst: str):
             print(f"  ! bilinmeyen kategori {s.get('category')!r}, 'genel' kullanıldı", file=sys.stderr)
             s["category"] = "genel"
         txt = f"{s.get('title', '')} {s['narration']}"
-        if s["kind"] in ("haber", "hook") and not TRAILER and ASAYIS.search(txt) and (
-                s.get("category") not in ASAYIS_MUAF or (s.get("category") == "sinema" and GERCEK_OLAY.search(txt))):
+        cat = s.get("category")
+        if s["kind"] in ("haber", "hook") and not TRAILER and (ASAYIS.search(txt) or (real_story and cat == "sinema")) and (
+                cat not in ASAYIS_MUAF or (cat == "sinema" and (real_story or GERCEK_OLAY.search(txt)))):
             print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
             s["category"] = "asayis"
     if ANLIK and haber and os.environ.get("INFO_BREAKING", "") != "0":

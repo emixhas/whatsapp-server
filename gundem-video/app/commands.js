@@ -34,9 +34,10 @@ export function parseCommand(raw) {
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
   // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat". Linkli mesajda fiil tam kelime olmalı: YouTube linkinin yanına
   // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
-  // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider.
+  // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider. Kibar/ekli emir biçimleri yine açar ("açar mısın",
+  // "çalar mısın", "oynatır mısın", "açsana", "açın", "açabilir misin"; STRIP_WORDS'teki açma istekleri).
   const hasLink = /https?:\/\//i.test(raw);
-  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && (hasLink ? /(^| )(aç|çal|oynat|başlat)( |$)/ : /(aç|çal|oynat|başlat)/).test(t)) {
+  if (/(youtube|yutub|yutup|şarkı|parça|müzik|klib)/.test(t) && (hasLink ? /(^| )(aç|çal|oynat|başlat)(ar|ır|ın|sana|abilir)?( |$)/ : /(aç|çal|oynat|başlat)/).test(t)) {
     const q = extractQuery(t);
     if (q.length > 1) return { action: "open_youtube", query: q, reply: "" };
     return { action: "none", reply: "Hangi şarkıyı açayım?" };
