@@ -26,6 +26,9 @@ from common import OUT, ROOT, episode_meta, settings  # noqa: E402
 from info_card import DAYS, make_script, new_job, tr_date  # noqa: E402
 
 RANK_WORD = {1: "Birinci", 2: "İkinci", 3: "Üçüncü", 4: "Dördüncü", 5: "Beşinci"}
+# disk temizliği (cleanup.py) videoları 2 günde siler: derlemenin keseceği bölüm silmeden önce buraya ayrılır (8 gün tutulur)
+PARCA = ROOT / "work" / "derleme_parca"
+CROP, CROP_IMG = "crop=920:560:80:220,scale=1280:780,setsar=1", "crop=920:560:80:220,scale=1840:1120"
 
 
 def cfg() -> dict:
@@ -39,7 +42,7 @@ def pick(n: int) -> list:
         meta = episode_meta(r["name"]) or {}
         if r.get("format") in LONG or meta.get("infoKind") in ("piyasa", "takvim", "derleme") or not r["views"]:
             continue
-        if not (OUT / r["name"]).exists():
+        if not (OUT / r["name"]).exists() and not (PARCA / (Path(r["name"]).stem + ".mp4")).exists():  # video silindiyse ayrılan bölüm
             continue
         try:
             ts = datetime.strptime(f"{r['date']} {r['time']}", "%Y-%m-%d %H:%M").timestamp()
@@ -59,26 +62,59 @@ def pick(n: int) -> list:
     return out
 
 
-def clip(r: dict, dst_dir: Path, i: int) -> dict | None:
-    """İlk haber kartının görüntü alanını keser (sessiz, ~8 sn) + bir kare (yedek görsel)."""
-    segs = r["meta"].get("segments") or []
+def first_card(meta: dict) -> tuple | None:
+    """İlk haber kartının videodaki yeri: (başlangıç, süre)."""
     t = 0.0
-    for s in segs:
+    for s in meta.get("segments") or []:
         if s.get("kind") == "haber":
-            start, dur = t + 0.7, max(3.0, min(9.0, float(s.get("duration") or 8) - 1.0))
-            break
+            return t + 0.7, max(3.0, min(9.0, float(s.get("duration") or 8) - 1.0))
         t += float(s.get("duration") or 0)
-    else:
-        return None
-    src = OUT / r["name"]
-    vid, img = dst_dir / f"clip-{i}.mp4", dst_dir / f"clip-{i}.jpg"
-    vf = "crop=920:560:80:220,scale=1280:780,setsar=1"
-    ok = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", f"{dur:.2f}", "-i", str(src), "-an", "-vf", vf,
-                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", str(vid)], capture_output=True).returncode == 0
+    return None
+
+
+def cut(src: Path, start: float, dur: float, vid: Path, img: Path, crf: int = 20) -> bool:
+    """İlk haber kartının görüntü alanını keser (sessiz, ~8 sn) + bir kare (yedek görsel)."""
+    ok = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start:.2f}", "-t", f"{dur:.2f}", "-i", str(src), "-an", "-vf", CROP,
+                         "-c:v", "libx264", "-preset", "veryfast", "-crf", str(crf), "-pix_fmt", "yuv420p", str(vid)], capture_output=True).returncode == 0
     ok2 = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{start + 1:.2f}", "-i", str(src), "-frames:v", "1", "-vf",
-                          "crop=920:560:80:220,scale=1840:1120", "-q:v", "2", str(img)], capture_output=True).returncode == 0
-    if not (ok and ok2 and vid.exists() and img.exists()):
+                          CROP_IMG, "-q:v", "2", str(img)], capture_output=True).returncode == 0
+    return ok and ok2 and vid.exists() and img.exists()
+
+
+def eligible(name: str, meta: dict) -> bool:
+    """Derlemeye girebilecek video (pick() ile aynı süzgeç; izlenme sonra bakılır)."""
+    return meta.get("format") not in LONG and meta.get("infoKind") not in ("piyasa", "takvim", "derleme") and name[:4].isdigit()
+
+
+def save_clip(name: str) -> bool:
+    """cleanup.py videoyu silmeden önce: derlemenin keseceği bölüm work/derleme_parca/<ad>.mp4 + .jpg (derlemeye girmeyecek videoda yok)."""
+    meta = episode_meta(name) or {}
+    fc = first_card(meta)
+    if not fc or not eligible(name, meta) or not (OUT / name).exists():
+        return False
+    PARCA.mkdir(parents=True, exist_ok=True)
+    stem = Path(name).stem
+    return cut(OUT / name, *fc, PARCA / f"{stem}.mp4", PARCA / f"{stem}.jpg", crf=23)
+
+
+def clip(r: dict, dst_dir: Path, i: int) -> dict | None:
+    """Derlemenin haber segmenti görüntüsü: video duruyorsa ondan kesilir, silindiyse önceden ayrılan bölüm kullanılır."""
+    fc = first_card(r["meta"])
+    if not fc:
         return None
+    start, dur = fc
+    vid, img = dst_dir / f"clip-{i}.mp4", dst_dir / f"clip-{i}.jpg"
+    src = OUT / r["name"]
+    if src.exists():
+        if not cut(src, start, dur, vid, img):
+            return None
+    else:
+        stem = Path(r["name"]).stem
+        if not ((PARCA / f"{stem}.mp4").exists() and (PARCA / f"{stem}.jpg").exists()):
+            return None
+        import shutil
+        shutil.copyfile(PARCA / f"{stem}.mp4", vid)
+        shutil.copyfile(PARCA / f"{stem}.jpg", img)
     return {"video": str(vid.relative_to(ROOT)), "image": str(img.relative_to(ROOT)), "videoDuration": round(dur, 2)}
 
 

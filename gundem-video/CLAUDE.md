@@ -1111,11 +1111,23 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yeniden bağlamak gerekir), görülenler `data/comments_state.json`. `brain.complete()` (düşük effort) ile özet →
   WhatsApp + `data/reports/yorumlar-<gün>.md`; yorumlara otomatik yanıt YOK, yazar adları özete girmez. Yeni yorum
   yoksa yalnız log. `POST /api/comments/digest`, komut "yorumları özetle", Ayarlar → Otomasyon anahtar + "şimdi özetle".
-- Disk temizliği (`scripts/cleanup.py`, her gece 04:10, `settings.cleanup` {enabled, days 30}): `days`'ten eski ve en az
-  bir platformda yayınlanmış (yayınlanmamışsa 2×days) videonun yalnız mp4'ü silinir; json'a `archived` yazılır, kapak,
-  metrik ve platformdaki video kalır. Demo/test (adı rakamla başlamayan) ve YouTube sırasındaki videolar silinmez.
-  `analyze.video_rows` arşivlenmiş videoları da sayar (panel listesinde mp4 olmadığı için görünmezler). Ayarlar →
-  Otomasyon anahtar + "🧹 Şimdi temizle" (önce `--dry-run` ile ne silineceğini sorar), `POST /api/cleanup {dryRun}`.
+- Disk temizliği (kullanıcı isteği, 19 Ekim: "tüm üretilen haberleri ve videoları, normal videolar dahil 2 gün sonra diskten silelim —
+  kapaklar da dahil"; `scripts/cleanup.py`, `settings.cleanup` {enabled true, days 2 (1-60)}; eski 30 günlük ayar ya da kapalı temizlik bir kez
+  2 güne çekilir — `cleanup.twoDays`): panel SAATTE BİR (her saatin 10. dakikasından sonra, üretim yokken; `data/cleanup_last.json` hour) çalıştırır.
+  `days`'ten eski HER video (5 saatlik, anlık, şablon, sosyal medya/WhatsApp, fragman, uzun video özeti, günün/haftanın özeti; yayınlanmış olsun
+  olmasın — eski "yayınlanmamışsa 2×days" kuralı kalktı): mp4, -render.mp4, kapaklar (-kapak, -kapakA, -kapakB, -kapakYT) ve paneldeki küçük resim
+  (work/thumbs) silinir; json (birkaç KB) KALIR ve `archived` alır (raporlar, analiz, haftanın özeti, yorum yanıtları, izleyici tutma, Instagram
+  silme kararı onunla çalışır; `analyze.video_rows` arşivlenmişleri sayar), metrik ve platformdaki video da kalır. Silinmez: yükleme sırasındaki
+  (`publish_queue.json`), planlı yayındaki (`scheduled_publish.json`), WhatsApp'ta onay bekleyen (`wa_pending.json`) video ve demo/test (adı
+  rakamla başlamayan). Videosu daha önce silinmiş eski kapaklar ve küçük resimler de silinir (genç olan kalır). Ayrıca `days`'ten eski
+  work/jobs (iş klasörleri, kurgu parçaları), work/wa_inbox (indirilen/gönderilen kaynak videolar, özetin analiz kopyası), work/stories.
+  Pazar derlemesi (`weekly_top.py`) son 7 günün videosundan kestiği için video silinmeden önce derlemenin keseceği bölüm (`save_clip`: ilk
+  haber kartının alanı, ~8 sn 1280x780 + kare) `work/derleme_parca/`a ayrılır (yalnız derlemeye girebilecek videoda — uzun özet, piyasa,
+  takvim, derleme hariç —, derleme kapalıysa ayrılmaz; 8 gün tutulur); `pick`/`clip` video yoksa bu bölümü kullanır. Panel listesinde
+  yalnız son `days` günün videoları görünür (yeniden yayın da onlardan). Log 🧹 "2 günden eski N video kapaklarıyla silindi (+ iş klasörü,
+  kaynak video), X GB boşaldı". Ayarlar → Otomasyon: anahtar + gün kutusu + "🧹 Şimdi temizle" (önce `--dry-run` ile ne silineceğini sorar),
+  `POST /api/cleanup {dryRun}`. Sandbox'ta sahte out/ ile denendi: yaşlar, korunan üç video, demo, eski arşivin kapakları, genç yetim kapak,
+  iş klasörleri, kaynak videolar, hikâye, derleme parçası ve silinmiş videonun parçasından derleme kesiti, ikinci çalıştırma, bozuk ayarlar.
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 10 (her biri için `bestPlatform`), platform analizi
   `byPlatform` {youtube|instagram|tiktok: total, videos, avg, best, top3} ve `leadingPlatform`, manşet etkisi → `data/insights.json`
   ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:

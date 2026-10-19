@@ -77,6 +77,9 @@ const patchSettings = (patch) => { const s = deepMerge(settings(), patch); write
 // kademeli izlenme takibi (ilk 3 gün sık, sonra günde bir, 7 günden sonra yok): eski varsayılan 60 dk → 20 dk (bir kez)
 if (!settings().metricsSyncMigrated) patchSettings({ metricsSyncMinutes: Number(settings().metricsSyncMinutes) === 60 ? 20 : settings().metricsSyncMinutes, metricsSyncMigrated: true });
 if (settings().media?.allowYoutubeEmbeds === false && !settings().media?.ytEmbedsMigrated) patchSettings({ media: { allowYoutubeEmbeds: true, ytEmbedsMigrated: true } });
+// Tek seferlik geçiş (kullanıcı isteği, 19 Ekim: "tüm üretilen haberleri ve videoları 2 gün sonra diskten silelim, kapaklar dahil"):
+// eski 30 günlük ayar (ya da kapalı temizlik) 2 güne çekilir; sonra panelden değiştirilebilir
+if (!settings().cleanup?.twoDays) patchSettings({ cleanup: { enabled: true, days: 2, twoDays: true } });
 const IMPROVEMENTS = path.join(DATA, "improvements.md");
 const queueImprovement = (task) => { const head = "# Emixhas geliştirme kuyruğu\n\nBir görevi uygulamak için proje klasöründe Claude Code'u açıp bu dosyadaki ilk açık görevi vermeniz yeterli; uygulanınca [x] işaretleyin.\n\n"; const line = `- [ ] ${new Date().toISOString().slice(0, 16)} ${String(task).trim()}\n`; writeFileSync(IMPROVEMENTS, (existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : head) + line); return { ok: true, file: "data/improvements.md" }; };
 const label = (v) => (v.date ? `${v.date}, günün ${v.episodeOfDay}. özeti` : v.name.replace(/\.mp4$/, ""));
@@ -1706,17 +1709,33 @@ async function commentsDigest({ manual = false } = {}) {
 }
 setInterval(() => { const c = commentsCfg(); const n = new Date(); if (!c.enabled || n.getHours() * 60 + n.getMinutes() < Number(c.hour) * 60 + Number(c.minute) || readJson(COMMENTS_FILE, {}).day === today()) return; commentsDigest().catch((e) => push(`💬 yorum özeti: ${e.message}`)); }, 60000);
 app.post("/api/comments/digest", async (_req, res) => res.json(await commentsDigest({ manual: true })));
-// ---------- disk temizliği (scripts/cleanup.py): her gece 04:10, settings.cleanup {enabled, days 30}; dinlenmede de (hafif)
+// ---------- disk temizliği (scripts/cleanup.py; kullanıcı isteği, 19 Ekim: "tüm üretilen haberleri ve videoları, normal videolar dahil 2
+// gün sonra diskten silelim, kapaklar dahil"): saatte bir (her saatin 10. dakikasından sonra, üretim yokken), settings.cleanup {enabled,
+// days 2}; dinlenmede de (hafif). Video, kapaklar, küçük resim, iş klasörü, kaynak video silinir; kayıt (json) ve platformdaki video kalır.
 const CLEAN_FILE = path.join(DATA, "cleanup_last.json");
+let cleanBusy = false;
 async function runCleanup({ manual = false } = {}) {
-  const r = await py("cleanup.py", []);
-  const j = r.json || {};
-  writeJson(CLEAN_FILE, { day: today(), at: Date.now(), deleted: (j.deleted || []).length, freedMb: j.freedMb || 0 });
-  if ((j.deleted || []).length) push(`🧹 disk temizliği: ${(j.deleted || []).length} eski videonun Mac'teki kopyası silindi, ${(j.freedMb / 1024).toFixed(1)} GB boşaldı (kayıtlar, kapaklar ve platformdaki videolar duruyor)`);
-  else if (manual) push("🧹 disk temizliği: silinecek eski video yok");
-  return j;
+  if (cleanBusy) return { deleted: [], freedMb: 0, busy: true };
+  cleanBusy = true;
+  try {
+    const r = await py("cleanup.py", []);
+    const j = r.json || {};
+    const n = new Date();
+    writeJson(CLEAN_FILE, { day: today(), hour: `${today()} ${n.getHours()}`, at: Date.now(), deleted: (j.deleted || []).length, freedMb: j.freedMb || 0, other: j.other || {} });
+    const o = j.other || {}, extra = [o.isKlasoru && `${o.isKlasoru} iş klasörü`, o.kaynakVideo && `${o.kaynakVideo} kaynak video`, o.hikaye && `${o.hikaye} hikâye klasörü`].filter(Boolean);
+    const gb = (Number(j.freedMb || 0) / 1024).toFixed(1);
+    if ((j.deleted || []).length) push(`🧹 disk temizliği: ${j.days || 2} günden eski ${(j.deleted || []).length} video kapaklarıyla silindi${extra.length ? ` (+ ${extra.join(", ")})` : ""}, ${gb} GB boşaldı; kayıtlar ve platformdaki videolar duruyor`);
+    else if (extra.length || o.kapak) push(`🧹 disk temizliği: ${[...(o.kapak ? [`${o.kapak} eski kapak`] : []), ...extra].join(", ")} silindi, ${gb} GB boşaldı`);
+    else if (manual) push("🧹 disk temizliği: silinecek eski dosya yok");
+    if (r.stderr && /! derleme parçası/.test(r.stderr)) push(`🧹 ${String(r.stderr).split("\n").find((l) => /! derleme parçası/.test(l)).trim()}`);
+    return j;
+  } finally { cleanBusy = false; }
 }
-setInterval(() => { const n = new Date(); if (n.getHours() === 4 && n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).day !== today() && !pipelineBusy() && (settings().cleanup?.enabled !== false)) runCleanup().catch((e) => push(`🧹 disk temizliği: ${e.message}`)); }, 60000);
+setInterval(() => {
+  const n = new Date();
+  if (n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).hour !== `${today()} ${n.getHours()}` && !pipelineBusy() && settings().cleanup?.enabled !== false)
+    runCleanup().catch((e) => push(`🧹 disk temizliği: ${e.message}`));
+}, 60000);
 app.post("/api/cleanup", async (req, res) => res.json(req.body?.dryRun ? (await py("cleanup.py", ["--dry-run"])).json || {} : await runCleanup({ manual: true })));
 // ---------- haftanın özeti (yatay, YouTube): settings.weeklySummary {enabled, weekday 0 = pazar, hour 20, minute 30,
 // duration 300, stories 10, autoPublish}; GUNLUK=1 + HAFTALIK=1 (aynı GunlukOzet kompozisyonu), data/weekly_video_last.json
