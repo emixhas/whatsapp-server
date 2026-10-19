@@ -12,8 +12,10 @@ import { Parti } from "./illustrations/Parti";
 import { Egitim } from "./illustrations/Egitim";
 import { Asayis } from "./illustrations/Asayis";
 import { Sinema } from "./illustrations/Sinema";
+import { Trend } from "./illustrations/Trend";
+import { Mizah } from "./illustrations/Mizah";
 
-export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "genel"] as const;
+export const CATEGORIES = ["finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "trend", "mizah", "genel"] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export type CategoryStyle = {
@@ -39,6 +41,10 @@ export const CATEGORY_STYLES: Record<Category, CategoryStyle> = {
   asayis:    { label: "ASAYİŞ",    accent: "#3D7BFF", sfx: "sfx/siren.wav",    sfxVolume: 0.4,  Illustration: Asayis },
   // film, dizi, fragman, gişe, festival ve ödül törenleri (kullanıcı isteği, 18 Ekim: "bir filmin fragmanını analiz edip … video")
   sinema:    { label: "SİNEMA",    accent: "#E040FB", sfx: "sfx/sinema.wav",   sfxVolume: 0.5,  Illustration: Sinema },
+  // sosyal medyada çok izlenen ve mizah videoları (kullanıcı isteği, 19 Ekim: "son dakika diye haber yapıyor; link/mizah yazınca mizah
+  // kategorisine göre üretilsin ama direk mizah yazmasın, girişte izlenmez"): ikisinde de ekranda VİRAL yazar; mizah videonun sonunda söylenir
+  trend:     { label: "VİRAL",     accent: "#FF2D55", sfx: "sfx/trend.wav",    sfxVolume: 0.5,  Illustration: Trend },
+  mizah:     { label: "VİRAL",     accent: "#C6FF00", sfx: "sfx/mizah.wav",    sfxVolume: 0.5,  Illustration: Mizah },
   genel:     { label: "GÜNDEM",    accent: "#FFFFFF", sfx: "sfx/bildirim.wav", sfxVolume: 0.45, Illustration: Genel },
 };
 

@@ -47,7 +47,7 @@ from urllib.parse import urljoin
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SECRETS, settings, summary_cfg, summary_secs  # noqa: E402
+from common import ROOT, SECRETS, content_kind, settings, summary_cfg, summary_secs  # noqa: E402
 
 PLATFORMS = [(r"instagram\.com", "Instagram"), (r"tiktok\.com", "TikTok"), (r"(^|\.)(x|twitter)\.com", "X"),
              (r"youtube\.com|youtu\.be", "YouTube"), (r"facebook\.com|fb\.watch", "Facebook")]
@@ -603,7 +603,9 @@ def wants_summary(instruction: str, dur: float, plat: str = "YouTube", title: st
         return False, ""
     if SUMMARY_ASK.search(t):
         return True, "talimatta özet istendi"
-    if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not KEEP_SOUND.search(t) and not is_trailer(title, caption):
+    # viral/mizah etiketli video haber özeti değildir (kendi sesiyle oynar): kendiliğinden özetlenmez
+    if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not KEEP_SOUND.search(t) and not is_trailer(title, caption) \
+            and content_kind(instruction) not in ("trend", "mizah"):
         return True, f"video {round(c['minSeconds'] / 60)} dakikadan uzun"
     return False, ""
 
@@ -807,7 +809,9 @@ def fetch(url: str, instruction: str = "") -> dict:
     series = bool(bolum or re.search(r"sezon|season|episode|dizi|series", f"{title} {caption[:200]}", re.I))
     social.update({"trailer": trailer, "film": film, "bolum": bolum,
                    "tags": [str(x) for x in (info.get("tags") or [])[:15]]})
-    return {"ok": True, "file": str(video), "social": social, "related": related(caption, title, film if trailer and film else "", series)}
+    # mizah videosu haber sitelerinde aranmaz (haber değil; 75 sn boşuna beklenmesin)
+    rel = [] if content_kind(instruction) == "mizah" else related(caption, title, film if trailer and film else "", series)
+    return {"ok": True, "file": str(video), "social": social, "related": rel}
 
 
 if __name__ == "__main__":

@@ -527,6 +527,41 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   ile: log, Claude argümanları ve iş klasörü aynı (sinema planında yalnız kategori genel → sinema), istem yalnız montaj.md'nin sinema
   satırlarıyla farklı. Gerçek YouTube indirmesi, mlx-whisper'ın dil algılaması ve Claude'un kare
   okuması Mac'te DENENMEDİ.
+- Sosyal medya video türü: haber / viral / mizah (kullanıcı isteği, 19 Ekim: "bazen mizah, bazen normal sosyal medyada çok izlenen video
+  linkleri gönderiyorum, bunları da son dakika diye haber yapıyor; link/mizah yazınca mizah kategorisine göre üretilsin ama direk mizah
+  yazmasın, girişte izlenmez, videonun sonunda belirtelim; ya da link/trend"). Eskiden her paylaşım "SON DAKİKA" etiketi, "Son dakika."
+  girişi, SON DAKİKA kartı ve #sondakika ile üretiliyordu (panel talimatsız linke "haber olarak anlat" yazıyordu). Etiket: `commands.js
+  findLink` linke bitişik "/mizah", "/komik", "/trend", "/viral", "/haber"i adresten ayırır (`tag`; yt-dlp "watch?v=ID/mizah"yı indiremez) ve
+  talimata ekler; linkin yanına yazılan "mizah", "#mizah", "trend" de olur. Tür `common.content_kind` (server.js `contentKindOf` aynı):
+  mizah (mizah, komik, espri, şaka, güldür-, eğlenceli, caps) > trend (trend, viral, akım, çok izlenen, gündem olan, keşfet) > haber ("haber
+  yap/olarak", "son dakika"); yoksa "" → `prompts/montaj.md` "VİDEO TÜRÜ": girdide `video_turu.istenen` null, Claude içeriğe göre "tur"
+  seçer (gerçek olay → haber; ilginç/şaşırtıcı an, akım, hayvan… → trend; komik → mizah). Talimatsız sosyal medya linkinde talimat boş gider
+  (`DECIDE_TALIMAT`); WhatsApp videosunda eski varsayılan (haber). Talimat yalnız etiketse ("mizah", "#trend", "viral 18:30";
+  `common.kind_only`) montaja türün varsayılan talimatı (`KIND_TALIMAT`) gider. Haber türünde sosyal medya paylaşımı "SON DAKİKA" etiketini
+  yalnız yeni (bugün/dün) ve büyük olayda alır, diğerinde "GÖRÜNTÜLÜ HABER" (montaj.md); SON DAKİKA olmayan etiketli video haberinde (WhatsApp
+  videosu dahil) giriş "Son dakika." değil etiketin kendisi ("Görüntülü haber.", "Özel haber."), intro'da etiket (`Intro videoLabel`,
+  `episode.infoKind` video), SON DAKİKA kartı yok. Fragman ve uzun video özetinde tür yok. trend/mizah (`wa_video.kind_label`):
+  etiket VİRAL (ÇOK İZLENEN, SOSYAL MEDYA, GÜNDEM kabul; SON DAKİKA/MİZAH/başka → VİRAL), giriş "Sosyal medyada gündem.", kapanış mizahta "Bu
+  video mizah amaçlıdır. Daha fazlası için takip etmeyi unutma.", trendde "Sosyal medyada çok izlenen videolar için takip etmeyi unutma.",
+  `breaking` yok, her segmentin kategorisi türün kendisi; istem: haber kalıpları yok, canlı sosyal medya dili, kimseyi aşağılama yok, mağdur/
+  çocuk/hasta mizah konusu değil, mizahta "mizah/komik/espri/şaka/güldüren/kahkaha" kancada, ekran başlıklarında, titles'ta ve ilk segmentte
+  YOK. Panel `startAnlik(…, {contentKind})` + info {label, intro, outro, breaking: false} → env `CONTENT_KIND` → assemble meta `contentKind`
+  → Remotion: intro'da etiket (VİRAL), kancada son dakika sesi yerine kategori sesi, kapanış sloganı "HER 5 SAATTE BİR / SON DAKİKA" yerine
+  "SOSYAL MEDYANIN / VİRALLERİ" (`Outro slogan`), mizahta takip düğmelerinin altında "BU VİDEO MİZAH AMAÇLIDIR" rozeti (`Outro note`); `build_caption` başlığı "🔥 VİRAL: …" (mizah yazmaz), #sondakika yok (`calm_tags`), kapanış satırı mizahta "😄 Bu video mizah
+  amaçlıdır. Güldüren videolar için takip et, abone ol." (açıklamanın sonunda), trendde "Sosyal medyanın en çok konuşulan videoları…";
+  YouTube'da "· Son Dakika" listesine girmez, kategori listesi "· Viral Videolar" / "· Mizah". Yeni kategoriler (`src/categories.ts`):
+  trend #FF2D55 (telefon, artan izlenme sayacı, kalpler, yükselen grafik + alev; `sfx/trend.wav` iki pop + yükselen parıltı) ve mizah
+  #C6FF00 (zıplayan, göz kırpan gülen yüz, konfeti, yıldız; `sfx/mizah.wav` yay sesi), ikisinin de ekrandaki adı VİRAL; assemble `CATEGORIES`,
+  `ASAYIS_MUAF` ("komik kaza" asayiş kartı olmasın), wa_video `CATS`, hashtags (#viral #keşfet / #mizah #komik #viral; mizahta mizah/komik
+  etiketleri listenin SONUNA alınır — YouTube açıklamadaki ilk 3 etiketi başlığın üstünde gösterir), oynatma listesi;
+  senaryo.md/anlik.md haber istemleri bunları önermez. Mizah videosu haber sitelerinde aranmaz (`social_video.related` atlanır); viral/mizah
+  etiketli uzun YouTube videosu kendiliğinden özetlenmez. WhatsApp ilk yanıtı "🎬 Başladı: … mizah videosu (VİRAL etiketiyle; mizah olduğu
+  sonda söylenir) hazırlanıyor". Sandbox'ta denendi (sahte Claude): mizah/trend etiketli, etiketsiz (Claude trend/mizah/haber seçti) ve "haber
+  yap" + Claude mizah dediği işler (etiket, giriş, kapanış, kategori, breaking, istemde video_turu), assemble + build_caption + caption_tags +
+  oynatma listesi (CONTENT_KIND mizah/trend/yok), Remotion kareleri (kanca VİRAL, intro VİRAL / GÖRÜNTÜLÜ HABER, Trend/Mizah çizimleri, kapanış
+  sloganı ve mizah rozeti); tür etiketsiz 5 wa_video işi (sosyal medya, WhatsApp, sesli, fragman, "haber yap") eski kodla: kurgu, Claude
+  argümanları ve iş klasörü aynı, istem montaj.md'nin yeni bölümleriyle ve girdideki `video_turu` ile farklı (talimatsız sosyal medya
+  linkinde talimat artık `DECIDE_TALIMAT`). Gerçek Claude'un tür seçimi DENENMEDİ.
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,
@@ -1255,6 +1290,8 @@ değişmez. Eşleme `src/categories.ts` içindedir ve tek doğru kaynak odur:
 | parti     | SİYASET   | #E30A17     | kürsüden kürsüye yürüyen silüet, konfeti | sfx/tokmak.wav            |
 | egitim    | EĞİTİM    | #FFB020     | okul, sallanan zil, uyarı üçgeni    | sfx/okul.wav                   |
 | sinema    | SİNEMA    | #E040FB     | çarpan klaket, kayan film şeridi, projeksiyon ışığı | sfx/sinema.wav (klaket + projektör) |
+| trend     | VİRAL     | #FF2D55     | telefon, artan izlenme sayacı, kalpler, yükselen grafik + alev | sfx/trend.wav (pop + parıltı) |
+| mizah     | VİRAL     | #C6FF00     | zıplayan göz kırpan gülen yüz, konfeti, yıldız | sfx/mizah.wav (yay sesi) |
 | genel     | GÜNDEM    | #FFFFFF     | gazete + zil                        | sfx/bildirim.wav               |
 
 `parti`: parti değişimi, istifa, transfer, atama haberleri. Parti renkleri veya logoları

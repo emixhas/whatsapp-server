@@ -19,7 +19,8 @@ DURATION = int(os.environ.get("DURATION", "30"))
 MAX_WORDS_TOTAL = int(os.environ.get("WORDS", str(DURATION * 24 // 10))) + 6   # küçük tolerans
 _H = int(os.environ.get("HABER", str(max(2, DURATION // 8))))
 HABER_MIN, HABER_MAX = max(2, _H - 1), min(12, _H + 1)
-CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "genel"}
+# trend ve mizah yalnız sosyal medya/WhatsApp videolarında (wa_video.py, montaj.md); haber istemleri bunları önermez
+CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "asayis", "sinema", "trend", "mizah", "genel"}
 # Asayiş zorlaması: Claude ne derse desin bu kalıplar geçen yurt içi haber "asayis" olur (şehit haberi siyasete düşmesin)
 # Zorlanmayanlar: dunya, hava ve sinema (fragmanın konusu cinayet/patlama/çatışma olabilir; kullanıcı isteği, 18 Ekim:
 # "bir filmin fragmanını analiz edip …" → film haberi asayiş kartına düşmesin). Fragman analizinde (TRAILER=1) hiç zorlanmaz (oyun
@@ -27,7 +28,7 @@ CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "sagli
 # genç oyuncu hayatını kaybetti") yine asayiş olur (GERCEK_OLAY; Claude ne derse desin). GERCEK_OLAY ekli ve edilgen biçimleri kapsar
 # (öldü, 2 yaralı, yaralanarak, öldürüldü, rehin alındı); etken fiil ("katil öldürdü": filmin konusu) sayılmaz. Tek konulu anlık
 # videoda karar haber başına değil olay başınadır (main: real_story): bir kartta gerçek zarar varsa tüm sinema kartları asayiş olur
-ASAYIS_MUAF = ("asayis", "dunya", "hava", "sinema")
+ASAYIS_MUAF = ("asayis", "dunya", "hava", "sinema", "trend", "mizah")  # "komik kaza" videosu polis sirenli asayiş kartı olmasın
 TRAILER = os.environ.get("TRAILER") == "1"
 GERCEK_OLAY = re.compile(r"(hayatını kaybet|can verdi|şehit|öldü(?!r)|ölü\b|öldürül|yaralan|yaralı|gözaltı|tutuklan|kaçırıl|rehin)", re.I)
 ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza(?!n)|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
@@ -508,7 +509,9 @@ def main(src: str, dst: str):
         "infoKind": INFO_KIND or None,  # şablon video türü: deprem | mac | piyasa | takvim
         "userVideo": os.environ.get("USER_VIDEO") == "1" or None,
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
-        "summary": os.environ.get("SUMMARY") == "1" or None,  # uzun video özeti: intro ve açıklamada kendi etiketi (ÖZET…), son dakika değil
+        "summary": os.environ.get("SUMMARY") == "1" or None,
+        # sosyal medya videosunun türü (trend | mizah): son dakika değil; intro etiketi, açıklama başlığı, kapanış notu, etiketler
+        "contentKind": os.environ.get("CONTENT_KIND", "").strip() if os.environ.get("CONTENT_KIND", "").strip() in ("trend", "mizah") else None,  # uzun video özeti: intro ve açıklamada kendi etiketi (ÖZET…), son dakika değil
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)
         "expiresAt": data.get("expiresAt") or None,  # bilgi bu andan sonra eskir: expire_videos.py YouTube'da liste dışı yapar
         "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum

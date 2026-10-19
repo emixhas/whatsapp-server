@@ -158,6 +158,27 @@ def summary_secs(instruction: str) -> int:
     return max(20, min(60, n))
 
 
+# Video türü (kullanıcı isteği, 19 Ekim: "bazen mizah, bazen normal sosyal medyada çok izlenen video linkleri gönderiyorum, bunları da son
+# dakika diye haber yapıyor; link/mizah yazınca mizah kategorisine göre üretilsin, link/trend"): talimattaki açık etiket. mizah > trend >
+# haber; etiket yoksa "" (kurgu planında Claude karar verir). server.js contentKindOf aynı kural.
+_KIND_MIZAH = re.compile(r"(?<!\w)(?:mizah\w*|komik\w*|espri\w*|şaka\w*|güldür\w*|eğlenceli|caps)(?!\w)", re.I)
+_KIND_TREND = re.compile(r"(?<!\w)(?:trend\w*|viral\w*|akım\w*|çok\s+izlenen|gündem\s+olan|keşfet\w*)(?!\w)", re.I)
+_KIND_HABER = re.compile(r"(?<!\w)(?:haber(?:i|ini)?\s+(?:yap|olarak|hazırla|üret)(?!ma|me)\w*|haber\s+olarak|son\s*dakika)(?!\w)", re.I)
+
+
+def content_kind(instruction: str) -> str:
+    t = str(instruction or "").replace("I", "ı").replace("İ", "i").lower()
+    return "mizah" if _KIND_MIZAH.search(t) else "trend" if _KIND_TREND.search(t) else "haber" if _KIND_HABER.search(t) else ""
+
+
+def kind_only(instruction: str) -> bool:
+    """Talimat yalnız tür etiketinden mi oluşuyor ("mizah", "#trend", "viral")? O zaman montaja türün varsayılan talimatı gider."""
+    t = str(instruction or "").replace("I", "ı").replace("İ", "i").lower()
+    for rx in (_KIND_MIZAH, _KIND_TREND, _KIND_HABER):
+        t = rx.sub(" ", t)
+    return bool(content_kind(instruction)) and not re.search(r"[^\W\d_]", t)
+
+
 def episode_meta(video_name: str):
     return load_json(OUT / video_name.replace(".mp4", ".json"), None)
 
@@ -215,6 +236,8 @@ def build_caption(video_name: str, max_len: int = 2000):
             head = f"🔴 {meta['slotLabel']}"
         if meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA":  # uzun video özeti: son dakika değil → "📺 ÖZET: …"
             head = f"📺 {meta.get('slotLabel') or 'ÖZET'}"
+        if meta.get("contentKind") in ("trend", "mizah"):  # viral/mizah videosu: son dakika değil → "🔥 VİRAL: …" (mizah başlıkta yazmaz)
+            head = f"🔥 {meta.get('slotLabel') or 'VİRAL'}"
         if meta.get("trailer"):  # fragman analizi: son dakika değil → "🎬 FRAGMAN: …" (etiket kurgu planından: YENİ FRAGMAN…)
             head = f"🎬 {meta.get('slotLabel') or 'FRAGMAN'}"
             room = 100 - len(f"{head}:  | {s['channelName']} #Shorts")  # uzun başlık kanal adını ve #Shorts'u kesmesin
@@ -240,10 +263,14 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl") and not social_src:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"  # uzun video özeti son dakika haberi değil: #sondakika yok
+    # uzun video özeti, viral ve mizah videosu son dakika haberi değil: #sondakika yok
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah")
     tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"],
                                                                                    ["#sondakika"] if anlik and not calm and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
-    lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if meta.get("trailer") and meta.get("slotLabel") == "TANITIM FİLMİ"
+    # mizah videosu: mizah olduğu açıklamanın SONUNDA söylenir (kullanıcı isteği, 19 Ekim: "girişte yazarsa izlenmez, sonunda belirtelim")
+    lines += ["😄 Bu video mizah amaçlıdır. Güldüren videolar için takip et, abone ol." if meta.get("contentKind") == "mizah"
+              else "Sosyal medyanın en çok konuşulan videoları için takip et, abone ol." if meta.get("contentKind") == "trend"
+              else "Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if meta.get("trailer") and meta.get("slotLabel") == "TANITIM FİLMİ"
               else "Yeni fragmanlar ve film, dizi haberleri için takip et, abone ol." if meta.get("trailer")
               else "Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
@@ -264,7 +291,7 @@ def caption_tags(video_name: str) -> list:
     meta = episode_meta(video_name) or {}
     s = settings()
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah")
     tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"], ["#sondakika"] if anlik and not calm else [])
     try:
         import censor

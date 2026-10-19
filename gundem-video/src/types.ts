@@ -66,6 +66,11 @@ export type Episode = {
   trailer?: boolean;
   /** uzun video özeti (assemble meta summary): intro'da SON DAKİKA yerine özet etiketi (slotLabel: ÖZET, AÇIKLAMA…) */
   summary?: boolean;
+  /** sosyal medya videosunun türü (assemble meta contentKind): trend | mizah → son dakika değil; intro'da etiket (VİRAL), kancada
+   *  son dakika sesi yerine kategori sesi, mizahta kapanışta "BU VİDEO MİZAH AMAÇLIDIR" */
+  contentKind?: string | null;
+  /** şablon/video türü (assemble meta infoKind): video → intro'da kurgu planının etiketi (SON DAKİKA değilse, ör. GÖRÜNTÜLÜ HABER) */
+  infoKind?: string | null;
   segments: Segment[];
 };
 

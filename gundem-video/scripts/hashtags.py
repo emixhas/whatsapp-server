@@ -9,7 +9,7 @@ MAX_TAGS = 12
 
 CATEGORY_TAGS = {"finans": "#ekonomi", "siyaset": "#siyaset", "parti": "#siyaset", "asayis": "#asayiş", "spor": "#spor",
                  "hava": "#havadurumu", "toplum": "#toplum", "egitim": "#eğitim", "teknoloji": "#teknoloji",
-                 "saglik": "#sağlık", "dunya": "#dünya", "sinema": "#sinema #film"}  # boşlukla birden çok etiket olabilir
+                 "saglik": "#sağlık", "dunya": "#dünya", "sinema": "#sinema #film", "trend": "#viral #keşfet", "mizah": "#mizah #komik #viral"}  # boşlukla birden çok etiket olabilir
 VALUE_TAGS = {"can kaybı": "#sondakika", "kaza/afet": "#kaza", "emekli/memur maaşı": "#emekli",
               "zam/fiyat/vergi": "#zam", "tatil/izin": "#tatil", "kamu duyurusu": "#duyuru", "güvenlik": "#güvenlik",
               "para ve destek": "#ekonomi", "sağlık ve gıda": "#sağlık", "milli başarı": "#millitakım",
@@ -56,6 +56,9 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
         if t.lower() == "#shorts" and meta.get("format") in ("gunluk", "haftalik"):  # yatay uzun video Shorts değil
             continue
         add(t)
+    if meta.get("contentKind") == "mizah":  # mizah etiketleri en sona: YouTube açıklamanın ilk 3 etiketini başlığın üstünde gösterir
+        fun = [t for t in out if re.search(r"mizah|komik|espri|şaka|caps", t)]
+        out = [t for t in out if t not in fun][:MAX_TAGS - min(len(fun), 2)] + fun[:2]
     return out[:MAX_TAGS]
 
 

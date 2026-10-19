@@ -47,7 +47,7 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
         cursor += seg.duration;
         const haberIndex = haberler.indexOf(seg);
         const st = styleFor(seg.category);
-        const sceneSfx = seg.kind === "hook" ? "sfx/sondakika.wav" : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
+        const sceneSfx = seg.kind === "hook" ? (episode.contentKind ? st.sfx : "sfx/sondakika.wav") : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
         const breakingSfx = seg.kind === "haber" && seg.breaking ? "sfx/sondakika.wav" : null;
         const sceneVol = seg.kind === "haber" ? st.sfxVolume : seg.kind === "hook" ? 0.75 : 0.5;
         return (
@@ -64,9 +64,11 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
                 images={seg.imagesTall?.length ? seg.imagesTall : seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} words={seg.words} durationInFrames={dur} />
             ) : seg.kind === "intro" ? (
               <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} dayLabel={episode.dayLabel}
-                slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} trailer={episode.trailer} summary={episode.summary} words={seg.words} />
+                slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} trailer={episode.trailer} summary={episode.summary} contentKind={episode.contentKind}
+                videoLabel={episode.infoKind === "video" ? episode.slotLabel : undefined} words={seg.words} />
             ) : seg.kind === "outro" ? (
-              <Outro words={seg.words} />
+              <Outro words={seg.words} note={episode.contentKind === "mizah" ? "BU VİDEO MİZAH AMAÇLIDIR" : undefined}
+                slogan={episode.contentKind ? ["SOSYAL MEDYANIN", "VİRALLERİ"] : undefined} />
             ) : seg.kind === "sesli" || seg.fullFrame ? (
               <FullFrame index={seg.displayIndex != null ? seg.displayIndex - 1 : Math.max(0, haberIndex)} total={haberler.length} title={seg.title ?? ""} source={seg.source}
                 category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words}

@@ -318,6 +318,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.userVideo) env.USER_VIDEO = "1"; // WhatsApp'tan gönderilen video: yayın onayla (waVideo.autoPublish)
   if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
   if (opts.summary) env.SUMMARY = "1"; // uzun video özeti: meta summary → intro ve açıklamada özet etiketi (SON DAKİKA değilse #sondakika yok)
+  if (["trend", "mizah"].includes(opts.contentKind)) env.CONTENT_KIND = opts.contentKind; // viral/mizah videosu: meta contentKind
   if (opts.publishAt) env.PUBLISH_AT = String(opts.publishAt); // WhatsApp'ta yazılan yayın saati: video hemen üretilir, o saatte yayınlanır
   if (opts.info) { const i = opts.info; env.INFO_KIND = i.kind || ""; env.INFO_LABEL = i.label || ""; if (i.intro) env.INFO_INTRO = i.intro; if (i.outro) env.INFO_OUTRO = i.outro; if (i.breaking === false) env.INFO_BREAKING = "0"; }
   if (opts.source) env.ANLIK_SOURCE = String(opts.source);
@@ -1461,6 +1462,14 @@ const trailerCfg = () => {
   const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
   return { duration: 40, maxSoundSeconds: 8, ...t, enabled: !off(t.enabled), autoDetect: !off(t.autoDetect) };
 };
+// Video türü (kullanıcı isteği, 19 Ekim: "mizah ve sosyal medyada çok izlenen video linklerini de son dakika diye haber yapıyor; link/mizah,
+// link/trend"): talimattaki açık etiket (scripts/common.py content_kind ile aynı kural: mizah > trend > haber; yoksa "" → Claude karar verir)
+const contentKindOf = (instruction) => {
+  const t = String(instruction || "").toLocaleLowerCase("tr-TR");
+  if (/(^|[^\p{L}])(mizah\p{L}*|komik\p{L}*|espri\p{L}*|şaka\p{L}*|güldür\p{L}*|eğlenceli|caps)(?![\p{L}])/u.test(t)) return "mizah";
+  if (/(^|[^\p{L}])(trend\p{L}*|viral\p{L}*|akım\p{L}*|çok\s+izlenen|gündem\s+olan|keşfet\p{L}*)(?![\p{L}])/u.test(t)) return "trend";
+  return "";
+};
 // uzun video özeti (kullanıcı isteği, 19 Ekim): settings.longSummary (scripts/common.py summary_cfg ile aynı kural)
 const longSummaryCfg = () => {
   const raw = settings().longSummary;
@@ -1521,7 +1530,7 @@ const waBrief = () => settings().whatsapp?.brief !== false;
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
 async function runVideoNews(v) { videoNewsN++; try { return await runVideoNews0(v); } finally { videoNewsN--; } } // güncelleme beklesin
 async function runVideoNews0(v) {
-  push(`🎬 ${v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || "(talimat yok)").slice(0, 120)}`);
+  push(`🎬 ${v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : contentKindOf(v.instruction) === "mizah" ? "mizah videosu" : contentKindOf(v.instruction) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || "(talimat yok)").slice(0, 120)}`);
   if (!waBrief()) await sendW(v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
@@ -1545,16 +1554,19 @@ async function runVideoNews0(v) {
   // özette sorun olabilecek iki durum kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir)
   if (p.summary && p.unsuitable) await sendW(`⚠️ Video habere pek uygun görünmüyor (${String(p.unsuitable).slice(0, 140)}); yine de en iyi anlarıyla hazırladım.`);
   if (p.summary && p.lowres) await sendW(`⚠️ ${p.lowres} an YouTube'dan HD inmedi; o anlar düşük çözünürlüklü kopyadan kesildi (görüntü bulanık olabilir).`);
-  if (!waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  if (!waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : p.contentKind === "mizah" ? "Kurgu hazır (mizah: sonda belirtilecek)" : p.contentKind === "trend" ? "Kurgu hazır (viral video)" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   // fragman: etiket plandan (FRAGMAN / YENİ FRAGMAN / HAYRAN FRAGMANI / TANITIM FİLMİ), giriş ve kapanış etikete göre wa_video.py'den
   // ("Yeni fragman." yalnız yeni fragmanda; eski fragmana "yeni" denmez), SON DAKİKA kartı yok; yine onaylı (userVideo), en çok izlenen
   // saat tekrarına girmez (infoKind video)
   const info = v.trailer ? { kind: "video", label: p.label || "FRAGMAN", intro: p.intro || "Fragman analizi.", outro: p.outro || "Yeni fragmanları kaçırmamak için takip etmeyi unutma.", breaking: false }
     // özet: etiket plandan (ÖZET, AÇIKLAMA, RÖPORTAJ…); SON DAKİKA kartı ve "Son dakika." yalnız SON DAKİKA etiketinde
     : p.summary ? { kind: "video", label: p.label || "ÖZET", intro: p.intro || "Kısa özet.", ...(p.label === "SON DAKİKA" ? {} : { breaking: false }) }
-    : { kind: "video", label: p.label || "SON DAKİKA", intro: "Son dakika." };
+    // viral/mizah: son dakika değil (SON DAKİKA kartı ve "Son dakika." yok); mizah olduğu yalnız kapanışta söylenir
+    : p.contentKind ? { kind: "video", label: p.label || "VİRAL", intro: p.intro || "Sosyal medyada gündem.", outro: p.outro || "Takip etmeyi unutma.", breaking: false }
+    : !p.label || p.label === "SON DAKİKA" ? { kind: "video", label: "SON DAKİKA", intro: "Son dakika." }
+    : { kind: "video", label: p.label, intro: `${p.label.charAt(0)}${p.label.slice(1).toLocaleLowerCase("tr-TR")}.`, breaking: false }; // GÖRÜNTÜLÜ HABER, ÖZEL HABER: "Son dakika." denmez
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
-    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}) });
+    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}) });
   if (!res.ok) await sendW(`❌ Üretim başlatılamadı: ${res.error}`);
   else if (res.queued) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`);
   return res;
@@ -1578,7 +1590,7 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🔗 paylaşım indirilemedi: ${err}`); await sendW(`❌ Paylaşım indirilemedi: ${err}`); return { ok: false, error: err }; }
     const s = j.social || {};
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
-    push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`);
+    push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · ${contentKindOf(instruction) === "mizah" ? "mizah videosu: haber sitelerinde aranmadı" : `haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`}`);
     // canlı yayın / uzun videonun yalnız bir bölümü alındıysa kullanıcı bilsin (kısa mesaj modunda da tek satır; bölümü değiştirme yolu)
     const note = String(s.note || ""), Note = note.charAt(0).toLocaleUpperCase("tr-TR") + note.slice(1);
     if (note && s.live) await sendW(`📡 ${Note}.`);
@@ -1607,7 +1619,9 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
       return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "" });
     }
     if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
-    return await runVideoNews({ files: [j.file], instruction: instruction || "Bu paylaşımdaki olayı tarafsız bir haber olarak anlat.", social: s, related: j.related || [], publishAt });
+    // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
+    // her paylaşım son dakika haberi oluyordu; kullanıcı isteği, 19 Ekim)
+    return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt });
   } finally { socialBusy = false; }
 }
 
@@ -2664,7 +2678,8 @@ async function handleCommand(text, opts = {}) {
       const fr = trailerCfg().enabled !== false && TRAILER_ASK.test(cmd.instruction || "") && !NEWS_ASK.test(cmd.instruction || "");
       const frSecs = trailerSecs(cmd.instruction);
       reply = (fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
-        : waBrief() ? "🎬 Başladı: paylaşım indiriliyor, haber videosu hazırlanıyor. Bitince video gelecek." : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
+        : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[contentKindOf(cmd.instruction)] || "video"} hazırlanıyor. Bitince video gelecek.`
+        : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
       break;
     }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }

@@ -57,7 +57,11 @@ export function findLink(text) {
     const v = videoLink(url);
     if (!v || !["video", "channel", "playlist"].includes(v.kind) || (v.platform === "TikTok" && !TT_VIDEO.test(url))) return null;
   }
-  return { raw: m[0], url };
+  // linke bitişik tür etiketi (kullanıcı isteği, 19 Ekim: "linki verirken link/mizah ya da link/trend yazayım"): video adresinden ayrılır
+  // (yt-dlp "watch?v=ID/mizah" adresini indiremez), `tag` olarak döner; çağıran talimata ekler
+  const tm = url.toLocaleLowerCase("tr-TR").match(/\/+(mizah|komik|trend|viral|haber)\/*$/);
+  if (tm && videoLink(url.slice(0, tm.index))?.kind === "video") return { raw: m[0], url: url.slice(0, tm.index), tag: tm[1] };
+  return { raw: m[0], url, tag: "" };
 }
 // Link türü: {kind: "video" | "channel" | "playlist" | "page", platform, url, reply?}; video sitesi değilse null.
 // YouTube kanal/oynatma listesi/diğer sayfa haber videosu değildir: haber sayfası gibi okunmaya çalışılmaz, Türkçe yanıt verilir.
@@ -152,7 +156,7 @@ export function parseCommand(raw) {
   if (an && vl && an[1].includes(lk.raw)) {
     if (vl.kind !== "video") return { action: "none", reply: vl.reply };
     const w = whenKeepingPositions(an[1].replace(lk.raw, " "), vl.platform === "YouTube");
-    return { action: "social_video", url: vl.url, instruction: `son dakika ${w.rest}`.replace(/\s+/g, " ").trim(), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
+    return { action: "social_video", url: vl.url, instruction: `son dakika ${lk.tag || ""} ${w.rest}`.replace(/\s+/g, " ").trim(), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
   }
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
   // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)
@@ -166,7 +170,7 @@ export function parseCommand(raw) {
     const when = vl?.kind === "video" ? whenKeepingPositions(String(raw).replace(lk.raw, " "), vl.platform === "YouTube") : parseWhen(String(raw).replace(lk.raw, " "));
     const publishAt = when.at ? when.at.toISOString() : undefined;
     // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
-    if (vl?.kind === "video") return { action: "social_video", url: vl.url, instruction: insOf(when.rest), publishAt, reply: "" };
+    if (vl?.kind === "video") return { action: "social_video", url: vl.url, instruction: insOf(`${lk.tag || ""} ${when.rest}`), publishAt, reply: "" };
     if (vl?.reply) return { action: "none", reply: vl.reply };  // YouTube kanal / oynatma listesi / diğer sayfa
     return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, reply: "" };
   }

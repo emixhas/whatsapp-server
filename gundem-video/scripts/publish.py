@@ -118,7 +118,7 @@ PLAYLIST_FILE = DATA / "youtube_playlists.json"  # {liste adı: playlistId}
 # kategori → liste adı (kanal adı önek olarak eklenir); format listeleri: anlık → Son Dakika, düzenli → 5 saatlik özet
 PLAYLIST_BY_CATEGORY = {"finans": "Ekonomi", "siyaset": "Siyaset", "parti": "Siyaset", "asayis": "Asayiş ve Kaza",
                         "hava": "Hava ve Afet", "egitim": "Eğitim", "saglik": "Sağlık", "dunya": "Dünya",
-                        "spor": "Spor", "teknoloji": "Teknoloji", "toplum": "Toplum", "sinema": "Sinema"}
+                        "spor": "Spor", "teknoloji": "Teknoloji", "toplum": "Toplum", "sinema": "Sinema", "trend": "Viral Videolar", "mizah": "Mizah"}
 
 
 # ---------------- YouTube
@@ -431,7 +431,8 @@ def playlist_names(meta: dict) -> list:
     from common import settings
     ch = settings().get("channelName", "Türkiye Gündemi")
     fmt = meta.get("format")
-    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"  # uzun video özeti son dakika değil: yalnız kategori listesi
+    # uzun video özeti ve viral/mizah videosu son dakika değil: yalnız kategori listesi
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah")
     names = [] if meta.get("trailer") or calm else [
              f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"

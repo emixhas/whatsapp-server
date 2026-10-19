@@ -54,6 +54,19 @@ def noise(sec, amp=0.5, cutoff=0.1, attack=0.01, decay=0.3):
     return out
 
 
+def glide(f0, f1, sec, amp=0.5, vibrato=0.0, vib_rate=12.0, attack=0.01, decay=0.4, harmonics=(1.0,)):
+    """Frekansı f0'dan f1'e kayan ton (çizgi film yay sesi, yükselen ıslık); faz birikimli, kayma tıklamasız."""
+    n = int(SR * sec)
+    e = env(n, attack=attack, decay=decay)
+    out, ph = [], 0.0
+    for i in range(n):
+        t = i / SR
+        f = (f0 + (f1 - f0) * (i / n)) * (1 + vibrato * math.sin(2 * math.pi * vib_rate * t))
+        ph += 2 * math.pi * f / SR
+        out.append(amp * e[i] * sum(h * math.sin(ph * (k + 1)) for k, h in enumerate(harmonics)) / sum(harmonics))
+    return out
+
+
 def mix(*layers):
     n = max(len(l[0]) + int(SR * l[1]) for l in layers)
     out = [0.0] * n
@@ -167,6 +180,20 @@ def main():
         (tone(96, 0.85, decay=1.0, amp=0.45, harmonics=(1, 0.7, 0.4, 0.2), vibrato=0.01, vib_rate=24, attack=0.12), 0.3),
         (noise(0.85, amp=0.5, cutoff=0.06, attack=0.12, decay=1.0), 0.3),
         *clicks,
+    ))
+    # Sosyal medya videoları (kullanıcı isteği, 19 Ekim: mizah ve çok izlenen videolar son dakika gibi üretilmesin). En sonda: yukarıdaki
+    # seslerin rastgele sırası değişmesin. trend: iki bildirim "pop"u + yükselen parıltı (beğeni/izlenme artıyor); mizah: çizgi film
+    # yay sesi (titreyen kayan ton) + kısa "pop" — kelime yok, giriş "mizah" demeden eğlenceli hissettirsin.
+    save("trend.wav", mix(
+        (tone(1320, 0.12, decay=0.06, amp=0.7, harmonics=(1, 0.4)), 0),
+        (tone(1760, 0.14, decay=0.07, amp=0.7, harmonics=(1, 0.4)), 0.09),
+        (glide(620, 1860, 0.34, amp=0.35, attack=0.03, decay=0.5, harmonics=(1, 0.3)), 0.18),
+        (tone(2637, 0.42, decay=0.25, amp=0.3, harmonics=(1, 0.2), vibrato=0.004, vib_rate=9), 0.46),
+    ))
+    save("mizah.wav", mix(
+        (glide(190, 480, 0.55, amp=0.8, vibrato=0.09, vib_rate=14, attack=0.005, decay=0.45, harmonics=(1, 0.5, 0.2)), 0),
+        (glide(900, 1500, 0.16, amp=0.35, attack=0.01, decay=0.12), 0.5),
+        (tone(1046, 0.18, decay=0.09, amp=0.45, harmonics=(1, 0.3)), 0.66),
     ))
 
 

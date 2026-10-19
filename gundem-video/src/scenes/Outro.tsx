@@ -62,7 +62,8 @@ const Platform = ({ p, delay }: { p: (typeof PLATFORMS)[number]; delay: number }
   );
 };
 
-export const Outro = ({ words }: { words?: Word[] }) => {
+// slogan: varsayılan "HER 5 SAATTE BİR / SON DAKİKA"; viral/mizah videosunda son dakika denmez (kullanıcı isteği, 19 Ekim)
+export const Outro = ({ words, note, slogan = ["HER 5 SAATTE BİR", "SON DAKİKA"] }: { words?: Word[]; note?: string; slogan?: [string, string] }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const label = interpolate(frame, [0, 14], [0, 1], { extrapolateRight: "clamp" });
@@ -84,13 +85,19 @@ export const Outro = ({ words }: { words?: Word[] }) => {
         <TurkeyMap width={940} />
       </div>
       <div style={{ position: "absolute", top: 700, left: 60, right: 60 }}>
-        <div style={{ fontSize: 66, fontWeight: 900, lineHeight: 1.05, opacity: Math.min(1, line1 * 1.3), transform: `translateY(${(1 - line1) * 40}px)` }}>HER 5 SAATTE BİR</div>
-        <div style={{ display: "inline-block", marginTop: 18, fontSize: 108, fontWeight: 900, lineHeight: 1, background: theme.red, color: theme.white, padding: "10px 36px", borderRadius: 18, transform: `scale(${line2}) rotate(-2deg)`, boxShadow: "0 12px 40px rgba(227,10,23,0.5)" }}>SON DAKİKA</div>
+        <div style={{ fontSize: 66, fontWeight: 900, lineHeight: 1.05, opacity: Math.min(1, line1 * 1.3), transform: `translateY(${(1 - line1) * 40}px)` }}>{slogan[0]}</div>
+        <div style={{ display: "inline-block", marginTop: 18, fontSize: 108, fontWeight: 900, lineHeight: 1, background: theme.red, color: theme.white, padding: "10px 36px", borderRadius: 18, transform: `scale(${line2}) rotate(-2deg)`, boxShadow: "0 12px 40px rgba(227,10,23,0.5)" }}>{slogan[1]}</div>
         <div style={{ marginTop: 22, fontSize: 44, fontWeight: 700, color: theme.muted, opacity: line3 }}>Kaçırmamak için takip etmeyi unutma</div>
       </div>
       <div style={{ position: "absolute", top: 985, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 80 }}>
         {PLATFORMS.map((p, i) => <Platform key={p.key} p={p} delay={delays[i]} />)}
       </div>
+      {/* video türü notu (kullanıcı isteği, 19 Ekim: mizah videosu girişte değil sonda belirtilir) */}
+      {note ? (
+        <div style={{ position: "absolute", top: 1300, left: 0, right: 0, display: "flex", justifyContent: "center", opacity: line3 }}>
+          <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: 2, color: "#0B0F1A", background: "#C6FF00", padding: "12px 34px", borderRadius: 999, boxShadow: "0 8px 30px rgba(198,255,0,0.35)" }}>{note}</div>
+        </div>
+      ) : null}
       <Captions words={words} accent={theme.red} bottom={340} size={54} />
     </AbsoluteFill>
   );

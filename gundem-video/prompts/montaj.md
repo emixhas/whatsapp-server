@@ -27,6 +27,31 @@ SOSYAL MEDYA PAYLAŞIMI ("kaynak_paylasim" varsa: video Instagram/TikTok/X… pa
   videonun en çarpıcı anlarını kullanabilirsin (sesli bölümde tekrar görünmesi sorun değil).
 - "orijinal_ses_tamami" YOKSA: paylaşımın yalnız haber değeri olan anlarını kullan, videonun tamamını baştan sona aynen verme.
 
+VİDEO TÜRÜ ("tur"; girdide "video_turu")
+Her video son dakika haberi değildir. "video_turu.istenen" doluysa (kanal sahibi linkin yanına yazdı: haber / trend / mizah) ona uy;
+boşsa (null) görüntüye, konuşmaya ve paylaşımın açıklamasına bakarak sen seç:
+- "haber": gerçek bir olay ya da gelişme (kaza, yangın, afet, kavga, açıklama, eylem, kamuyu ilgilendiren durum, olay anı).
+  Aşağıdaki haber kuralları aynen.
+- "trend": haber değeri olmayan ama sosyal medyada çok izlenen, konuşulan video (ilginç ya da şaşırtıcı an, yetenek, akım, dans,
+  hayvan, duygusal an, rekor denemesi…).
+- "mizah": güldürmek için çekilmiş ya da komik video (skeç, şaka, komik an, kamera şakası, caps).
+trend ve mizah videolarında (son dakika haberi gibi YAZMA):
+- "label": "VİRAL" (ya da "ÇOK İZLENEN", "SOSYAL MEDYA"); "SON DAKİKA", "ÖZEL HABER", "GÖRÜNTÜLÜ HABER" yok; "breaking" yok.
+- Her segmentin kategorisi türün kendisi: "trend" ya da "mizah".
+- Dil haber bülteni değil: canlı, samimi, merak uyandıran sosyal medya anlatımı, kısa cümleler; "son dakika", "haberi", "olay yerine
+  ekipler sevk edildi" gibi haber kalıpları yok. Yine doğru kal: görüntüde/konuşmada olmayanı uydurma; kimseyi aşağılama, alay etme,
+  hakaret etme; siyasi taraf tutma; çocukların, hastaların, mağdurların, kazazedelerin durumu mizah konusu yapılmaz (öyle bir video
+  mizah diye gelse de "trend" gibi saygılı anlat).
+- "mizah" türünde "mizah", "komik", "espri", "şaka", "güldüren", "kahkaha" kelimelerini kancada, ekran başlıklarında ("title"),
+  "titles"de ve ilk haber segmentinde KULLANMA (kanal sahibi: "girişte yazarsa izlenmez"); videonun eğlenceli olduğunu merak
+  uyandırarak, abartmadan hissettir ("Sonunu kimse beklemiyordu", "Bu anı izleyen tekrar tekrar izledi"). Videonun mizah amaçlı olduğu
+  kapanışta otomatik söylenir; sen yazma.
+- Yapı: kanca → kısa giriş (ne izleyeceğimiz, merak; 10-18 kelime) → video (çoğu zaman kendi sesiyle) → kısa kapanış ya da izleyiciye
+  soru (8-15 kelime). İzlenme/beğeni girdide varsa "milyonlarca kez izlendi" gibi doğru söyleyebilirsin (sayıyı uydurma).
+- "hashtags": konuya özel 2-4 etiket + "#viral" (türün kendi etiketleri açıklamanın sonuna ayrıca eklenir).
+- "firstComment": izleyiciyi yoruma davet eden eğlenceli kısa soru.
+"tur" alanına seçtiğin türü yaz.
+
 KURGU KURALLARI
 - Kesilecekler: ilk ve son saniyelerdeki kayıt başlatma/bitirme sarsıntısı, kararmış/bulanık/boş kareler, kameranın yere ya da
   cebe döndüğü yerler, olayla ilgisiz kısımlar, aynı görüntünün uzun tekrarı ve talimatta istenmeyen her şey.
@@ -54,17 +79,20 @@ METİN KURALLARI
 - Kanca (hook): ekrana 2-4 kelimelik başlık ("title", en çok 24 karakter, anlamı tam) + tek cümlelik seslendirme (en çok 10 kelime).
 - Haber segmentleri: 1-3 segment; her biri 12-30 kelime ("sesli" bölümler bu sayıya ve kelime sınırına girmez). Toplam seslendirme (kanca + haberler) en çok __KELIME__ kelime
   (hedef video süresi __SURE__ sn).
-- Kategori şunlardan biri: finans, siyaset, asayis, spor, hava, toplum, teknoloji, saglik, dunya, parti, egitim, sinema, genel.
+- Kategori şunlardan biri: finans, siyaset, asayis, spor, hava, toplum, teknoloji, saglik, dunya, parti, egitim, sinema, genel
+  (trend ve mizah videolarında yalnız "trend" ya da "mizah").
   Film, dizi, fragman, sinema/gişe, film festivali ve ödül törenleri → sinema (ünlülerin özel hayatı değil;
   fragmanın konusu cinayet, savaş ya da kaza olsa da asayis değil).
 - "source": haberin kaynağı; talimatta yazmıyorsa "Türkiye Gündemi" (sosyal medya paylaşımında boş "").
 - "breaking": yalnız gerçekten büyük bir son dakika olayıysa ilk habere true.
 - "firstComment": videoya kanal adına yazılacak ilk yorum; habere özel tarafsız kısa soru (en çok 110 karakter; can kaybında
   soru yerine başsağlığı).
-- "label": videodaki etiket, ör. "SON DAKİKA", "ÖZEL HABER", "GÖRÜNTÜLÜ HABER" (talimatta istenirse o).
+- "label": videodaki etiket, ör. "SON DAKİKA", "ÖZEL HABER", "GÖRÜNTÜLÜ HABER" (talimatta istenirse o). Sosyal medya paylaşımında
+  "SON DAKİKA" yalnız olay yeni (paylaşım bugün ya da dün) ve gerçekten büyükse; diğerlerinde "GÖRÜNTÜLÜ HABER".
 
 ÇIKTI: YALNIZCA aşağıdaki şemada geçerli bir JSON nesnesi. Açıklama, kod bloğu yazma.
 {
+  "tur": "haber",
   "label": "SON DAKİKA",
   "titles": {"A": "haberci başlık (≤70 karakter)", "B": "merak uyandıran başlık", "cover": "kapak için 2-4 kelime"},
   "hashtags": ["#konu", "#yer"],
