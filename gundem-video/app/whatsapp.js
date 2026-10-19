@@ -13,7 +13,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   // bekleyen yayın onayı diske yazılır: panel yeniden başlayınca ("güncelle", çökme) "onay" kaybolmasın (6 saatten eskisi okunmaz)
   const PENDING_FILE = path.join(ROOT, "data", "wa_pending.json");
   let pendingVal = null;
-  try { const p = JSON.parse(readFileSync(PENDING_FILE, "utf8")); if (p?.video && Array.isArray(p.platforms) && Date.now() - Number(p.at || 0) < 6 * 3600000) pendingVal = p; } catch { /* yok */ }
+  // diskten gelen onay "restored": yeniden başlamadan sonra gevşek "tamam/evet/ok" (örneğin "✅ Güncellendi" mesajına cevap) eski videoyu
+  // yayınlamasın; yalnız açık "onay …" / "yayınla" / "paylaş" ya da platform adı
+  try { const p = JSON.parse(readFileSync(PENDING_FILE, "utf8")); if (p?.video && Array.isArray(p.platforms) && Date.now() - Number(p.at || 0) < 6 * 3600000) pendingVal = { ...p, restored: true }; } catch { /* yok */ }
   Object.defineProperty(st, "pending", { enumerable: true, get: () => pendingVal, set: (v) => {
     pendingVal = v || null;
     try { if (pendingVal) writeFileSync(PENDING_FILE, JSON.stringify(pendingVal)); else rmSync(PENDING_FILE, { force: true }); } catch { /* yazılamadı: bellekte kalır */ }
@@ -110,7 +112,11 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     return status();
   }
 
-  async function onOwnerVideo(jid, msg, vm, caption) {
+  // süren gönderim/indirme sayısı (panel güncellemesi bunlar bitmeden yeniden başlatmasın: video ve onay mesajı yarıda kalırdı)
+  let sending = 0, downloading = 0;
+  const busy = () => sending > 0 || downloading > 0;
+  async function onOwnerVideo(...a) { downloading++; try { return await onOwnerVideo0(...a); } finally { downloading--; } }
+  async function onOwnerVideo0(jid, msg, vm, caption) {
     const mb = Number(vm.fileLength || 0) / 1048576;
     if (mb > 500) { await send(jid, `Video çok büyük (${Math.round(mb)} MB); en çok 500 MB gönderin.`); return; }
     const dir = path.join(ROOT, "work", "wa_inbox"); mkdirSync(dir, { recursive: true });
@@ -133,7 +139,8 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (st.pending && !/(^|\s)sil/.test(t)) {  // "evet sil" = Instagram temizliği onayı
       const plats = pickPlatforms(t);
       const words = t.split(/\s+/).length;
-      const approve = APPROVE.test(t) || (plats.length && words <= 6 && /(onay|yayınla|yayinla|paylaş|paylas|yükle|yukle)/.test(t)) || (plats.length && /^(sadece|yalnız|yalniz)\s/.test(t));
+      const loose = st.pending.restored && !plats.length && /^(evet|ok|tamam)(\s|$|[.,!])/.test(t); // yeniden başlamadan kalan onayda gevşek cevap yayınlamaz
+      const approve = !loose && (APPROVE.test(t) || (plats.length && words <= 6 && /(onay|yayınla|yayinla|paylaş|paylas|yükle|yukle)/.test(t)) || (plats.length && /^(sadece|yalnız|yalniz)\s/.test(t)));
       if (approve && !(st.pending.partial && !plats.length && !/^(onay|onayla|yayınla|yayinla|paylaş|paylas)/.test(t))) {
         const p = st.pending;
         const chosen = plats.length ? p.platforms.filter((pl) => plats.includes(pl)) : p.platforms;
@@ -243,7 +250,8 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     return [...out, ...notes];
   }
 
-  async function notifyVideo(name, { ask = true, summary = null } = {}) {
+  async function notifyVideo(...a) { sending++; try { return await notifyVideo0(...a); } finally { sending--; } }
+  async function notifyVideo0(name, { ask = true, summary = null } = {}) {
     const w = settings().whatsapp || {};
     if (!w.enabled) return { ok: false, error: "WhatsApp kapalı" };
     if (st.status !== "connected") { // bağlantı kopukken bildirim kaybolmasın: kısa metin kuyruğa girer, bağlanınca gider
@@ -370,5 +378,5 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   async function logout() { try { await sock?.logout?.(); } catch { /* yok */ } await stop(); rmSync(AUTH_DIR, { recursive: true, force: true }); st.phone = null; return status(); }
   const status = () => ({ lastOkAt: st.lastOkAt || null, reconnects: st.reconnects || 0, outbox: outbox.length, lastIgnored: st.lastIgnored || null, selfPhone: selfPhone() ? "…" + selfPhone().slice(-4) : null, status: st.status, qrSvg: st.qrSvg, phone: st.phone, error: st.error, owner: ownerDigits() || null, pending: st.pending ? { video: st.pending.video, platforms: st.pending.platforms } : null, hasSession: existsSync(AUTH_DIR), lastMsgAt: st.lastMsgAt });
   const clearPending = (video) => { if (st.pending && (!video || st.pending.video === video)) st.pending = null; };
-  return { start, stop, logout, status, watchdog, send: (t) => send(ownerJid(), t), notifyVideo, clearPending };
+  return { start, stop, logout, status, watchdog, send: (t) => send(ownerJid(), t), notifyVideo, clearPending, busy };
 }

@@ -44,6 +44,10 @@ app.use("/previews", express.static(path.join(ROOT, "data", "previews")));
 
 // ---------- yardımcılar
 const lanIp = () => { for (const l of Object.values(networkInterfaces())) for (const i of l || []) if (i.family === "IPv4" && !i.internal) return i.address; return "127.0.0.1"; };
+// süren elle istekler (link/konu araması, yeniden yayın, Instagram silme, değerli haber partisi, YouTube sırası): güncelleme paneli
+// bunlar bitmeden yeniden başlatmasın (yanıtsız kaybolurlardı); sayılan işlevler aşağıda counted() ile sarılır
+let reqN = 0, flushQ = false;
+const counted = (fn) => async (...a) => { reqN++; try { return await fn(...a); } finally { reqN--; } };
 const run = (cmd, args, opts = {}) => new Promise((res) => execFile(cmd, args, { cwd: ROOT, env: ENV, maxBuffer: 8e6, ...opts }, (err, stdout, stderr) => res({ ok: !err, stdout, stderr, err })));
 // uzun işlerde (sosyal medya indirme, video kurgusu) ilerleme satırları beklemeden loga düşsün: satır satır okur (sonuç run() ile aynı)
 const runLines = (cmd, args, { timeout = 0, onLine = null } = {}) => new Promise((res) => {
@@ -437,7 +441,8 @@ function queueValuable(item) { // {title, text, source, url, sourceCount, durati
   push(`⭐ değerli haber yakalandı: ${item.title.slice(0, 80)} (${item.source}) → ${Math.round(VALUE_BATCH_MS / 1000)} sn içinde düşen diğerleriyle birlikte üretilecek`);
   if (!valueTimer) valueTimer = setTimeout(() => flushValuable().catch((e) => push(`⭐ değerli haber üretimi: ${e.message}`)), VALUE_BATCH_MS);
 }
-async function flushValuable() {
+const flushValuable = counted(flushValuable0); // parti valueBatch'ten çıkarıldıktan sonra da (hafıza denetimi, birleştirme) sayılır
+async function flushValuable0() {
   valueTimer = null;
   if (watchScanning) { valueTimer = setTimeout(() => flushValuable().catch(() => {}), 3000); return; } // diğer kaynak da taransın
   let items = valueBatch.splice(0, 3);
@@ -482,7 +487,8 @@ async function flushValuable() {
 // Haberler, son dakika siteleri ve son RSS'te arar, en iyi eşleşen sayfaları okur (fotoğraf/video da oralardan gelir).
 // Bulunamazsa ve editör yalnız kısa bir konu yazdıysa video ÜRETİLMEZ, link ya da ayrıntı istenir.
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
-async function prepareAnlik(input, duration, opts = {}) {
+const prepareAnlik = counted(prepareAnlik0);
+async function prepareAnlik0(input, duration, opts = {}) {
   input = String(input || "").replace(/\s+/g, " ").trim();
   // YouTube/sosyal medya video linki haber sayfası değildir (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"):
   // beyin breaking_news'i ya da panel kartı ile gelse de videosu indirilip kurgulanır (socialVideoNews; talimatta "son dakika" kalır,
@@ -536,7 +542,8 @@ async function prepareAnlik(input, duration, opts = {}) {
 // videodakinden FARKLI görsellerle. Anlık videoda tüm konu, çok haberli videoda kanca (manşet) haberi tek konulu son dakika
 // videosu olur. Haber sitelerde yeniden aranır (güncel bilgi + başka sayfalar); eski haber sayfaları ve eski videonun
 // görsel kaynakları work/remake.json "avoid" listesine girer, fetch_images önce başka kaynaklara bakar.
-async function remakeVideo(name, opts = {}) {
+const remakeVideo = counted(remakeVideo0);
+async function remakeVideo0(name, opts = {}) {
   name = path.basename(String(name || "")).replace(/\.json$/, "").replace(/\.mp4$/, "") + ".mp4";
   const meta = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), null);
   if (!meta?.segments?.length) return { ok: false, error: "Videonun bilgileri bulunamadı." };
@@ -728,7 +735,8 @@ async function igCleanupPlan({ days = 7, max = 1000, minAgeH = 0 } = {}) {
     `\n\nYalnız Instagram'dan kalıcı olarak silinir (YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`;
   return { ok: true, items, unknown: r.unknown, text };
 }
-async function igCleanupRun({ notify = true } = {}) {
+const igCleanupRun = counted(igCleanupRun0);
+async function igCleanupRun0({ notify = true } = {}) {
   const p = igCleanupPending;
   if (!p || Date.now() - p.at > 15 * 60000) { igCleanupPending = null; return { ok: false, error: "Bekleyen Instagram silme listesi yok ya da 15 dakikalık onay süresi doldu. Önce listeyi isteyin (ör. \"instagramda son 7 günde 1000 izlenmenin altındakileri sil\")." }; }
   igCleanupPending = null;
@@ -1486,7 +1494,8 @@ function waVideoText(text) {
   const v = waVid;
   if (!v || !v.files.length || v.instruction || v.running) return null;
   if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
-  if (["self_update", "update_check"].includes(parseCommand(text).action)) return null; // "güncelle" videonun talimatı değil
+  // kontrol komutları videonun talimatı değil ("güncelle", "sistemi durdur", "sistemi başlat", "durum")
+  if (["self_update", "update_check", "stopall", "rest_end", "status"].includes(parseCommand(text).action)) return null;
   if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
   v.instruction = text.trim(); clearTimeout(v.timer);
   { const wn = parseWhen(text); if (wn.at) v.publishAt = wn.at.toISOString(); }
@@ -2209,10 +2218,14 @@ app.get("/api/settings", (_req, res) => res.json(settings()));
 app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
 app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); restartPanel(500); });
-// Panel yeniden başlatma: panel.sh döngüsünde (npm run panel, launchd servisi, basla.sh) 75 ile çıkmak yeniden açar; launchd doğrudan
-// çalıştırıyorsa (üst süreç 1) KeepAlive açar. Elle "node app/server.js" ile açılmışsa döngü yok: önce panel.sh ayrık başlatılır
-// (2 sn sonra, port boşalınca; log work/panel.log), sonra çıkılır; yoksa panel kapanır ve WhatsApp'tan geri açılamazdı.
-const underLoop = () => { if (process.ppid === 1) return true; try { return /panel\.sh/.test(spawnSync("ps", ["-o", "command=", "-p", String(process.ppid)], { encoding: "utf8" }).stdout || ""); } catch { return false; } };
+// Panel yeniden başlatma: panel.sh döngüsünde (npm run panel, launchd servisi, basla.sh) 75 ile çıkmak yeniden açar (üst süreç panel.sh:
+// panel.sh EMIXHAS_LOOP=$$ verir, eski panel.sh için ps). Elle "node app/server.js" ile açılmışsa — ya da terminal kapanıp süreç
+// launchd'ye (pid 1) sahipsiz kaldıysa — döngü yok: önce panel.sh ayrık başlatılır (2 sn sonra, port boşalınca; log work/panel.log),
+// sonra çıkılır; yoksa panel kapanır ve WhatsApp'tan geri açılamazdı. Projenin hiçbir başlatıcısı node'u launchd altında doğrudan çalıştırmaz.
+const underLoop = () => {
+  if (process.env.EMIXHAS_LOOP && process.env.EMIXHAS_LOOP === String(process.ppid)) return true;
+  try { return /panel\.sh/.test(spawnSync("ps", ["-o", "command=", "-p", String(process.ppid)], { encoding: "utf8" }).stdout || ""); } catch { return false; }
+};
 function restartPanel(delay = 800) {
   setTimeout(() => {
     if (underLoop()) process.exit(75);
@@ -2244,8 +2257,10 @@ function gitHint(r) {
   if (/would be overwritten by merge|Please commit your changes or stash them/.test(o)) { const f = files(/overwritten by merge:\n([\s\S]*?)\n(?:Please|Aborting)/); return `Mac'te elle değiştirilmiş dosya var${f ? ` (${f})` : ""}; güncelleme bunların üstüne yazamaz. Terminalde: git stash, sonra yeniden güncelle.`; }
   if (/Not possible to fast-forward|diverg|non-fast-forward/i.test(o)) return "Mac'teki kod ile GitHub'daki kod ayrışmış (Mac'te ayrı değişiklik yapılmış); kendiliğinden birleştirilmez, terminalde bakılmalı.";
   if (/no tracking information|no upstream configured|does not point to a branch|HEAD detached|not currently on a branch/i.test(o)) return "Mac'teki kod bir GitHub dalını izlemiyor; terminalde bir kez: git branch --set-upstream-to=origin/<dal>.";
-  if (/Could not resolve host|unable to access|Failed to connect|Connection timed out|Operation timed out|Network is unreachable|Could not read from remote/i.test(o)) return "GitHub'a ulaşılamadı (internet bağlantısı?).";
-  if (/Authentication failed|could not read Username|Permission denied|terminal prompts disabled|Repository not found/i.test(o)) return "GitHub girişi reddedildi (Mac'te git oturumu/anahtarı).";
+  // giriş hatası önce: SSH'de "Permission denied (publickey)" ardından git her aktarım hatasına "Could not read from remote" ekler
+  if (/Authentication failed|could not read Username|could not read Password|Permission denied|Host key verification failed|terminal prompts disabled|Repository not found|passphrase/i.test(o)) return "GitHub girişi reddedildi (Mac'te git oturumu ya da SSH anahtarı; panel arka planda çalışırken parola soramaz).";
+  if (/Could not resolve host|unable to access|Failed to connect|Connection timed out|Operation timed out|Network is unreachable|Connection refused|Connection reset/i.test(o)) return "GitHub'a ulaşılamadı (internet bağlantısı?).";
+  if (/Could not read from remote/i.test(o)) return "GitHub'a ulaşılamadı ya da giriş reddedildi (internet bağlantısı ya da Mac'teki git oturumu).";
   if (r.err?.killed || r.err?.signal) return "git 2 dakikada yanıt vermedi (internet yavaş?).";
   if (/not a git repository/i.test(o)) return "Proje klasörü bir git deposu değil; panelden güncellenemez.";
   return o.trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200) || "git hatası";
@@ -2261,7 +2276,25 @@ function updateBusy() {
   if (infoBusy || peakBusy) return "otomatik içerik hazırlanıyor";
   if (pubN || schedBusy || storiesBusy || igAutoBusy || replyBusy) return "yayın işlemi sürüyor";
   if (watchScanning || sondakikaBusy) return "haber taraması sürüyor";
+  if (reqN || flushQ) return "bir istek işleniyor";
+  if (wa.busy?.()) return "WhatsApp'a video gönderiliyor";
+  if ((wa.status?.().outbox || 0) > 0) return "WhatsApp mesajları gönderilmeyi bekliyor";
+  if (igCleanupPending && Date.now() - Number(igCleanupPending.at || 0) < 15 * 60000) return "Instagram silme onayı bekliyor";
   return "";
+}
+// bekleyen (henüz çekilmemiş) güncelleme diske yazılır: beklerken panel yeniden başlarsa söz verilen güncelleme kaybolmasın (3 saat)
+const UPDATE_PENDING = path.join(DATA, "update_pending.json");
+const setUpdatePending = (v) => { updatePending = v; try { if (v) writeJson(UPDATE_PENDING, v); else rmSync(UPDATE_PENDING, { force: true }); } catch { /* yazılamadı */ } };
+{ const u = readJson(UPDATE_PENDING, null); if (u && Date.now() - Number(u.at || 0) < 3 * 3600000) updatePending = { at: Number(u.at), source: u.source || "panel" }; else if (u) setUpdatePending(null); }
+// güncellemeden sonra yeniden başlatma: zamanlayıcı dolunca iş yeniden denetlenir (bu arada başlayan üretim/istek yarıda kalmasın)
+let restartAt = 0;
+function restartAfterUpdate(delay, source) {
+  restartAt = Date.now() + delay;
+  setTimeout(() => {
+    const b = updateBusy();
+    if (b) { restartAt = 0; restartPending = { at: Date.now(), source }; push(`↻ ${b}; güncellenen panel iş bitince yeniden başlatılacak`); return; }
+    restartPanel(0);
+  }, delay);
 }
 const commitsSince = async (from, to) => { if (!from || !to || from === to) return []; const r = await git(["log", "--no-merges", "--format=%s", `${from}..${to}`]); return r.ok ? String(r.stdout).split("\n").filter(Boolean) : []; };
 const subjectOf = (c) => spawnSync("git", ["log", "-1", "--format=%s", c || "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout?.trim() || "";
@@ -2275,8 +2308,23 @@ async function updateCheck() {
   const subjects = n ? await commitsSince("HEAD", "@{u}") : stale ? await commitsSince(BOOT_COMMIT, "HEAD") : [];
   return { ok: true, count: n, stale, subjects, current: subjectOf(BOOT_COMMIT) };
 }
+// app/*.js'te adı geçen paketlerden çözülemeyenler (node_modules'ta yok): ayrı süreçte import.meta.resolve, kod çalıştırılmaz
+const RESOLVE_JS = `import { readdirSync, readFileSync } from "node:fs";
+const bad = new Set();
+for (const f of readdirSync("app").filter((x) => x.endsWith(".js"))) {
+  for (const m of readFileSync("app/" + f, "utf8").matchAll(/(?:\\bfrom\\s*|\\bimport\\s*\\(\\s*|\\bimport\\s+)["']([^"'./][^"']*)["']/g)) {
+    if (m[1].startsWith("node:")) continue;
+    try { import.meta.resolve(m[1]); } catch { bad.add(m[1]); }
+  }
+}
+console.log(JSON.stringify([...bad]));`;
+function missingModules() {
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", RESOLVE_JS], { cwd: ROOT, encoding: "utf8", timeout: 30000 });
+  try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop() || "[]"); } catch { return []; } // denetim çalışmazsa engellemez
+}
 async function selfUpdate({ source = "panel" } = {}) {
   if (updateRun) return { ok: false, error: "Güncelleme zaten sürüyor." };
+  if (restartAt && Date.now() < restartAt + 5000) return { ok: true, restarting: true, again: true }; // yeniden başlatma zaten sırada
   if (restartPending) return { ok: true, waitRestart: true, busy: updateBusy() || "iş bitiyor" };
   updateRun = true;
   try {
@@ -2286,10 +2334,10 @@ async function selfUpdate({ source = "panel" } = {}) {
       if (!c.ok) return c;
       if (!c.count && !c.stale) return { ok: true, upToDate: true, current: c.current };
       if (!updatePending) push(`⬇ güncelleme: yeni sürüm var (${c.count || c.subjects.length} değişiklik) ama ${busy}; iş bitince alınacak`);
-      updatePending = { at: updatePending?.at || Date.now(), source };
+      setUpdatePending({ at: updatePending?.at || Date.now(), source });
       return { ok: true, deferred: true, busy, count: c.count || c.subjects.length, subjects: c.subjects };
     }
-    updatePending = null;
+    setUpdatePending(null);
     push("⬇ güncelleme: git pull");
     const r = await git(["pull", "--ff-only"]);
     const out = `${r.stdout || ""}${r.stderr ? "\n" + r.stderr : ""}`.trim();
@@ -2298,15 +2346,24 @@ async function selfUpdate({ source = "panel" } = {}) {
     const head = headCommit();
     if (!head || head === BOOT_COMMIT) return { ok: true, upToDate: true, current: subjectOf(BOOT_COMMIT), summary: out.split("\n").pop() };
     const subjects = await commitsSince(BOOT_COMMIT, head);
-    const changed = BOOT_COMMIT ? String((await git(["diff", "--name-only", BOOT_COMMIT, head])).stdout || "").split("\n").filter(Boolean) : [];
+    // değişen dosyalar proje klasörüne göre (--relative): Mac'te git deposunun kökü proje klasörünün bir üstü (whatsapp-server/), yollar
+    // "gundem-video/package.json" geliyordu ve npm install hiç çalışmıyordu (inceleme, 19 Ekim); kökteki başka projenin package.json'u sayılmaz
+    const dr = BOOT_COMMIT ? await git(["diff", "--relative", "--name-only", BOOT_COMMIT, head]) : { ok: false };
+    const changed = dr.ok ? String(dr.stdout || "").split("\n").filter(Boolean) : [];
     const notes = [];
     // yeni sürüm kullanılamıyorsa dosyalar çalışan sürüme geri döner (diskteki kod çalışan kodla aynı kalsın: panel çökerse ya da Mac
     // yeniden açılırsa bozuk sürümle açılmasın); --keep yerel değişikliği silmez, çakışırsa geri almaz
     const rollback = async (why) => { const k = BOOT_COMMIT ? await git(["reset", "--keep", BOOT_COMMIT]) : { ok: false }; const error = `${why} ${k.ok ? "Değişiklik geri alındı; panel eski sürümle çalışmaya devam ediyor." : "Panel yeniden başlatılmadı (eski sürüm çalışıyor) ama yeni dosyalar diskte; panel kapanırsa açılamayabilir, terminalde bakılmalı."}`; push(`✖ güncelleme: ${error}`); return { ok: false, error }; };
-    if (changed.some((f) => /^package(-lock)?\.json$/.test(f)) || (!changed.length && /package(-lock)?\.json/.test(out))) {
+    let installed = false;
+    const npmInstall = async () => {
+      installed = true;
       push("⬇ bağımlılıklar güncelleniyor (npm install)");
       const n = await run("npm", ["install", "--no-audit", "--no-fund"], { timeout: 10 * 60000 });
-      if (!n.ok) return rollback(`npm install başarısız (${String(n.stderr || n.err?.message || "").trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200)}).`);
+      return n.ok ? "" : String(n.stderr || n.err?.message || "").trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200);
+    };
+    if (changed.some((f) => /^package(-lock)?\.json$/.test(f)) || (!dr.ok && /(^|\s)package(-lock)?\.json\s*\|/m.test(out))) {
+      const e = await npmInstall();
+      if (e) return rollback(`npm install başarısız (${e}).`);
     }
     if (changed.includes("requirements.txt")) notes.push("Python paketleri değişti (requirements.txt); gerekirse Mac'te bir kez: pip install -r requirements.txt");
     // yeni kodda sözdizimi hatası varsa yeniden başlatma: panel açılamaz, WhatsApp'tan da geri getirilemezdi
@@ -2314,12 +2371,17 @@ async function selfUpdate({ source = "panel" } = {}) {
       const c = spawnSync(process.execPath, ["--check", path.join("app", f)], { cwd: ROOT, encoding: "utf8", timeout: 30000 });
       if (c.status !== 0) return rollback(`Yeni sürümde hata var (app/${f}: ${String(c.stderr || "").split("\n").find((l) => /Error/.test(l)) || "sözdizimi"}).`);
     }
+    // --check eksik paketi yakalamaz (yeni bağımlılık: panel ERR_MODULE_NOT_FOUND ile açılmazdı): app/*.js'teki paket adları çözülür;
+    // eksik varsa npm install (henüz yapılmadıysa) ve bir kez daha; yine eksikse geri alınır
+    let missing = missingModules();
+    if (missing.length && !installed) { const e = await npmInstall(); if (e) return rollback(`npm install başarısız (${e}).`); missing = missingModules(); }
+    if (missing.length) return rollback(`Yeni sürümün ihtiyaç duyduğu paketler kurulamadı (${missing.slice(0, 3).join(", ")}).`);
     writeJson(UPDATE_FILE, { at: Date.now(), from: BOOT_COMMIT, to: head, count: subjects.length, subjects: subjects.slice(0, 5), source, notes, notified: false });
     for (const n of notes) push(`⬇ not: ${n}`);
     const again = updateBusy(); // çekilirken üretim başladıysa yeniden başlatma iş bitince
     if (again) { restartPending = { at: Date.now(), source }; push(`↻ güncelleme alındı (${subjects.length} değişiklik); ${again}, bitince panel yeniden başlatılacak`); return { ok: true, waitRestart: true, busy: again, count: subjects.length, subjects, notes }; }
     push(`↻ güncelleme alındı (${subjects.length} değişiklik), panel yeniden başlatılıyor`);
-    restartPanel(source === "panel" ? 800 : 6000); // WhatsApp yanıtı gidebilsin
+    restartAfterUpdate(source === "panel" ? 800 : 6000, source); // WhatsApp yanıtı gidebilsin; o arada iş başlarsa beklenir
     return { ok: true, restarting: true, count: subjects.length, subjects, notes, summary: out.split("\n").pop() };
   } finally { updateRun = false; }
 }
@@ -2328,7 +2390,11 @@ const updateText = (r) => {
   const last = (r.subjects || [])[0] ? `: ${String(r.subjects[0]).slice(0, 110)}` : "";
   if (!r.ok) return `❌ Güncellenemedi: ${r.error}`;
   if (r.upToDate) return `✅ Zaten güncel${r.current ? ` (son sürüm: ${String(r.current).slice(0, 90)})` : ""}.`;
-  if (r.deferred) return `⏳ Yeni sürüm var (${r.count} değişiklik) ama şu an ${r.busy}; bitince güncelleyip panel yeniden başlayacak. Beklemeden almak için: *sistemi durdur*`;
+  // ipucu nedene göre: "sistemi durdur" yalnız üretim/sıra için (talimat bekleyen videoda bu yazı videonun talimatı sanılırdı)
+  const hint = /üretim sürüyor|video sırada|son dakika haberi/.test(r.busy || "") ? " Beklemeden almak için: *sistemi durdur*"
+    : /talimat bekliyor/.test(r.busy || "") ? " Videonun talimatını yazın ya da *iptal* yazın; sonra güncellenir." : "";
+  if (r.deferred) return `⏳ Yeni sürüm var (${r.count} değişiklik) ama şu an ${r.busy}; bitince güncelleyip panel yeniden başlayacak.${hint}`;
+  if (r.restarting && r.again) return "↻ Güncelleme alındı, panel zaten yeniden başlıyor.";
   if (r.waitRestart) return `⬇ Güncelleme alındı${r.count ? ` (${r.count} değişiklik)` : ""}; ${r.busy}, bitince panel yeniden başlayacak.`;
   return `⬇ Güncelleme alındı (${r.count} değişiklik)${last}. Panel yeniden başlıyor; açılınca haber vereceğim.`;
 };
@@ -2339,13 +2405,17 @@ setInterval(async () => {
   if (!p) return;
   const busy = updateBusy();
   if (busy && Date.now() - p.at > 3 * 3600000) {
-    restartPending = updatePending = null;
+    if (restartPending) { // yeni kod diskte: vazgeçilmez (eski kodla yeni dosyalar karışık kalmasın), iş bitince yeniden başlar; bir kez söylenir
+      if (!restartPending.told) { restartPending.told = true; const t = `⚠️ Güncelleme indirildi ama 3 saattir yeniden başlatılamadı (${busy}); iş bitince panel yeniden başlayacak.`; push(t); if (p.source !== "panel") sendW(t); }
+      return;
+    }
+    setUpdatePending(null);
     const t = `⚠️ Güncelleme 3 saattir bekliyordu (${busy}); yapılmadı. Tekrar *güncelle* yazın.`;
     push(t); if (p.source !== "panel") sendW(t);
     return;
   }
   if (busy) return;
-  if (restartPending) { restartPending = null; push("↻ iş bitti, güncellenen panel yeniden başlatılıyor"); restartPanel(800); return; }
+  if (restartPending) { const src = restartPending.source; restartPending = null; push("↻ iş bitti, güncellenen panel yeniden başlatılıyor"); restartAfterUpdate(800, src); return; }
   const r = await selfUpdate({ source: p.source }).catch((e) => ({ ok: false, error: e.message }));
   if (!r.restarting && !r.deferred && !r.waitRestart && p.source !== "panel") sendW(updateText(r)); // yeniden başlarsa sonuç açılışta gider
 }, 15000);
@@ -2818,7 +2888,8 @@ setInterval(async () => {
   if (rest) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
   if (anyConnected && !state.running && Date.now() - lastFlush > 60 * 60000 && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
     lastFlush = Date.now();
-    const r = await py("publish.py", ["--flush"]);
+    flushQ = true; // sıradaki videolar yükleniyor: güncelleme yeniden başlatmayı bekler
+    const r = await py("publish.py", ["--flush"]).finally(() => { flushQ = false; });
     for (const l of String(r.stdout || "").trim().split("\n").slice(0, -1)) if (l.startsWith("📤")) push(l);
     if (r.json?.uploaded?.length) await py("analyze.py");
   }

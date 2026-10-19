@@ -731,10 +731,28 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   bakılır, iş bitince güncellenir (çekerken üretim başladıysa `restartPending`: yeniden başlatma iş bitince), 3 saatten uzun bekleyen vazgeçilir.
   Açılışta `update_last.json` bildirilmemişse ve 3 saatten yeniyse log + (panel düğmesi dışında, WhatsApp açıksa) WhatsApp: "✅ Güncellendi,
   panel yeni sürümle açıldı (N değişiklik): <son commit konusu>" (+ elle durdurulmuşsa "*sistemi başlat*"); çalışan sürüm beklenenden farklıysa
-  "⚠️". `restartPanel`: üst süreç panel.sh ya da launchd (pid 1) ise çıkış 75; elle "node app/server.js" ile açılmışsa panel.sh'ı ayrık başlatıp
+  "⚠️". `restartPanel`: üst süreç panel.sh ise çıkış 75; elle "node app/server.js" ile açılmışsa panel.sh'ı ayrık başlatıp
   (2 sn sonra, log work/panel.log) çıkar (eskiden panel kapanır, WhatsApp'tan geri açılamazdı); `restart` eylemi ve `/api/restart` de bunu
   kullanır. Bekleyen yayın onayı (`whatsapp.js st.pending`) `data/wa_pending.json`a yazılır, yeniden başlayınca okunur (6 saatten eskisi değil):
-  güncelleme/çökme sonrası "onay" kaybolmaz. İLK KEZ: Mac'teki eski kod bu komutu bilmez; bir kez panelde "⬇ Güncelle"ye basılmalı (ya da
+  güncelleme/çökme sonrası "onay" kaybolmaz; diskten gelen onay `restored`: gevşek "tamam/evet/ok" (ör. "✅ Güncellendi"ye cevap) eski videoyu
+  yayınlamaz, yalnız açık "onay …"/"yayınla"/"paylaş" ya da platform adı. İnceleme düzeltmeleri (19 Ekim): değişen dosyalar `git diff
+  --relative` ile proje klasörüne göre (Mac'te git kökü whatsapp-server/, yollar "gundem-video/package.json" geldiği için npm install hiç
+  çalışmıyordu; kökteki başka projenin package.json'u artık sayılmaz; diff başarısızsa pull çıktısındaki "package.json |" satırı); `node
+  --check` sonrası `missingModules()` app/*.js'teki paket adlarını ayrı süreçte `import.meta.resolve` ile çözer (kod çalıştırmaz), eksik paket
+  varsa npm install (yapılmadıysa) ve bir kez daha, yine eksikse geri alınır (yeni bağımlılık paneli ERR_MODULE_NOT_FOUND'la kapatmasın);
+  `underLoop` üst süreç 1'i (launchd) döngü saymaz (terminali kapanıp sahipsiz kalan panel 75 ile çıkıp hiç geri gelmiyordu): panel.sh
+  `EMIXHAS_LOOP=$$` verir, eski panel.sh için ps; `restartAfterUpdate` zamanlayıcı dolunca işi yeniden denetler (o 6 sn içinde başlayan
+  üretim/istek yarıda kalmasın; yeniden başlatma sıradayken ikinci "güncelle" yeniden çekmez); `updateBusy` ek olarak süren elle istekleri
+  (`counted`: prepareAnlik, remakeVideo, igCleanupRun, flushValuable — parti valueBatch'ten çıktıktan sonra da), YouTube sırası yüklemesini
+  (`flushQ`), WhatsApp'a giden video/indirilen videoyu (`wa.busy()`), WhatsApp kuyruğundaki mesajları (outbox) ve 15 dk'lık Instagram "evet
+  sil" onayını sayar; bekleyen (çekilmemiş) güncelleme `data/update_pending.json`a yazılır, panel beklerken yeniden başlarsa açılışta okunur (3
+  saat); çekilmiş ama yeniden başlatılamamış güncellemeden 3 saatte vazgeçilmez (yeni kod diskte), bir kez "⚠️ … iş bitince yeniden başlayacak"
+  denir; ipucu nedene göre ("sistemi durdur" yalnız üretim/sıra için; talimat bekleyen videoda "talimatı yazın ya da iptal"); talimat bekleyen
+  WhatsApp videosu "güncelle", "sistemi durdur/başlat", "durum"u talimat saymaz; git giriş hataları (SSH "Permission denied (publickey)", host
+  key) ağ hatasından önce denetlenir; komut yazımları Türkçe harfsiz ("guncelle", "güncelleme var mi"), emoji/dolgu kelimeli ("güncelle 👍",
+  "hadi güncelle"), kibar ("günceller misin", "güncelleme yapar mısın") da tanınır, soru işaretli "güncelle?" yalnız bakar. Sandbox'ta (git kökü
+  üst klasörde, sahte npm) denendi: yalnız gundem-video/package.json → npm install, yalnız kök package.json → yok, eksik paket import'u → npm
+  install + geri alma, requirements.txt notu, bekleyen güncellemenin yeniden başlatmadan sonra iş bitince uygulanması. İLK KEZ: Mac'teki eski kod bu komutu bilmez; bir kez panelde "⬇ Güncelle"ye basılmalı (ya da
   terminalde git pull + yeniden başlatma). Sandbox'ta sahte GitHub (bare repo) + Mac kopyası + panel.sh döngüsünde denendi: güncel, yeni sürüm
   (yeniden başladı, açılış mesajı), "güncelleme var mı", üretim kilidi varken bekleme ve kilit kalkınca güncelleme, elle değiştirilmiş dosya,
   aynı adda dosya, ulaşılamayan uzak depo, bozuk yeni sürümde geri alma (yerel değişiklik korundu); bekleyen onayın diske yazılması.

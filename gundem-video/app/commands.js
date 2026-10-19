@@ -90,16 +90,22 @@ const OPEN_ONLY = /^(?:(?:şunu|bunu|şu|bu|videoyu|linki|lütfen|hemen)\s+)*(?:
 // talimatta harf/rakam yoksa (linkin çevresindeki parantez, tırnak, WhatsApp *kalın* işareti) talimat boştur: varsayılan haber talimatı geçer
 const insOf = (s) => { const x = String(s || "").replace(/\s+/g, " ").trim(); return /[\p{L}\p{N}]/u.test(x) ? x : ""; };
 
-const SELF_UPDATE = /^(?:(?:emixhas|lütfen|hemen|şimdi) )*(?:(?:sistemi|paneli|kendini|kodu|yazılımı|programı|uygulamayı|emixhas ı|emixhası|sistem|panel|kod) )?(?:güncelle|güncellemeyi al|güncellemeleri al|güncellemeyi yükle|güncellemeleri yükle|güncellemeyi yap|güncelleme yap|son sürüme geç|son sürümü al|yeni sürümü al|update)(?: (?:lütfen|hemen|şimdi|emixhas))*$/;
-const UPDATE_CHECK = /^(?:emixhas )?(?:(?:yeni )?(?:güncelleme|sürüm)(?:ler)? var mı|güncel misin|(?:sistem|panel|kod) güncel mi|son sürümde misin)$/;
+// Türkçe harfler ASCII'ye katlanır ("guncelle", "güncelleme var mi" de tanınsın)
+const fold = (x) => x.replace(/[üÜ]/g, "u").replace(/[öÖ]/g, "o").replace(/[ıİI]/g, "i").replace(/[şŞ]/g, "s").replace(/[çÇ]/g, "c").replace(/[ğĞ]/g, "g");
+const UPD_FILL = "(?:emixhas|lutfen|hemen|simdi|hadi|haydi|bi|bir|artik|kanka|abi|sen)";
+const SELF_UPDATE = new RegExp(`^(?:${UPD_FILL} )*(?:(?:sistemi|paneli|kendini|kodu|yazilimi|programi|uygulamayi|emixhasi|emixhas i|sistem|panel|kod) )?(?:${UPD_FILL} )*` +
+  "(?:guncelle|guncellesene|guncelleyiver|guncelle(?:r|yebilir) misin|guncellemeyi al|guncellemeleri al|guncellemeyi yukle|guncellemeleri yukle|guncellemeyi yap|" +
+  `guncelleme yap|guncelleme(?:yi)? yapar misin|son surume gec|son surumu al|yeni surumu al|update)(?: ${UPD_FILL})*$`);
+const UPDATE_CHECK = /^(?:emixhas )?(?:(?:yeni )?(?:bir )?(?:guncelleme|surum|update)(?:ler)? (?:var mi|geldi mi)|guncel misin|(?:sistem|panel|kod) guncel mi|son surumde misin)$/;
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
   // Kendini güncelleme (kullanıcı isteği, 19 Ekim: "WhatsApp'tan güncelle yazayım, panel kendini güncellesin, güncelle butonuna basmışım
   // gibi"): yalnız tüm mesaj bu kalıpsa ("izlenmeleri güncelle", "kapakları güncelle" başka komut; "kendini güncelleyebilir mi?" soru,
   // beyne gider). "güncelleme var mı" yalnız bakar, çekmez.
-  const tu = t.replace(/[*_~`]/g, "").trim(); // WhatsApp biçim işareti (*güncelle*)
-  if (SELF_UPDATE.test(tu)) return { action: "self_update", reply: "" };
+  // WhatsApp biçim işareti (*güncelle*), emoji ve noktalama atılır; "güncelle?" soru gibi yazıldıysa yalnız bakar (çekmez)
+  const tu = fold(t).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  if (SELF_UPDATE.test(tu)) return { action: /\?\s*\S{0,4}\s*$/u.test(String(raw).trim()) ? "update_check" : "self_update", reply: "" };
   if (UPDATE_CHECK.test(tu)) return { action: "update_check", reply: "" };
   // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat". Linkli mesajda fiil tam kelime olmalı: YouTube linkinin yanına
   // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
