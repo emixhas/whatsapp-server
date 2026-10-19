@@ -30,8 +30,11 @@ export function parseWhen(text, now = new Date()) {
   // dönem + saat, "saat X", ya da HH:MM / HH.MM
   const per = "(sabah|öğle(?:n|den sonra)?|akşam|gece|ikindi)";
   const sfx = "(?:\\s?['’]?(?:[ıiuü]?n?(?:da|de|ta|te))(?=\\s|$|[.,!?]))?";
+  // saatin hemen ardındaki yayın fiili de atılır ("18:30'da paylaş", "akşam 8'de yayınla mizah"): talimatta kalıp yanındaki tür
+  // etiketini ("mizah", "trend") serbest cümleye çevirmesin (inceleme, 19 Ekim)
+  const verb = "(?:\\s+(?:paylaş|yayınla|yayımla|gönder|yükle|planla)[a-zçğıöşü]*(?:\\s+m[ıi]s[ıi]n)?(?=\\s|$|[.,!?]))?";
   const re = new RegExp(
-    `(?:${per}\\s*(?:saat\\s*)?(\\d{1,2})(?:[:.](\\d{2}))?|saat\\s*(\\d{1,2})(?:[:.](\\d{2}))?|(?<![\\d.,])(\\d{1,2})[:.](\\d{2})(?![\\d.,]))${sfx}`);
+    `(?:${per}\\s*(?:saat\\s*)?(\\d{1,2})(?:[:.](\\d{2}))?|saat\\s*(\\d{1,2})(?:[:.](\\d{2}))?|(?<![\\d.,])(\\d{1,2})[:.](\\d{2})(?![\\d.,]))${sfx}${verb}`);
   m = low.match(re);
   if (!m) return { at: null, rest: t, label: "" };
   const period = m[1] || "";

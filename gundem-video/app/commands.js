@@ -67,16 +67,23 @@ export function findLink(text) {
 // Tür etiketi → video türü (linke bitişik "/mizah" ya da linkin yanında yalnız "mizah", "#trend", "haber"; serbest cümledeki kelime değil:
 // "trende yangın", "şakalaşırken" haberi viral/mizah olmasın — inceleme, 19 Ekim). {kind, rest}: rest'ten etiket kelimesi atılır.
 const KIND_TAG = { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" };
+const KIND_FILL = /^(?:saniye|saniyelik|sn|dakika|dakikalik|dk|lutfen|olarak|bunu|sunu|at|atar|misin|paylas\p{L}*|yayinla\p{L}*|yayimla\p{L}*|gonder\p{L}*|yukle\p{L}*)$/u;
 const kfold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğ]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g" })[c]);
 export function tagKind(tag, rest) {
   if (KIND_TAG[kfold(tag)]) return { kind: KIND_TAG[kfold(tag)], rest };
   // başta ayraçla yazılmış etiket: "mizah, kısa kes", "#trend: sesi kalsın" (kfold uzunluğu korur: kesim asıl metinde)
   const lead = kfold(rest).match(/^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*[,;:\-–/]\s*/);
   if (lead) return { kind: KIND_TAG[lead[1]], rest: String(rest).slice(lead[0].length) };
-  const words = kfold(rest).match(/[\p{L}]+/gu) || [];
-  if (words.length && words.every((w) => KIND_TAG[w])) {  // yalnız etiket: "mizah", "#trend", "_viral_" (haber > mizah > trend)
-    const ks = new Set(words.map((w) => KIND_TAG[w]));
-    return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: "" };
+  // yalnız etiket: "mizah", "#trend", "_viral_" (haber > mizah > trend); yanında yalnız yayın fiili, süre ya da dolgu kelimesi de
+  // olabilir: "mizah 18:30'da paylaş", "trend 40 saniye", "bunu mizah olarak paylaş" (inceleme, 19 Ekim). Etiket atılır, süre kalır.
+  const f = kfold(rest), words = f.match(/[\p{L}]+/gu) || [];
+  if (words.some((w) => KIND_TAG[w]) && words.every((w) => KIND_TAG[w] || KIND_FILL.test(w))) {
+    const ks = new Set(words.filter((w) => KIND_TAG[w]).map((w) => KIND_TAG[w]));
+    let out = "", at = 0;
+    for (const m of f.matchAll(/[#_*]*(\p{L}+)[_*]*/gu)) if (KIND_TAG[m[1]]) { out += String(rest).slice(at, m.index) + " "; at = m.index + m[0].length; }
+    out = (out + String(rest).slice(at)).replace(/\s+/g, " ").trim();
+    const left = kfold(out).match(/[\p{L}\d]+/gu) || [];
+    return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: left.every((w) => KIND_FILL.test(w)) ? "" : out };
   }
   return { kind: "", rest };
 }

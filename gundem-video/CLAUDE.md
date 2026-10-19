@@ -534,7 +534,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   findLink` linke bitişik "/mizah", "/komik", "/trend", "/viral", "/haber"i (büyük harf "/MIZAH" ve bitişik "#mizah" da) adresten ayırır
   (`tag`; yt-dlp "watch?v=ID/mizah"yı indiremez), `tagKind` onu ya da linkin yanına YALNIZ yazılmış etiketi ("mizah", "#trend", "_viral_")
   ya da başta ayraçla yazılmış etiketi ("mizah, kısa kes", "#trend: sesi kalsın") komutun ayrı `kind` alanına koyar (komik → mizah, viral →
-  trend) ve talimattan atar; `kind` panelde `socialVideoNews({kind})` → social_video.py `--kind` (mizahta haber araması yok, viral/mizahta
+  trend) ve talimattan atar; etiketin yanında yalnız yayın fiili, süre ya da dolgu kelimesi varsa da etiket sayılır ("mizah 18:30'da paylaş",
+  "trend 40 saniye" → talimatta "40 saniye" kalır, "bunu mizah olarak paylaş"; `KIND_FILL`) ve `when.js` mutlak saatin hemen ardındaki
+  yayın fiilini de atar ("18:30'da paylaş" talimatta "paylaş" bırakmaz; inceleme, 19 Ekim: etiket serbest cümle sanılıp tür Claude'a kalıyordu); `kind` panelde `socialVideoNews({kind})` → social_video.py `--kind` (mizahta haber araması yok, viral/mizahta
   kendiliğinden özet yok) → wa_video işinde `job.kind` (sıra kuyruğu ve panel ANLIK kartı da taşır; mizah/viral etiketli linke "son dakika"
   eklenmez). Etiket yoksa serbest metinde yalnız AÇIK etiket (`common.content_kind`, server.js `contentKindOf` aynı kural; inceleme, 19 Ekim:
   "trende yangın", "elektrik akımına kapıldı", "şakalaşırken", "komik duruma düştü", "viral hepatit" haberi VİRAL/mizah oluyordu, "haber yap"
