@@ -5,8 +5,9 @@ silelim — kapaklar da dahil"). Panel saatte bir çağırır; `settings.cleanup
 `days` günden eski her video (5 saatlik, anlık, şablon, sosyal medya, fragman, özet, günün/haftanın özeti; yayınlanmış olsun olmasın):
 mp4, kapakları (-kapak, -kapakA, -kapakB, -kapakYT), render artığı (-render.mp4) ve paneldeki küçük resmi (work/thumbs) silinir.
 Kayıt (json, birkaç KB) KALIR ve `archived` alır: raporlar, analiz, haftanın özeti, yorum yanıtları ve izlenme takibi onunla çalışır;
-platformdaki video ve istatistik de kalır. Silinmez: yükleme sırasında (publish_queue), planlı yayında (scheduled_publish) ya da
-WhatsApp'ta yayın onayı bekleyen (wa_pending) video ve demo/test videoları (adı rakamla başlamayan).
+platformdaki video ve istatistik de kalır. Silinmez: yükleme sırasında (publish_queue), planlı yayında (scheduled_publish), WhatsApp'ta
+yayın onayı bekleyen (wa_pending) ya da o an yüklenen (publishing, panel yayını) video ve demo/test videoları (adı rakamla başlamayan).
+Derleme parçası yalnız son 7 günün yayınlanmış videosu için ayrılır.
 Pazar derlemesi (weekly_top.py, son 7 günün en çok izlenenleri) videonun kendisini kullandığı için silmeden önce derlemenin kestiği
 ~8 sn'lik bölüm `work/derleme_parca/` altına ayrılır (8 gün tutulur; derleme kapalıysa ayrılmaz).
 Ayrıca `days` günden eski: work/jobs (video/şablon iş klasörleri, kurgu parçaları), work/wa_inbox (indirilen/gönderilen kaynak
@@ -69,6 +70,8 @@ def protected() -> set:
     p = load_json(DATA / "wa_pending.json", None)
     if isinstance(p, dict) and p.get("video"):
         names.add(p["video"])
+    # panelin o an yüklediği video (server.js execAction publish; 3 saatten eski kayıt sayılmaz)
+    names |= {x.get("video") for x in (load_json(DATA / "publishing.json", []) or []) if isinstance(x, dict) and time.time() * 1000 - float(x.get("at") or 0) < 3 * 3600000}
     return {str(n) for n in names if n}
 
 

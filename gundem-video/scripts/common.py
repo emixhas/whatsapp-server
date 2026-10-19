@@ -151,10 +151,18 @@ def summary_cfg() -> dict:
             **{k: num(k) for k in ("duration", "minSeconds", "maxSoundSeconds", "maxSeconds")}}
 
 
+# "45 dakikalık programı 40 saniyede özetle": kaynak videonun uzunluğu özetin süresi değildir
+_SOURCE_NOUN = re.compile(r"\s*(?:bir\s+)?(?:video|program|konuşma|röportaj|açıklama|yayın|kayıt|belgesel|maç|toplantı|oturum|bülten|sohbet|tartışma|film|dizi|bölüm)")
+
+
 def summary_secs(instruction: str) -> int:
-    """Özet videosunun süresi: talimattaki "N saniye/dakika", yoksa longSummary.duration (40); 20-60 sn."""
-    m = SURE_RE.search(str(instruction or "").replace("I", "ı").replace("İ", "i").lower())
-    n = (int(m.group(1)) if m.group(1) else int(m.group(2)) * 60) if m else int(summary_cfg()["duration"])
+    """Özet videosunun süresi: talimattaki "N saniye" (önce), yoksa "N dakika" (kaynak videoyu niteleyen "45 dakikalık program" değil),
+    yoksa longSummary.duration (40); 20-60 sn."""
+    t = str(instruction or "").replace("I", "ı").replace("İ", "i").lower()
+    found = list(SURE_RE.finditer(t))
+    sec = next((m for m in found if m.group(1)), None)
+    mins = [m for m in found if m.group(2) and not _SOURCE_NOUN.match(t, m.end())]
+    n = int(sec.group(1)) if sec else int(mins[-1].group(2)) * 60 if mins else int(summary_cfg()["duration"])
     return max(20, min(60, n))
 
 

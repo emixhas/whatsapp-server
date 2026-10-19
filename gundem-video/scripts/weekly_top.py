@@ -22,7 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from analyze import LONG, video_rows  # noqa: E402
 from breaking_watch import same_event  # noqa: E402
-from common import OUT, ROOT, episode_meta, settings  # noqa: E402
+from common import OUT, ROOT, episode_meta, metrics, settings  # noqa: E402
 from info_card import DAYS, make_script, new_job, tr_date  # noqa: E402
 
 RANK_WORD = {1: "Birinci", 2: "İkinci", 3: "Üçüncü", 4: "Dördüncü", 5: "Beşinci"}
@@ -87,10 +87,18 @@ def eligible(name: str, meta: dict) -> bool:
 
 
 def save_clip(name: str) -> bool:
-    """cleanup.py videoyu silmeden önce: derlemenin keseceği bölüm work/derleme_parca/<ad>.mp4 + .jpg (derlemeye girmeyecek videoda yok)."""
+    """cleanup.py videoyu silmeden önce: derlemenin keseceği bölüm work/derleme_parca/<ad>.mp4 + .jpg. Derlemeye girmeyecek videoda yok:
+    son 7 günden eski (pick() yalnız son 7 günü sıralar) ya da hiçbir platformda yayınlanmamış (izlenmesi olmaz) video kesilmez."""
     meta = episode_meta(name) or {}
     fc = first_card(meta)
     if not fc or not eligible(name, meta) or not (OUT / name).exists():
+        return False
+    try:
+        ts = datetime.strptime(f"{meta.get('date')} {meta.get('timeLabel') or '00:00'}", "%Y-%m-%d %H:%M").timestamp()
+    except Exception:
+        return False
+    plats = (metrics().get("videos") or {}).get(name) or {}
+    if time.time() - ts > 7 * 86400 or not any(isinstance(v, dict) and (v.get("id") or v.get("publish_id")) for v in plats.values()):
         return False
     PARCA.mkdir(parents=True, exist_ok=True)
     stem = Path(name).stem

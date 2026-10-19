@@ -1163,6 +1163,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   kaynak video), X GB boşaldı". Ayarlar → Otomasyon: anahtar + gün kutusu + "🧹 Şimdi temizle" (önce `--dry-run` ile ne silineceğini sorar),
   `POST /api/cleanup {dryRun}`. Sandbox'ta sahte out/ ile denendi: yaşlar, korunan üç video, demo, eski arşivin kapakları, genç yetim kapak,
   iş klasörleri, kaynak videolar, hikâye, derleme parçası ve silinmiş videonun parçasından derleme kesiti, ikinci çalıştırma, bozuk ayarlar.
+  İnceleme düzeltmeleri (19 Ekim): yüklenen video korunur — panel her yayında (`execAction` publish: elle, WhatsApp "onay", planlı) videoyu
+  `data/publishing.json`a yazar (cleanup.py `protected()` okur, 3 saatten eski kayıt sayılmaz), saatlik temizlik yayın sürerken (`pubN`,
+  `schedBusy`) başlamaz, planlı yayının kaydı yükleme BİTİNCE silinir (eskiden yüklemeden önce siliniyordu; o sırada çalışan temizlik mp4'ü ve
+  kapağı silip Instagram/TikTok yüklemesini düşürüyordu). Derleme parçası yalnız derlemeye girebilecek videoya ayrılır: son 7 günün (meta
+  date + timeLabel) ve en az bir platformda yayınlanmış videosu (ilk çalıştırmada yüzlerce gereksiz ffmpeg kesimi olmasın). Arşivlenmiş video
+  panelden platformlardan silinebilir: `listVideos({archived})` / `GET /api/videos?archived=1` mp4'ü silinmiş, kaydı duran ve bir platformda
+  yayında olan videoları da verir (`archived: true`, sıralama üretim zamanıyla); Videolar sekmesinde "🗄 Diskten silinmiş (platformda duran)"
+  süzgeci (diğer süzgeçlerde görünmez), kartta küçük resim yerine "🗄 Diskten silindi" yazısı, pencerede oynatıcı/indirme/paylaşım/yükleme
+  yok, yalnız "🗑 Platformlardan sil" (`DELETE /api/videos/:name`; bir platformdan silinemezse kayıt kalır, yeniden denenebilir) ve "🔁 Yeniden
+  yayınla" (ikisi de yalnız kaydı kullanır). Sağlık uyarısındaki "son düzenli video N saat önce" artık kayıtların üretim zamanından (arşivlenenler
+  dahil; `metaTime`, yoksa mp4 zamanı); eskiden son video silinince zamanlayıcının açılış zamanı yazılıyordu. Panel kopyasında denendi (arşiv
+  listesi ve süzgeç, başsız Chromium'da kart ve pencere, kısmi platform silmede kaydın kalması, yayındaki videonun korunması, derleme parçası
+  süzgeci, metaTime).
 - `scripts/analyze.py`: kategori/süre/saat ortalamaları, en iyi 10 (her biri için `bestPlatform`), platform analizi
   `byPlatform` {youtube|instagram|tiktok: total, videos, avg, best, top3} ve `leadingPlatform`, manşet etkisi → `data/insights.json`
   ve `data/prompt_hint.txt`. Pipeline bu ipucunu `__IPUCU__` olarak senaryo prompt'una verir:

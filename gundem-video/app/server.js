@@ -52,10 +52,11 @@ const run = (cmd, args, opts = {}) => new Promise((res) => execFile(cmd, args, {
 // uzun işlerde (sosyal medya indirme, video kurgusu) ilerleme satırları beklemeden loga düşsün: satır satır okur (sonuç run() ile aynı)
 const runLines = (cmd, args, { timeout = 0, onLine = null } = {}) => new Promise((res) => {
   const c = spawn(cmd, args, { cwd: ROOT, env: ENV });
+  c.stdout.setEncoding("utf8"); c.stderr.setEncoding("utf8"); // Türkçe harf/emoji iki parçaya bölünürse � olmasın
   let out = "", err = "", buf = "", killed = false;
   const t = timeout ? setTimeout(() => { killed = true; try { c.kill("SIGTERM"); } catch { /* yok */ } }, timeout) : null;
-  c.stdout.on("data", (b) => { const x = b.toString(); out += x; buf += x; const ls = buf.split("\n"); buf = ls.pop(); if (onLine) for (const l of ls) { try { onLine(l); } catch { /* yok */ } } });
-  c.stderr.on("data", (b) => { err = (err + b.toString()).slice(-20000); });
+  c.stdout.on("data", (x) => { out += x; buf += x; const ls = buf.split("\n"); buf = ls.pop(); if (onLine) for (const l of ls) { try { onLine(l); } catch { /* yok */ } } });
+  c.stderr.on("data", (x) => { err = (err + x).slice(-20000); });
   c.on("error", (e) => { if (t) clearTimeout(t); res({ ok: false, stdout: out, stderr: err || e.message, err: e }); });
   c.on("close", (code) => { if (t) clearTimeout(t); res({ ok: code === 0 && !killed, stdout: out, stderr: err, err: code === 0 && !killed ? null : { code, killed } }); });
 });
@@ -84,14 +85,24 @@ const IMPROVEMENTS = path.join(DATA, "improvements.md");
 const queueImprovement = (task) => { const head = "# Emixhas geliştirme kuyruğu\n\nBir görevi uygulamak için proje klasöründe Claude Code'u açıp bu dosyadaki ilk açık görevi vermeniz yeterli; uygulanınca [x] işaretleyin.\n\n"; const line = `- [ ] ${new Date().toISOString().slice(0, 16)} ${String(task).trim()}\n`; writeFileSync(IMPROVEMENTS, (existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : head) + line); return { ok: true, file: "data/improvements.md" }; };
 const label = (v) => (v.date ? `${v.date}, günün ${v.episodeOfDay}. özeti` : v.name.replace(/\.mp4$/, ""));
 
-function listVideos() {
+// meta date + timeLabel → ms (disk temizliği json'u yeniden yazdığı için dosya zamanı üretim zamanı değildir)
+const metaTime = (meta) => { const t = Date.parse(`${meta?.date || ""}T${/^\d{1,2}:\d{2}$/.test(meta?.timeLabel || "") ? meta.timeLabel.padStart(5, "0") : "00:00"}:00`); return Number.isFinite(t) ? t : null; };
+// archived: disk temizliğinin mp4'ünü sildiği (kaydı duran) ve bir platformda yayında olan videolar da listelenir (archived: true): panelden
+// platformlardan silinebilsin ve yeniden yayınlanabilsin (ikisi de yalnız kaydı kullanır)
+function listVideos({ archived = false } = {}) {
   const metrics = readJson(path.join(DATA, "metrics.json"), { videos: {} }).videos;
-  return readdirSync(OUT).filter((f) => f.endsWith(".mp4")).map((f) => {
-    const st = statSync(path.join(OUT, f));
+  const files = readdirSync(OUT);
+  const mp4s = new Set(files.filter((f) => f.endsWith(".mp4")));
+  const gone = archived ? files.filter((f) => /^\d{4}.*\.json$/.test(f) && !mp4s.has(f.replace(/\.json$/, ".mp4"))).map((f) => f.replace(/\.json$/, ".mp4"))
+    .filter((f) => { const m = metrics[f] || {}; return m.youtube?.id || m.instagram?.id || m.tiktok?.publish_id || m.tiktok?.id; }) : [];
+  return [...mp4s, ...gone].map((f) => {
+    const old = !mp4s.has(f);
     const meta = readJson(path.join(OUT, f.replace(/\.mp4$/, ".json")), null);
+    if (old && !meta?.archived) return null;
+    const st = old ? { size: 0, mtimeMs: metaTime(meta) || 0 } : statSync(path.join(OUT, f));
     const dur = meta ? meta.segments.reduce((s, x) => s + x.duration, 0) : null;
     const m = metrics[f] || {};
-    return { name: f, size: st.size, mtime: st.mtimeMs, duration: dur ? Math.round(dur) : null, targetDuration: meta?.targetDuration ?? null,
+    return { name: f, size: st.size, mtime: st.mtimeMs, ...(old ? { archived: true } : {}), duration: dur ? Math.round(dur) : null, targetDuration: meta?.targetDuration ?? null,
       date: meta?.dateLabel ?? null, time: meta?.timeLabel ?? null, episodeOfDay: meta?.episodeOfDay ?? null,
       headlines: meta ? meta.segments.filter((s) => s.kind === "haber").map((s) => ({ title: s.title, category: s.category, breaking: !!s.breaking })) : [],
       youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, remakeOf: meta?.remakeOf || null, peakHour: meta?.peakHour ?? null,
@@ -99,7 +110,7 @@ function listVideos() {
       search: meta ? [meta.publishTitle, meta.titles?.A, meta.titles?.B, meta.dayLabel, meta.slotLabel, meta.formatLabel, meta.sourceName, ...(meta.hashtags || []),
         ...meta.segments.flatMap((x) => [x.title, x.narration, x.source])].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").slice(0, 4000) : f.toLowerCase(),
       views: (m.youtube?.views || 0) + (m.instagram?.views || 0) + (m.tiktok?.views || 0) };
-  }).sort((a, b) => b.mtime - a.mtime);
+  }).filter(Boolean).sort((a, b) => b.mtime - a.mtime);
 }
 
 // ---------- üretim durumu + canlı log (SSE)
@@ -191,6 +202,7 @@ function stopAll({ quiet = false } = {}) {
   if (existsSync(lock)) { try { const pid = Number(readFileSync(lock, "utf8").trim()); process.kill(pid, 0); n += killTree(pid); } catch { /* eski kilit */ } }
   for (const q of anlikQueue) { if (q.opts?.sondakika) sondakikaUnqueue(q); else unmarkQueued(q); } // sondakika.com haberi "üretildi" görünmesin; işaretler silinir (video yok)
   anlikQueue.length = 0;
+  if (socialQueue.length) { push(`🔗 sıradaki ${socialQueue.length} paylaşım iptal edildi (durduruldu)`); socialQueue.length = 0; }
   const r = reap({ minAgeSec: 0, reason: "durduruldu", force: true });
   try { stopTts(); } catch { /* yok */ }
   if (!quiet) push(`⏹ hepsi durduruldu: üretim ${n ? "kapatıldı" : "yoktu"}, ${r.killed.length} arka plan süreci kapatıldı`);
@@ -1576,6 +1588,14 @@ async function runVideoNews0(v) {
 // videoyu çekip bizim stilimizde haber yap"): scripts/social_video.py indirir + paylaşım bilgisi + haber sitelerinde aynı olay;
 // sonra runVideoNews (kurgu, kesim, seslendirme). Kaynak hesabı kartlarda ve açıklamada görünür; yayın onaylı (userVideo).
 let socialBusy = false;
+// paylaşım hazırlanırken (uzun video özetinde 10-20 dk) WhatsApp'tan gelen yeni linkler sıraya girer (en çok 5; 3 saatten eski düşer);
+// eskiden "Başladı" yanıtından sonra sessizce kayboluyordu
+const socialQueue = [];
+const socialNext = () => {
+  while (socialQueue.length && Date.now() - socialQueue[0].at > 3 * 3600000) { const q = socialQueue.shift(); push(`🔗 sıradaki paylaşım bayatladı, atlandı: ${q.url}`); }
+  const q = socialQueue.shift();
+  if (q) setTimeout(() => { push(`🔗 sıradaki paylaşım başlıyor: ${q.url}`); socialVideoNews(q).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`)); }, 1000);
+};
 async function socialVideoNews({ url, instruction = "", publishAt = null }) {
   if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
   socialBusy = true;
@@ -1596,17 +1616,18 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     if (note && s.live) await sendW(`📡 ${Note}.`);
     else if (note && s.summary) await sendW(`🔎 ${Note}.${s.summaryProxy ? ` Belirli bir bölümden haber için linkin yanına zamanı yazın: "12:30'dan itibaren".` : ""}`);
     else if (note && s.window) await sendW(`🔗 ${Note}.${s.clip ? "" : ` Başka bölüm için linkin yanına zamanı yazın: "12:30'dan itibaren", "5. dakikadan", "son 3 dakika".`}`);
-    // uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem analiz edip 40 saniyelik habere dökebilir miyiz,
-    // çarpıcı sahneleri de alarak"): social_video.py karar verdi (uzun video ya da talimatta özet); fragman yolundan önce
-    if (s.summary) {
-      push(`🎬 uzun video özeti: ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}(${s.summaryReason || "özet"}; ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı"})`);
-      return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, summary: true, summaryProxy: !!s.summaryProxy });
-    }
     // fragman mı: talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser geçiyorsa ya da başlık fragmansa (autoDetect)
     const tc = trailerCfg();
     const news = NEWS_ASK.test(instruction);
     const asked = !news && TRAILER_ASK.test(instruction);
     const trailer = tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer));
+    // uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem analiz edip 40 saniyelik habere dökebilir miyiz,
+    // çarpıcı sahneleri de alarak"): social_video.py karar verdi (uzun video ya da talimatta özet). Fragman ("analiz et", "özetle" denmiş
+    // fragman linki) özet değil fragman analizidir; yalnız videonun tamamı düşük çözünürlükte indiyse (uzun video) özet yolu kalır
+    if (s.summary && (!trailer || s.summaryProxy)) {
+      push(`🎬 uzun video özeti: ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}(${s.summaryReason || "özet"}; ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı"})`);
+      return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, summary: true, summaryProxy: !!s.summaryProxy });
+    }
     if (trailer) {
       // başlıktan ayıklanan ad yalnız başlık fragman diye tanındıysa film adıdır ("fragman: <link>" ile istenen Instagram videosunda
       // başlık "Video by …" olabilir); tanınmadıysa Claude adı karelerden ve açıklamadan okur
@@ -1622,7 +1643,7 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
     // her paylaşım son dakika haberi oluyordu; kullanıcı isteği, 19 Ekim)
     return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt });
-  } finally { socialBusy = false; }
+  } finally { socialBusy = false; socialNext(); }
 }
 
 // ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu
@@ -1633,10 +1654,12 @@ const schedItems = () => readJson(PUB_SCHED, []) || [];
 const vidTitle = (name) => { const m = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), {}); return m.publishTitle || m.titles?.A || name; };
 let schedBusy = false;
 async function publishScheduled(item, { late = false } = {}) {
-  writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video));
-  if (!existsSync(path.join(OUT, item.video))) { push(`⏰ planlı yayın: ${item.video} bulunamadı (silinmiş), atlandı`); return { ok: false }; }
+  if (!existsSync(path.join(OUT, item.video))) { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); push(`⏰ planlı yayın: ${item.video} bulunamadı (silinmiş), atlandı`); return { ok: false }; }
   push(`⏰ planlı yayın zamanı geldi${late ? " (gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 80)} → ${item.platforms.join(", ")}`);
-  const r = await execAction({ type: "publish", video: item.video, platforms: item.platforms });
+  // kayıt yükleme bitince silinir: o sürede saatlik disk temizliği (cleanup.py protected) videoyu ve kapağını silmesin; ikinci kez
+  // yayınlanmasın diye dakikalık döngü schedBusy ile bekler
+  let r;
+  try { r = await execAction({ type: "publish", video: item.video, platforms: item.platforms }); } finally { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); }
   const lines = Object.entries(r.results || {}).map(([k, x]) => x.ok ? `✅ ${k}: ${x.skipped ? "zaten yayında" : (x.url || x.note || "tamam")}` : `❌ ${k}: ${String(x.error || "").slice(0, 140)}`);
   await sendW(`⏰ *Planlı yayın yapıldı*${late ? " (Mac uykudaydı, gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 90)}\n${lines.join("\n")}`);
   return r;
@@ -1747,7 +1770,7 @@ async function runCleanup({ manual = false } = {}) {
 }
 setInterval(() => {
   const n = new Date();
-  if (n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).hour !== `${today()} ${n.getHours()}` && !pipelineBusy() && settings().cleanup?.enabled !== false)
+  if (n.getMinutes() >= 10 && readJson(CLEAN_FILE, {}).hour !== `${today()} ${n.getHours()}` && !pipelineBusy() && !pubN && !schedBusy && settings().cleanup?.enabled !== false)
     runCleanup().catch((e) => push(`🧹 disk temizliği: ${e.message}`));
 }, 60000);
 app.post("/api/cleanup", async (req, res) => res.json(req.body?.dryRun ? (await py("cleanup.py", ["--dry-run"])).json || {} : await runCleanup({ manual: true })));
@@ -1981,7 +2004,14 @@ const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: ()
 const SAFE = new Set(["command", "generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 // elle yayın sürerken (WhatsApp "onay", panel) güncelleme paneli yeniden başlatmasın: süren yayın sayılır
-async function execAction(a) { if (a?.type !== "publish") return execAction0(a); pubN++; try { return await execAction0(a); } finally { pubN--; } }
+// yayınlanan video data/publishing.json'da (cleanup.py protected() okur): yükleme sürerken saatlik disk temizliği mp4'ü ve kapağı silmesin
+const PUBLISHING = path.join(DATA, "publishing.json");
+const publishingMark = (video, on) => { try { const l = (readJson(PUBLISHING, []) || []).filter((x) => x?.video !== video && Date.now() - (x?.at || 0) < 3 * 3600000); writeJson(PUBLISHING, on ? [...l, { video, at: Date.now() }] : l); } catch { /* yazılamadı */ } };
+async function execAction(a) {
+  if (a?.type !== "publish") return execAction0(a);
+  pubN++; if (a.video) publishingMark(a.video, true);
+  try { return await execAction0(a); } finally { pubN--; if (a.video) publishingMark(a.video, false); }
+}
 async function execAction0(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
@@ -2098,7 +2128,7 @@ async function makeThumb(name, width) {
 async function thumbBuffer(name) { try { return readFileSync(await makeThumb(name, 480)); } catch { return null; } }
 
 // ---------- API: videolar
-app.get("/api/videos", (_req, res) => res.json(listVideos()));
+app.get("/api/videos", (req, res) => res.json(listVideos({ archived: req.query.archived === "1" })));
 app.get("/api/thumb/:name", async (req, res) => { const name = path.basename(req.params.name); if (!existsSync(path.join(OUT, name))) return res.status(404).end(); const dst = await makeThumb(name, 480); if (!existsSync(dst)) return res.status(404).end(); res.sendFile(dst); });
 // Sil: önce yüklendiği platformlardan (publish.py --delete-remote), sonra Mac'teki dosyalar. ?local=1 yalnız yerel siler.
 app.delete("/api/videos/:name", async (req, res) => { const name = path.basename(req.params.name);
@@ -2113,7 +2143,9 @@ app.delete("/api/videos/:name", async (req, res) => { const name = path.basename
       if (!r.json) push(`🗑 platformlardan silme hatası: ${(r.stderr || r.stdout || "").slice(-200)}`);
     }
   }
-  for (const f of [name, name.replace(/\.mp4$/, ".json"), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t);
+  // diskten zaten silinmiş (arşivlenmiş) videoda bir platformdan silinemediyse kayıt kalır: panelde yine görünsün, yeniden denenebilsin
+  const keepMeta = !existsSync(path.join(OUT, name)) && Object.values(remote).some((v) => !v.ok);
+  for (const f of [name, ...(keepMeta ? [] : [name.replace(/\.mp4$/, ".json")]), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t);
   push(`🗑 ${name}: Mac'ten silindi`); py("analyze.py").catch(() => {}); res.json({ ok: true, remote }); });
 app.post("/api/reveal", async (req, res) => { const p = path.join(OUT, path.basename(req.body.name || "")); if (!existsSync(p) || !isMac) return res.json({ ok: false }); res.json(await run("open", ["-R", p])); });
 app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}` + (req.query.name ? "/videos/" + path.basename(String(req.query.name)) : "/"); res.json({ url, svg: await QRCode.toString(url, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }) }); });
@@ -2303,7 +2335,7 @@ function updateBusy() {
   if (pipelineBusy()) return "üretim sürüyor";
   if (anlikQueue.length) return `${anlikQueue.length} video sırada`;
   if (anlikInflight.size || valueBatch.length || dequeueBusy) return "son dakika haberi hazırlanıyor";
-  if (socialBusy || videoNewsN) return "video haberi hazırlanıyor";
+  if (socialBusy || videoNewsN || socialQueue.length) return "video haberi hazırlanıyor";
   if (waVid?.files?.length && Date.now() - waVid.at < Number(waVideoCfg().waitMin) * 60000) return "gönderdiğiniz video talimat bekliyor";
   if (digestPending) return "video WhatsApp'a gönderiliyor";
   if (infoBusy || peakBusy) return "otomatik içerik hazırlanıyor";
@@ -2672,6 +2704,13 @@ async function handleCommand(text, opts = {}) {
     case "scheduled": { reply = await scheduledCommand(cmd); break; }
     case "social_video": {
       if (waVideoCfg().enabled === false) { reply = "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)."; break; }
+      if (socialBusy) {
+        if (socialQueue.length >= 5) { reply = "⏳ Sırada zaten 5 paylaşım var; bunlar bitince bu linki yeniden gönderin."; break; }
+        socialQueue.push({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, at: Date.now() });
+        push(`🔗 paylaşım sıraya alındı (${socialQueue.length}. sırada; önceki paylaşım hazırlanıyor): ${cmd.url}`);
+        reply = `⏳ Sıraya alındı (${socialQueue.length}. sırada): önceki paylaşım hazırlanıyor (uzun videoda 10-20 dk sürebilir), bitince bu link başlayacak.`;
+        break;
+      }
       socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
       // talimatta fragman geçiyorsa (açık haber isteği yoksa; socialVideoNews ile aynı öncelik) yanıt fragman analizi der (başlıktan
       // tanınan fragmanı socialVideoNews ayrıca bildirir); süre talimattaki "N saniye"den
@@ -2840,9 +2879,17 @@ async function healthCheck() {
   // 1) kaçan üretim: zamanlayıcı açık, son videodan beri aralık + 40 dk geçti, üretim de sürmüyor
   try {
     const sch = await getSchedule();
-    const regular = listVideos().filter((v) => { const m = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), {}); return !(m.anlik || m.format === "anlik" || m.format === "gunluk" || m.format === "haftalik"); });
+    // son düzenli video: kayıtların üretim zamanı (disk temizliği 2 günden eski mp4'ü siler, kayıt kalır; mp4 zamanı yedek)
+    let lastRegular = 0;
+    for (const f of readdirSync(OUT).filter((x) => /^\d{4}.*\.json$/.test(x))) {
+      const m = readJson(path.join(OUT, f), {});
+      if (m.anlik || ["anlik", "gunluk", "haftalik"].includes(m.format)) continue;
+      let t = metaTime(m);
+      if (!t) { try { t = statSync(path.join(OUT, f.replace(/\.json$/, ".mp4"))).mtimeMs; } catch { t = 0; } }
+      if (t > lastRegular) lastRegular = t;
+    }
     // zamanlayıcı yeni açıldıysa ondan önceki boşluk sayılmaz
-    const last = Math.max(regular[0] ? statSync(path.join(OUT, regular[0].name)).mtimeMs : 0, Number(readSched().loadedAt) || 0) || null;
+    const last = Math.max(lastRegular, Number(readSched().loadedAt) || 0) || null;
     const gap = (Number(sch.hours) || 5) * 3600000 + 40 * 60000;
     if (sch.enabled && !state.running && last && Date.now() - last > gap) {
       // neden: launchd işi yüklü mü, son çıkış kodu, kilit, son log satırları; yüklü değilse yeniden yüklenir
