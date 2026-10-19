@@ -1086,6 +1086,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   biçimi ve 6.7.24 oturum klasörünün v7'ye geçişi; web.whatsapp.com sandbox'tan kapalı (DNS yok, vekil CONNECT 403), QR'a kadar el
   sıkışma da denenemedi. Mac'te ilk deneme: güncelle → panel logunda "WhatsApp kütüphanesi yenilendi" → kendine ve sahibe bir mesaj;
   telefonda "bekleniyor" kalırsa logdaki "yeniden istedi" satırına bakın.
+  Doğrulama düzeltmeleri (19 Ekim): kendine-mesaj sohbetinde kendi telefonumuzun "yeniden gönder" isteğinde `recipient` yoktu, v7
+  remoteJid'i boş bulup yeniden gönderirken hata veriyordu ("error in sending message again"): `CB:receipt,type:retry` (Baileys'in
+  işlediği CB:receipt'ten önce aynı düğümle gelir) recipient/participant yoksa ve gönderen kendi numaramız ya da LID'imizse kendi sohbet
+  adresini ekler (gerçek v7 soketi + sahte ağla: düzeltmesiz yeniden gönderim yok, düzeltmeyle var; sahibin ya da grubun isteğine
+  dokunulmaz). Durdurduktan hemen sonra başlatma eski kurulumun sözünü almaz (`stop` `starting`i bırakır, her kurulum yalnız kendi kaydını
+  siler; "numara değiştir" akışında bağlantı açılmıyordu). Güncelleme: package-lock.json yerelde değişmişse (npm 11 kurulumda yeniden
+  yazar) `git pull`dan önce eski hâline döner (kilidi değişen ilk güncelleme çekilemezdi), npm install `--no-save` (kilit yeniden yazılmaz);
+  package.json'da tam sürümle sabitlenen paket (`PINNED`: Baileys) kurulu sürümden farklıysa `pinMismatch` → güncellemede npm install
+  çalışır; panel açılışında da (20 sn sonra) uyuşmazlık varsa npm install kendiliğinden bir kez denenir, olursa panel iş yokken yeniden
+  başlar, olmazsa logda "terminalde npm install" (6 saatte en çok bir deneme, `data/pin_install.json`) — eski güncelleme kodu (git kökü üst
+  klasörde, `--relative` yokken) ya da terminalde yalnız `git pull` Baileys'i 6.7'de bırakmasın. Sahte soket denetimleri düzeltmelerden
+  sonra yeniden: v7 47/47, 6.7.24 (gerçek 6.7.24 kurulumuyla) 44/44, ek 6/6 (retry adresi 5 durum, durdur → başlat).
 - Platform seçerek onay (kullanıcı isteği, 14 Ekim: "onay yazarsam tüm platformlarda, onay insta yazarsam yalnız Instagram'da paylaşsın";
   `whatsapp.js` `pickPlatforms`/`approveLine`): "onay" (onayla/evet/yayınla/paylaş/tamam/ok) bekleyen tüm platformlar; "onay insta",
   "onay youtube tiktok", "insta onay", "instagram'da paylaş", "sadece tiktok" yalnız yazılanlar (insta/ig/reels, youtube/yt/shorts,

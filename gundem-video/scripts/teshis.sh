@@ -13,7 +13,10 @@ r = s.get("rest") or {}; w = s.get("whatsapp") or {}; sch = s.get("schedule") or
 print("✅ panel açık · üretim sürüyor:", "evet" if s.get("running") else "hayır")
 print("   dinlenme:", f"AÇIK ({r.get('reason')}, {t(r.get('since'))}'den beri, sıradaki planlı {t(r.get('until'))})" if r.get("on") else "kapalı (sistem çalışıyor)")
 print("   WhatsApp:", w.get("status"), f"· hata: {w.get('error')}" if w.get("error") else "", "· oturum dosyası", "var" if w.get("hasSession") else "YOK (QR okutulmalı)",
-      "· son mesaj", t(w.get("lastMsgAt")) if isinstance(w.get("lastMsgAt"), (int, float)) else w.get("lastMsgAt") or "-")
+      "· son mesaj", t(w.get("lastMsgAt")) if isinstance(w.get("lastMsgAt"), (int, float)) else w.get("lastMsgAt") or "-",
+      f"· Baileys {w.get('lib') or '?'} · Node {w.get('node') or '?'}")
+rt = w.get("retry") or {}
+if rt: print(f"   WhatsApp yeniden gönderme istekleri ({t(rt.get('at'))}): {rt.get('messages')} mesaj, en çok {rt.get('maxTry')}. deneme, kayıtta olmayan {rt.get('missing')}")
 print("   zamanlayıcı:", "açık" if sch.get("enabled") else "KAPALI", "· sıradaki üretim", t(sch.get("nextRunAt")), "· saatler", sch.get("slots"))
 PY
 else

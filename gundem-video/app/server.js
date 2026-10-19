@@ -2399,6 +2399,14 @@ for (const f of readdirSync("app").filter((x) => x.endsWith(".js"))) {
   }
 }
 console.log(JSON.stringify([...bad]));`;
+// package.json'da tam sürümle sabitlenen paket kurulu sürümden farklı mı (eski güncelleme kodu npm install'ı atladıysa ya da terminalde
+// yalnız git pull yapıldıysa Baileys 6.7 kalır, telefonda "Mesaj bekleniyor" sürer; inceleme, 19 Ekim)
+const PINNED = ["@whiskeysockets/baileys"];
+function pinMismatch() {
+  const want = readJson(path.join(ROOT, "package.json"), {}).dependencies || {};
+  return PINNED.map((p) => ({ p, want: want[p], have: readJson(path.join(ROOT, "node_modules", ...p.split("/"), "package.json"), {}).version || null }))
+    .filter((x) => /^\d+\.\d+\.\d+/.test(String(x.want || "")) && x.have !== x.want);
+}
 function missingModules() {
   const r = spawnSync(process.execPath, ["--input-type=module", "-e", RESOLVE_JS], { cwd: ROOT, encoding: "utf8", timeout: 30000 });
   try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop() || "[]"); } catch { return []; } // denetim çalışmazsa engellemez
@@ -2419,6 +2427,9 @@ async function selfUpdate({ source = "panel" } = {}) {
       return { ok: true, deferred: true, busy, count: c.count || c.subjects.length, subjects: c.subjects };
     }
     setUpdatePending(null);
+    // package-lock.json üretilen dosyadır: npm 11 kurulumda yeniden yazar, yerelde değişmiş kilit "git pull"u durdurur (inceleme, 19 Ekim;
+    // kilidi değişen ilk güncelleme). Yalnız bu dosyadaki yerel değişiklik bırakılır, node_modules etkilenmez
+    if (!(await git(["diff", "--quiet", "--", "package-lock.json"])).ok) { push("⬇ package-lock.json yerelde değişmiş (npm yeniden yazmış); güncelleme için eski hâline döndürülüyor"); await git(["checkout", "--", "package-lock.json"]); }
     push("⬇ güncelleme: git pull");
     const r = await git(["pull", "--ff-only"]);
     const out = `${r.stdout || ""}${r.stderr ? "\n" + r.stderr : ""}`.trim();
@@ -2439,7 +2450,7 @@ async function selfUpdate({ source = "panel" } = {}) {
     const npmInstall = async () => {
       installed = true;
       push("⬇ bağımlılıklar güncelleniyor (npm install)");
-      const n = await run("npm", ["install", "--no-audit", "--no-fund"], { timeout: 10 * 60000 });
+      const n = await run("npm", ["install", "--no-save", "--no-audit", "--no-fund"], { timeout: 10 * 60000 }); // --no-save: kilit yeniden yazılmasın
       return n.ok ? "" : String(n.stderr || n.err?.message || "").trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200);
     };
     if (changed.some((f) => /^package(-lock)?\.json$/.test(f)) || (!dr.ok && /(^|\s)package(-lock)?\.json\s*\|/m.test(out))) {
@@ -2455,7 +2466,7 @@ async function selfUpdate({ source = "panel" } = {}) {
     // --check eksik paketi yakalamaz (yeni bağımlılık: panel ERR_MODULE_NOT_FOUND ile açılmazdı): app/*.js'teki paket adları çözülür;
     // eksik varsa npm install (henüz yapılmadıysa) ve bir kez daha; yine eksikse geri alınır
     let missing = missingModules();
-    if (missing.length && !installed) { const e = await npmInstall(); if (e) return rollback(`npm install başarısız (${e}).`); missing = missingModules(); }
+    if ((missing.length || pinMismatch().length) && !installed) { const e = await npmInstall(); if (e) return rollback(`npm install başarısız (${e}).`); missing = missingModules(); }
     if (missing.length) return rollback(`Yeni sürümün ihtiyaç duyduğu paketler kurulamadı (${missing.slice(0, 3).join(", ")}).`);
     writeJson(UPDATE_FILE, { at: Date.now(), from: BOOT_COMMIT, to: head, count: subjects.length, subjects: subjects.slice(0, 5), source, notes, notified: false });
     for (const n of notes) push(`⬇ not: ${n}`);
@@ -2467,6 +2478,21 @@ async function selfUpdate({ source = "panel" } = {}) {
   } finally { updateRun = false; }
 }
 app.post("/api/update", async (_req, res) => res.json(await selfUpdate({ source: "panel" })));
+// açılışta sabit sürümlü paket kurulu sürümle uyuşmuyorsa (terminalde yalnız git pull, eski güncelleme kodu npm install'ı atladı) npm install
+// kendiliğinden bir kez denenir, olursa panel iş yokken yeniden başlar (WhatsApp yeni kütüphaneyle açılsın); 6 saatte en çok bir deneme
+const PIN_FILE = path.join(DATA, "pin_install.json");
+setTimeout(async () => {
+  const m = pinMismatch();
+  if (!m.length) return;
+  const what = m.map((x) => `${x.p} kurulu ${x.have || "yok"}, gereken ${x.want}`).join("; ");
+  if (Date.now() - (readJson(PIN_FILE, {}).at || 0) < 6 * 3600000) { push(`⚠️ paket sürümü uyuşmuyor (${what}); terminalde gundem-video klasöründe: npm install`); return; }
+  writeJson(PIN_FILE, { at: Date.now(), what });
+  push(`⬇ ${what}: npm install çalıştırılıyor (WhatsApp mesajları telefonda "Mesaj bekleniyor" kalmasın)`);
+  const n = await run("npm", ["install", "--no-save", "--no-audit", "--no-fund"], { timeout: 10 * 60000 });
+  if (!n.ok || pinMismatch().length) { push(`✖ npm install olmadı (${String(n.stderr || n.err?.message || "").trim().split("\n").slice(-2).join(" ").slice(0, 200)}); terminalde gundem-video klasöründe: npm install`); return; }
+  push("✅ paketler kuruldu; panel iş yokken yeniden başlatılıyor");
+  restartAfterUpdate(3000, "paket");
+}, 20000);
 const updateText = (r) => {
   const last = (r.subjects || [])[0] ? `: ${String(r.subjects[0]).slice(0, 110)}` : "";
   if (!r.ok) return `❌ Güncellenemedi: ${r.error}`;
