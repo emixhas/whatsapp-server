@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, content_kind, kind_fold, kind_only, settings, summary_cfg, summary_secs  # noqa: E402
 from info_card import new_job  # noqa: E402
 import social_video as sv  # noqa: E402
+import frame_crop as fc  # noqa: E402
 
 SPEECH_OFF = False  # konuşma tanıma kurulamadı/kapalı: plan yalnız kareler ve sahne geçişleriyle
 WORDS: dict = {}  # video yolu → [(kelime, başlangıç, bitiş)] (orijinal sesli bölümün altyazısı)
@@ -898,6 +899,21 @@ def build(job: dict) -> dict:
             shutil.rmtree(tmp, ignore_errors=True)
             return {"ok": False, "error": S["error"], **({"limit": True} if S.get("limit") else {})}
         srcs = S["srcs"]
+    # Çerçeve ve ekrandaki yazılar (kullanıcı isteği, 19 Ekim: "Instagram'dan gönderdiğim haber hesaplarının videolarında etrafında çerçeve
+    # oluyor ve bazen linkte açıklama olmuyor; videodaki kelimeleri analiz ederek haber üretebilir miyiz"; settings.waVideo {cropFrame,
+    # screenText}, varsayılan açık): çerçeve (logo/hesap bandı, başlık paneli, kenarlık) bulunursa kesimler, kareler ve dikey/yatay kararı
+    # çerçevenin içindeki videodan (frame_crop); ekrandaki yazılar özgün (çerçeveli) görüntüden büyük karelerle Claude'a okutulur
+    vcfg, orig, cropped = settings().get("waVideo") or {}, list(srcs), {}
+    if not trailer and not summary and vcfg.get("cropFrame") is not False:
+        for k, p in enumerate(srcs, 1):
+            rect, why = fc.detect(p)
+            if rect and fc.crop(p, rect, tmp / f"kirp-{k}.mp4"):
+                srcs[k - 1], cropped[k] = tmp / f"kirp-{k}.mp4", {**rect, **(why.get("pct") or {})}
+                pc = why.get("pct") or {}
+                log(f"🖼 video {k}: çerçeve kırpıldı ({rect['W']}x{rect['H']} → {rect['w']}x{rect['h']}; bant "
+                    f"{', '.join(f'{n} %{v}' for n, v in pc.items() if v)}): logo ve başlık bandı videoda görünmeyecek, yazıları okunacak")
+    caption = str((social or {}).get("caption") or "").strip()
+    screen = not trailer and not summary and vcfg.get("screenText") is not False
     infos, blocks = [], []
     for i, p in enumerate(srcs, 1):
         info = probe(p)
@@ -951,6 +967,16 @@ def build(job: dict) -> dict:
         blocks.append({"video": i, "sure": round(info["duration"], 1), "boyut": f"{info['width']}x{info['height']}",
                        "sahne_gecisleri": info["scenes"], "konusma": [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][:80],
                        "kareler_dosyasi": info["sheet"], "kareler": info["frames"]})
+        # yazı kareleri: çerçeve kırpıldıysa, paylaşımın açıklaması boş/kısaysa ya da (WhatsApp videosunda) talimat kısa ve konuşma yoksa
+        if screen and (i in cropped or (social and len(caption) < 40) or (not social and len(instruction) < 30 and not info["speech"])):
+            n = (3 if settings().get("tokenSaver") is not False else 4) if len(srcs) == 1 else 2
+            info["text"] = fc.text_frames(orig[i - 1], info["duration"], info["scenes"], tmp, f"yazi-{i}", n)
+            if info["text"]:
+                blocks[-1]["yazi_kareleri"] = info["text"]
+                log(f"📝 video {i}: ekrandaki yazılar için {len(info['text'])} büyük kare okunacak"
+                    f"{' (paylaşımın açıklaması yok)' if social and not caption else ' (açıklama kısa)' if social and len(caption) < 40 else ''}")
+        if i in cropped:
+            blocks[-1]["cerceve"] = "kırpıldı: kareler ve kesimler çerçevenin içindeki videodan; yazi_kareleri çerçeveli özgün görüntü"
         if summary:  # anın uzun videodaki yeri ve seçilme nedeni (kurgu editörü bağlamı görsün)
             blocks[-1].update({"kaynak_zamani": f"{hms(sec['start'])}–{hms(sec['end'])}", "konusma_dili": LANGS.get(str(p)),
                                "an": [{"tur": x["tur"], "neden": x["neden"], **({"alinti": x["alinti"]} if x["alinti"] else {}),
@@ -963,6 +989,14 @@ def build(job: dict) -> dict:
             log(f"🎬 fragman kareleri: {len(info['frames'])} çekimden kare, {len(info['black'])} siyah bölüm ayıklanacak")
             blocks[-1].update({"konusma_dili": LANGS.get(str(p)), "konusma": blocks[-1]["konusma"] + [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][80:120],
                                "siyah_bolumler": [list(x) for x in info["black"][:40]]})
+    # açıklaması boş paylaşım (Instagram'da sık): haber siteleri açıklama yerine konuşmadaki kelimelerle aranır (mizahta aranmaz)
+    if social and not trailer and not summary and not rel and kind_req != "mizah" and len(re.findall(r"[^\W\d_]{3,}", caption)) < 3:
+        said = [w for w in re.findall(r"[^\W\d_]{4,}", " ".join(t for x in infos for _, _, t in x["speech"])) if w.lower() not in sv.KW_STOP]
+        words = list(dict.fromkeys(said))[:10]
+        if len(words) >= 4:
+            rel = sv._lookup(" ".join(words), timeout=75)
+            log(f"🔎 paylaşımın açıklaması yok: haber siteleri konuşmadaki kelimelerle arandı ({' '.join(words[:6])}…): "
+                f"{f'{len(rel)} ilgili haber' if rel else 'bulunamadı'}")
     caps_used = any(i.get("captions") for i in infos)
     if SPEECH_OFF and caps_used:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): döküm YouTube altyazısından — Mac'te bir kez 'bash scripts/install_align.sh'")
@@ -1181,7 +1215,7 @@ def build(job: dict) -> dict:
     # social: paylaşımın başlığı/açıklaması ve adresi üretilen haber hafızasına girer (assemble_script → news_memory): aynı olay
     # sonra bir haber sitesinde başka sözlerle düşerse otomatik yakalama onu tekrar üretmez
     so_mem = {"title": str(social.get("title") or "")[:200], "caption": str(social.get("caption") or "")[:600], "url": social.get("url") or ""} if social else None
-    job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs],
+    job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in orig],
                                          **({"trailer": True, "film": film} if trailer else {}), **({"social": so_mem} if so_mem else {}),
                                          **({"summary": {"sourceSeconds": round(S["D"], 1), "sections": [[x["start"], x["end"]] for x in S["secs"]],
                                                          "konu": (S["analysis"] or {}).get("konu")}} if summary else {})})
@@ -1210,6 +1244,8 @@ def build(job: dict) -> dict:
                     **({"speechSource": "youtube", "speechOff": SPEECH_OFF} if caps_used else {})}}
     if kind:  # panel: SON DAKİKA kartı yok, etiket/giriş/kapanış plandan, env CONTENT_KIND
         res["plan"].update({"contentKind": kind, "intro": intro, "outro": outro, "kindSource": "talimat" if kind_req and not down else "claude"})
+    if cropped or any(x.get("text") for x in infos):  # "Kurgu hazır" mesajı: çerçeve kırpıldı mı, ekrandan ne okundu
+        res["plan"].update({"frameCropped": sorted(cropped), "screenText": [str(x)[:100] for x in (plan.get("ekran_yazilari") if isinstance(plan.get("ekran_yazilari"), list) else []) if str(x).strip()][:5]})
     if summary:
         an = S["analysis"] or {}
         res["summary"] = True

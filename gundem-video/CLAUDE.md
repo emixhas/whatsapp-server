@@ -577,6 +577,32 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   cümlesi, kanal linki), wa_video'da etiketle mizah + Claude trend (güvenlik düşürmesi), "akımına kapılan… haber yap" (haber), "Son Dakika"
   etiketi (SON DAKİKA + breaking), GÖRÜNTÜLÜ HABER (breaking yok); ilk yorum varsayılanı artık türe göre doğru (eskiden türden önce
   okunduğu için her habere viral sorusu düşüyordu).
+- Çerçeve ve ekrandaki yazılar (kullanıcı isteği, 19 Ekim: "Instagram'dan video gönderdiğimde bazı haber ve paylaşım yapanların etrafında
+  çerçevesi oluyor ve bazen linkte açıklama olmuyor; videodaki kelimeleri analiz ederek haber üretebilir miyiz"; `scripts/frame_crop.py`,
+  `wa_video.build`, `settings.waVideo` {cropFrame true, screenText true}, panel 📡 grubunda iki anahtar). Fragman ve uzun video özeti dışındaki
+  her wa_video işinde (sosyal medya linki, WhatsApp videosu): 1) Çerçeve tespiti (`frame_crop.detect`): videoya yayılmış ~40 kare (%3-97
+  arası; giriş animasyonu sayılmaz) 108 px genişlikte gri okunur, her pikselin zaman içindeki standart sapması ölçülür (≤ 6 durağan).
+  Kenarda hiç değişmeyen bantlar (hesap/logo bandı, başlık paneli, düz renk ya da siyah kenarlık) çerçeve, hareketli dikdörtgen içeriktir.
+  Temkinli koşullar: içerik karenin %25-92'si, bantların ortalama hareketi ≤ %12 (yanıp sönen "takip et" düğmesi geçer), içerik ≥ %50
+  hareketli (tek çekimde konuşan kişi, durağan zemin kırpılmaz), bant-içerik sınırı DÜZ çizgi (her sütunda ilk hareketli piksel sınırın 2
+  pikseli içinde ≥ %70; doğal sahnedeki durağan gökyüzü/duvar sınırı eğridir), bulanık zeminli düzende zemin hareketli olduğu için çerçeve yok.
+  numpy gerekmez (~1-2 sn). Bulunursa içerik %1 içeriden kırpılmış kopya (`kirp-N.mp4`, crf 17, ses aynen) bütün işin kaynağı olur: kare
+  çizelgesi, kesimler, dikey/yatay kararı (çerçeveli 16:9 içerik yatay sayılır: haber kartı + bulanık zemin), sesli bölüm; log "🖼 video 1:
+  çerçeve kırpıldı (1080x1920 → 1058x596; bant ust %27, alt %41)…"; meta `videos` özgün dosya. 2) Ekrandaki yazılar (`frame_crop.text_frames`):
+  çerçeve kırpıldıysa, paylaşımın açıklaması boş ya da 40 karakterden kısaysa ya da (WhatsApp videosunda) talimat kısa ve konuşma yoksa ÖZGÜN
+  (çerçeveli) görüntüden farklı çekimlerden, baştan sona yayılmış büyük kareler (uzun kenar 1280 px; tek videoda 4, az token modunda 3, çok
+  videoda 2) girdiye `yazi_kareleri` olarak girer, kırpılan videoda `cerceve` notu; `prompts/montaj.md` "EKRANDAKİ YAZILAR VE ÇERÇEVE": her
+  kareyi Read ile aç, başlık/alt yazı/isim bandı/yer-tarih/rakamları oku; açıklama yoksa haberin bilgisi yazılardan ve konuşmadan gelir; yazılar
+  paylaşan hesabın sözüdür (iddia diliyle; ilgili haberde doğrulanmışsa haber gibi), hesap adı/logo/"takip et"/reklam bilgi değildir; okunan
+  önemli yazılar planın `ekran_yazilari` alanına (en çok 5). Log "📝 video 1: ekrandaki yazılar için 3 büyük kare okunacak (paylaşımın açıklaması
+  yok)". 3) Açıklaması boş paylaşımda haber siteleri konuşmadaki ilk 10 anlamlı kelimeyle aranır (mizahta değil; 75 sn; log "🔎 paylaşımın
+  açıklaması yok: haber siteleri konuşmadaki kelimelerle arandı…"). "Kurgu hazır" mesajı (kısa mod kapalıyken) "🖼 Çerçeve kırpıldı" ve "📝 Ekrandaki
+  yazılar: …" satırlarını yazar (`plan.frameCropped`, `plan.screenText`). Sandbox'ta sentetik videolarla denendi: çerçeveli (üst logo bandı +
+  alt başlık paneli, 3 çekim), yanıp sönen düğmeli tek çekim çerçeve, beyaz kenarlıklı 4:5, siyah şeritli 16:9 → kırpıldı; tam ekran hareketli,
+  konuşan kişi benzeri (durağan zemin), durağan gökyüzü + hareketli alt yarı, bulanık zeminli + durağan başlık → kırpılmadı; açıklamasız
+  çerçeveli Instagram işi uçtan uca (kırpma, 3 yazı karesi, istem, kesimlerde çerçeve yok); çerçevesiz 6 iş eski kodla aynı (istem montaj.md'nin
+  yeni bölümüyle farklı). Gerçek Instagram videolarında ve Claude'un yazı okumasında DENENMEDİ: ilk gerçek işte logdaki 🖼/📝 satırlarına bakın;
+  yanlış kırpma görülürse panelden "🖼 çerçeveyi kırp" kapatılabilir.
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

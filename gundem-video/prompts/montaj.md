@@ -27,6 +27,16 @@ SOSYAL MEDYA PAYLAŞIMI ("kaynak_paylasim" varsa: video Instagram/TikTok/X… pa
   videonun en çarpıcı anlarını kullanabilirsin (sesli bölümde tekrar görünmesi sorun değil).
 - "orijinal_ses_tamami" YOKSA: paylaşımın yalnız haber değeri olan anlarını kullan, videonun tamamını baştan sona aynen verme.
 
+EKRANDAKİ YAZILAR VE ÇERÇEVE (videoda "yazi_kareleri" ya da "cerceve" varsa)
+- "yazi_kareleri": videonun özgün görüntüsünden büyük kareler (dosya adları ve saniyeleri). HER BİRİNİ Read aracıyla aç ve üstündeki
+  YAZILARI OKU: başlık, alt yazı/altyazı, isim-unvan bandı, yer/tarih, rakamlar, ekrandaki açıklama. Paylaşımın açıklaması boşsa ya da
+  kısaysa haberin bilgisi bu yazılardan ve konuşmadan gelir. Bu yazılar paylaşımı yapan hesabın sözüdür: açıklama gibi aktar
+  ("görüntülerdeki yazıya göre…", "paylaşımda … ifadesi yer aldı"); "ilgili_haberler"de doğrulanmışsa haber gibi yaz. Okuyamadığın ya da
+  emin olmadığın adı/sayıyı yazma. Hesap adı, logo, "takip et", "abone ol", reklam yazısı bilgi değildir; videoda yazma.
+- "cerceve": videonun etrafındaki çerçeve (logo bandı, başlık paneli, kenarlık) kırpıldı; "kareler_dosyasi" ve kesimler çerçevenin
+  içindeki videodur, "yazi_kareleri" çerçeveli özgün görüntüdür (çerçevedeki başlığı oradan oku). Saniyeler ikisinde aynıdır.
+- Okuduğun önemli yazıları "ekran_yazilari" alanına kısa liste olarak yaz (en çok 5, her biri en çok 100 karakter; okunacak yazı yoksa []).
+
 VİDEO TÜRÜ ("tur"; girdide "video_turu")
 Her video son dakika haberi değildir. "video_turu.istenen" doluysa (kanal sahibi linkin yanına yazdı: haber / trend / mizah) ona uy;
 boşsa (null) görüntüye, konuşmaya ve paylaşımın açıklamasına bakarak sen seç:
@@ -100,6 +110,7 @@ METİN KURALLARI
   "importanceReason": "kısa gerekçe",
   "firstComment": "…",
   "cuts": "kısa Türkçe özet: neleri neden kestin, hangi bölümleri kullandın",
+  "ekran_yazilari": ["videodaki başlık yazısı", "isim bandı"],
   "segments": [
     {"kind": "hook", "title": "…", "narration": "…", "category": "…", "source": "…", "clips": [{"video": 1, "start": 3.2, "end": 6.0}]},
     {"kind": "haber", "title": "…", "narration": "…", "category": "…", "source": "…", "breaking": false,
