@@ -167,24 +167,45 @@ def summary_secs(instruction: str) -> int:
 
 
 # Video türü (kullanıcı isteği, 19 Ekim: "bazen mizah, bazen normal sosyal medyada çok izlenen video linkleri gönderiyorum, bunları da son
-# dakika diye haber yapıyor; link/mizah yazınca mizah kategorisine göre üretilsin, link/trend"): talimattaki açık etiket. mizah > trend >
-# haber; etiket yoksa "" (kurgu planında Claude karar verir). server.js contentKindOf aynı kural.
-_KIND_MIZAH = re.compile(r"(?<!\w)(?:mizah\w*|komik\w*|espri\w*|şaka\w*|güldür\w*|eğlenceli|caps)(?!\w)", re.I)
-_KIND_TREND = re.compile(r"(?<!\w)(?:trend\w*|viral\w*|akım\w*|çok\s+izlenen|gündem\s+olan|keşfet\w*)(?!\w)", re.I)
-_KIND_HABER = re.compile(r"(?<!\w)(?:haber(?:i|ini)?\s+(?:yap|olarak|hazırla|üret)(?!ma|me)\w*|haber\s+olarak|son\s*dakika)(?!\w)", re.I)
+# dakika diye haber yapıyor; link/mizah yazınca mizah kategorisine göre üretilsin, link/trend"). Tür yalnız AÇIK etiketten (inceleme, 19
+# Ekim: serbest metindeki "trende yangın", "elektrik akımına kapıldı", "şakalaşırken", "komik duruma düştü", "viral hepatit" haberi VİRAL/
+# mizah yapıyordu, "haber yap" bile düzeltemiyordu): linke bitişik etiket (commands.js → job.kind, buraya hiç gelmez), talimatın yalnız
+# etiketten oluşması ("mizah", "#trend", "viral"), #etiket ya da açık ifade ("mizah videosu", "mizah olarak", "komik video", "viral video",
+# "çok izlenen video"; ardından "değil/olmasın" gelirse sayılmaz). Açık haber isteği ("haber yap", "haber olarak", "son dakika", yalnız
+# "haber") hep haber. Etiket yoksa "" (kurgu planında Claude karar verir). Harfsiz/büyük harf yazım aynı ("MIZAH", "_mizah_").
+# server.js contentKindOf aynı kural.
+KIND_WORDS = {"mizah": "mizah", "mizahi": "mizah", "komik": "mizah", "trend": "trend", "viral": "trend", "haber": "haber"}
+_KL = r"[^\W\d_]"  # harf (rakam ve _ ayraç: "_mizah_")
+_KIND_HABER = re.compile(rf"(?<!{_KL})(?:haber(?:i|ini)?\s+(?:yap|olarak|hazirla|uret)(?!ma|me){_KL}*|haber\s+olarak|son\s*dakika)(?!{_KL})"
+                         r"(?!\s+(?:degil|olmasin|olmayacak))")
+_KIND_PHRASE = re.compile(rf"(?<!{_KL})(?:#(mizah|mizahi|komik|trend|viral|haber)|(mizah|mizahi|komik|viral|trend)\s+(?:video{_KL}*|icerik{_KL}*|"
+                          rf"paylasim{_KL}*|olarak|amacli|kategori{_KL}*)|(cok\s+izlenen)\s+(?:video{_KL}*|paylasim{_KL}*))(?!{_KL})"
+                          r"(?!\s+(?:degil|olmasin|olmayacak))")
 
 
-def content_kind(instruction: str) -> str:
-    t = str(instruction or "").replace("I", "ı").replace("İ", "i").lower()
-    return "mizah" if _KIND_MIZAH.search(t) else "trend" if _KIND_TREND.search(t) else "haber" if _KIND_HABER.search(t) else ""
+def kind_fold(t: str) -> str:
+    """Türkçe küçük harf + harfsiz yazım (ı→i, ş→s…): "MİZAH", "MIZAH", "mızah" aynı."""
+    return str(t or "").replace("I", "ı").replace("İ", "i").lower().translate(str.maketrans("ıöçşüğâîû", "iocsugaiu"))
 
 
 def kind_only(instruction: str) -> bool:
-    """Talimat yalnız tür etiketinden mi oluşuyor ("mizah", "#trend", "viral")? O zaman montaja türün varsayılan talimatı gider."""
-    t = str(instruction or "").replace("I", "ı").replace("İ", "i").lower()
-    for rx in (_KIND_MIZAH, _KIND_TREND, _KIND_HABER):
-        t = rx.sub(" ", t)
-    return bool(content_kind(instruction)) and not re.search(r"[^\W\d_]", t)
+    """Talimat yalnız tür etiketinden mi oluşuyor ("mizah", "#trend", "viral 18:30")? O zaman montaja türün varsayılan talimatı gider."""
+    words = re.findall(_KL + "+", kind_fold(instruction))
+    return bool(words) and all(w in KIND_WORDS for w in words)
+
+
+def content_kind(instruction: str) -> str:
+    t = kind_fold(instruction)
+    if kind_only(instruction):
+        ks = {KIND_WORDS[w] for w in re.findall(_KL + "+", t)}
+        return "haber" if "haber" in ks else "mizah" if "mizah" in ks else "trend"
+    lead = re.match(r"\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*[,;:\-–/]", t)  # başta ayraçla etiket: "mizah, kısa kes"
+    if lead:
+        return KIND_WORDS[lead.group(1)]
+    if _KIND_HABER.search(t):
+        return "haber"
+    ks = {KIND_WORDS.get(x, "trend") for g in _KIND_PHRASE.findall(t) for x in g if x}
+    return "haber" if "haber" in ks else "mizah" if "mizah" in ks else "trend" if "trend" in ks else ""
 
 
 def episode_meta(video_name: str):

@@ -531,16 +531,27 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   linkleri gönderiyorum, bunları da son dakika diye haber yapıyor; link/mizah yazınca mizah kategorisine göre üretilsin ama direk mizah
   yazmasın, girişte izlenmez, videonun sonunda belirtelim; ya da link/trend"). Eskiden her paylaşım "SON DAKİKA" etiketi, "Son dakika."
   girişi, SON DAKİKA kartı ve #sondakika ile üretiliyordu (panel talimatsız linke "haber olarak anlat" yazıyordu). Etiket: `commands.js
-  findLink` linke bitişik "/mizah", "/komik", "/trend", "/viral", "/haber"i adresten ayırır (`tag`; yt-dlp "watch?v=ID/mizah"yı indiremez) ve
-  talimata ekler; linkin yanına yazılan "mizah", "#mizah", "trend" de olur. Tür `common.content_kind` (server.js `contentKindOf` aynı):
-  mizah (mizah, komik, espri, şaka, güldür-, eğlenceli, caps) > trend (trend, viral, akım, çok izlenen, gündem olan, keşfet) > haber ("haber
-  yap/olarak", "son dakika"); yoksa "" → `prompts/montaj.md` "VİDEO TÜRÜ": girdide `video_turu.istenen` null, Claude içeriğe göre "tur"
-  seçer (gerçek olay → haber; ilginç/şaşırtıcı an, akım, hayvan… → trend; komik → mizah). Talimatsız sosyal medya linkinde talimat boş gider
+  findLink` linke bitişik "/mizah", "/komik", "/trend", "/viral", "/haber"i (büyük harf "/MIZAH" ve bitişik "#mizah" da) adresten ayırır
+  (`tag`; yt-dlp "watch?v=ID/mizah"yı indiremez), `tagKind` onu ya da linkin yanına YALNIZ yazılmış etiketi ("mizah", "#trend", "_viral_")
+  ya da başta ayraçla yazılmış etiketi ("mizah, kısa kes", "#trend: sesi kalsın") komutun ayrı `kind` alanına koyar (komik → mizah, viral →
+  trend) ve talimattan atar; `kind` panelde `socialVideoNews({kind})` → social_video.py `--kind` (mizahta haber araması yok, viral/mizahta
+  kendiliğinden özet yok) → wa_video işinde `job.kind` (sıra kuyruğu ve panel ANLIK kartı da taşır; mizah/viral etiketli linke "son dakika"
+  eklenmez). Etiket yoksa serbest metinde yalnız AÇIK etiket (`common.content_kind`, server.js `contentKindOf` aynı kural; inceleme, 19 Ekim:
+  "trende yangın", "elektrik akımına kapıldı", "şakalaşırken", "komik duruma düştü", "viral hepatit" haberi VİRAL/mizah oluyordu, "haber yap"
+  bile düzeltemiyordu): talimat yalnız etiketse, başta ayraçla etiket, #etiket ya da açık ifade ("mizah videosu", "mizah olarak", "komik
+  video", "viral video", "çok izlenen video"; ardından "değil/olmasın" gelirse sayılmaz); açık haber isteği ("haber yap", "haber olarak",
+  "son dakika", yalnız "haber") her zaman haber; Türkçe harfsiz/büyük harf yazım aynı (`kind_fold`). Yoksa "" → `prompts/montaj.md` "VİDEO
+  TÜRÜ": girdide `video_turu.istenen` null, Claude içeriğe göre "tur" seçer (gerçek olay → haber; ilginç/şaşırtıcı an, akım, hayvan… →
+  trend; komik → mizah). Açık etiket Claude'un "tur"unu ezer; tek istisna güvenlik: mizah istenip Claude içerik nedeniyle (mağdur, yaralı,
+  çocuk…) "trend" derse trend (log "mizah istendi ama Claude içerik nedeniyle viral (saygılı) anlattı"). "haber" etiketi açık haber isteğidir
+  (fragman otomatik tanıması yapılmaz); mizah/viral etiketli videonun başlığı fragman olsa da (parodi) fragman analizine gitmez. Talimatsız sosyal medya linkinde talimat boş gider
   (`DECIDE_TALIMAT`); WhatsApp videosunda eski varsayılan (haber). Talimat yalnız etiketse ("mizah", "#trend", "viral 18:30";
   `common.kind_only`) montaja türün varsayılan talimatı (`KIND_TALIMAT`) gider. Haber türünde sosyal medya paylaşımı "SON DAKİKA" etiketini
   yalnız yeni (bugün/dün) ve büyük olayda alır, diğerinde "GÖRÜNTÜLÜ HABER" (montaj.md); SON DAKİKA olmayan etiketli video haberinde (WhatsApp
   videosu dahil) giriş "Son dakika." değil etiketin kendisi ("Görüntülü haber.", "Özel haber."), intro'da etiket (`Intro videoLabel`,
-  `episode.infoKind` video), SON DAKİKA kartı yok. Fragman ve uzun video özetinde tür yok. trend/mizah (`wa_video.kind_label`):
+  `episode.infoKind` video), SON DAKİKA kartı yok. Haber etiketi `wa_video.news_label` ile düzlenir ("Son Dakika", "SON DAKIKA" → SON DAKİKA;
+  GÖRÜNTÜLÜ HABER, ÖZEL HABER…; en çok 30 karakter), `breaking` yalnız SON DAKİKA etiketinde kalır (sosyal medya, WhatsApp videosu ve özet).
+  Viral/mizah videosunda haber değeri etiketlerinden (can kaybı, acı olay) de #sondakika gelmez (`hashtags.for_meta`). Fragman ve uzun video özetinde tür yok. trend/mizah (`wa_video.kind_label`):
   etiket VİRAL (ÇOK İZLENEN, SOSYAL MEDYA, GÜNDEM kabul; SON DAKİKA/MİZAH/başka → VİRAL), giriş "Sosyal medyada gündem.", kapanış mizahta "Bu
   video mizah amaçlıdır. Daha fazlası için takip etmeyi unutma.", trendde "Sosyal medyada çok izlenen videolar için takip etmeyi unutma.",
   `breaking` yok, her segmentin kategorisi türün kendisi; istem: haber kalıpları yok, canlı sosyal medya dili, kimseyi aşağılama yok, mağdur/
@@ -561,7 +572,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   oynatma listesi (CONTENT_KIND mizah/trend/yok), Remotion kareleri (kanca VİRAL, intro VİRAL / GÖRÜNTÜLÜ HABER, Trend/Mizah çizimleri, kapanış
   sloganı ve mizah rozeti); tür etiketsiz 5 wa_video işi (sosyal medya, WhatsApp, sesli, fragman, "haber yap") eski kodla: kurgu, Claude
   argümanları ve iş klasörü aynı, istem montaj.md'nin yeni bölümleriyle ve girdideki `video_turu` ile farklı (talimatsız sosyal medya
-  linkinde talimat artık `DECIDE_TALIMAT`). Gerçek Claude'un tür seçimi DENENMEDİ.
+  linkinde talimat artık `DECIDE_TALIMAT`). Gerçek Claude'un tür seçimi DENENMEDİ. İnceleme düzeltmeleri (19 Ekim) sandbox'ta denendi: 34
+  talimatlık Python ve 28 talimatlık JS/Python karşılaştırması (fark yok), 12 linkli komut (bitişik/büyük harf/# etiket, saat, "haber yap"
+  cümlesi, kanal linki), wa_video'da etiketle mizah + Claude trend (güvenlik düşürmesi), "akımına kapılan… haber yap" (haber), "Son Dakika"
+  etiketi (SON DAKİKA + breaking), GÖRÜNTÜLÜ HABER (breaking yok); ilk yorum varsayılanı artık türe göre doğru (eskiden türden önce
+  okunduğu için her habere viral sorusu düşüyordu).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,
@@ -979,14 +994,72 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Hızlı yol (Claude'a gitmez): link içeren mesaj (haber/sosyal medya videosu + saat), yayın onayı/iptali ve video talimatı (whatsapp.js
   önce işler), tek kelimelik kesin komutlar (`WA_DIRECT`: yardım, durum, iptal, evet sil…). Claude'a ulaşılamazsa eski kural yolu.
   Claude düşünürken WhatsApp'ta "yazıyor…" görünür (`sendPresenceUpdate`). Yanıt ~10-20 sn sürer.
-- Gönderen tanıma (komutlar sessizce kaybolmasın): WhatsApp'ın yeni LID kimliğinde 1'e 1 sohbet `…@lid` gelir, numara
-  `key.senderPn`'dedir; `isOwner` LID'i telefon sanmaz. Sahip: senderPn/participantPn/remoteJid telefonu eşleşen,
-  ya da bilinen sahip LID'i (`learnOwnerLid`: bağlanınca `sock.onWhatsApp(ownerJid)` ile öğrenilir, senderPn ile
-  eşleşince de eklenir), ya da bağlı numaranın KENDİNE-MESAJ sohbeti (fromMe + kendi numara/LID; telefondan "append"
-  gelebilir). Bağlı numaranın başka sohbetlere yazdıkları ve 5 dk'dan eski mesajlar işlenmez. Gönderdiğimiz her mesajın
-  kimliği `sentIds`te (kendine-mesajda yanıt döngüsü olmasın). Yanıt her zaman telefon jid'ine (LID'e değil). Sahip
-  olmayan göndericiden gelen mesaj dakikada bir loga "💬 WhatsApp: sahip olmayan göndericiden mesaj yok sayıldı (…son 4
-  hane / numara gizli)" yazar; `status().lastIgnored`.
+- Gönderen tanıma (komutlar sessizce kaybolmasın): WhatsApp'ın yeni LID kimliğinde 1'e 1 sohbet `…@lid` gelir; karşı kimlik
+  Baileys 7'de `key.remoteJidAlt` (grupta `participantAlt`), 6.7.x'te `senderPn/senderLid/participantPn/participantLid` (ikisi de
+  okunur). `isOwner` LID'i telefon sanmaz, cihaz ekini atar (`userOf`: v7'nin LID → numara eşlemesi "905…:0@s.whatsapp.net" döner).
+  Sahip: numarası eşleşen, ya da bilinen sahip LID'i (`learnOwnerLid`: bağlanınca v7'de `sock.signalRepository.lidMapping.getLIDForPN`
+  — yerel depo, yoksa USync sorgusu; v7'de `onWhatsApp` artık lid vermez —, 6.7.x'te `onWhatsApp().lid`; başarısız sorgu 5 dk
+  tekrarlanmaz; numarası eşleşen her mesaj ve v7'nin `lid-mapping.update` olayı da öğretir; numarası gizli gelen LID mesajında v7'nin
+  yerel `getPNForLID` eşlemesine bakılır; sahip numarası değişince eski LID'ler unutulur), ya da bağlı numaranın KENDİNE-MESAJ sohbeti
+  (fromMe + kendi numara/LID; telefondan "append" gelebilir). Bağlı numaranın başka sohbetlere yazdıkları ve 5 dk'dan eski mesajlar
+  işlenmez. Gönderdiğimiz her mesajın kimliği gönderimden ÖNCE ayrılır (`sendRaw`: `generateMessageIDV2` → `messageId`) ve `sentIds` +
+  `data/wa_sent.json`'da durur (kendine-mesajda yanıt döngüsü olmasın; panel yeniden başlasa da). Yanıt mesajın GELDİĞİ sohbet adresine
+  (`normJid(remoteJid)`: LID sohbetinde LID, numara sohbetinde numara, kendine-mesajda kendi adresimiz; eskiden hep telefon jid'ine —
+  aşağıda "Mesaj bekleniyor"). Sahibe kendiliğinden gidenler (`ownerTarget`: video bildirimi, `wa.send` sağlık/rapor mesajları, kuyruk —
+  kuyruktaki adres gönderirken seçilir) bilinen LID'ine, yoksa telefon jid'ine; sahip bağlı numaranın kendisiyse kendi LID'ine
+  (kendine-mesaj). Sahip olmayan göndericiden gelen mesaj dakikada bir loga "💬 WhatsApp: sahip olmayan göndericiden mesaj yok sayıldı
+  (…son 4 hane / numara gizli)" yazar; `status().lastIgnored`.
+- "Mesaj bekleniyor" düzeltmesi (kullanıcı şikâyeti, 19 Ekim: "WhatsApp'tan gelen tüm mesajlar 'Mesaj bekleniyor. Bu işlem biraz zaman
+  alabilir' görünüyor, kendi numaramdan kendime gelenler de"; komutlar çalışıyordu, yalnız botun gönderdikleri telefonda çözülmüyordu).
+  Kök neden (6.7.24 kaynağından; gerçek hesapla doğrulanamadı): 1) `getMessage` verilmemişti: telefon çözemediği mesaj için "yeniden
+  gönder" (retry receipt) isteyince Baileys mesajı bulamıyor ("recv retry request, but message not available"), hiç yeniden
+  göndermiyordu → telefonda kalıcı "bekleniyor"; 2) 6.7.24 Signal oturum adresini yalnız numara + cihazdan kurar (sunucu atılır), LID ↔
+  numara eşlemesi yok: aynı kişi için iki ayrı oturum. Gelen LID mesajı LID oturumuyla çözülüyor, yanıt telefon jid'ine gittiği için eski
+  numara oturumuyla şifreleniyordu; retry'deki oturum yenilemesi yalnız isteyen (LID) adrese dokunduğundan sonraki her mesaj da aynı
+  biçimde kalıyordu (her mesajın bozuk olmasının nedeni; telefonun oturumlarını LID'e taşıdığı çıkarım). Çözüm:
+  Baileys `7.0.0-rc14` (package.json'da tam sürüm — `^6.7.24` hiçbir 7.x ön sürümünü seçmez —, npm `latest`; libsignal artık npm'den,
+  kurulum git/GitHub istemez, kaynağı bayt bayt aynı 6.0.0): numara oturumlarını LID'e taşır, her şifrelemede numarayı LID'e çevirir
+  (`lid-mapping`, `device-list`, `tctoken`, `identity-key` anahtarları aynı `secrets/wa-auth/` klasörüne; oturum klasörü biçimi aynı,
+  yeniden QR gerekmez), kimlik değişiminde ve MAC hatasında oturumu kendiliğinden yeniler. `makeWASocket`: `getMessage` = gönderdiğimiz
+  mesajların deposu `data/wa_sent.json` (`sendRaw` → `remember` → `storeSent`; proto `Message.encode` base64 — BufferJSON medya
+  anahtarını metne çeviriyor —; yalnız kimlikle aranır, çünkü istek @lid, cihaz jid'i ya da kendine-mesaj adresinden gelir; 7 gün / 500
+  mesaj, geçici dosya + rename; v7'nin kendi önbelleği yalnız 5 dk, aynı adres ve yeniden başlatmada boşalır), süreç boyu tek
+  `msgRetryCounterCache` (soket yenilenince sayaç sıfırlanıp istek fırtınası olmasın), `maxMsgRetryCount` v7'de 10 (v7 sayacı istek başına
+  iki kez artırıyor; 5'te yalnız 2 yeniden gönderim kalıyordu), `makeCacheableSignalKeyStore`, `syncFullHistory: false` (geçmiş
+  eşitlemesi kapatılmaz: v7 LID eşlemelerini oradan da öğrenir), sürüm sorgusu 10 sn sınırlı ve başarısızsa `version` hiç verilmez
+  (`undefined` varsayılanı eziyordu), `printQRInTerminal` kaldırıldı. Bağlantı: `start` tek uçuş (bekçi + kopma sonrası deneme + düğme
+  aynı anda iki canlı soket açıyordu), kurulum sürerken "durdur" gelirse soket açılmaz (`gen`), `stop` bekleyen yeniden denemeyi iptal
+  eder (eskiden kopmanın zamanlayıcısı durdurulan bağlantıyı yeniden açıyordu), yerine yenisi kurulmuş eski soketin geç mesaj olayı
+  işlenmez, `end()` v7'de async (`endSock`), `creds.update` yazma hatası süreci düşürmez. Video indirme: v7'nin 404/410'da telefondan
+  yeniden yükleme denemesi hata kodunu yanlış alandan okuyup hiç çalışmıyor; `onOwnerVideo` kendisi `updateMediaMessage` + ikinci indirme
+  yapar. Teşhis (gizli bilgi yok: sayılar): telefonun yeniden gönderme istekleri (`CB:receipt,type:retry`) sayılır, 20 sn sonra loga tek
+  satır "💬 WhatsApp: telefon son 30 dk'da N mesajımızı çözemeyip yeniden istedi (en çok K. deneme, LID adresinden); mesajlar kayıtta,
+  yeniden şifrelenip gönderiliyor" (kayıtta olmayanı ayrıca söyler); 30 dk'da 2 mesaj 3+ kez ya da 6+ mesaj → 6 saatte bir "⚠️ WhatsApp:
+  telefon mesajlarımızı sürekli çözemiyor … panel Ayarlar → WhatsApp → çıkış yap, telefonda Bağlı cihazlar'dan eski oturumu kaldırın,
+  yeni QR"; `status()` `retry`, `lib`, `node` (`npm run teshis` yazar). Sürüm değişince ilk bağlanışta bir kez "💬 WhatsApp kütüphanesi
+  yenilendi (Baileys 6.x → 7.0.0-rc14): … ilk birkaç mesajda telefon bir kez yeniden gönder isteyebilir" (`data/wa_lib.json`). Geçiş:
+  6.7.24'ün LID oturum dosyaları v7'de okunmaz (`<lid>_1.<cihaz>` arar): ilk gelen/giden birkaç mesajda bir yeniden deneme turu beklenir,
+  kendiliğinden düzelir; "bekleniyor" sürerse panelden çıkış + yeni QR (kullanıcının kararı). Önceki sürümle gönderilmiş, çözülemeden kalmış
+  mesajlar kayıtta olmadığı için geri gelmez. Node: 6.7.24 de 7 de Node 20+ ister (ikisinin `preinstall`'ı 20 altında kurulumu durdurur;
+  Node 18.20'de ikisi de `globalThis.crypto` hatasıyla açılmaz; 20.9'da 6.7.24 açılmaz, 7 açılır) → eski sürümü takma adla yedek tutmak
+  Node yedeği olmazdı, eklenmedi. Kod 6.7.x ile de çalışır (alan adları, `onWhatsApp` yedeği; geri dönüş `npm i
+  @whiskeysockets/baileys@6.7.24`, oturumlar yeniden kurulur); içe aktarma başarısızsa Türkçe hata (`status().error` + log: Node 20 altında
+  "Node'u güncelleyin", değilse "npm install"). "⬇ Güncelle"/"güncelle" package.json değiştiği için `npm install` çalıştırır.
+  Sınama (sandbox, ağsız; gerçek hesap, eşleşme ve secrets/ YOK): yeni kilit dosyasıyla `npm ci` temiz (yalnız Baileys ve bağımlılıkları
+  değişti, axios zinciri çıktı); `app/whatsapp.js` kopyası sahte Baileys soketiyle (gerçek kütüphanenin proto/jid/mesaj üretimi/anahtar
+  önbelleği, gerçek `generateWAMessage` ile video dahil) 7 ve 6.7.24 için 47 + 44 denetim: v7 (LID + remoteJidAlt, PN + LID alt, alt
+  kimliksiz LID → yerel eşleme ":0" ile) ve v6 (senderPn/senderLid) biçimli sahip mesajları, kendine-mesaj (PN/append ve LID), yabancı LID/
+  numara, grup, eski ve çevrimdışı mesaj; yanıt adresi (LID sohbeti → LID, PN → PN, kendine → kendi adresi), yazıyor… aynı adrese, kendi
+  yankımız (yeniden başlatmadan sonra da) komut sayılmadı, kuyruk bağlanınca sahibin LID'ine, sahip = bağlı numara → kendi LID'i,
+  `lid-mapping.update`; getMessage başka adresten yalnız kimlikle videoyu (medya anahtarı dahil) ve metni bayt bayt döndü, panel yeniden
+  başlayınca da; depo sınırı (500, 7 gün) ve bozuk dosya; aynı anda 3 start → tek soket, kopma + bekçi → tek yeni soket, sayaç
+  soketler arasında aynı, durdur → bekleyen deneme iptal, kurulum sürerken durdur → soket yok; 410 → `updateMediaMessage` + indirme;
+  yeniden gönderme isteği özeti ve uyarısı; loglarda anahtar yok. Gerçek 7.0.0-rc14 ile uygulama: yapılandırma kabul edildi, sürüm
+  GitHub'dan geldi, Node 20.9'da açıldı; Node 18.20'de Türkçe "Node 20" hatası; v7'nin libsignal'ıyla `SIGNAL_NOISE` filtresi oturum
+  dökümünü (sahte özel anahtar) susturdu. DENENMEDİ: gerçek telefonla "Mesaj bekleniyor"un kalkması, gerçek retry isteklerinin
+  biçimi ve 6.7.24 oturum klasörünün v7'ye geçişi; web.whatsapp.com sandbox'tan kapalı (DNS yok, vekil CONNECT 403), QR'a kadar el
+  sıkışma da denenemedi. Mac'te ilk deneme: güncelle → panel logunda "WhatsApp kütüphanesi yenilendi" → kendine ve sahibe bir mesaj;
+  telefonda "bekleniyor" kalırsa logdaki "yeniden istedi" satırına bakın.
 - Platform seçerek onay (kullanıcı isteği, 14 Ekim: "onay yazarsam tüm platformlarda, onay insta yazarsam yalnız Instagram'da paylaşsın";
   `whatsapp.js` `pickPlatforms`/`approveLine`): "onay" (onayla/evet/yayınla/paylaş/tamam/ok) bekleyen tüm platformlar; "onay insta",
   "onay youtube tiktok", "insta onay", "instagram'da paylaş", "sadece tiktok" yalnız yazılanlar (insta/ig/reels, youtube/yt/shorts,

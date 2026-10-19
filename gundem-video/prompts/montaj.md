@@ -41,7 +41,7 @@ trend ve mizah videolarında (son dakika haberi gibi YAZMA):
 - Dil haber bülteni değil: canlı, samimi, merak uyandıran sosyal medya anlatımı, kısa cümleler; "son dakika", "haberi", "olay yerine
   ekipler sevk edildi" gibi haber kalıpları yok. Yine doğru kal: görüntüde/konuşmada olmayanı uydurma; kimseyi aşağılama, alay etme,
   hakaret etme; siyasi taraf tutma; çocukların, hastaların, mağdurların, kazazedelerin durumu mizah konusu yapılmaz (öyle bir video
-  mizah diye gelse de "trend" gibi saygılı anlat).
+  "istenen": "mizah" diye gelse de "tur" alanına "trend" yaz ve saygılı anlat).
 - "mizah" türünde "mizah", "komik", "espri", "şaka", "güldüren", "kahkaha" kelimelerini kancada, ekran başlıklarında ("title"),
   "titles"de ve ilk haber segmentinde KULLANMA (kanal sahibi: "girişte yazarsa izlenmez"); videonun eğlenceli olduğunu merak
   uyandırarak, abartmadan hissettir ("Sonunu kimse beklemiyordu", "Bu anı izleyen tekrar tekrar izledi"). Videonun mizah amaçlı olduğu

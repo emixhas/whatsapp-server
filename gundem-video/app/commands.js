@@ -58,10 +58,27 @@ export function findLink(text) {
     if (!v || !["video", "channel", "playlist"].includes(v.kind) || (v.platform === "TikTok" && !TT_VIDEO.test(url))) return null;
   }
   // linke bitişik tür etiketi (kullanıcı isteği, 19 Ekim: "linki verirken link/mizah ya da link/trend yazayım"): video adresinden ayrılır
-  // (yt-dlp "watch?v=ID/mizah" adresini indiremez), `tag` olarak döner; çağıran talimata ekler
-  const tm = url.toLocaleLowerCase("tr-TR").match(/\/+(mizah|komik|trend|viral|haber)\/*$/);
+  // (yt-dlp "watch?v=ID/mizah" adresini indiremez), `tag` olarak döner; çağıran türü ayrı alan (`kind`) olarak taşır. Büyük harf ve
+  // harfsiz yazım ("/MIZAH": tr-TR küçük harfte ı) ve bitişik "#mizah" da (uzunluk değişmez, tm.index asıl adreste doğru yeri keser)
+  const tm = url.toLocaleLowerCase("tr-TR").replace(/ı/g, "i").match(/[/#]+(mizah|komik|trend|viral|haber)\/*$/);
   if (tm && videoLink(url.slice(0, tm.index))?.kind === "video") return { raw: m[0], url: url.slice(0, tm.index), tag: tm[1] };
   return { raw: m[0], url, tag: "" };
+}
+// Tür etiketi → video türü (linke bitişik "/mizah" ya da linkin yanında yalnız "mizah", "#trend", "haber"; serbest cümledeki kelime değil:
+// "trende yangın", "şakalaşırken" haberi viral/mizah olmasın — inceleme, 19 Ekim). {kind, rest}: rest'ten etiket kelimesi atılır.
+const KIND_TAG = { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" };
+const kfold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğ]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g" })[c]);
+export function tagKind(tag, rest) {
+  if (KIND_TAG[kfold(tag)]) return { kind: KIND_TAG[kfold(tag)], rest };
+  // başta ayraçla yazılmış etiket: "mizah, kısa kes", "#trend: sesi kalsın" (kfold uzunluğu korur: kesim asıl metinde)
+  const lead = kfold(rest).match(/^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*[,;:\-–/]\s*/);
+  if (lead) return { kind: KIND_TAG[lead[1]], rest: String(rest).slice(lead[0].length) };
+  const words = kfold(rest).match(/[\p{L}]+/gu) || [];
+  if (words.length && words.every((w) => KIND_TAG[w])) {  // yalnız etiket: "mizah", "#trend", "_viral_" (haber > mizah > trend)
+    const ks = new Set(words.map((w) => KIND_TAG[w]));
+    return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: "" };
+  }
+  return { kind: "", rest };
 }
 // Link türü: {kind: "video" | "channel" | "playlist" | "page", platform, url, reply?}; video sitesi değilse null.
 // YouTube kanal/oynatma listesi/diğer sayfa haber videosu değildir: haber sayfası gibi okunmaya çalışılmaz, Türkçe yanıt verilir.
@@ -156,7 +173,8 @@ export function parseCommand(raw) {
   if (an && vl && an[1].includes(lk.raw)) {
     if (vl.kind !== "video") return { action: "none", reply: vl.reply };
     const w = whenKeepingPositions(an[1].replace(lk.raw, " "), vl.platform === "YouTube");
-    return { action: "social_video", url: vl.url, instruction: `son dakika ${lk.tag || ""} ${w.rest}`.replace(/\s+/g, " ").trim(), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
+    const tk = tagKind(lk.tag, w.rest);
+    return { action: "social_video", url: vl.url, instruction: `son dakika ${tk.rest}`.replace(/\s+/g, " ").trim(), ...(tk.kind ? { kind: tk.kind } : {}), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
   }
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
   // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)
@@ -170,7 +188,7 @@ export function parseCommand(raw) {
     const when = vl?.kind === "video" ? whenKeepingPositions(String(raw).replace(lk.raw, " "), vl.platform === "YouTube") : parseWhen(String(raw).replace(lk.raw, " "));
     const publishAt = when.at ? when.at.toISOString() : undefined;
     // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
-    if (vl?.kind === "video") return { action: "social_video", url: vl.url, instruction: insOf(`${lk.tag || ""} ${when.rest}`), publishAt, reply: "" };
+    if (vl?.kind === "video") { const tk = tagKind(lk.tag, when.rest); return { action: "social_video", url: vl.url, instruction: insOf(tk.rest), ...(tk.kind ? { kind: tk.kind } : {}), publishAt, reply: "" }; }
     if (vl?.reply) return { action: "none", reply: vl.reply };  // YouTube kanal / oynatma listesi / diğer sayfa
     return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, reply: "" };
   }

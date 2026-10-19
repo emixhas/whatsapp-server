@@ -34,7 +34,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, content_kind, kind_only, settings, summary_cfg, summary_secs  # noqa: E402
+from common import ROOT, content_kind, kind_fold, kind_only, settings, summary_cfg, summary_secs  # noqa: E402
 from info_card import new_job  # noqa: E402
 import social_video as sv  # noqa: E402
 
@@ -826,6 +826,18 @@ KIND_TALIMAT = {"mizah": "Bu eğlenceli videoyu merak uyandırarak anlat; mizah 
 DECIDE_TALIMAT = "Bu paylaşımı anlat; haber mi, sosyal medyada çok izlenen bir video mu, mizah mı, VİDEO TÜRÜ kuralına göre sen karar ver."
 
 
+def news_label(label: str) -> str:
+    """Haber videosunun etiketi: Türkçe büyük harf, emoji/noktalama yok, ASCII yazım bilinen etikete ("Son Dakika", "SON DAKIKA" →
+    SON DAKİKA; server.js "Son dakika." girişini ve SON DAKİKA kartını yalnız tam SON DAKİKA'da verir), en çok 30 karakter."""
+    key = re.sub(r"\s+", " ", re.sub(r"[^\w ]", " ", str(label or "").replace("i", "İ").replace("ı", "I").upper())).strip()
+    fold = lambda t: t.translate(str.maketrans("İŞĞÜÖÇ", "ISGUOC"))  # noqa: E731
+    canon = {fold(c): c for c in ("SON DAKİKA", "GÖRÜNTÜLÜ HABER", "ÖZEL HABER", "ÖZET", "AÇIKLAMA", "RÖPORTAJ", "GÜNDEM")}
+    key = canon.get(fold(key), key)
+    if len(key) > 30:
+        key = key[:31].rsplit(" ", 1)[0] if " " in key[:31] else key[:30]
+    return key or "SON DAKİKA"
+
+
 def kind_label(label: str, kind: str) -> tuple:
     """trend/mizah: ekrandaki etiket (VİRAL, ÇOK İZLENEN, SOSYAL MEDYA, GÜNDEM; SON DAKİKA, MİZAH ya da başka bir şey → VİRAL), giriş ve
     kapanış cümlesi. Mizah olduğu yalnız kapanışta söylenir."""
@@ -1130,15 +1142,19 @@ def build(job: dict) -> dict:
         for x in segs:
             x["source"] = ""
     # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru (kaynak yalnız açıklamada)
+    # tür: açık etiket (talimat) önce; Claude'un "tur"u etiket yoksa. Tek istisna güvenlik: mizah istenip Claude içerik nedeniyle (mağdur,
+    # yaralı, çocuk…) "trend" dediyse trend (montaj.md: bu kişiler mizah konusu yapılmaz; inceleme, 19 Ekim: etiket Claude'u eziyordu)
+    tur = {"haber": "haber", "trend": "trend", "viral": "trend", "mizah": "mizah", "komik": "mizah"}.get(re.sub(r"[^a-z]", "", kind_fold(plan.get("tur"))), "")
+    down = kind_req == "mizah" and tur == "trend"
+    kind = "" if trailer or summary else ("trend" if down else kind_req or tur)
+    kind = kind if kind in ("trend", "mizah") else ""  # haber: eski davranış
+    if kind:
+        log(f"🎬 video türü: {'mizah' if kind == 'mizah' else 'viral (çok izlenen)'} — {'mizah istendi ama Claude içerik nedeniyle viral (saygılı) anlattı' if down else 'talimatta istendi' if kind_req else 'Claude içeriğe göre seçti'}; son dakika gibi üretilmeyecek")
     first = str(plan.get("firstComment") or "").strip()[:160] or ("Fragmanı nasıl buldunuz? İzleyecek misiniz? Yorumlara yazın 👇" if trailer
                                                                   else "Siz bu videoyu nasıl buldunuz? Yorumlara yazın 👇" if kind
                                                                   else "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇")
-    kind = "" if trailer or summary else (kind_req or str(plan.get("tur") or "").strip().lower())
-    kind = kind if kind in ("trend", "mizah") else ""  # haber: eski davranış
-    if kind:
-        log(f"🎬 video türü: {'mizah' if kind == 'mizah' else 'viral (çok izlenen)'} — {'talimatta istendi' if kind_req else 'Claude içeriğe göre seçti'}; son dakika gibi üretilmeyecek")
     raw_label = str(plan.get("label") or ("FRAGMAN" if trailer else "ÖZET" if summary else "VİRAL" if kind else "SON DAKİKA"))
-    label = raw_label[:30]
+    label = news_label(raw_label)
     intro, outro, cats, gen = "Son dakika.", "", CATS, "genel"  # geçersiz kategori → genel
     if trailer:  # etiket, giriş ve kapanış etikete göre (panel startAnlik'e bunları verir); kesme trailer_label'da kelime sınırında
         label, intro, outro = trailer_label(raw_label, (social or {}).get("date"))
@@ -1159,7 +1175,7 @@ def build(job: dict) -> dict:
                      s.get("category") if s.get("category") in cats else gen), "soundDuration": s["soundDuration"], "soundWords": s["soundWords"]}
                   if s["kind"] == "sesli" else
                   {"kind": "haber", "title": s.get("title", ""), "narration": s["narration"], "source": s.get("source") or src,
-                   "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer and not kind and (not summary or label == "SON DAKİKA") else {})})
+                   "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer and not kind and label == "SON DAKİKA" else {})})
                  for s in segs[1:]]
               + [{"kind": "outro", "narration": "Takip etmeyi unutma."}]}
     # social: paylaşımın başlığı/açıklaması ve adresi üretilen haber hafızasına girer (assemble_script → news_memory): aynı olay
@@ -1193,7 +1209,7 @@ def build(job: dict) -> dict:
                     # speechOff: panel "konuşma tanıma kurulu değil" ile "konuşma bulamadı"yı ayırsın (inceleme, 18 Ekim)
                     **({"speechSource": "youtube", "speechOff": SPEECH_OFF} if caps_used else {})}}
     if kind:  # panel: SON DAKİKA kartı yok, etiket/giriş/kapanış plandan, env CONTENT_KIND
-        res["plan"].update({"contentKind": kind, "intro": intro, "outro": outro, "kindSource": "talimat" if kind_req else "claude"})
+        res["plan"].update({"contentKind": kind, "intro": intro, "outro": outro, "kindSource": "talimat" if kind_req and not down else "claude"})
     if summary:
         an = S["analysis"] or {}
         res["summary"] = True

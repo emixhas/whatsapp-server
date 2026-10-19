@@ -28,7 +28,7 @@ başına göre kaydırılıp `social.captions` [[başlangıç, bitiş, metin], �
 çıkarmazsa döküm olarak kullanır. YouTube "bot değilim" / giriş / yaş sınırı / üyelere özel / gizli / ülke engeli hatalarında
 Türkçe yol gösterilir (YouTube'a giriş yapılmış tarayıcının çerezleri). Diğer platformlarda akış ve yt-dlp argümanları aynı.
 
-  python3 scripts/social_video.py --url URL [--instruction "TALİMAT"]
+  python3 scripts/social_video.py --url URL [--instruction "TALİMAT"] [--kind haber|trend|mizah]
   python3 scripts/social_video.py --film "BAŞLIK"      # fragman tanıma + film adı denemesi (ağsız)
 Son satır JSON: {ok, file, social: {platform, handle, uploader, credit, caption, url, views, likes, date, trailer, film, bolum,
 tags; YouTube'da ek olarak captions, captionsLang, sourceDuration, window {start, end, reason} (klipte clip: true) ya da live,
@@ -306,6 +306,14 @@ def _low(t: str) -> str:
 def _fold(t: str) -> str:
     """Türkçe küçük harf + harfsiz yazım (ö→o, ç→c, ş→s, ü→u, ğ→g, ı→i): "özetle" ile "ozetle" aynı."""
     return _low(t).translate(str.maketrans("öçşüğıâîû", "ocsugiaiu"))
+
+
+# linke bitişik tür etiketi (panel --kind: link/mizah, link/trend, link/haber); yoksa talimattaki açık etiket (common.content_kind)
+KIND_TAG = ""
+
+
+def kind_of(instruction: str) -> str:
+    return KIND_TAG or content_kind(instruction)
 
 
 def keep_sound(instruction: str) -> bool:
@@ -644,7 +652,7 @@ def wants_summary(instruction: str, dur: float, plat: str = "YouTube", title: st
         return True, "talimatta özet istendi"
     # viral/mizah etiketli video haber özeti değildir (kendi sesiyle oynar): kendiliğinden özetlenmez
     if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not is_trailer(title, caption) \
-            and content_kind(instruction) not in ("trend", "mizah"):
+            and kind_of(instruction) not in ("trend", "mizah"):
         return True, f"video {round(c['minSeconds'] / 60)} dakikadan uzun"
     return False, ""
 
@@ -849,7 +857,7 @@ def fetch(url: str, instruction: str = "") -> dict:
     social.update({"trailer": trailer, "film": film, "bolum": bolum,
                    "tags": [str(x) for x in (info.get("tags") or [])[:15]]})
     # mizah videosu haber sitelerinde aranmaz (haber değil; 75 sn boşuna beklenmesin)
-    rel = [] if content_kind(instruction) == "mizah" else related(caption, title, film if trailer and film else "", series)
+    rel = [] if kind_of(instruction) == "mizah" else related(caption, title, film if trailer and film else "", series)
     return {"ok": True, "file": str(video), "social": social, "related": rel}
 
 
@@ -867,6 +875,8 @@ if __name__ == "__main__":
             print(json.dumps({"ok": any(files), "files": [str(f) if f else None for f in files], "error": err}, ensure_ascii=False))
             sys.exit(0)
         ins = sys.argv[sys.argv.index("--instruction") + 1] if "--instruction" in sys.argv else ""
+        if "--kind" in sys.argv and sys.argv[sys.argv.index("--kind") + 1] in ("haber", "trend", "mizah"):
+            KIND_TAG = sys.argv[sys.argv.index("--kind") + 1]
         res = fetch(sys.argv[sys.argv.index("--url") + 1], ins) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}
     except Exception as e:
         res = {"ok": False, "error": str(e)[:300]}

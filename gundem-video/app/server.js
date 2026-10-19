@@ -518,9 +518,11 @@ async function prepareAnlik0(input, duration, opts = {}) {
     // inceleme, 18 Ekim: saat talimatta kalıp videodaki konum sanılıyordu, yayın planlanmıyordu)
     const pc = parseCommand(input);
     const rest = String(pc.action === "social_video" ? pc.instruction || "" : input.replace(vlk.raw, " ")).replace(/\s+/g, " ").trim();
-    const instruction = /^son ?dakika(\s|$)/i.test(rest) ? rest : `son dakika ${rest}`.trim();
+    // mizah/viral etiketli link (link/mizah) son dakika haberi değildir: talimata "son dakika" eklenmez, tür ayrı alanla gider
+    const tagged = ["trend", "mizah"].includes(pc.kind);
+    const instruction = tagged || /^son ?dakika(\s|$)/i.test(rest) ? rest : `son dakika ${rest}`.trim();
     push(`🔗 ${vl.platform} video linki son dakika haberi olarak alındı (haber sayfası gibi okunmaz): ${vl.url.slice(0, 120)}`);
-    socialVideoNews({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
+    socialVideoNews({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null, kind: pc.kind || "" }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
     // haber sayfası okunmadı ve süre kurgudan gelir: panel kartı "Haberi okudum … (N sn)" yazmasın (viaLink/duration yok)
     return { ok: true, social: true, title: `${vl.platform} videosu indiriliyor`, source: vl.platform };
   }
@@ -1476,12 +1478,23 @@ const trailerCfg = () => {
 };
 // Video türü (kullanıcı isteği, 19 Ekim: "mizah ve sosyal medyada çok izlenen video linklerini de son dakika diye haber yapıyor; link/mizah,
 // link/trend"): talimattaki açık etiket (scripts/common.py content_kind ile aynı kural: mizah > trend > haber; yoksa "" → Claude karar verir)
+// serbest metinde yalnız açık etiket (inceleme, 19 Ekim: "trende yangın", "elektrik akımına kapıldı", "şakalaşırken" haberi VİRAL/mizah
+// oluyordu): talimat yalnız etiket ("mizah", "#trend"), başta ayraçla etiket ("mizah, kısa kes"), #etiket ya da açık ifade ("mizah videosu",
+// "viral video", "çok izlenen video"; ardından değil/olmasın sayılmaz); açık haber isteği hep haber. scripts/common.py content_kind aynı kural
+const KIND_WORDS = { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" };
+const kindFold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğâîû]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g", â: "a", î: "i", û: "u" })[c]);
+const KIND_HABER_RE = /(^|[^\p{L}])(haber(i|ini)?\s+(yap|olarak|hazirla|uret)(?!ma|me)\p{L}*|haber\s+olarak|son\s*dakika)(?!\p{L})(?!\s+(degil|olmasin|olmayacak))/u;
+const KIND_PHRASE_RE = /(?:^|[^\p{L}])(?:#(mizah|mizahi|komik|trend|viral|haber)|(mizah|mizahi|komik|viral|trend)\s+(?:video\p{L}*|icerik\p{L}*|paylasim\p{L}*|olarak|amacli|kategori\p{L}*)|(cok\s+izlenen)\s+(?:video\p{L}*|paylasim\p{L}*))(?!\p{L})(?!\s+(?:degil|olmasin|olmayacak))/gu;
 const contentKindOf = (instruction) => {
-  const t = String(instruction || "").toLocaleLowerCase("tr-TR");
-  if (/(^|[^\p{L}])(mizah\p{L}*|komik\p{L}*|espri\p{L}*|şaka\p{L}*|güldür\p{L}*|eğlenceli|caps)(?![\p{L}])/u.test(t)) return "mizah";
-  if (/(^|[^\p{L}])(trend\p{L}*|viral\p{L}*|akım\p{L}*|çok\s+izlenen|gündem\s+olan|keşfet\p{L}*)(?![\p{L}])/u.test(t)) return "trend";
-  return "";
+  const t = kindFold(instruction), words = t.match(/\p{L}+/gu) || [];
+  const pick = (ks) => (ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : ks.has("trend") ? "trend" : "");
+  if (words.length && words.every((w) => KIND_WORDS[w])) return pick(new Set(words.map((w) => KIND_WORDS[w])));
+  const lead = t.match(/^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*[,;:\-–/]/);
+  if (lead) return KIND_WORDS[lead[1]];
+  if (KIND_HABER_RE.test(t)) return "haber";
+  return pick(new Set([...t.matchAll(KIND_PHRASE_RE)].map((m) => KIND_WORDS[m[1] || m[2]] || (m[3] ? "trend" : ""))));
 };
+const kindOf = (v) => (["haber", "trend", "mizah"].includes(v?.kind) ? v.kind : contentKindOf(v?.instruction));
 // uzun video özeti (kullanıcı isteği, 19 Ekim): settings.longSummary (scripts/common.py summary_cfg ile aynı kural)
 const longSummaryCfg = () => {
   const raw = settings().longSummary;
@@ -1542,7 +1555,7 @@ const waBrief = () => settings().whatsapp?.brief !== false;
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
 async function runVideoNews(v) { videoNewsN++; try { return await runVideoNews0(v); } finally { videoNewsN--; } } // güncelleme beklesin
 async function runVideoNews0(v) {
-  push(`🎬 ${v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : contentKindOf(v.instruction) === "mizah" ? "mizah videosu" : contentKindOf(v.instruction) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || "(talimat yok)").slice(0, 120)}`);
+  push(`🎬 ${v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || "(talimat yok)").slice(0, 120)}`);
   if (!waBrief()) await sendW(v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
@@ -1550,6 +1563,7 @@ async function runVideoNews0(v) {
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
   writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "" } : {}),
+    ...(["haber", "trend", "mizah"].includes(v.kind) ? { kind: v.kind } : {}),
     ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}) });
   // özet: videonun tamamının analizi + iki Claude çağrısı + HD anlar (en çok 60 dk); satırlar anında loga
   const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : 25) * 60000, onLine: (l) => { if (/^(🎬|✂️|🔗|⚠️|🔊|📱|  !)/.test(l)) push(l.trim()); } });
@@ -1575,7 +1589,7 @@ async function runVideoNews0(v) {
     : p.summary ? { kind: "video", label: p.label || "ÖZET", intro: p.intro || "Kısa özet.", ...(p.label === "SON DAKİKA" ? {} : { breaking: false }) }
     // viral/mizah: son dakika değil (SON DAKİKA kartı ve "Son dakika." yok); mizah olduğu yalnız kapanışta söylenir
     : p.contentKind ? { kind: "video", label: p.label || "VİRAL", intro: p.intro || "Sosyal medyada gündem.", outro: p.outro || "Takip etmeyi unutma.", breaking: false }
-    : !p.label || p.label === "SON DAKİKA" ? { kind: "video", label: "SON DAKİKA", intro: "Son dakika." }
+    : !p.label || kindFold(p.label).replace(/[^a-z]/g, "") === "sondakika" ? { kind: "video", label: "SON DAKİKA", intro: "Son dakika." }
     : { kind: "video", label: p.label, intro: `${p.label.charAt(0)}${p.label.slice(1).toLocaleLowerCase("tr-TR")}.`, breaking: false }; // GÖRÜNTÜLÜ HABER, ÖZEL HABER: "Son dakika." denmez
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
     source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}) });
@@ -1596,7 +1610,8 @@ const socialNext = () => {
   const q = socialQueue.shift();
   if (q) setTimeout(() => { push(`🔗 sıradaki paylaşım başlıyor: ${q.url}`); socialVideoNews(q).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`)); }, 1000);
 };
-async function socialVideoNews({ url, instruction = "", publishAt = null }) {
+async function socialVideoNews({ url, instruction = "", publishAt = null, kind = "" }) {
+  kind = kindOf({ kind, instruction }); // linke bitişik etiket (commands.js) ya da talimattaki açık etiket
   if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
   socialBusy = true;
   try {
@@ -1604,13 +1619,13 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     // talimat social_video.py'ye de gider: uzun YouTube videosunda bölüm seçimi ("12:30'dan itibaren", başlık + talimat kelimeleri);
     // süre: bilgi + altyazı (≤3 dk) + bölüm indirme (≤12 dk) + haber araması
     // uzun video özetinde videonun tamamı (≤3 saat, düşük çözünürlük) iner: en çok 30 dk; ilerleme satırları anında loga
-    const r = await runLines(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : [])], { timeout: 30 * 60000, onLine: (l) => { if (/^(🔗|📡)/.test(l)) push(l.trim()); } });
+    const r = await runLines(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : []), ...(kind ? ["--kind", kind] : [])], { timeout: 30 * 60000, onLine: (l) => { if (/^(🔗|📡)/.test(l)) push(l.trim()); } });
     const outLines = String(r.stdout || "").trim().split("\n");
     let j = null; try { j = JSON.parse(outLines.pop()); } catch { /* yanıt yok */ }
     if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🔗 paylaşım indirilemedi: ${err}`); await sendW(`❌ Paylaşım indirilemedi: ${err}`); return { ok: false, error: err }; }
     const s = j.social || {};
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
-    push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · ${contentKindOf(instruction) === "mizah" ? "mizah videosu: haber sitelerinde aranmadı" : `haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`}`);
+    push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · ${kind === "mizah" ? "mizah videosu: haber sitelerinde aranmadı" : `haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`}`);
     // canlı yayın / uzun videonun yalnız bir bölümü alındıysa kullanıcı bilsin (kısa mesaj modunda da tek satır; bölümü değiştirme yolu)
     const note = String(s.note || ""), Note = note.charAt(0).toLocaleUpperCase("tr-TR") + note.slice(1);
     if (note && s.live) await sendW(`📡 ${Note}.`);
@@ -1618,15 +1633,16 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
     else if (note && s.window) await sendW(`🔗 ${Note}.${s.clip ? "" : ` Başka bölüm için linkin yanına zamanı yazın: "12:30'dan itibaren", "5. dakikadan", "son 3 dakika".`}`);
     // fragman mı: talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser geçiyorsa ya da başlık fragmansa (autoDetect)
     const tc = trailerCfg();
-    const news = NEWS_ASK.test(instruction);
+    // "haber" etiketi açık haber isteğidir; mizah/viral etiketli video (parodi fragman) başlığından fragman sayılmaz (özet gibi)
+    const news = NEWS_ASK.test(instruction) || kind === "haber";
     const asked = !news && TRAILER_ASK.test(instruction);
-    const trailer = tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer));
+    const trailer = tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer && !["trend", "mizah"].includes(kind)));
     // uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem analiz edip 40 saniyelik habere dökebilir miyiz,
     // çarpıcı sahneleri de alarak"): social_video.py karar verdi (uzun video ya da talimatta özet). Fragman ("analiz et", "özetle" denmiş
     // fragman linki) özet değil fragman analizidir; yalnız videonun tamamı düşük çözünürlükte indiyse (uzun video) özet yolu kalır
     if (s.summary && (!trailer || s.summaryProxy)) {
       push(`🎬 uzun video özeti: ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}(${s.summaryReason || "özet"}; ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı"})`);
-      return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, summary: true, summaryProxy: !!s.summaryProxy });
+      return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, summary: true, summaryProxy: !!s.summaryProxy, kind });
     }
     if (trailer) {
       // başlıktan ayıklanan ad yalnız başlık fragman diye tanındıysa film adıdır ("fragman: <link>" ile istenen Instagram videosunda
@@ -1639,10 +1655,10 @@ async function socialVideoNews({ url, instruction = "", publishAt = null }) {
       // talimat yoksa "fragman yap": wa_video.py bunu varsayılan analiz talimatına (TRAILER_TALIMAT) çevirir
       return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "" });
     }
-    if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
+    if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : kind === "mizah" ? "😄 Mizah videosu: haber sitelerinde aranmadı." : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
     // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
     // her paylaşım son dakika haberi oluyordu; kullanıcı isteği, 19 Ekim)
-    return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt });
+    return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, kind });
   } finally { socialBusy = false; socialNext(); }
 }
 
@@ -2706,18 +2722,18 @@ async function handleCommand(text, opts = {}) {
       if (waVideoCfg().enabled === false) { reply = "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)."; break; }
       if (socialBusy) {
         if (socialQueue.length >= 5) { reply = "⏳ Sırada zaten 5 paylaşım var; bunlar bitince bu linki yeniden gönderin."; break; }
-        socialQueue.push({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, at: Date.now() });
+        socialQueue.push({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "", at: Date.now() });
         push(`🔗 paylaşım sıraya alındı (${socialQueue.length}. sırada; önceki paylaşım hazırlanıyor): ${cmd.url}`);
         reply = `⏳ Sıraya alındı (${socialQueue.length}. sırada): önceki paylaşım hazırlanıyor (uzun videoda 10-20 dk sürebilir), bitince bu link başlayacak.`;
         break;
       }
-      socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
+      socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "" }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
       // talimatta fragman geçiyorsa (açık haber isteği yoksa; socialVideoNews ile aynı öncelik) yanıt fragman analizi der (başlıktan
       // tanınan fragmanı socialVideoNews ayrıca bildirir); süre talimattaki "N saniye"den
-      const fr = trailerCfg().enabled !== false && TRAILER_ASK.test(cmd.instruction || "") && !NEWS_ASK.test(cmd.instruction || "");
+      const fr = trailerCfg().enabled !== false && TRAILER_ASK.test(cmd.instruction || "") && !NEWS_ASK.test(cmd.instruction || "") && cmd.kind !== "haber";
       const frSecs = trailerSecs(cmd.instruction);
       reply = (fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
-        : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[contentKindOf(cmd.instruction)] || "video"} hazırlanıyor. Bitince video gelecek.`
+        : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[kindOf(cmd)] || "video"} hazırlanıyor. Bitince video gelecek.`
         : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
       break;
     }

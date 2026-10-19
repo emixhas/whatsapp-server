@@ -33,9 +33,11 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
     """Bir bölümün hashtag listesi (sırayla, tekrarsız)."""
     out = []
 
+    calm = meta.get("contentKind") in ("trend", "mizah")  # viral/mizah videosu son dakika değil: haber değeri etiketinden de #sondakika gelmez
+
     def add(t):
         t = clean(t)
-        if t and t not in out:
+        if t and t not in out and not (calm and t == "#sondakika"):
             out.append(t)
 
     for t in meta.get("hashtags") or []:
