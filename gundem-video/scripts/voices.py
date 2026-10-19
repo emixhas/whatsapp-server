@@ -242,12 +242,55 @@ def _pronounce(t: str) -> str:
     return t
 
 
+# Harf + rakam kodları (kullanıcı şikâyeti, 19 Ekim: "C4'ü seslendirirken 'cfour' diye seslendiriyor; seslendirmemizin tam profesyonel
+# olması lazım"): ses modelleri bitişik harf-rakamı İngilizce okuyor. Büyük harf kısmı (en çok 3 harf) Türkçe harf adlarıyla, rakam
+# ayrı (sonra yazıya çevrilir): C4 / C-4 → ce dört, TB2 → te be iki, T-129 → te yüz yirmi dokuz, X5 → iks beş, G20 → ge yirmi, U17 → u
+# on yedi, 5G → beş ge, 4K → dört ka, 3D → üç de; ek korunur (C4'ün → ce dördün, C4lü → ce dörtlü). Savaş uçağı F → "ef" (F-16, F-35),
+# S-300/400/500 → "es"; yerleşik okunuşlar CODE_SAY'de; settings.pronunciations ({"M4": "em dört"}) hepsinden önce gelir. 4 harften
+# uzun kelime içeren kod (COVID-19) ve küçük harfli adlar (iPhone 15, Mi-17) değişmez.
+LETTER_TR = {"A": "a", "B": "be", "C": "ce", "Ç": "çe", "D": "de", "E": "e", "F": "fe", "G": "ge", "Ğ": "yumuşak ge", "H": "he", "I": "ı",
+             "İ": "i", "J": "je", "K": "ka", "L": "le", "M": "me", "N": "ne", "O": "o", "Ö": "ö", "P": "pe", "Q": "kü", "R": "re", "S": "se",
+             "Ş": "şe", "T": "te", "U": "u", "Ü": "ü", "V": "ve", "W": "dabılyu", "X": "iks", "Y": "ye", "Z": "ze"}
+CODE_SAY = {"F1": "Formula 1", "H5N1": "ha 5 en 1", "H1N1": "ha 1 en 1", "CO2": "karbondioksit", "A400M": "a 400 em", "MP3": "em pe 3",
+            "MP4": "em pe 4", "4X4": "4 çeker", "COVID19": "kovid 19"}
+_CODE = re.compile(r"(?<![\wçğıöşüÇĞİÖŞÜ])([A-ZÇĞİÖŞÜ0-9]+(?:-[A-ZÇĞİÖŞÜ0-9]+)*)(?![A-ZÇĞİÖŞÜ0-9])")
+
+
+def _codes(text: str) -> str:
+    user = settings().get("pronunciations") or {}
+
+    def say(m):
+        tok = m.group(1)
+        if not (re.search(r"\d", tok) and re.search(r"[A-ZÇĞİÖŞÜ]", tok)):
+            return tok
+        key = tok.replace("-", "")
+        if tok in user or key in user:
+            return user.get(tok) or user[key]
+        if key in CODE_SAY:
+            return CODE_SAY[key]
+        parts = re.findall(r"[A-ZÇĞİÖŞÜ]+|\d+", key)
+        if any(p.isalpha() and len(p) > 3 for p in parts):
+            return tok  # kelime içeren kod (COVID-19): eski davranış
+        out = []
+        for i, p in enumerate(parts):
+            if p.isdigit():
+                out.append(p)
+            elif i == 0 and len(parts) > 1 and p == "F":
+                out.append("ef")  # savaş uçağı: F-16, F-35
+            elif i == 0 and len(parts) > 1 and p == "S" and parts[1] in ("300", "400", "500"):
+                out.append("es")  # hava savunma: S-400
+            else:
+                out.append(" ".join(LETTER_TR.get(ch, ch) for ch in p))
+        return " ".join(out)
+    return _CODE.sub(say, text)
+
+
 def speakable(text: str) -> str:
     """Parti adları gibi kelime olarak okunması gereken kısaltmaları normal yazıma çevirir (AK Parti → Ak Parti),
     okunuş sözlüğünü uygular (Mynet → Maynet)."""
     def fix(m):
         return " ".join(SPOKEN_WORDS.get(g, g) for g in m.groups() if g)
-    t = _PARTY_CTX.sub(fix, _pronounce(text))
+    t = _PARTY_CTX.sub(fix, _pronounce(_codes(text)))
     t = re.sub(r"\bAK\b(?=[\s-]*(?:Parti|PARTİ|parti))", "Ak", t)
     # Kesme işaretinden sonraki büyük harfli ekler harf harf okunmasın: PARTİ'YE → PARTİ'ye, PKK'NIN → PKK'nın
     return re.sub(r"(?<=[A-Za-zÇĞİÖŞÜçğıöşü])['’]([A-ZÇĞİÖŞÜ]{1,6})\b", lambda m: "'" + tr_lower(m.group(1)), t)
@@ -255,7 +298,7 @@ def speakable(text: str) -> str:
 
 def prep_text(text: str) -> str:
     """Yerel modeller için: rakamlar yazıya, parti adları kelime olarak, BÜYÜK HARFLİ kelimeler (NATO, TÜİK) normal yazıma."""
-    t = speakable(normalize_tr(_GLUED_NUM.sub(r"\1 ", text)))
+    t = speakable(normalize_tr(_codes(_GLUED_NUM.sub(r"\1 ", text))))  # kod rakamı sonra yazıya çevrilsin (C4 → ce 4 → ce dört)
     return re.sub(r"\b([A-ZÇĞİÖŞÜ]{4,})\b", lambda m: m.group(1)[0] + tr_lower(m.group(1)[1:]), t)
 
 

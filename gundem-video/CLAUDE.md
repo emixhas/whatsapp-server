@@ -878,7 +878,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   DEM/İYİ/TİP Parti, HÜDA PAR; harf harf değil), kesmeden sonraki büyük ekler küçülür (PARTİ'YE → Parti'ye,
   PKK'NIN → PKK'nın). PKK/THY gibi gerçek kısaltmalar harf harf kalır. Ekranda yazım değişmez. Okunuş sözlüğü
   `PRONOUNCE` (Mynet → Maynet, PKK → Pekaka, TV → Teve — "tivi" okunmasın; ATV → Ateve, NTV → Enteve, bitişik sayı ayrılır: TV8 → Teve sekiz; `SPOKEN_AS` başka adla söylenenler — Amed SFK → "Amed Spor" (kullanıcı isteği, 17 Ekim; ek yeni ada göre yeniden kurulur: SFK'nın → Spor'un, `_reharmonize`); ekler korunur, büyük harf kısaltmada bitişik ek de: PKKlı → Pekakalı) + `settings.pronunciations` {"Kelime": "Okunuş"}; değiştirince
-  `server.js` `PRON_VER`'i artır (konuşma önbelleği anahtarına girer, eski okunuşlu sesler kullanılmaz). Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
+  `server.js` `PRON_VER`'i artır (konuşma önbelleği anahtarına girer, eski okunuşlu sesler kullanılmaz).
+  Harf + rakam kodları (kullanıcı şikâyeti, 19 Ekim: "C4'ü seslendirirken 'cfour' diye seslendiriyor; seslendirmemizin tam profesyonel
+  olması lazım"; `voices._codes`, `prep_text` rakam dönüşümünden ÖNCE, `speakable` de): ses modelleri bitişik harf-rakamı İngilizce
+  okuyordu ("5G" bile "beşG" gidiyordu). Büyük harf kısmı (en çok 3 harf) Türkçe harf adlarıyla (`LETTER_TR`: ce, te be, iks, ge, ka…),
+  rakam ayrı yazıya çevrilir: C4 / C-4 → ce dört, C4'ün → ce dördün, C4lü → ce dörtlü, TB2 → te be iki, T-129 → te yüz yirmi dokuz,
+  T10X → te on iks, X5 → iks beş, G20 → ge yirmi, U17 → u on yedi, TRT1 → te re te bir, 5G → beş ge, 4K → dört ka, 3D → üç de;
+  savaş uçağı F → "ef" (F-16 → ef on altı), S-300/400/500 → "es"; yerleşik okunuşlar `CODE_SAY` (F1 → Formula bir, H5N1 → ha beş en
+  bir, CO2 → karbondioksit, A400M, MP3, COVID-19 → kovid on dokuz); `settings.pronunciations` ({"M4": "em dört"}) hepsinden önce gelir.
+  4 harften uzun kelimeli kod ve küçük harfli adlar (iPhone 15, Mi-17) değişmez; yalnız harfli kısaltmalara (CHP, MHP) dokunulmaz.
+  Ayrıca rakamdan sonra ünlüyle başlayan ekte ünsüz yumuşar (`tr_numbers.normalize_tr`: 4'ü → dördü, 4'e → dörde, 104'üncü → yüz
+  dördüncü; eskiden "dörtü"). Altyazı hizalaması aynı `prep_text`i kullandığı için söylenen uzunluk uyumlu (C4 → 6 harf). `PRON_VER` 6. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
   (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
 - Isınma önlemi (kullanıcı isteği, geri alma): `reap()` üretim sürmüyorken bizim başlattığımız ağır süreçleri
   (`HEAVY`: ses modelleri, yt-dlp, kapak çizimi, Remotion ve onun Chrome'u — yalnızca node_modules/.remotion

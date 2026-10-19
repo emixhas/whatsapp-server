@@ -105,6 +105,7 @@ def normalize_tr(text: str) -> str:
     t = _scores(t)  # spor skoru: "4-1 yendi" → "dört bir yendi" (kullanıcı isteği; "dört ile bir" yanlış)
     t = re.sub(r"(\d)\s*-\s*(\d)", r"\1 ile \2", t)  # 3-5 derece → 3 ile 5 derece
     t = _NUM.sub(_repl, t)
+    t = re.sub(r"(?<![\wçğıöşü])dört(?=[aeıioöuü])", "dörd", t)  # ünsüz yumuşaması: 4'ü → dördü, 4'e → dörde, 104'üncü → yüz dördüncü
     t = re.sub(r"\s{2,}", " ", t)
     return t.strip()
 
