@@ -47,7 +47,7 @@ from urllib.parse import urljoin
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SECRETS, settings  # noqa: E402
+from common import ROOT, SECRETS, settings, summary_cfg, summary_secs  # noqa: E402
 
 PLATFORMS = [(r"instagram\.com", "Instagram"), (r"tiktok\.com", "TikTok"), (r"(^|\.)(x|twitter)\.com", "X"),
              (r"youtube\.com|youtu\.be", "YouTube"), (r"facebook\.com|fb\.watch", "Facebook")]
@@ -254,6 +254,16 @@ def related(caption: str, title: str, film: str = "", series: bool = False) -> l
 # ---------- YouTube haber linki (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"): uzun video, canlı yayın, altyazı
 SOCIAL_DEFAULTS = {"maxSeconds": 600, "longWindowSeconds": 240, "maxLongSeconds": 3 * 3600, "liveSeconds": 120}
 FMT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=1080]/b"
+# Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir
+# miyiz, videodan çarpıcı sahneleri de alarak"): videonun TAMAMI analiz için düşük çözünürlükte iner (kareler, sahne geçişleri, gerekirse
+# konuşma tanıma), seçilen anlar sonra `download_sections` ile HD iner. H.264 önce (uzun videoda sahne taraması hızlı olsun).
+PROXY_FMT = "bv*[height<=360][vcodec^=avc1]+ba/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/wv*+ba/w"
+# talimatta özet/analiz isteği: her uzunlukta (90 sn üstü) özet modu
+SUMMARY_ASK = re.compile(r"(?<!\w)(?:özet\w*|analiz\w*|çarpıcı\s+(?:sahne|an|anlar|yer|görüntü|kısım|bölüm)\w*|"
+                         r"en\s+(?:önemli|çarpıcı|ilginç|dikkat\s+çekici)\s+(?:yer|an|anlar|sahne|kısım|bölüm|görüntü)\w*|öne\s+çıkan\w*)", re.I)
+# özet istemeyen talimat: videonun kendi sesi / tamamı istenirse uzun videoda eski yol (bölüm + kendi sesi)
+KEEP_SOUND = re.compile(r"(?:orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|sesiyle|ses(?:i|ini)?\s+(?:kullan|koru|kalsın)|"
+                        r"(?<!\w)(?:tamamı\w*|hepsini|baştan\s+sona)(?!\w)", re.I)
 # altyazı/başlık eşleşmesinde sayılmayan kelimeler (topic_news.STOP + haber videolarının kalıp sözleri, zaman ve kurgu talimatı)
 KW_STOP = {"için", "ile", "olan", "olarak", "sonra", "daha", "göre", "yeni", "oldu", "etti", "dedi", "açıkladı", "haber", "son", "dakika",
            "bugün", "şimdi", "hakkında", "ilgili", "konu", "video", "anlık", "gündem", "olay", "olayı", "kadar", "gibi", "çok", "bir", "iki",
@@ -569,6 +579,62 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _auth(plat: str) -> list:
+    """yt-dlp giriş/çerez ve YouTube JS çalıştırıcı argümanları (ayar ya da secrets/social_cookies.txt)."""
+    cfg, auth = social_cfg(), []
+    if (SECRETS / "social_cookies.txt").exists():
+        auth += ["--cookies", str(SECRETS / "social_cookies.txt")]
+    elif cfg.get("cookiesFromBrowser"):
+        auth += ["--cookies-from-browser", str(cfg["cookiesFromBrowser"]).strip()]
+    node = shutil.which("node")
+    if node and plat == "YouTube":
+        auth += ["--js-runtimes", f"node:{node}", "--remote-components", "ejs:github"]
+    return auth
+
+
+def wants_summary(instruction: str, dur: float, plat: str = "YouTube", title: str = "", caption: str = "") -> tuple[bool, str]:
+    """Uzun video özeti mi (ve neden): talimatta özet/analiz isteği (90 sn üstü videoda) ya da kendiliğinden (YouTube, `minSeconds`tan
+    uzun; talimatta zaman, kendi ses ya da fragman isteği yoksa, fragman başlığı değilse). Kapalıysa hiç."""
+    c = summary_cfg()
+    if not c["enabled"] or dur <= 90:
+        return False, ""
+    t = _low(instruction)
+    if TRAILER.search(t):  # fragman analizi kendi yolunda
+        return False, ""
+    if SUMMARY_ASK.search(t):
+        return True, "talimatta özet istendi"
+    if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not KEEP_SOUND.search(t) and not is_trailer(title, caption):
+        return True, f"video {round(c['minSeconds'] / 60)} dakikadan uzun"
+    return False, ""
+
+
+def download_sections(url: str, sections: list, tag: str, timeout: int = 900) -> tuple[list, str]:
+    """Uzun videonun seçilen anları HD (≤1080p): [(başlangıç, bitiş)] → [Path | None] (aynı sırayla) ve hata metni. Tek yt-dlp çağrısı,
+    her aralık ayrı dosya (`--download-sections`, `--force-keyframes-at-cuts`: dosyanın 0. saniyesi aralığın başı)."""
+    cmd = ytdlp()
+    if not cmd or not sections:
+        return [None] * len(sections), "yt-dlp kurulu değil" if not cmd else ""
+    INBOX.mkdir(parents=True, exist_ok=True)
+    plat = platform_of(url)
+    secs = []
+    for a, b in sections:
+        secs += ["--download-sections", f"*{float(a):.2f}-{float(b):.2f}"]
+    tmpl = str(INBOX / f"{tag}-%(section_start)d.%(ext)s")
+    try:
+        r = subprocess.run([*cmd, "--no-playlist", "--no-warnings", "--socket-timeout", "25", "-f", FMT, "--merge-output-format", "mp4", *secs,
+                            "--force-keyframes-at-cuts", "-o", tmpl, *_auth(plat), url], capture_output=True, text=True, timeout=timeout)
+        err = "" if r.returncode == 0 else hint(" ".join((r.stderr or r.stdout or "").strip().splitlines()[-3:]), plat)
+    except subprocess.TimeoutExpired:
+        err = f"HD bölümler {timeout // 60} dakikada inmedi"
+    out = []
+    for a, b in sections:
+        got = [p for p in INBOX.glob(f"{tag}-{int(float(a))}.*") if p.suffix.lower() in (".mp4", ".mkv", ".webm", ".mov") and ".part" not in p.name]
+        p = max(got, key=lambda x: x.stat().st_size) if got else None
+        d = _probe_secs(p) if p else None
+        out.append(p if p and d and d >= (float(b) - float(a)) * 0.5 else None)  # yarım inen bölüm yok sayılır (proxy'den kesilir)
+    return out, err
+
+
 def fetch(url: str, instruction: str = "") -> dict:
     cmd = ytdlp()
     if not cmd:
@@ -584,14 +650,7 @@ def fetch(url: str, instruction: str = "") -> dict:
     base = [*cmd, "--no-playlist", "--no-warnings", "--socket-timeout", "25"]
     args = [*base, "--max-filesize", "300M", "--match-filter", f"duration <? {int(cfg['maxSeconds'])}",
             "-f", FMT, "--merge-output-format", "mp4", "--write-info-json", "-o", tmpl]
-    auth = []
-    if (SECRETS / "social_cookies.txt").exists():
-        auth += ["--cookies", str(SECRETS / "social_cookies.txt")]
-    elif cfg.get("cookiesFromBrowser"):
-        auth += ["--cookies-from-browser", str(cfg["cookiesFromBrowser"]).strip()]
-    node = shutil.which("node")
-    if node and plat == "YouTube":
-        auth += ["--js-runtimes", f"node:{node}", "--remote-components", "ejs:github"]
+    auth = _auth(plat)
     args += auth
     meta, cues, cap_lang, extra, r = {}, [], "", {}, None
     if plat == "YouTube":  # önce bilgi + altyazı (video inmeden): süre, canlı yayın, altyazı
@@ -638,6 +697,28 @@ def fetch(url: str, instruction: str = "") -> dict:
         extra = {"live": True, "liveSeconds": int(secs), "note": note}
     elif status == "post_live" and not dur:
         return {"ok": False, "error": "Canlı yayın yeni bitti; YouTube kaydı hazırlıyor. Birkaç dakika sonra linki yeniden gönderin."}
+    elif (summ := (not clip and plat == "YouTube" and not (time_hint(instruction, dur, cfg["longWindowSeconds"], cfg["maxSeconds"]) or url_time(url) is not None)
+                   and wants_summary(instruction, dur, plat, str(meta.get("title") or ""), str(meta.get("description") or "")))) and summ[0] and dur > cfg["maxSeconds"]:
+        # uzun video özeti: videonun tamamı analiz için düşük çözünürlükte (en çarpıcı anlar wa_video.py'de seçilip HD iner); zaman
+        # yazılmışsa (talimat, t=) eski yol: o bölüm iner. Üst sınır longSummary.maxSeconds (3 saat).
+        sc = summary_cfg()
+        if dur > sc["maxSeconds"]:
+            return {"ok": False, "error": f"Video çok uzun ({dur_text(dur)}); en çok {dur_text(sc['maxSeconds'])} uzunluğundaki videoyu baştan sona inceleyebiliyorum. "
+                                          "Linkin yanına haberin geçtiği zamanı yazın (ör. \"1:02:10'dan itibaren\"): o bölümden haber yaparım."}
+        _log(f"🔗 uzun video ({dur_text(dur)}): tamamı incelenecek ({summ[1]}) — analiz için düşük çözünürlükte indiriliyor, en çarpıcı anlar sonra HD alınacak")
+        try:
+            r = subprocess.run([*base, "-f", PROXY_FMT, "--merge-output-format", "mkv", "--write-info-json", "-o", tmpl, *auth, url],
+                               capture_output=True, text=True, timeout=1500)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "videonun tamamı 25 dakikada inmedi (internet yavaş ya da video çok uzun); zaman yazarak bir bölümünü isteyin"}
+        capf, ncap = None, len(cues)
+        if cues:  # tüm altyazı (600 satır sınırı yok): wa_video.py dosyadan okur
+            capf = INBOX / f"{stem}.captions.json"
+            capf.write_text(json.dumps([list(c) for c in cues], ensure_ascii=False), encoding="utf-8")
+        cues = []
+        extra = {"summary": True, "summaryProxy": True, "summaryReason": summ[1], "sourceDuration": dur, "duration": dur,
+                 **({"captionsFile": str(capf), "captionsCount": ncap} if capf else {}),
+                 "note": f"uzun video ({dur_text(dur)}): tamamı inceleniyor; en çarpıcı anlarıyla {summary_secs(instruction)} saniyelik haber hazırlanacak"}
     elif dur > cfg["maxSeconds"] or clip:  # uzun video (haber programı, uzun röportaj, biten canlı yayın) ya da klip: yalnız o bölüm iner
         explicit = clip or time_hint(instruction, dur, cfg["longWindowSeconds"], cfg["maxSeconds"]) or url_time(url) is not None
         if dur > cfg["maxLongSeconds"] and not explicit:
@@ -678,7 +759,7 @@ def fetch(url: str, instruction: str = "") -> dict:
         err = (((r.stderr or r.stdout) if r else "") or "video bulunamadı").strip().splitlines() or ["video bulunamadı"]
         return {"ok": False, "error": hint(" ".join(err[-3:]), plat)}
     video = vids[0]
-    if video.suffix.lower() != ".mp4":  # webm/mkv → mp4 (ffmpeg her birini okur ama dosya adı tutarlı olsun)
+    if video.suffix.lower() != ".mp4" and not extra.get("summaryProxy"):  # webm/mkv → mp4 (özetin analiz kopyası çevrilmez: uzun, gereksiz)
         mp4 = video.with_suffix(".mp4")
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(video), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                         "-c:a", "aac", str(mp4)])
@@ -703,10 +784,18 @@ def fetch(url: str, instruction: str = "") -> dict:
               "comments": info.get("comment_count"), "date": f"{d[6:8]}.{d[4:6]}.{d[:4]}" if len(d) == 8 else None,
               "duration": info.get("duration")}
     if plat == "YouTube":  # bölüm/canlı: süre inen parçanın süresi; altyazı wa_video'da konuşma tanıma boş kalırsa döküm olur
-        if extra:
+        if extra.get("summaryProxy"):  # özet: videonun tamamı (düşük çözünürlük); altyazı dosyada
+            social.update({**extra, "captionsLang": cap_lang} if extra.get("captionsFile") else extra)
+        elif extra:
             social.update({"duration": _probe_secs(video), "sourceDuration": None if clip else dur or None, **extra})  # klipte asıl video süresi bilinmez
         if cues:
             social.update({"captions": [list(c) for c in cues][:600], "captionsLang": cap_lang})
+    if not social.get("summary") and not extra.get("live") and not extra.get("window"):  # videonun tamamı indi: talimat özet isterse özet modu
+        full = _probe_secs(video) or float(info.get("duration") or 0)
+        ok, why = wants_summary(instruction, full, plat, title, caption) if not clip else (False, "")
+        if ok:
+            social.update({"summary": True, "summaryReason": why, "sourceDuration": full,
+                           "note": f"video ({dur_text(full)}) inceleniyor; en çarpıcı anlarıyla {summary_secs(instruction)} saniyelik haber hazırlanacak"})
     # fragman (kullanıcı isteği, 18 Ekim): film adı başlıktan; panel talimata ve fragman ayarına göre fragman analizine geçer. Otomatik
     # tanıma yalnız YouTube'da (yardım ve panel metni): TikTok/X/Facebook haber klibinin açıklamasındaki "trailer" (römork), "fragmanda
     # yoktu" gibi sözler haber videosunu fragman moduna ve film adıyla aramaya çevirmesin; talimatta "fragman" yazılırsa her platformda olur
@@ -727,6 +816,12 @@ if __name__ == "__main__":
             t = sys.argv[sys.argv.index("--film") + 1]
             f, b = film_name(t)
             print(json.dumps({"ok": True, "trailer": is_trailer(t), "film": f, "bolum": b}, ensure_ascii=False))
+            sys.exit(0)
+        if "--sections" in sys.argv:  # deneme: python3 scripts/social_video.py --sections URL 754-770,1200-1215 [--tag ad]
+            u, rng = sys.argv[sys.argv.index("--sections") + 1], sys.argv[sys.argv.index("--sections") + 2]
+            tag = sys.argv[sys.argv.index("--tag") + 1] if "--tag" in sys.argv else f"bolum-{int(time.time())}"
+            files, err = download_sections(u, [tuple(float(x) for x in r.split("-")) for r in rng.split(",")], tag)
+            print(json.dumps({"ok": any(files), "files": [str(f) if f else None for f in files], "error": err}, ensure_ascii=False))
             sys.exit(0)
         ins = sys.argv[sys.argv.index("--instruction") + 1] if "--instruction" in sys.argv else ""
         res = fetch(sys.argv[sys.argv.index("--url") + 1], ins) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}

@@ -33,8 +33,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, settings  # noqa: E402
+from common import ROOT, settings, summary_cfg, summary_secs  # noqa: E402
 from info_card import new_job  # noqa: E402
+import social_video as sv  # noqa: E402
 
 SPEECH_OFF = False  # konuşma tanıma kurulamadı/kapalı: plan yalnız kareler ve sahne geçişleriyle
 WORDS: dict = {}  # video yolu → [(kelime, başlangıç, bitiş)] (orijinal sesli bölümün altyazısı)
@@ -46,8 +47,12 @@ WANT_SOUND = re.compile(r"(orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|s
 # 1 dakikadan uzun olabilir, mümkünse hepsini orijinal sesiyle paylaşsın"); talimat açıkça seslendirme/sessiz isterse uygulanmaz
 NO_SOUND = re.compile(r"ses(?:i|ini)?\s+(?:kapat(?!ma)|kıs(?!ma)|olmasın|gitsin\b|istemiyorum|kullanma)|sessiz|orijinal\s+ses\w*\s+(?:olmasın|kullanma|istemiyorum)|"
                       r"(?:yalnız|sadece|hep)\s+seslendir|kısa\s+(?:kes|parça|tut)|özetle", re.I)
+# özette sesli alıntıyı kapatan istek (NO_SOUND'daki "özetle", "kısa kes" özetin kendisidir, ses isteği değil)
+NO_BITE = re.compile(r"ses(?:i|ini)?\s+(?:kapat(?!ma)|kıs(?!ma)|olmasın|gitsin\b|istemiyorum|kullanma)|sessiz|orijinal\s+ses\w*\s+(?:olmasın|kullanma|istemiyorum)|"
+                     r"(?:yalnız|sadece|hep)\s+seslendir", re.I)
 CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "sinema", "genel"}
 LANGS: dict = {}  # video yolu → konuşma tanımanın algıladığı dil (fragmanda dil kendiliğinden algılanır)
+TRASH: list = []  # iş bitince (başarılı ya da değil) silinecek dosyalar: uzun video özetinin analiz kopyası, altyazısı, HD anları
 TRAILER_TALIMAT = "Bu fragmanı analiz et: ne anlatıldığını ve en çarpıcı anlarını dikkat çeken ama doğru bir fragman özeti olarak anlat."
 # fragman süresi (server.js SURE_RE/trailerSecs ile aynı kural): "N saniye/sn" ya da "N dakika/dk" (× 60); belirtme/çıkma ekli sayı süre
 # değildir ("baştaki 15 saniyeyi kullanma", "ilk 5 sn'yi kes"), "40 saniyelik", "40 sn'lik", "40 saniyede", "1 dakikalık" süredir
@@ -140,6 +145,7 @@ def contact_sheet(p: Path, dur: float, out: Path, tmp: Path, times: list | None 
         n = 16 if dur > 40 else 12 if dur > 15 else 8
         times = [round((i + 0.5) * dur / n, 1) for i in range(n)]
     fr = tmp / f"fr-{p.stem}"
+    shutil.rmtree(fr, ignore_errors=True)  # aynı videodan birden çok çizelge (uzun video özeti): önceki kareler karışmasın
     fr.mkdir(parents=True, exist_ok=True)
     for i, t in enumerate(times):
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(p), "-frames:v", "1",
@@ -365,7 +371,7 @@ def still(src: Path, t: float, w: int, h: int, out: Path) -> bool:
     return r.returncode == 0 and out.exists()
 
 
-def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float = 0.0) -> list:
+def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float = 0.0, spread: set | None = None) -> list:
     """Claude'un parçalarını doğrular (video numarası, sınırlar, en az 0,8 sn); hiç geçerli parça yoksa videonun
     henüz kullanılmamış kısmından seslendirme kadar bir parça verir (video biterse `start0`dan; fragmanda logolardan sonrası)."""
     out = []
@@ -384,8 +390,10 @@ def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float =
         used_until[c["video"]] = max(used_until.get(c["video"], 0.0), c["end"])
     if out:
         return out[:8]
-    v = 1
-    d = infos[0]["duration"]
+    # yedek parça: ilk video; özetin ayrı anlarında (spread = planda kullanılan video numaraları) önce planın hiç kullanmadığı, sonra en az
+    # kullanılmış an (her geçersiz parça aynı anı oynatmasın, sonraki segmentin görüntüsünü tekrarlamasın)
+    v = min(range(1, len(infos) + 1), key=lambda k: (k in spread, used_until.get(k, 0.0) / max(infos[k - 1]["duration"], 0.1), k)) if spread is not None else 1
+    d = infos[v - 1]["duration"]
     s = used_until.get(v, min(0.5, d / 10))
     if s + 1.5 > d:
         s = start0
@@ -442,6 +450,243 @@ def trailer_sound_clips(clips: list, infos: list, others: list, budget: float) -
     return [{"video": v, "start": round(lo + w["start"], 2), "end": round(lo + w["end"], 2)}]
 
 
+# ---------- Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere
+# dökebilir miyiz, videodan çarpıcı sahneleri de alarak"). İki aşama: 1) videonun TAMAMI (altyazı ya da konuşma tanıma dökümü, tüm
+# sahne geçişleri, videoya yayılmış 48 kare) Claude'a gider (`prompts/ozet_secim.md`): konu, haberin özü, en çarpıcı 5-8 an; anlar HD
+# indirilir (yoksa kaynaktan kesilir). 2) anlar ayrı videolar olarak kurguya girer (`prompts/ozet.md`): kanca + 2-4 haber segmenti,
+# hızlı kesim, isteğe bağlı tek kısa orijinal sesli alıntı (en çok longSummary.maxSoundSeconds 8 sn).
+SUMMARY_DIRECT = 240.0  # bundan kısa videoda an seçimi yok: video olduğu gibi ikinci aşamaya girer
+SUMMARY_MAX_TOTAL, SUMMARY_MAX_N = 180.0, 8  # HD indirilecek anların toplam saniyesi ve sayısı
+SUMMARY_TALIMAT = "Bu videoyu analiz et: ana haberi ve en çarpıcı anları dikkat çeken ama doğru, tarafsız bir haber olarak anlat."
+
+
+def hms(t: float) -> str:
+    t = int(round(t))
+    return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
+
+
+def summary_lines(social: dict | None) -> tuple:
+    """Uzun videonun tamamının altyazısı (social_video.py `captionsFile`, kısa videoda `captions`) → [(başlangıç, bitiş, metin)], kaynak."""
+    so = social or {}
+    raw = []
+    f = so.get("captionsFile")
+    if f and Path(f).exists():
+        try:
+            raw = json.loads(Path(f).read_text(encoding="utf-8"))
+        except Exception:
+            raw = []
+    elif so.get("captions"):
+        raw = so["captions"]
+    out = []
+    for c in raw or []:
+        try:
+            a, b, t = float(c[0]), float(c[1]), str(c[2]).strip()
+        except (TypeError, ValueError, IndexError):
+            continue
+        if t and math.isfinite(a) and math.isfinite(b):
+            out.append((round(a, 1), round(max(b, a + 0.1), 1), t))
+    out.sort(key=lambda x: x[0])
+    return out, (f"YouTube altyazısı ({so['captionsLang']})" if so.get("captionsLang") else "YouTube altyazısı") if out else ""
+
+
+def paragraphs(lines: list, span: float = 25.0, budget: int = 14000) -> list:
+    """Döküm satırları → "[12:30] metin" paragrafları (en çok `span` sn). Toplam `budget` kelimeyi aşarsa (2-3 saatlik video) her paragraf
+    orantılı kısalır: videonun her yeri temsil edilsin (yalnız başı değil)."""
+    paras, cur, t0 = [], [], 0.0
+    for a, _, t in lines:
+        if cur and a - t0 > span:
+            paras.append((t0, " ".join(cur)))
+            cur = []
+        if not cur:
+            t0 = a
+        cur.append(t)
+    if cur:
+        paras.append((t0, " ".join(cur)))
+    words = sum(len(x[1].split()) for x in paras)
+    keep = 1.0 if words <= budget else budget / words
+    out = []
+    for t0, txt in paras:
+        w = txt.split()
+        if keep < 1.0 and len(w) > 8:
+            w = w[:max(8, int(len(w) * keep))] + ["…"]
+        out.append(f"[{hms(t0)}] {' '.join(w)}")
+    return out
+
+
+def cut_density(cuts: list, dur: float) -> list:
+    """Dakika başına sahne geçişi sayısı (yüksek = sahadan görüntü/olay montajı, düşük = stüdyo/konuşma)."""
+    d = [0] * max(1, math.ceil(dur / 60))
+    for t in cuts:
+        if 0 <= int(t // 60) < len(d):
+            d[int(t // 60)] += 1
+    return d
+
+
+def overview_sheets(p: Path, dur: float, cuts: list, tmp: Path, n: int = 48, per: int = 16) -> list:
+    """Uzun videonun genel kareleri: çekimlere hizalı, tüm videoya yayılmış n kare, 16'lık çizelgeler [{dosya, kareler}]."""
+    times = shot_times(dur, cuts, [], n=n)
+    out = []
+    for k in range(0, len(times), per):
+        sheet = tmp / f"genel-{k // per + 1}.jpg"
+        got = contact_sheet(p, dur, sheet, tmp, times[k:k + per])
+        if got:
+            out.append({"dosya": sheet.name, "kareler": got})
+    return out
+
+
+def pick_sections(moments, dur: float) -> list:
+    """Claude'un anları → indirilecek bölümler [{start, end, anlar}]: geçersizler atılır, tek an en çok 30 sn; toplam SUMMARY_MAX_TOTAL
+    sn'yi aşarsa önce kanca, sonra önemi yüksek olanlar kalır; her an 1 sn payla genişler, 3 sn'den yakın anlar birleşir; en çok
+    SUMMARY_MAX_N bölüm (fazlası önemi düşük olanlardan atılır)."""
+    ms = []
+    for m in moments or []:
+        try:
+            a, b = float(m.get("start")), float(m.get("end"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not (math.isfinite(a) and math.isfinite(b)):
+            continue
+        a, b = max(0.0, a), min(dur, b)
+        if b - a < 2.0:
+            continue
+        try:
+            onem = max(1, min(5, int(m.get("onem") or 3)))
+        except (TypeError, ValueError):
+            onem = 3
+        ms.append({"start": round(a, 2), "end": round(min(b, a + 30.0), 2), "tur": str(m.get("tur") or "olay")[:12], "onem": onem,
+                   "neden": str(m.get("neden") or "")[:240], "alinti": str(m.get("alinti") or "")[:300]})
+    chosen, total = [], 0.0
+    for m in sorted(ms, key=lambda x: (x["tur"] != "kanca", -x["onem"], x["start"])):
+        ln = m["end"] - m["start"] + 2.0
+        if chosen and total + ln > SUMMARY_MAX_TOTAL:
+            continue
+        chosen.append(m)
+        total += ln
+    secs = []
+    for m in sorted(chosen, key=lambda x: x["start"]):
+        a, b = max(0.0, m["start"] - 1.0), min(dur, m["end"] + 1.0)
+        if secs and a - secs[-1]["end"] < 3.0:
+            secs[-1]["end"] = round(max(secs[-1]["end"], b), 2)
+            secs[-1]["anlar"].append(m)
+        else:
+            secs.append({"start": round(a, 2), "end": round(b, 2), "anlar": [m]})
+    if len(secs) > SUMMARY_MAX_N:
+        rank = lambda x: (any(y["tur"] == "kanca" for y in x["anlar"]), max(y["onem"] for y in x["anlar"]))  # noqa: E731
+        secs = sorted(sorted(secs, key=rank, reverse=True)[:SUMMARY_MAX_N], key=lambda x: x["start"])
+    return secs
+
+
+def summary_cut_local(src: Path, secs: list, tmp: Path, idx: list) -> list:
+    """Bölümleri kaynaktan keser (tam çözünürlüklü indirme ya da WhatsApp videosu; HD inmezse analiz kopyası): saniyesi tam, yeniden kodlanır."""
+    out = []
+    for i, x in zip(idx, secs):
+        dst = tmp / f"an-{i + 1}.mp4"
+        r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{x['start']:.2f}", "-i", str(src), "-t", f"{x['end'] - x['start']:.2f}",
+                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(dst)],
+                           capture_output=True, text=True)
+        out.append(dst if r.returncode == 0 and dst.exists() and probe(dst)["duration"] >= 1.0 else None)
+    return out
+
+
+def summary_prepare(job: dict, src: Path, tmp: Path, instruction: str, target: int, social: dict | None, rel: list) -> dict:
+    """1. aşama: videonun tamamı → anlar → bölüm dosyaları. Dönüş {ok, srcs, secs, analysis, lines, lsrc, D, lowres, hd} ya da {ok: False, error}."""
+    so = social or {}
+    info = probe(src)
+    D = info["duration"]
+    lines, lsrc = summary_lines(so)
+    if not lines and info["audio"]:
+        log(f"🎬 özet: altyazı yok, konuşma tanıma videonun tamamını ({hms(D)}) dinliyor")
+        lines = transcript(src, tmp, None)
+        lsrc = f"konuşma tanıma ({LANGS.get(str(src)) or 'dil bilinmiyor'})" if lines else ""
+    if D <= SUMMARY_DIRECT:  # kısa video: an seçimi yok, tamamı kurguya girer
+        return {"ok": True, "srcs": [src], "secs": [{"start": 0.0, "end": round(D, 2), "anlar": []}], "analysis": None, "lines": lines,
+                "lsrc": lsrc, "D": D, "lowres": 0, "hd": []}
+    log(f"🎬 özet: {hms(D)} uzunluğundaki video baştan sona inceleniyor — {len(lines)} döküm satırı ({lsrc or 'döküm yok: yalnız görüntüden'})")
+    cuts = scenes(src, 100000)
+    sheets = overview_sheets(src, D, cuts, tmp)
+    log(f"🎬 özet: {len(cuts)} sahne geçişi, {sum(len(x['kareler']) for x in sheets)} genel kare")
+    inp = {"talimat": instruction or SUMMARY_TALIMAT, "hedef_sure": target,
+           "video": {"baslik": so.get("title"), "kanal": so.get("uploader") or so.get("handle"), "aciklama": str(so.get("caption") or "")[:1500],
+                     "yukleme_tarihi": so.get("date"), "bugun": time.strftime("%d.%m.%Y"), "izlenme": so.get("views"), "sure": hms(D), "sure_sn": round(D, 1)},
+           "dokum_kaynagi": lsrc or "yok", "dokum": paragraphs(lines), "kesim_yogunlugu": cut_density(cuts, D), "kare_dosyalari": sheets,
+           "ilgili_haberler": rel[:5]}
+    prompt = (ROOT / "prompts" / "ozet_secim.md").read_text(encoding="utf-8") + json.dumps(inp, ensure_ascii=False, indent=1)
+    log("🎬 özet: Claude videonun tamamını inceleyip en çarpıcı anları seçiyor")
+    rc, text = claude(prompt, tmp, images=bool(sheets), kind="ozet")
+    if rc not in (0, 2):
+        log(f"  ! ilk deneme olmadı ({text[:120]}); kareler olmadan yeniden deneniyor")
+        rc, text = claude(prompt.replace("Her dosyayı Read aracıyla aç ve İNCELE", "Kareleri GÖREMİYORSUN (Read aracı kapalı): yalnız dökümden, kesim "
+                                         "yoğunluğundan ve açıklamadan karar ver; görüntüyü tarif etme. Görebilseydin bakacağın şeyler")
+                          + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="ozet")
+    if rc:
+        return {"ok": False, "error": f"anlar seçilemedi: {text[:200]}", "limit": rc == 2}
+    try:
+        sel = parse_plan(text)
+    except Exception as e:
+        return {"ok": False, "error": f"an seçimi okunamadı: {e}"}
+    secs = pick_sections(sel.get("anlar"), D)
+    if not secs:
+        return {"ok": False, "error": "videoda kullanılabilir an seçilemedi"}
+    if sel.get("uygun") is False:
+        log(f"⚠️ özet: video habere pek uygun değil ({str(sel.get('neden') or '')[:120]}); yine de en iyi anlarla hazırlanıyor")
+    log("🎬 özet: konu — " + str(sel.get("konu") or "?")[:160])
+    log("🎬 özet: seçilen anlar: " + ", ".join(f"{hms(x['start'])}–{hms(x['end'])} ({'/'.join(m['tur'] for m in x['anlar'])})" for x in secs))
+    files, hd = [None] * len(secs), []
+    if job.get("summaryProxy") and so.get("url"):  # analiz kopyası düşük çözünürlüklü: anlar YouTube'dan HD iner
+        log(f"🔗 özet: {len(secs)} an HD indiriliyor ({round(sum(x['end'] - x['start'] for x in secs))} sn)")
+        files, err = sv.download_sections(str(so["url"]), [(x["start"], x["end"]) for x in secs], f"an-{int(time.time())}")
+        hd = [f for f in files if f]
+        TRASH.extend(hd)
+        if err:
+            log(f"  ! HD bölümler: {err}")
+    miss = [i for i, f in enumerate(files) if not f]
+    lowres = 0
+    if miss:
+        for i, f in zip(miss, summary_cut_local(src, [secs[i] for i in miss], tmp, miss)):
+            files[i] = f
+        if job.get("summaryProxy"):
+            lowres = sum(1 for i in miss if files[i])
+            if lowres:
+                log(f"  ! {lowres} an HD inmedi: düşük çözünürlüklü kopyadan kesildi (görüntü bulanık olabilir)")
+    keep = [(x, f) for x, f in zip(secs, files) if f]
+    if not keep:
+        return {"ok": False, "error": "seçilen anlar indirilemedi"}
+    return {"ok": True, "srcs": [f for _, f in keep], "secs": [x for x, _ in keep], "analysis": sel, "lines": lines, "lsrc": lsrc, "D": D,
+            "lowres": lowres, "hd": hd}
+
+
+def summary_label(label: str) -> tuple:
+    """Özet etiketi (Türkçe büyük harf, emoji/noktalama yok, en çok 20 karakter; ASCII yazım bilinen etikete) ve giriş cümlesi."""
+    key = re.sub(r"\s+", " ", re.sub(r"[^\w ]", " ", str(label or "").replace("i", "İ").replace("ı", "I").upper())).strip()
+    fold = lambda t: t.translate(str.maketrans("İŞĞÜÖÇ", "ISGUOC"))  # noqa: E731
+    canon = {fold(c): c for c in ("SON DAKİKA", "ÖZET", "ÖZEL HABER", "AÇIKLAMA", "RÖPORTAJ", "MAÇ ÖZETİ", "GÜNDEM")}
+    key = canon.get(fold(key), key)
+    if len(key) > 20:
+        key = key[:21].rsplit(" ", 1)[0] if " " in key[:21] else key[:20]
+    key = key or "ÖZET"
+    return key, "Son dakika." if key == "SON DAKİKA" else "Kısa özet."
+
+
+def ozet_text(S: dict, social: dict | None, segs: list) -> str:
+    """ozet_analiz.txt (kullanıcı isteği: "analiz edip"): analiz, seçilen anlar, seslendirme ve videonun tamamının dökümü."""
+    so, an = social or {}, S.get("analysis") or {}
+    out = [f"Uzun video özeti — {so.get('title') or 'video'}",
+           " · ".join(x for x in [f"Kanal: {so.get('uploader') or so.get('handle')}" if so.get("uploader") or so.get("handle") else "",
+                                  f"Yükleme: {so['date']}" if so.get("date") else "", f"Süre: {hms(S['D'])}", so.get("url") or ""] if x), ""]
+    if an:
+        out += [f"Video türü: {an.get('video_turu') or '?'}", f"Konu: {an.get('konu') or '?'}", f"Haberin özü: {an.get('ana_haber') or '?'}"]
+        out += ["Önemli bilgiler:"] + [f"• {x}" for x in an.get("onemli_bilgiler") or []]
+        if an.get("uygun") is False:
+            out.append(f"Not: habere uygunluk düşük — {an.get('neden') or ''}")
+        out += ["", "Seçilen anlar:"]
+        for x in S["secs"]:
+            out += [f"[{hms(x['start'])} – {hms(x['end'])}] " + "; ".join(f"{m['tur']} ({m['onem']}): {m['neden']}" + (f" — \"{m['alinti']}\"" if m["alinti"] else "")
+                                                             for m in x["anlar"])]
+    out += ["", "Videonun Türkçe seslendirmesi:"] + [f"• {s.get('title') or s['kind']}: {s['narration']}" for s in segs if s["kind"] != "sesli"]
+    out += ["", f"Videonun tamamının dökümü ({S.get('lsrc') or 'yok'}):"] + paragraphs(S.get("lines") or [], budget=10 ** 9)
+    return "\n".join(out).rstrip() + "\n"
+
+
 def build(job: dict) -> dict:
     srcs = [Path(p) for p in job.get("videos") or [] if Path(p).exists()][:4]
     if not srcs:
@@ -449,8 +694,13 @@ def build(job: dict) -> dict:
     instruction = str(job.get("instruction") or "").strip()
     trailer = bool(job.get("trailer"))  # fragman analizi (kullanıcı isteği, 18 Ekim: "fragmanda ne anlatıldı gibi 40 saniyelik video")
     tr_cfg = tr_settings() if trailer else {}  # fragman olmayan iş settings.trailer'ı hiç okumaz
+    # uzun video özeti: panel (social_video.py kararı: uzun YouTube videosu ya da talimatta özet) ya da tek WhatsApp videosunda "özetle"
+    summary = not trailer and (bool(job.get("summary")) or (not job.get("social") and len(srcs) == 1
+                                                            and sv.wants_summary(instruction, probe(srcs[0])["duration"], "WhatsApp")[0]))
+    sum_cfg = summary_cfg() if summary else {}
     m = re.search(r"(\d{2,3})\s*(?:saniye\w*|sn\b)", instruction.lower())  # fragman olmayan işin süre kuralı (değişmedi)
-    asked = trailer_secs(instruction) if trailer else (int(m.group(1)) if m else 0)  # fragman: dakika da, ekli sayı değil (server.js ile aynı)
+    # fragman ve özet: dakika da, ekli sayı değil (server.js ile aynı); özet varsayılanı longSummary.duration (40)
+    asked = trailer_secs(instruction) if trailer else summary_secs(instruction) if summary else (int(m.group(1)) if m else 0)
     dur = int(job.get("duration") or asked
               or (tr_cfg["duration"] if trailer else (settings().get("waVideo") or {}).get("duration")) or 30)
     dur = max(20, min(60, dur))
@@ -464,26 +714,46 @@ def build(job: dict) -> dict:
     if trailer:  # fragman baştan sona kendi sesiyle oynamaz: sesli bölüm yalnız açıkça istenirse, toplam en çok 8 sn
         full_sound = False
         max_sound = tr_cfg["maxSoundSeconds"]
+    if summary:  # özet de baştan sona kendi sesiyle oynamaz: en çok bir kısa alıntı (8 sn; talimat "sesi kapat" derse hiç)
+        full_sound = False
+        max_sound = 0.0 if NO_BITE.search(instruction) else float(sum_cfg["maxSoundSeconds"])
     if full_sound and not m:  # video kendi sesiyle oynayacak: seslendirme kısa (kanca + giriş + devam)
         dur = 25
     name = f"video-{time.strftime('%Y%m%d-%H%M%S')}"
     tmp = ROOT / "work" / "jobs" / f"{name}-analiz"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
+    S = None
+    if summary and job.get("summaryProxy"):  # analiz kopyası (yüzlerce MB) ve altyazı dosyası iş bitince silinir (başarısız olsa da)
+        TRASH.extend([*srcs, *([Path(social["captionsFile"])] if (social or {}).get("captionsFile") else [])])
+    if summary:  # 1. aşama: videonun tamamı → en çarpıcı anlar (HD bölüm dosyaları); 2. aşama bunlarla kurgu
+        S = summary_prepare(job, srcs[0], tmp, instruction, dur, social, rel)
+        if not S["ok"]:
+            shutil.rmtree(tmp, ignore_errors=True)
+            return {"ok": False, "error": S["error"], **({"limit": True} if S.get("limit") else {})}
+        srcs = S["srcs"]
     infos, blocks = [], []
     for i, p in enumerate(srcs, 1):
         info = probe(p)
         if info["duration"] < 1.5:
             return {"ok": False, "error": f"{i}. video çok kısa ya da okunamadı"}
-        if trailer:  # TÜM geçişler kare seçimine; isteme en çok 150, eşit aralıklı (yalnız ilk 150 değil: sondaki doruk ve ad kartı görünsün)
+        if trailer or summary:  # TÜM geçişler kare seçimine; isteme en çok 150, eşit aralıklı (yalnız ilk 150 değil: sondaki doruk ve ad kartı görünsün)
             info["cuts"] = scenes(p, 1000)
             info["scenes"] = info["cuts"][::max(1, math.ceil(len(info["cuts"]) / 150))]
         else:
             info["scenes"] = scenes(p)
-        info["speech"] = (transcript(p, tmp, None) if trailer else transcript(p, tmp)) if info["audio"] else []
+        # fragman ve özette konuşma dili kendiliğinden algılanır (uzun video İngilizce röportaj olabilir)
+        info["speech"] = (transcript(p, tmp, None) if trailer or summary else transcript(p, tmp)) if info["audio"] else []
+        sec = S["secs"][i - 1] if summary else None
+        if summary and S["analysis"] is not None and (SPEECH_OFF or not info["speech"]) and S["lines"]:
+            # konuşma tanıma bu anda bir şey çıkarmadı: videonun tamamının dökümünden (altyazı/konuşma tanıma) bu anın satırları
+            s0, e0 = sec["start"], sec["end"]
+            info["speech"] = [(round(max(0.0, a - s0), 1), round(min(b, e0) - s0, 1), t) for a, b, t in S["lines"] if s0 - 0.3 <= a < e0 - 0.3]
+            if info["speech"] and S["lsrc"].startswith("YouTube"):
+                info["captions"] = True
         # YouTube altyazısı (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"): konuşma tanıma bir şey çıkarmadıysa
         # (kurulu değil ya da boş) social_video.py'nin verdiği, bölüme göre kaydırılmış altyazı satırları döküm olur; diğer işler aynı
-        caps = (social or {}).get("captions") if len(srcs) == 1 and info["audio"] else None
+        caps = (social or {}).get("captions") if len(srcs) == 1 and info["audio"] and not (summary and S["analysis"] is not None) else None
         if caps and (SPEECH_OFF or not info["speech"]):
             try:
                 info["speech"] = [(round(float(a), 1), round(float(b), 1), str(t).strip()) for a, b, t in caps
@@ -500,6 +770,8 @@ def build(job: dict) -> dict:
         if trailer:  # hızlı kurgu: her çekimden kare (siyah çekimler hariç), en çok 24, 4 sütun
             info["black"] = blacks(p)
             info["frames"] = contact_sheet(p, info["duration"], sheet, tmp, shot_times(info["duration"], info["cuts"], info["black"]))
+        elif summary:  # özet: her andan çekimlere hizalı kareler (kısa anda 8, kısa videonun tamamında 16)
+            info["frames"] = contact_sheet(p, info["duration"], sheet, tmp, shot_times(info["duration"], info["cuts"], [], n=8 if S["analysis"] is not None else 16))
         else:
             info["frames"] = contact_sheet(p, info["duration"], sheet, tmp)
         info["sheet"] = sheet.name if info["frames"] else None
@@ -509,6 +781,9 @@ def build(job: dict) -> dict:
         blocks.append({"video": i, "sure": round(info["duration"], 1), "boyut": f"{info['width']}x{info['height']}",
                        "sahne_gecisleri": info["scenes"], "konusma": [f"[{a}-{b}] {t}" for a, b, t in info["speech"]][:80],
                        "kareler_dosyasi": info["sheet"], "kareler": info["frames"]})
+        if summary:  # anın uzun videodaki yeri ve seçilme nedeni (kurgu editörü bağlamı görsün)
+            blocks[-1].update({"kaynak_zamani": f"{hms(sec['start'])}–{hms(sec['end'])}", "konusma_dili": LANGS.get(str(p)),
+                               "an": [{"tur": x["tur"], "neden": x["neden"], **({"alinti": x["alinti"]} if x["alinti"] else {})} for x in sec["anlar"]]})
         if trailer:
             if info["audio"] and not SPEECH_OFF:
                 log(f"🎬 fragman konuşması: {len(info['speech'])} satır, dil: {LANGS.get(str(p)) or 'bilinmiyor'}")
@@ -520,7 +795,7 @@ def build(job: dict) -> dict:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): döküm YouTube altyazısından — Mac'te bir kez 'bash scripts/install_align.sh'")
     elif SPEECH_OFF:
         log("🎬 konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): kurgu yalnız kareler ve sahne geçişleriyle yapılacak — Mac'te bir kez 'bash scripts/install_align.sh'")
-    tpl = (ROOT / "prompts" / ("fragman.md" if trailer else "montaj.md")).read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
+    tpl = (ROOT / "prompts" / ("fragman.md" if trailer else "ozet.md" if summary else "montaj.md")).read_text(encoding="utf-8").replace("__SURE__", str(dur)).replace("__KELIME__", str(int(dur * 2.4) - 6))
     if trailer:  # fragman: girdi fragmanın kendi bilgisi (başlık, açıklama, etiketler) + film adıyla bulunan haberler
         so = social or {}
         bare = re.sub(r"fragman\w*|trailer\w*|teaser\w*|analiz\w*|özet\w*|video\w*|yap\w*|hazırla\w*|üret\w*|\bet\b|[\W\d_]", "", instruction, flags=re.I)
@@ -532,16 +807,26 @@ def build(job: dict) -> dict:
                "ilgili_haberler": rel[:5]}
         if WANT_SOUND.search(instruction) and any(i["audio"] for i in infos):  # sessiz fragmanda orijinal ses istenmez
             inp["orijinal_ses_istegi"] = {"en_fazla_saniye": int(max_sound)}
+    elif summary:  # özet: 1. aşamanın analizi + kaynak videonun bilgisi + seçilen anlar
+        so, an = social or {}, S["analysis"] or {}
+        inp = {"talimat": instruction or SUMMARY_TALIMAT,
+               "analiz": {k: an.get(k) for k in ("video_turu", "konu", "ana_haber", "onemli_bilgiler") if an.get(k)} if an
+               else {"not": "video kısa: tamamı aşağıda tek video (1)"},
+               "kaynak_video": {"baslik": so.get("title"), "kanal": so.get("uploader") or so.get("handle"), "aciklama": str(so.get("caption") or "")[:1500],
+                                "yukleme_tarihi": so.get("date"), "bugun": time.strftime("%d.%m.%Y"), "izlenme": so.get("views"), "sure": hms(S["D"])},
+               "videolar": blocks, "ilgili_haberler": rel[:5]}
+        if max_sound >= 3 and any(i["audio"] and i["speech"] for i in infos):  # kısa orijinal sesli alıntı izni
+            inp["alinti_izni"] = {"en_fazla_saniye": int(max_sound)}
     else:
         inp = {"talimat": instruction or "Videodaki olayı tarafsız bir haber olarak anlat.", "videolar": blocks}
-    if social and not trailer:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
+    if social and not trailer and not summary:  # sosyal medya paylaşımı: açıklama iddiadır, haber sitelerinde bulunanlar doğrulanmış bilgidir
         inp["kaynak_paylasim"] = {k: social.get(k) for k in ("platform", "credit", "uploader", "caption", "title", "views", "likes", "comments", "date")}
         inp["ilgili_haberler"] = rel[:5]
     if full_sound:
         inp["orijinal_ses_tamami"] = {"video_suresi": round(max(i["duration"] for i in infos), 1), "en_fazla_saniye": int(max_sound)}
     prompt = tpl + json.dumps(inp, ensure_ascii=False, indent=1)
     log("🎬 kurgu planı yazılıyor (Claude görüntüleri ve konuşmayı inceliyor)")
-    kind = "fragman" if trailer else "montaj"
+    kind = "fragman" if trailer else "ozet" if summary else "montaj"
     rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] for b in blocks), kind=kind)
     if rc not in (0, 2):  # resim aracı açılamadıysa ya da geçersiz yanıt: resimsiz bir kez daha
         log(f"  ! ilk deneme olmadı ({text[:120]}); kare resimleri olmadan yeniden deneniyor")
@@ -560,8 +845,11 @@ def build(job: dict) -> dict:
     if trailer and want_sound and not any(i["audio"] for i in infos):  # ses izi yok: "ORİJİNAL SES" rozetli sessiz bölüm olmasın
         want_sound = False
         log("🔊 talimatta orijinal ses istendi ama fragmanın ses izi yok: sesli bölüm eklenmedi")
+    if summary and want_sound and "alinti_izni" not in inp:  # özet: ses izi/konuşma yok ya da alıntı kapalı
+        want_sound = False
+    allow_sound = summary and "alinti_izni" in inp  # özet: Claude kısa alıntı eklediyse kalır (zorla eklenmez)
     segs = [s for s in plan.get("segments") or [] if (s.get("kind") in ("hook", "haber") and str(s.get("narration") or "").strip())
-            or (s.get("kind") == "sesli" and want_sound)]  # sesli bölüm yalnız talimatta istendiyse (kullanıcı kararı)
+            or (s.get("kind") == "sesli" and (want_sound or allow_sound))]  # sesli bölüm yalnız talimatta istendiyse (kullanıcı kararı)
     if not any(s["kind"] == "haber" for s in segs):
         return {"ok": False, "error": "planda haber segmenti yok"}
     if segs[0]["kind"] != "hook":
@@ -575,7 +863,7 @@ def build(job: dict) -> dict:
         dv = infos[v]["duration"]
         at = next(i for i, x in enumerate(segs) if x["kind"] == "haber") + 1
         clip = {"video": v + 1, "start": min(0.3, dv / 10), "end": max(1.0, dv - 0.2)}
-        if trailer:  # fragman: bütün döküm satırlarından en çok 8 sn, diğer segmentlerin saniyeleriyle çakışmayan (logolar değil)
+        if trailer or summary:  # fragman/özet: bütün döküm satırlarından en çok 8 sn, diğer segmentlerin saniyeleriyle çakışmayan (logolar değil)
             avoid = []
             for x in segs:
                 for c in x.get("clips") or []:
@@ -602,11 +890,11 @@ def build(job: dict) -> dict:
     for x in list(segs):  # orijinal ses toplamı en çok max_sound sn (videonun toplamı ~3 dk'yı geçmesin)
         if x["kind"] != "sesli":
             continue
-        if trailer and sound_left < 0.8:  # fragman: bütçe (8 sn) bitti, fazla sesli bölüm atılır (cap_clips ilk parçayı kırpmadan verirdi)
+        if (trailer or summary) and sound_left < 0.8:  # fragman/özet: bütçe (8 sn) bitti, fazla sesli bölüm atılır (cap_clips ilk parçayı kırpmadan verirdi)
             segs.remove(x)
             continue
         clips = clean_clips(x.get("clips"), infos, 6.0, dict(seed), seed.get(1, 0.0))
-        if trailer:  # fragman: bütçeden uzun tek parça baştan (stüdyo logosu) kırpılmaz; o parçanın içindeki en iyi bütün-cümle penceresi
+        if trailer or summary:  # fragman/özet: bütçeden uzun tek parça baştan kırpılmaz; o parçanın içindeki en iyi bütün-cümle penceresi
             clips = trailer_sound_clips(clips, infos, [y for y in segs if y is not x], sound_left)
         x["clips"] = cap_clips(clips, sound_left)
         sound_left -= sum(c["end"] - c["start"] for c in x["clips"])
@@ -620,12 +908,19 @@ def build(job: dict) -> dict:
     # montaj: her segmentin parçaları → kanca ve sesli bölüm dikey tam ekran, haber kartı yatay (dikey videoda tam ekran)
     d = tmp / "parcalar"
     d.mkdir(exist_ok=True)
+    planned = set()  # özet: planın parçalarında geçen anlar (yedek parça önce bunların dışından)
+    for x in segs:
+        for c in x.get("clips") or []:
+            try:
+                planned.add(int(c.get("video", 1)))
+            except (TypeError, ValueError, AttributeError):
+                continue
     cards, used_until, plan_out = [], dict(seed), []
     has_audio = [bool(i["audio"]) for i in infos]
     for k, s in enumerate(segs):
         sesli = s["kind"] == "sesli"
         need = 0.0 if sesli else len(s["narration"].split()) / 2.4 + 0.5
-        clips = clean_clips(s.get("clips"), infos, need or 6.0, used_until, seed.get(1, 0.0))
+        clips = clean_clips(s.get("clips"), infos, need or 6.0, used_until, seed.get(1, 0.0), spread=planned if summary else None)
         if trailer:  # çekimler arası kararma ekranda görünmesin
             clips = skip_black(clips, infos)
         hook = s["kind"] == "hook"
@@ -661,7 +956,7 @@ def build(job: dict) -> dict:
     # ilk yorum (kullanıcı isteği: "linkten gelen haberde de ilk yorum atsın"): habere özel soru (kaynak yalnız açıklamada)
     first = str(plan.get("firstComment") or "").strip()[:160] or ("Fragmanı nasıl buldunuz? İzleyecek misiniz? Yorumlara yazın 👇" if trailer
                                                                   else "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇")
-    raw_label = str(plan.get("label") or ("FRAGMAN" if trailer else "SON DAKİKA"))
+    raw_label = str(plan.get("label") or ("FRAGMAN" if trailer else "ÖZET" if summary else "SON DAKİKA"))
     label = raw_label[:30]
     intro, outro, cats, gen = "Son dakika.", "", CATS, "genel"  # geçersiz kategori → genel
     if trailer:  # etiket, giriş ve kapanış etikete göre (panel startAnlik'e bunları verir); kesme trailer_label'da kelime sınırında
@@ -669,8 +964,10 @@ def build(job: dict) -> dict:
         # fragman.md'nin izin verdiği kategoriler; "asayis", "dunya" gibi etiket fragman konusunu gerçek olay gibi gösterir (polis
         # sireni kartı, #asayiş): fragmanda sinema, film olmayan tanıtım filminde genel
         cats, gen = {"sinema", "teknoloji", "siyaset", "genel"}, "genel" if label == "TANITIM FİLMİ" else "sinema"
+    elif summary:  # özet: "Son dakika." yalnız SON DAKİKA etiketinde, diğerlerinde "Kısa özet."
+        label, intro = summary_label(raw_label)
     script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
-              "importanceReason": plan.get("importanceReason", "Fragman analizi" if trailer else "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
+              "importanceReason": plan.get("importanceReason", "Fragman analizi" if trailer else "Uzun videonun özeti" if summary else "WhatsApp'tan gönderilen görüntü"), "firstComment": first,
               "segments": [{"kind": "hook", "title": segs[0].get("title", ""), "narration": segs[0]["narration"], "source": src,
                             "category": segs[0].get("category") if segs[0].get("category") in cats else gen},
                            {"kind": "intro", "narration": intro}]
@@ -678,14 +975,16 @@ def build(job: dict) -> dict:
                      s.get("category") if s.get("category") in cats else gen), "soundDuration": s["soundDuration"], "soundWords": s["soundWords"]}
                   if s["kind"] == "sesli" else
                   {"kind": "haber", "title": s.get("title", ""), "narration": s["narration"], "source": s.get("source") or src,
-                   "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer else {})})
+                   "category": s.get("category") if s.get("category") in cats else gen, **({"breaking": True} if s.get("breaking") and not trailer and (not summary or label == "SON DAKİKA") else {})})
                  for s in segs[1:]]
               + [{"kind": "outro", "narration": "Takip etmeyi unutma."}]}
     # social: paylaşımın başlığı/açıklaması ve adresi üretilen haber hafızasına girer (assemble_script → news_memory): aynı olay
     # sonra bir haber sitesinde başka sözlerle düşerse otomatik yakalama onu tekrar üretmez
     so_mem = {"title": str(social.get("title") or "")[:200], "caption": str(social.get("caption") or "")[:600], "url": social.get("url") or ""} if social else None
     job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p) for p in srcs],
-                                         **({"trailer": True, "film": film} if trailer else {}), **({"social": so_mem} if so_mem else {})})
+                                         **({"trailer": True, "film": film} if trailer else {}), **({"social": so_mem} if so_mem else {}),
+                                         **({"summary": {"sourceSeconds": round(S["D"], 1), "sections": [[x["start"], x["end"]] for x in S["secs"]],
+                                                         "konu": (S["analysis"] or {}).get("konu")}} if summary else {})})
     jd = ROOT / job_dir
     for i, c in enumerate(cards):  # parçaları iş klasörüne taşı (new_job klasörü yeniden kurdu)
         for key, suf in (("video", ".mp4"), ("image", ".jpg"), ("tall", "-tall.jpg")):
@@ -696,6 +995,9 @@ def build(job: dict) -> dict:
     if trailer:  # kelimelere dökme (kullanıcı isteği): zaman damgalı döküm + Türkçe seslendirme iş klasöründe
         (jd / "fragman_dokum.txt").write_text(dokum_text(infos, srcs, film, social, segs), encoding="utf-8")
         log(f"🎬 fragman dökümü (kelimelere dökme): {job_dir / 'fragman_dokum.txt'}")
+    if summary:  # analiz (kullanıcı isteği: "analiz edip"): konu, seçilen anlar, seslendirme ve videonun tamamının dökümü iş klasöründe
+        (jd / "ozet_analiz.txt").write_text(ozet_text(S, social, segs), encoding="utf-8")
+        log(f"🎬 özet analizi: {job_dir / 'ozet_analiz.txt'}")
     shutil.rmtree(tmp, ignore_errors=True)
     words = sum(len(s.get("narration", "").split()) for s in segs if s["kind"] != "sesli")
     res = {"ok": True, "job": str(job_dir), "duration": max(dur, min(60, int(words / 2.4) + 3)), "vertical": vertical,
@@ -706,6 +1008,13 @@ def build(job: dict) -> dict:
                     "narration": " ".join(s["narration"] for s in segs if s["kind"] != "sesli")[:900], "speech": not SPEECH_OFF or caps_used,
                     # speechOff: panel "konuşma tanıma kurulu değil" ile "konuşma bulamadı"yı ayırsın (inceleme, 18 Ekim)
                     **({"speechSource": "youtube", "speechOff": SPEECH_OFF} if caps_used else {})}}
+    if summary:
+        an = S["analysis"] or {}
+        res["summary"] = True
+        res["sourceSeconds"] = round(S["D"], 1)
+        res["plan"].update({"summary": True, "intro": intro, "konu": an.get("konu"), "unsuitable": an.get("neden") if an.get("uygun") is False else None,
+                            "moments": [[x["start"], x["end"]] for x in S["secs"]], "lowres": S["lowres"], "sourceSeconds": round(S["D"], 1),
+                            "transcriptSource": S["lsrc"], "analysisFile": str(job_dir / "ozet_analiz.txt")})
     if trailer:
         res["trailer"] = True
         res["plan"].update({"trailer": True, "film": film, "intro": intro, "outro": outro, "speechLang": next((LANGS[str(p)] for p in srcs if LANGS.get(str(p))), None),
@@ -721,4 +1030,9 @@ if __name__ == "__main__":
             res = {"ok": False, "error": "kullanım: --job IS.json"}
     except Exception as ex:
         res = {"ok": False, "error": str(ex)[:300]}
+    for f in TRASH:  # uzun video özeti: analiz kopyası, altyazı ve HD anlar (parçalar iş klasörüne kopyalandı; hata olsa da yer kaplamasın)
+        try:
+            Path(f).unlink(missing_ok=True)
+        except OSError:
+            pass
     print(json.dumps(res, ensure_ascii=False))

@@ -64,6 +64,8 @@ export type Episode = {
   anlik?: boolean;
   /** fragman analizi (assemble meta trailer): intro'da SON DAKİKA yerine fragman etiketi (slotLabel) */
   trailer?: boolean;
+  /** uzun video özeti (assemble meta summary): intro'da SON DAKİKA yerine özet etiketi (slotLabel: ÖZET, AÇIKLAMA…) */
+  summary?: boolean;
   segments: Segment[];
 };
 

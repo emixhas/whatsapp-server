@@ -508,6 +508,7 @@ def main(src: str, dst: str):
         "infoKind": INFO_KIND or None,  # şablon video türü: deprem | mac | piyasa | takvim
         "userVideo": os.environ.get("USER_VIDEO") == "1" or None,
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
+        "summary": os.environ.get("SUMMARY") == "1" or None,  # uzun video özeti: intro ve açıklamada kendi etiketi (ÖZET…), son dakika değil
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)
         "expiresAt": data.get("expiresAt") or None,  # bilgi bu andan sonra eskir: expire_videos.py YouTube'da liste dışı yapar
         "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum

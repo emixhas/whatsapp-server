@@ -431,7 +431,8 @@ def playlist_names(meta: dict) -> list:
     from common import settings
     ch = settings().get("channelName", "Türkiye Gündemi")
     fmt = meta.get("format")
-    names = [] if meta.get("trailer") else [
+    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"  # uzun video özeti son dakika değil: yalnız kategori listesi
+    names = [] if meta.get("trailer") or calm else [
              f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"
              else f"{ch} · Haftanın Özeti (uzun)" if fmt == "haftalik"

@@ -355,7 +355,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   --sub-format vtt/best`; altyazı inemezse bilgiyle devam). Altyazı seçimi elle tr → elle en → otomatik özgün dil (-orig) → otomatik tr → en;
   `parse_vtt` kayan otomatik altyazıda yalnız kelime zamanlı yeni satırı alır (10 ms'lik geçiş ipuçları atılır), bitiş sonraki satırı geçmez.
   `settings.social` {maxSeconds 600, longWindowSeconds 240, maxLongSeconds 10800, liveSeconds 120} (`social_cfg`; panelde alan yok, bozuk/0 →
-  varsayılan). Süre ≤ maxSeconds → eskisi gibi bütün iner (indirme argümanları aynı, önüne yalnız bilgi çağrısı eklenir). Uzun video (biten
+  varsayılan). Süre ≤ maxSeconds → eskisi gibi bütün iner (indirme argümanları aynı, önüne yalnız bilgi çağrısı eklenir). Uzun video (19 Ekim'den beri yalnız talimatta/linkte zaman varsa, "kendi sesiyle/tamamı" denmişse ya da uzun video özeti
+  kapalıysa; diğer durumda aşağıdaki "Uzun video özeti": videonun tamamı incelenir) (biten
   canlı yayın dahil) → `choose_window` ile en çok 240 sn `--download-sections "*A-B" --force-keyframes-at-cuts` (`--max-filesize` yok):
   1) talimattaki zaman (`time_hint`: aralık, h:mm:ss, mm:ss + -dan/-daki, 24'ten büyük eksiz mm:ss, "5. dakika(dan)", "5'inci dakika", "5
   dakikadan itibaren", "90. saniyeden", "son/ilk N dakika" — 20 sn altı ve "ilk 5 sn'yi kes", "son 10 saniyeyi kullanma" kurgu talimatıdır —,
@@ -526,6 +527,54 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   ile: log, Claude argümanları ve iş klasörü aynı (sinema planında yalnız kategori genel → sinema), istem yalnız montaj.md'nin sinema
   satırlarıyla farklı. Gerçek YouTube indirmesi, mlx-whisper'ın dil algılaması ve Claude'un kare
   okuması Mac'te DENENMEDİ.
+- Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
+  videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
+  `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,
+  maxSeconds 10800}; `common.summary_cfg()` — nesne değilse varsayılan, false → kapalı, bozuk/0 sayı varsayılan (maxSoundSeconds 0 = alıntı
+  yok) —, `server.js longSummaryCfg()` ve panel aynı kural). Karar (`wants_summary`): talimatta özet isteği (`SUMMARY_ASK`: özet/özetle,
+  analiz, çarpıcı sahne/an, en önemli/çarpıcı yer/an/sahne, öne çıkan; 90 sn üstü her platform, WhatsApp videosu dahil) ya da kendiliğinden
+  (yalnız YouTube, `minSeconds`tan — 10 dk — uzun, talimatta kendi ses/tamamı isteği `KEEP_SOUND` yoksa, başlık fragman değilse); talimatta
+  fragman geçerse fragman yolu; zaman yazılmışsa ("12:30'dan itibaren", t=) ya da klip/canlı yayında eski yol (bölüm + kendi sesi). Uzun
+  YouTube videosu (> social.maxSeconds 600): eski 4 dk'lık bölüm yerine videonun TAMAMI analiz için düşük çözünürlükte iner (`PROXY_FMT`
+  ≤360p, H.264 önce, mkv, mp4'e çevrilmez, en çok 25 dk), tüm altyazı `work/wa_inbox/<ad>.captions.json` (`social.captionsFile`; 600 satır
+  sınırı yok); `longSummary.maxSeconds` (3 saat) üstü Türkçe hata (zaman yazarak bölüm istenir). `social`: summary, summaryProxy, summaryReason,
+  sourceDuration, note. 600 sn'den kısa videoda tamamı HD iner, `summary` işareti eklenir. Panel (`socialVideoNews`): social_video.py 30 dk
+  sınırla ve ilerleme satırları anında loga (`runLines`); WhatsApp'a tek satır "🔎 Uzun video (25 dk): tamamı inceleniyor; en çarpıcı anlarıyla
+  40 saniyelik haber hazırlanacak. Belirli bir bölümden haber için…"; fragman kararından ÖNCE `runVideoNews({summary, summaryProxy})` →
+  wa_video.py 60 dk sınırla (satırlar anında). wa_video.py `summary` (job.summary ya da sosyal olmayan tek videoda `wants_summary`):
+  1. aşama (`summary_prepare`, video ≤240 sn ise atlanır): döküm = altyazı (yoksa konuşma tanıma videonun tamamında, dil kendiliğinden), tüm
+  sahne geçişleri (`scenes(…, 100000)`), çekimlere hizalı 48 genel kare (16'lık 3 çizelge, `overview_sheets`), dakika başına sahne geçişi
+  (`kesim_yogunlugu`), döküm "[12:30] …" paragrafları (≤25 sn; 14.000 kelimeyi aşarsa her paragraf orantılı kısalır) → Claude (`ozet_secim.md`,
+  kullanım türü "ozet", Read aracıyla kareler; olmazsa resimsiz bir kez): uygun/neden, video türü, konu, ana haber, kaynaklı önemli bilgiler,
+  5-8 an {start, end, tur kanca|olay|alinti|bilgi, onem 1-5, neden, alinti}. `pick_sections`: geçersiz/2 sn'den kısa an atılır, tek an ≤30 sn,
+  toplam ≤180 sn (önce kanca, sonra önem), 1 sn pay, 3 sn'den yakın anlar birleşir, en çok 8 bölüm. Bölümler `download_sections` ile HD (tek
+  yt-dlp çağrısı, her aralık `--download-sections` + `--force-keyframes-at-cuts`, şablon `<etiket>-%(section_start)d`; yarım inen bölüm yok
+  sayılır); inmeyen bölüm analiz kopyasından kesilir (log + WhatsApp "⚠️ N an YouTube'dan HD inmedi…"); tam inen videoda ve WhatsApp videosunda
+  kaynaktan kesilir (`summary_cut_local`, yeniden kodlanır). 2. aşama: her an ayrı video (en çok 8; normal işteki 4 sınırı girdide), her birinde
+  konuşma tanıma (dil kendiliğinden), yoksa videonun tamamının dökümünden o anın satırları; çekimlere hizalı 8 kare (anı seçilmeyen kısa videoda
+  16), blokta `kaynak_zamani`, `an` (tür/neden/alıntı), `konusma_dili` → `ozet.md` (girdide analiz, kaynak_video, ilgili_haberler; konuşmalı
+  sesli an varsa `alinti_izni` {en_fazla_saniye 8}): kanca + 2-4 haber segmenti, hızlı kesim (1,5-3 sn), en çok BİR kısa sesli alıntı (Claude
+  eklemezse zorlanmaz; bütçeyi aşan tek parçada `trailer_sound_clips`/`sound_window` ile bütün cümle penceresi; talimat "sesi kapat" derse —
+  `NO_BITE`; NO_SOUND'daki "özetle" sayılmaz — alıntı yok), kaynak videoda geçmez. Geçersiz parçanın yedeği önce planın hiç kullanmadığı, sonra
+  en az kullanılmış an (`clean_clips(spread=…)`). Etiket `summary_label` (ÖZET varsayılan; SON DAKİKA, AÇIKLAMA, RÖPORTAJ, MAÇ ÖZETİ, ÖZEL HABER;
+  ASCII yazım düzelir, ≤20 karakter), giriş "Kısa özet." (SON DAKİKA'da "Son dakika."), `breaking` ve SON DAKİKA kartı yalnız SON DAKİKA etiketinde
+  (panel `INFO_BREAKING=0`). İş klasörüne `ozet_analiz.txt` (analiz, seçilen anlar uzun videodaki saatleriyle, seslendirme, videonun tamamının
+  dökümü), meta.json `summary` {sourceSeconds, sections, konu}; sonuç `summary`, `sourceSeconds`, plan {summary, intro, konu, unsuitable, moments,
+  lowres, transcriptSource, analysisFile}. Analiz kopyası, altyazı dosyası ve HD anlar iş bitince silinir (başarısız olsa da; `TRASH`). Panel:
+  `startAnlik(…, {summary})` → env `SUMMARY=1` → assemble meta `summary` → Remotion intro'da SON DAKİKA yerine etiket (`episode.summary`,
+  `Intro.tsx`), `build_caption` başlığı "📺 ÖZET: …" (SON DAKİKA etiketinde eskisi gibi "🔴"), #sondakika ne eklenir ne kanal ortak etiketlerinden
+  gelir (`calm_tags`; `caption_tags` aynı), YouTube'da "· Son Dakika" listesine girmez (`playlist_names`). "Özet kurgusu hazır" mesajı (kısa
+  mesaj modu kapalıyken) konuyu ve seçilen anları yazar; habere uygun değilse (`uygun: false`) kısa modda da tek satır uyarı. Yayın onaylı
+  (userVideo). Panel 📡 grubunda "📺 Uzun video özeti" anahtarı + süre (20-60) + "… dakikadan uzun YouTube videosunu kendiliğinden özetle"
+  anahtarı + dakika (3-60); yardım listesinde. Sandbox'ta denendi (ağ yok): sentetik 25 dk 720p video + düşük çözünürlüklü kopyası, sahte YouTube
+  altyazısı, sahte yt-dlp (bilgi/altyazı, analiz kopyası, `--download-sections`), sahte iki aşamalı Claude: an birleştirme/kısaltma/sona taşma,
+  5 an HD, alıntı 8 sn bütçede bütün cümle (6,8-10,8 sn), HD hiç inmedi / yarısı indi (analiz kopyasından), altyazı yok + konuşma tanıma yok
+  (alıntı yok), bozuk JSON (hata, analiz kopyası silindi), uygun değil uyarısı, 400 sn + "özetle" (yerel kesim), 200 sn (an seçimi yok), zaman
+  yazılmış ve "orijinal sesiyle" (eski bölüm yolu), 4 saat (hata), 8 dk talimatsız (eski yol), WhatsApp videosu + "özetle"; panel kopyasında link
+  → social_video → wa_video → startAnlik (sahte pipeline: SUMMARY=1, INFO_LABEL ÖZET, INFO_INTRO "Kısa özet.", INFO_BREAKING 0, "30 saniye" →
+  DURATION 30), assemble + build_caption + playlist_names. Özet olmayan 6 wa_video işi (sosyal medya tam ses, sesi kapalı, WhatsApp, iki video,
+  sesli, fragman) HEAD ile: istem, Claude argümanları, log ve iş klasörü bayt bayt aynı. Gerçek YouTube indirmesi (analiz kopyası boyutu,
+  `--download-sections` hızı, bot doğrulaması), uzun videoda konuşma tanıma süresi ve Claude'un 48 kareyi okuması DENENMEDİ.
 - Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;
   saat yazmazsam direkt paylaşsın"): `app/when.js parseWhen` Türkçe saat ifadelerini çözer ("18:30'da", "18.30 da", "saat 8'de" —
   dönemsizse bugünün en yakın gelecekteki 08:00/20:00'ı —, "akşam 9", "sabah 9", "öğlen 12", "öğleden sonra 4", "gece 1", "yarın 10:00",

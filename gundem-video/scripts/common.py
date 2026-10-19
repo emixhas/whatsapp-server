@@ -1,6 +1,8 @@
 """Ortak yardımcılar: veri dosyaları, .env, zaman."""
 import json
+import math
 import os
+import re
 import ssl
 import urllib.request
 from datetime import datetime, timezone
@@ -123,6 +125,39 @@ def pick_format(hour: int | None = None):
     return "aksam", settings()["formats"]["aksam"]
 
 
+# Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir
+# miyiz, videodan çarpıcı sahneleri de alarak"): settings.longSummary. Nesne değilse varsayılan (false → kapalı); sayı alanı bozuk ya
+# da 0 → varsayılan (maxSoundSeconds 0 = orijinal ses yok). server.js longSummaryCfg() ve panel aynı kural.
+SUMMARY_DEFAULTS = {"enabled": True, "auto": True, "duration": 40, "minSeconds": 600, "maxSoundSeconds": 8, "maxSeconds": 3 * 3600}
+# süre (server.js SURE_RE ve wa_video.SURE_RE ile aynı kural): "40 saniyelik", "40 sn", "1 dakikalık"; ekli sayı ("ilk 15 saniyeyi kes") değil
+SURE_RE = re.compile(r"(?:(\d{2,3})\s*(?:saniye(?:lik|de|ye)?|sn)|(\d{1,2})\s*(?:dakika(?:l[ıi]k|da|ya)?|dk))(?!\w|['’](?:y[ıi]|d[ae]n|t[ae]n))")
+
+
+def _off(v) -> bool:
+    return v is False or v == 0 or str(v).strip().lower() in ("false", "0")
+
+
+def summary_cfg() -> dict:
+    raw = settings().get("longSummary")
+    s = raw if isinstance(raw, dict) else {"enabled": False} if raw is not None and _off(raw) else {}
+
+    def num(k: str) -> float:
+        try:
+            x = float(s.get(k))
+        except (TypeError, ValueError):
+            return float(SUMMARY_DEFAULTS[k])
+        return x if math.isfinite(x) and (x > 0 or (k == "maxSoundSeconds" and x == 0)) else float(SUMMARY_DEFAULTS[k])
+    return {**s, "enabled": not _off(s.get("enabled", True)), "auto": not _off(s.get("auto", True)),
+            **{k: num(k) for k in ("duration", "minSeconds", "maxSoundSeconds", "maxSeconds")}}
+
+
+def summary_secs(instruction: str) -> int:
+    """Özet videosunun süresi: talimattaki "N saniye/dakika", yoksa longSummary.duration (40); 20-60 sn."""
+    m = SURE_RE.search(str(instruction or "").replace("I", "ı").replace("İ", "i").lower())
+    n = (int(m.group(1)) if m.group(1) else int(m.group(2)) * 60) if m else int(summary_cfg()["duration"])
+    return max(20, min(60, n))
+
+
 def episode_meta(video_name: str):
     return load_json(OUT / video_name.replace(".mp4", ".json"), None)
 
@@ -140,6 +175,11 @@ def trailer_tags(meta: dict, base: str) -> list:
     promo = meta.get("slotLabel") == "TANITIM FİLMİ"
     tags = [t for t in for_meta(meta, base, [] if promo else ["#fragman"]) if t != "#sondakika" and not (promo and t == "#fragman")]
     return [t for t in tags if t != "#film"] if "#dizi" in tags else tags
+
+
+def calm_tags(base) -> str:
+    """Kanalın ortak etiketleri, #sondakika olmadan (uzun video özeti son dakika haberi değil; fragmandaki trailer_tags gibi)."""
+    return " ".join(t for t in (base if isinstance(base, str) else " ".join(base or [])).split() if t.lower().replace("ı", "i") != "#sondakika")
 
 
 def build_caption(video_name: str, max_len: int = 2000):
@@ -173,6 +213,8 @@ def build_caption(video_name: str, max_len: int = 2000):
         head = INFO_HEAD.get(meta.get("infoKind") or "", "🔴 SON DAKİKA")
         if meta.get("infoKind") == "video" and meta.get("slotLabel"):  # WhatsApp görüntüsü: etiket kurgu planından (ÖZEL HABER…)
             head = f"🔴 {meta['slotLabel']}"
+        if meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA":  # uzun video özeti: son dakika değil → "📺 ÖZET: …"
+            head = f"📺 {meta.get('slotLabel') or 'ÖZET'}"
         if meta.get("trailer"):  # fragman analizi: son dakika değil → "🎬 FRAGMAN: …" (etiket kurgu planından: YENİ FRAGMAN…)
             head = f"🎬 {meta.get('slotLabel') or 'FRAGMAN'}"
             room = 100 - len(f"{head}:  | {s['channelName']} #Shorts")  # uzun başlık kanal adını ve #Shorts'u kesmesin
@@ -198,7 +240,9 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl") and not social_src:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, s["hashtags"], ["#sondakika"] if anlik and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
+    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"  # uzun video özeti son dakika haberi değil: #sondakika yok
+    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"],
+                                                                                   ["#sondakika"] if anlik and not calm and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
     lines += ["Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if meta.get("trailer") and meta.get("slotLabel") == "TANITIM FİLMİ"
               else "Yeni fragmanlar ve film, dizi haberleri için takip et, abone ol." if meta.get("trailer")
               else "Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if anlik
@@ -220,7 +264,8 @@ def caption_tags(video_name: str) -> list:
     meta = episode_meta(video_name) or {}
     s = settings()
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, s["hashtags"], ["#sondakika"] if anlik else [])
+    calm = meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA"
+    tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"], ["#sondakika"] if anlik and not calm else [])
     try:
         import censor
         return censor.clean_tags(tags)
