@@ -10,10 +10,13 @@ ELİNDEKİLER
 - "talimat": kanal sahibinin isteği (konu, vurgu, istenen ya da istenmeyen bölümler). Talimat bir konu ya da kişi söylüyorsa o
   konuyu seç; DOĞRULUK kurallarını asla geçersiz kılmaz.
 - "video": başlık, kanal (yükleyen), açıklama, yükleme tarihi, bugün, izlenme, süre ("sure_sn" saniye).
-- "dokum": videonun tamamının konuşma dökümü, paragraflar halinde, her paragrafın başında videodaki zamanı ("[12:30]" = 12. dakika
-  30. saniye = 750 sn; "[1:02:10]" = 3730 sn). "dokum_kaynagi" nereden geldiğini söyler: YouTube'un otomatik altyazısı ya da konuşma
+- "dokum": videonun tamamının konuşma dökümü, satır satır (bir cümle ya da en çok ~8 saniyelik konuşma), her satırın başında
+  videodaki zamanı 0,1 saniye hassasiyetle ("[12:30.5]" = 12. dakika 30,5. saniye = 750,5 sn; "[1:02:10.0]" = 3730 sn). Bir satırın
+  sonu bir sonraki satırın zamanıdır. "dokum_kaynagi" nereden geldiğini söyler: YouTube'un otomatik altyazısı ya da konuşma
   tanıma hata yapar (özel adlar, sayılar yanlış yazılabilir): bağlamdan anlamı çıkar, emin olmadığın adı ve sayıyı kullanma.
   Döküm boşsa yalnız karelerden ve açıklamadan karar ver.
+- "dokum_seyreltildi" VARSA: video çok uzun olduğu için dökümden satırlar eşit aralıklarla atıldı (yalnız "tutulan_oran" kadarı
+  var); atlanan yerlerde de konuşma vardır, iki satır arasındaki boşluk sessizlik değildir.
 - "kare_dosyalari": videoya yayılmış kareler (her dosyada 16 kare, soldan sağa, yukarıdan aşağı; her karenin videodaki saniyesi
   "kareler" listesinde). Her dosyayı Read aracıyla aç ve İNCELE: ne görünüyor (stüdyo, sahadan görüntü, kalabalık, olay yeri,
   yangın, kaza, kürsüde konuşan kişi, ekrandaki isim/unvan bandı, grafik), hangi kare reklam, jenerik, boş ya da başka kanalın
@@ -38,8 +41,9 @@ AN SEÇİMİ ("anlar")
   - "kanca": görsel olarak EN çarpıcı an (olay anı, hareket, kalabalık, duygu, ilk kez görülen görüntü, dikkat çeken bir grafik
     ya da belge). En az bir tane, 4-10 saniye. Haberin konusuyla ilgili olmalı.
   - "olay": haberin anlattığını görüntüyle destekleyen anlar (sahadan görüntü, olay yeri, kişiler, kurum, ürün…).
-  - "alinti": haber değeri en yüksek, net duyulan, kendi başına anlaşılan bir açıklama/cümle (en çok 2 tane). Başını ve sonunu
-    döküm paragraflarına göre CÜMLE SINIRINDA seç (cümle ortasında başlamasın, bitmesin); "alinti" alanına cümleyi dökümdeki gibi yaz.
+  - "alinti": haber değeri en yüksek, net duyulan, kendi başına anlaşılan bir açıklama/cümle (en çok 2 tane). Başını cümlenin ilk
+    satırının zamanına, sonunu son satırından sonraki satırın zamanına göre CÜMLE SINIRINDA seç (cümle ortasında başlamasın, bitmesin);
+    "alinti" alanına cümleyi dökümdeki gibi AYNEN yaz (sınırlar bu metinle döküm satırlarına oturtulur).
   - "bilgi": haberin anlaşılması için gereken bağlam (kim, nerede, sayı, karar), görüntüsü sakin olabilir.
 - Kaçın: jenerik, program girişi/kapanışı, reklam ve sponsor, "abone ol" çağrıları, başka kanalın logosunun büyük göründüğü yerler,
   boş/siyah/geçiş kareleri, konunun dışındaki bölümler, uzun süre sabit duran konuşan kafa (konuşmanın kendisi haber değilse).

@@ -11,7 +11,8 @@ ELİNDEKİLER
   bilgiler ("onemli_bilgiler"). Videonun seçilmeyen bölümlerinde geçenler buradadır; bu bilgileri kullanabilirsin.
 - "kaynak_video": uzun videonun başlığı, kanalı (yükleyen), açıklaması, yükleme tarihi, bugün, izlenme, toplam süre.
 - "videolar": seçilen anların her biri ayrı bir video (1, 2, 3…; videoların kendi saniyeleri 0'dan başlar). Her birinde: "kaynak_zamani"
-  (uzun videodaki yeri), "an" (seçilme nedeni ve türü: kanca/olay/alinti/bilgi), süre, sahne geçişleri, konuşma dökümü ("[başlangıç-
+  (uzun videodaki yeri; parçalarda bu saatleri DEĞİL videonun kendi saniyelerini yaz), "an" (seçilme nedeni ve türü: kanca/olay/alinti/
+  bilgi; "start"-"end" anın bu videodaki yeri, yakın anlar tek videoda birleşmiş olabilir), süre, sahne geçişleri, konuşma dökümü ("[başlangıç-
   bitiş] metin", bu videonun saniyeleriyle) ve kare çizelgesi: KARELER dosyası (resim; kareler soldan sağa, yukarıdan aşağı, her
   karenin saniyesi "kareler" listesinde). Resmi Read aracıyla aç ve İNCELE: ne görünüyor, hangi bölüm net ve çarpıcı, ekranda hangi
   yazı (isim/unvan bandı, grafik, belge) var, hangi kare boş, geçiş ya da başka kanalın logosu büyük.

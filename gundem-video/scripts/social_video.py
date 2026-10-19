@@ -258,12 +258,24 @@ FMT = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[height<=1080]+ba/b[height<=108
 # miyiz, videodan çarpıcı sahneleri de alarak"): videonun TAMAMI analiz için düşük çözünürlükte iner (kareler, sahne geçişleri, gerekirse
 # konuşma tanıma), seçilen anlar sonra `download_sections` ile HD iner. H.264 önce (uzun videoda sahne taraması hızlı olsun).
 PROXY_FMT = "bv*[height<=360][vcodec^=avc1]+ba/bv*[height<=360]+ba/b[height<=360]/bv*[height<=480]+ba/b[height<=480]/wv*+ba/w"
-# talimatta özet/analiz isteği: her uzunlukta (90 sn üstü) özet modu
-SUMMARY_ASK = re.compile(r"(?<!\w)(?:özet\w*|analiz\w*|çarpıcı\s+(?:sahne|an|anlar|yer|görüntü|kısım|bölüm)\w*|"
-                         r"en\s+(?:önemli|çarpıcı|ilginç|dikkat\s+çekici)\s+(?:yer|an|anlar|sahne|kısım|bölüm|görüntü)\w*|öne\s+çıkan\w*)", re.I)
-# özet istemeyen talimat: videonun kendi sesi / tamamı istenirse uzun videoda eski yol (bölüm + kendi sesi)
-KEEP_SOUND = re.compile(r"(?:orijinal|kendi|videonun|gerçek|asıl|doğal)\s+ses|sesiyle|ses(?:i|ini)?\s+(?:kullan|koru|kalsın)|"
-                        r"(?<!\w)(?:tamamı\w*|hepsini|baştan\s+sona)(?!\w)", re.I)
+# Özet, ses ve haber istekleri Türkçe harfsiz yazımla da tanınır (WhatsApp'ta "ozetle", "carpici sahneler"; inceleme, 19 Ekim): talimat
+# `_fold` ile katlanır, kalıplar katlanmış biçimde yazılır. Talimatta açık özet isteği (özet/özetle, summarize, highlights, recap): her
+# uzunlukta (90 sn üstü) özet modu; genel sözler (analiz, çarpıcı sahne, en önemli an, öne çıkan) kendi ses isteğinden sonra bakılır
+SUMMARY_ASK = re.compile(r"(?<!\w)(?:ozet\w*|summar\w*|highlights?|recap\w*)", re.I)
+SUMMARY_HINT = re.compile(r"(?<!\w)(?:analiz\w*|analys\w*|carpici\s+(?:sahne|an|anlar|yer|goruntu|kisim|bolum)\w*|"
+                          r"en\s+(?:onemli|carpici|ilginc|dikkat\s+cekici)\s+(?:yer|an|anlar|sahne|kisim|bolum|goruntu)\w*|one\s+cikan\w*)", re.I)
+# özet istemeyen talimat: videonun kendi sesi istenirse uzun videoda eski yol (bölüm + kendi sesi). Önce olumsuz istek (sesi kapat,
+# orijinal ses olmasın, kendi sesini kullanma, videonun sesi gelmesin, sessiz, yalnız seslendirme) bakılır: kendi ses isteği sayılmaz;
+# "ses" sözcüğü bitmeli ("kendi seslendirmenle", "gerçek seslendirme" ses isteği değil); "tamamı/baştan sona" yalnız paylaş/oynat ile
+# ("baştan sona izle ve haber yap" uzun videoda özet isteğidir)
+NO_KEEP_SOUND = re.compile(r"(?<!\w)ses(?:i|ini|in|leri|lerini)?\s+(?:kapat(?!ma)|kis(?!ma)|olmasin|olmayacak|gitsin|gelmesin|duyulmasin|istemiyorum|"
+                           r"kullanma(?!k)|kullanmadan|verme(?!k))|(?<!\w)sessiz|(?:yalniz|sadece|hep)\s+seslendir", re.I)
+KEEP_SOUND = re.compile(r"(?:orijinal|kendi|videonun|gercek|asil|dogal)\s+ses(?:i|ini|iyle|le|leri|lerini|leriyle)?(?!\w)|(?<!\w)sesiyle(?!\w)|"
+                        r"(?<!\w)ses(?:i|ini)\s+(?:kullan|koru|kalsin|acik|duyulsun|olsun)|"
+                        r"(?<!\w)(?:tamam\w*|hepsini|bastan\s+sona)\s+(?:paylas|oynat|yayinla|ver|koy|kullan)\w*", re.I)
+# fragman başlıklı YouTube linkinde özet yerine fragman analizi (server.js NEWS_ASK ile aynı kural: açık haber isteği varsa haber özeti)
+NEWS_ASK = re.compile(r"(?<!\w)(?:haber(?:i|ini)?\s+(?:yap|olarak|gibi|hazırla|üret|çek)(?!(?:ma|me)(?:y[ıi]n|s[ıi]n|z|d[ae]n)?(?!\w))\w*|"
+                      r"haber\s+olarak|son\s?dakika)(?!\w)(?!\s*(?:olarak\s+)?(?:değil|olmasın|olmasin|yazma|koyma|deme|istemiyorum))", re.I)
 # altyazı/başlık eşleşmesinde sayılmayan kelimeler (topic_news.STOP + haber videolarının kalıp sözleri, zaman ve kurgu talimatı)
 KW_STOP = {"için", "ile", "olan", "olarak", "sonra", "daha", "göre", "yeni", "oldu", "etti", "dedi", "açıkladı", "haber", "son", "dakika",
            "bugün", "şimdi", "hakkında", "ilgili", "konu", "video", "anlık", "gündem", "olay", "olayı", "kadar", "gibi", "çok", "bir", "iki",
@@ -289,6 +301,25 @@ def social_cfg() -> dict:
 
 def _low(t: str) -> str:
     return (t or "").replace("I", "ı").replace("İ", "i").lower()
+
+
+def _fold(t: str) -> str:
+    """Türkçe küçük harf + harfsiz yazım (ö→o, ç→c, ş→s, ü→u, ğ→g, ı→i): "özetle" ile "ozetle" aynı."""
+    return _low(t).translate(str.maketrans("öçşüğıâîû", "ocsugiaiu"))
+
+
+def keep_sound(instruction: str) -> bool:
+    """Talimat videonun kendi sesini istiyor mu (olumsuzu — "sesi kapat", "orijinal ses olmasın" — istemez)."""
+    t = _fold(instruction)
+    return not NO_KEEP_SOUND.search(t) and bool(KEEP_SOUND.search(t))
+
+
+def trailer_auto() -> bool:
+    """settings.trailer açık ve başlıktan otomatik tanıma açık mı (server.js trailerCfg ile aynı hoşgörülü kural)."""
+    raw = settings().get("trailer")
+    t = raw if isinstance(raw, dict) else {"enabled": False} if raw is False or raw == "false" else {}
+    off = lambda v: v is False or v == 0 or str(v).strip().lower() in ("false", "0")  # noqa: E731
+    return not off(t.get("enabled")) and not off(t.get("autoDetect"))
 
 
 def hms(t: float) -> str:
@@ -598,13 +629,21 @@ def wants_summary(instruction: str, dur: float, plat: str = "YouTube", title: st
     c = summary_cfg()
     if not c["enabled"] or dur <= 90:
         return False, ""
-    t = _low(instruction)
+    t = _fold(instruction)
     if TRAILER.search(t):  # fragman analizi kendi yolunda
+        return False, ""
+    # fragman başlıklı YouTube videosu (inceleme, 19 Ekim: "analiz et", "özetle" fragman analizini özet yoluna çeviriyordu; fragman
+    # analizi zaten fragmanın özetidir): fragman analizi açık ve başlıktan tanıma açıkken açık haber isteği yoksa özet değil
+    if plat == "YouTube" and (title or caption) and is_trailer(title, caption) and trailer_auto() and not NEWS_ASK.search(_low(instruction)):
         return False, ""
     if SUMMARY_ASK.search(t):
         return True, "talimatta özet istendi"
+    if keep_sound(instruction):  # "kendi sesiyle" açık isteği genel sözlerden ("analiz", "en önemli an") önce gelir
+        return False, ""
+    if SUMMARY_HINT.search(t):
+        return True, "talimatta özet istendi"
     # viral/mizah etiketli video haber özeti değildir (kendi sesiyle oynar): kendiliğinden özetlenmez
-    if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not KEEP_SOUND.search(t) and not is_trailer(title, caption) \
+    if plat == "YouTube" and c["auto"] and dur > c["minSeconds"] and not is_trailer(title, caption) \
             and content_kind(instruction) not in ("trend", "mizah"):
         return True, f"video {round(c['minSeconds'] / 60)} dakikadan uzun"
     return False, ""

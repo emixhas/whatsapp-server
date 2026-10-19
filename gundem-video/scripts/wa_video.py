@@ -27,6 +27,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -53,6 +54,8 @@ NO_BITE = re.compile(r"ses(?:i|ini)?\s+(?:kapat(?!ma)|kıs(?!ma)|olmasın|gitsin
 CATS = {"finans", "siyaset", "asayis", "spor", "hava", "toplum", "teknoloji", "saglik", "dunya", "parti", "egitim", "sinema", "genel"}
 LANGS: dict = {}  # video yolu → konuşma tanımanın algıladığı dil (fragmanda dil kendiliğinden algılanır)
 TRASH: list = []  # iş bitince (başarılı ya da değil) silinecek dosyalar: uzun video özetinin analiz kopyası, altyazısı, HD anları
+TRASH_GLOBS: list = []  # (klasör, kalıp): HD bölüm indirmesinin bıraktığı her dosya (yarım inip reddedilen, .part) iş bitince silinir
+TMPDIRS: list = []  # iş klasörlerinin analiz kopyası: panel durdurursa (SIGTERM) silinir
 TRAILER_TALIMAT = "Bu fragmanı analiz et: ne anlatıldığını ve en çarpıcı anlarını dikkat çeken ama doğru bir fragman özeti olarak anlat."
 # fragman süresi (server.js SURE_RE/trailerSecs ile aynı kural): "N saniye/sn" ya da "N dakika/dk" (× 60); belirtme/çıkma ekli sayı süre
 # değildir ("baştaki 15 saniyeyi kullanma", "ilk 5 sn'yi kes"), "40 saniyelik", "40 sn'lik", "40 saniyede", "1 dakikalık" süredir
@@ -371,10 +374,11 @@ def still(src: Path, t: float, w: int, h: int, out: Path) -> bool:
     return r.returncode == 0 and out.exists()
 
 
-def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float = 0.0, spread: set | None = None) -> list:
+def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float = 0.0, spread: set | None = None, fallback: bool = True) -> list:
     """Claude'un parçalarını doğrular (video numarası, sınırlar, en az 0,8 sn); hiç geçerli parça yoksa videonun
-    henüz kullanılmamış kısmından seslendirme kadar bir parça verir (video biterse `start0`dan; fragmanda logolardan sonrası)."""
-    out = []
+    henüz kullanılmamış kısmından seslendirme kadar bir parça verir (video biterse `start0`dan; fragmanda logolardan sonrası).
+    fallback=False: yedek parça yok, boş liste (fragman/özet sesli bölümü: başka görüntü "açıklama" diye oynamasın)."""
+    out, named = [], []
     for c in raw or []:
         try:
             v, s, e = int(c.get("video", 1)), float(c["start"]), float(c["end"])
@@ -382,17 +386,20 @@ def clean_clips(raw, infos: list, need: float, used_until: dict, start0: float =
             continue
         if not 1 <= v <= len(infos):
             continue
+        named.append(v)
         d = infos[v - 1]["duration"]
         s, e = max(0.0, min(s, d)), max(0.0, min(e, d - 0.05))
         if e - s >= 0.8:
             out.append({"video": v, "start": round(s, 2), "end": round(e, 2)})
     for c in out[:8]:
         used_until[c["video"]] = max(used_until.get(c["video"], 0.0), c["end"])
-    if out:
+    if out or not fallback:
         return out[:8]
-    # yedek parça: ilk video; özetin ayrı anlarında (spread = planda kullanılan video numaraları) önce planın hiç kullanmadığı, sonra en az
-    # kullanılmış an (her geçersiz parça aynı anı oynatmasın, sonraki segmentin görüntüsünü tekrarlamasın)
-    v = min(range(1, len(infos) + 1), key=lambda k: (k in spread, used_until.get(k, 0.0) / max(infos[k - 1]["duration"], 0.1), k)) if spread is not None else 1
+    # yedek parça: ilk video; özetin ayrı anlarında (spread = planda kullanılan video numaraları) önce planın bu segment için yazdığı an
+    # (numara doğru, saniyeler geçersiz), sonra planın hiç kullanmadığı, sonra en az kullanılmış an (her geçersiz parça aynı anı oynatmasın,
+    # sonraki segmentin görüntüsünü tekrarlamasın)
+    v = (named[0] if named else min(range(1, len(infos) + 1), key=lambda k: (k in spread, used_until.get(k, 0.0) / max(infos[k - 1]["duration"], 0.1), k))
+         ) if spread is not None else 1
     d = infos[v - 1]["duration"]
     s = used_until.get(v, min(0.5, d / 10))
     if s + 1.5 > d:
@@ -412,6 +419,28 @@ def full_clips(raw, infos: list, max_s: float) -> list:
         return ok
     s0 = min(0.3, d / 10)
     return [{"video": v + 1, "start": round(s0, 2), "end": round(min(d - 0.2, s0 + max_s), 2)}]
+
+
+def local_clips(raw, secs: list, infos: list) -> list:
+    """Özet: Claude parçayı anın kendi saniyesi yerine uzun videonun saniyesiyle ("kaynak_zamani"ndaki 397,5-405 gibi) yazdıysa
+    parça o anın videosuna ve saniyesine çevrilir (yoksa geçersiz sayılıp başka görüntüyle doluyordu); diğer parçalar aynen."""
+    out = []
+    for c in raw or []:
+        try:
+            v, s, e = int(c.get("video", 1)), float(c["start"]), float(c["end"])
+        except Exception:
+            out.append(c)
+            continue
+        if 1 <= v <= len(infos) and s < infos[v - 1]["duration"] - 0.8:
+            out.append(c)
+            continue
+        inside = lambda k: secs[k]["start"] - 0.5 <= s < secs[k]["end"]  # noqa: E731
+        k = v - 1 if 1 <= v <= len(secs) and inside(v - 1) else next((i for i in range(len(secs)) if inside(i)), None)
+        if k is None:
+            out.append(c)
+            continue
+        out.append({**c, "video": k + 1, "start": round(max(0.0, s - secs[k]["start"]), 2), "end": round(e - secs[k]["start"], 2)})
+    return out
 
 
 def cap_clips(clips: list, budget: float) -> list:
@@ -465,6 +494,12 @@ def hms(t: float) -> str:
     return f"{t // 3600}:{t % 3600 // 60:02d}:{t % 60:02d}" if t >= 3600 else f"{t // 60}:{t % 60:02d}"
 
 
+def hms1(t: float) -> str:
+    """0,1 sn hassasiyetle: 750,5 → "12:30.5", 3730 → "1:02:10.0"."""
+    whole, tenth = divmod(int(round(max(0.0, t) * 10)), 10)
+    return f"{hms(whole)}.{tenth}"
+
+
 def summary_lines(social: dict | None) -> tuple:
     """Uzun videonun tamamının altyazısı (social_video.py `captionsFile`, kısa videoda `captions`) → [(başlangıç, bitiş, metin)], kaynak."""
     so = social or {}
@@ -513,6 +548,53 @@ def paragraphs(lines: list, span: float = 25.0, budget: int = 14000) -> list:
     return out
 
 
+DOKUM_STOP = {"bir", "için", "ile", "çok", "daha", "olan", "olarak", "gibi", "ama", "şey", "diye", "kadar", "sonra", "var", "yok", "biz", "siz",
+              "ben", "sen", "onu", "bunu", "şunu", "the", "and"}
+
+
+def dokum_lines(lines: list, budget: int = 14000, span: float = 8.0) -> tuple:
+    """1. aşamanın dökümü: satırlar → "[12:30.5] metin" (cümle sonunda ya da en çok `span` sn'de bir yeni satır, zaman 0,1 sn; alıntının
+    başı ve sonu bu zamanlara göre seçilir — eskiden 25 sn'lik paragrafta tek zaman vardı). Toplam `budget` kelimeyi aşarsa (2-3 saatlik
+    video) satırlar EŞİT ARALIKLARLA atılır (eskiden her paragrafın sonu kesiliyordu, alıntı kaybolabiliyordu); dönüş (satırlar, tutulan oran)."""
+    rows, cur, t0 = [], [], 0.0
+    for a, _, t in lines:
+        if cur and a - t0 > span:
+            rows.append((t0, " ".join(cur)))
+            cur = []
+        if not cur:
+            t0 = a
+        cur.append(t)
+        if re.search(r"[.!?…]$", t.strip()):
+            rows.append((t0, " ".join(cur)))
+            cur = []
+    if cur:
+        rows.append((t0, " ".join(cur)))
+    words = sum(len(x[1].split()) for x in rows)
+    keep = 1.0 if words <= budget else budget / words
+    if keep < 1.0:
+        rows = [r for i, r in enumerate(rows) if int((i + 1) * keep) > int(i * keep)]
+    return [f"[{hms1(t0)}] {txt}" for t0, txt in rows], round(keep, 2)
+
+
+def quote_span(text: str, lines: list, a: float, b: float) -> tuple | None:
+    """Alıntının döküm satırlarındaki yeri: anın ±60 sn'sinde alıntı kelimelerinin en az %60'ını kapsayan en kısa ardışık satırlar
+    (en çok 8) → (başlangıç, bitiş); bulunamazsa None."""
+    words = lambda x: {w for w in re.findall(r"\w+", x.replace("I", "ı").replace("İ", "i").lower()) if len(w) > 2 and w not in DOKUM_STOP}  # noqa: E731
+    q = words(text)
+    if len(q) < 3:
+        return None
+    cand = [x for x in lines if a - 60 <= x[0] <= b + 60]
+    best = None
+    for i in range(len(cand)):
+        got = set()
+        for j in range(i, min(i + 8, len(cand))):
+            got |= q & words(cand[j][2])
+            key = (len(got) / len(q), -(cand[j][1] - cand[i][0]))
+            if best is None or key > best[0]:
+                best = (key, cand[i][0], cand[j][1])
+    return (best[1], best[2]) if best and best[0][0] >= 0.6 else None
+
+
 def cut_density(cuts: list, dur: float) -> list:
     """Dakika başına sahne geçişi sayısı (yüksek = sahadan görüntü/olay montajı, düşük = stüdyo/konuşma)."""
     d = [0] * max(1, math.ceil(dur / 60))
@@ -534,10 +616,11 @@ def overview_sheets(p: Path, dur: float, cuts: list, tmp: Path, n: int = 48, per
     return out
 
 
-def pick_sections(moments, dur: float) -> list:
+def pick_sections(moments, dur: float, lines: list | None = None) -> list:
     """Claude'un anları → indirilecek bölümler [{start, end, anlar}]: geçersizler atılır, tek an en çok 30 sn; toplam SUMMARY_MAX_TOTAL
     sn'yi aşarsa önce kanca, sonra önemi yüksek olanlar kalır; her an 1 sn payla genişler, 3 sn'den yakın anlar birleşir; en çok
-    SUMMARY_MAX_N bölüm (fazlası önemi düşük olanlardan atılır)."""
+    SUMMARY_MAX_N bölüm (fazlası önemi düşük olanlardan atılır). Alıntı ("alinti" metni varsa) döküm satırlarında bulunursa sınırları o
+    satırlara oturur ve 2 sn payla genişler (cümle ortasında başlamasın, bitmesin)."""
     ms = []
     for m in moments or []:
         try:
@@ -547,14 +630,19 @@ def pick_sections(moments, dur: float) -> list:
         if not (math.isfinite(a) and math.isfinite(b)):
             continue
         a, b = max(0.0, a), min(dur, b)
+        tur, alinti, pad = str(m.get("tur") or "olay")[:12], str(m.get("alinti") or "")[:300], 1.0
+        q = quote_span(alinti, lines or [], a, b) if tur == "alinti" and alinti and b > a else None
+        if q:  # alıntının satırları anın içine (Claude'un aralığıyla birlikte; en çok 30 sn, alıntı hep içinde)
+            lo, hi = (min(a, q[0]), max(b, q[1])) if q[0] < b and q[1] > a else q
+            a, b, pad = max(0.0, lo, q[1] - 30.0), min(dur, hi), 2.0
         if b - a < 2.0:
             continue
         try:
             onem = max(1, min(5, int(m.get("onem") or 3)))
         except (TypeError, ValueError):
             onem = 3
-        ms.append({"start": round(a, 2), "end": round(min(b, a + 30.0), 2), "tur": str(m.get("tur") or "olay")[:12], "onem": onem,
-                   "neden": str(m.get("neden") or "")[:240], "alinti": str(m.get("alinti") or "")[:300]})
+        ms.append({"start": round(a, 2), "end": round(min(b, a + 30.0), 2), "tur": tur, "onem": onem,
+                   "neden": str(m.get("neden") or "")[:240], "alinti": alinti, "pad": pad})
     chosen, total = [], 0.0
     for m in sorted(ms, key=lambda x: (x["tur"] != "kanca", -x["onem"], x["start"])):
         ln = m["end"] - m["start"] + 2.0
@@ -564,7 +652,7 @@ def pick_sections(moments, dur: float) -> list:
         total += ln
     secs = []
     for m in sorted(chosen, key=lambda x: x["start"]):
-        a, b = max(0.0, m["start"] - 1.0), min(dur, m["end"] + 1.0)
+        a, b = max(0.0, m["start"] - m["pad"]), min(dur, m["end"] + m["pad"])
         if secs and a - secs[-1]["end"] < 3.0:
             secs[-1]["end"] = round(max(secs[-1]["end"], b), 2)
             secs[-1]["anlar"].append(m)
@@ -574,6 +662,35 @@ def pick_sections(moments, dur: float) -> list:
         rank = lambda x: (any(y["tur"] == "kanca" for y in x["anlar"]), max(y["onem"] for y in x["anlar"]))  # noqa: E731
         secs = sorted(sorted(secs, key=rank, reverse=True)[:SUMMARY_MAX_N], key=lambda x: x["start"])
     return secs
+
+
+def detect_lang(p: Path, tmp: Path, dur: float) -> str | None:
+    """Konuşma dili videonun içinden (%40'ı) 30 sn'lik örnekle algılanır: konuşma tanıma dili ilk 30 sn'den seçer, uzun videonun başı
+    çoğu zaman jenerik, müzik ya da bekleme ekranıdır. Konuşma tanıma kurulu değilse ya da algılanamazsa None (eski davranış)."""
+    try:
+        import align
+        run = align._whisper()
+    except Exception:
+        return None
+    if not run:
+        return None
+    wav = tmp / f"{p.stem}-dil.wav"
+    try:
+        if subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{dur * 0.4:.1f}", "-i", str(p), "-t", "30", "-vn", "-ac", "1",
+                           "-ar", "16000", str(wav)]).returncode:
+            return None
+        run(wav, language=None)
+        return getattr(align, "_LAST_LANG", None) or None
+    except Exception:
+        return None
+    finally:
+        wav.unlink(missing_ok=True)
+
+
+def speech_lang(lang) -> str | None:
+    """Altyazı dili ("tr (otomatik)", "en-orig") → konuşma tanıma dil kodu ("tr", "en")."""
+    x = re.split(r"[-_ (]", str(lang or "").strip().lower())[0]
+    return x if re.fullmatch(r"[a-z]{2,3}", x) else None
 
 
 def summary_cut_local(src: Path, secs: list, tmp: Path, idx: list) -> list:
@@ -594,22 +711,33 @@ def summary_prepare(job: dict, src: Path, tmp: Path, instruction: str, target: i
     info = probe(src)
     D = info["duration"]
     lines, lsrc = summary_lines(so)
+    lang = speech_lang(so.get("captionsLang")) if lines else None
     if not lines and info["audio"]:
         log(f"🎬 özet: altyazı yok, konuşma tanıma videonun tamamını ({hms(D)}) dinliyor")
-        lines = transcript(src, tmp, None)
+        lang = detect_lang(src, tmp, D) if D > SUMMARY_DIRECT else None  # dil videonun içinden; kısa videoda konuşma tanıma kendisi algılar
+        if lang:
+            log(f"🎬 özet: konuşma dili {lang} (videonun ortasından algılandı)")
+        lines = transcript(src, tmp, lang)
+        if lines:
+            lang = lang or LANGS.get(str(src))
+            LANGS[str(src)] = lang or LANGS.get(str(src))
         lsrc = f"konuşma tanıma ({LANGS.get(str(src)) or 'dil bilinmiyor'})" if lines else ""
     if D <= SUMMARY_DIRECT:  # kısa video: an seçimi yok, tamamı kurguya girer
         return {"ok": True, "srcs": [src], "secs": [{"start": 0.0, "end": round(D, 2), "anlar": []}], "analysis": None, "lines": lines,
-                "lsrc": lsrc, "D": D, "lowres": 0, "hd": []}
+                "lsrc": lsrc, "D": D, "lowres": 0, "hd": [], "lang": lang}
     log(f"🎬 özet: {hms(D)} uzunluğundaki video baştan sona inceleniyor — {len(lines)} döküm satırı ({lsrc or 'döküm yok: yalnız görüntüden'})")
     cuts = scenes(src, 100000)
     sheets = overview_sheets(src, D, cuts, tmp)
+    dokum, thin = dokum_lines(lines)
     log(f"🎬 özet: {len(cuts)} sahne geçişi, {sum(len(x['kareler']) for x in sheets)} genel kare")
     inp = {"talimat": instruction or SUMMARY_TALIMAT, "hedef_sure": target,
            "video": {"baslik": so.get("title"), "kanal": so.get("uploader") or so.get("handle"), "aciklama": str(so.get("caption") or "")[:1500],
                      "yukleme_tarihi": so.get("date"), "bugun": time.strftime("%d.%m.%Y"), "izlenme": so.get("views"), "sure": hms(D), "sure_sn": round(D, 1)},
-           "dokum_kaynagi": lsrc or "yok", "dokum": paragraphs(lines), "kesim_yogunlugu": cut_density(cuts, D), "kare_dosyalari": sheets,
+           "dokum_kaynagi": lsrc or "yok", "dokum": dokum, "kesim_yogunlugu": cut_density(cuts, D), "kare_dosyalari": sheets,
            "ilgili_haberler": rel[:5]}
+    if thin < 1.0:  # 2-3 saatlik video: satırlar eşit aralıklarla atıldı (Claude bilsin; atlanan yerde konuşma yok sanmasın)
+        inp["dokum_seyreltildi"] = {"tutulan_oran": thin, "not": "Döküm çok uzun olduğu için satırlar eşit aralıklarla atıldı; atlanan yerlerde de "
+                                                                 "konuşma var. Kareler ve kesim yoğunluğu videonun tamamını gösterir."}
     prompt = (ROOT / "prompts" / "ozet_secim.md").read_text(encoding="utf-8") + json.dumps(inp, ensure_ascii=False, indent=1)
     log("🎬 özet: Claude videonun tamamını inceleyip en çarpıcı anları seçiyor")
     rc, text = claude(prompt, tmp, images=bool(sheets), kind="ozet")
@@ -624,7 +752,7 @@ def summary_prepare(job: dict, src: Path, tmp: Path, instruction: str, target: i
         sel = parse_plan(text)
     except Exception as e:
         return {"ok": False, "error": f"an seçimi okunamadı: {e}"}
-    secs = pick_sections(sel.get("anlar"), D)
+    secs = pick_sections(sel.get("anlar"), D, lines)
     if not secs:
         return {"ok": False, "error": "videoda kullanılabilir an seçilemedi"}
     if sel.get("uygun") is False:
@@ -634,7 +762,9 @@ def summary_prepare(job: dict, src: Path, tmp: Path, instruction: str, target: i
     files, hd = [None] * len(secs), []
     if job.get("summaryProxy") and so.get("url"):  # analiz kopyası düşük çözünürlüklü: anlar YouTube'dan HD iner
         log(f"🔗 özet: {len(secs)} an HD indiriliyor ({round(sum(x['end'] - x['start'] for x in secs))} sn)")
-        files, err = sv.download_sections(str(so["url"]), [(x["start"], x["end"]) for x in secs], f"an-{int(time.time())}")
+        tag = f"an-{int(time.time())}"
+        TRASH_GLOBS.append((sv.INBOX, f"{tag}-*"))  # reddedilen (yarım) bölümler ve zaman aşımında kalan .part dosyaları da silinsin
+        files, err = sv.download_sections(str(so["url"]), [(x["start"], x["end"]) for x in secs], tag)
         hd = [f for f in files if f]
         TRASH.extend(hd)
         if err:
@@ -652,7 +782,7 @@ def summary_prepare(job: dict, src: Path, tmp: Path, instruction: str, target: i
     if not keep:
         return {"ok": False, "error": "seçilen anlar indirilemedi"}
     return {"ok": True, "srcs": [f for _, f in keep], "secs": [x for x, _ in keep], "analysis": sel, "lines": lines, "lsrc": lsrc, "D": D,
-            "lowres": lowres, "hd": hd}
+            "lowres": lowres, "hd": hd, "lang": lang}
 
 
 def summary_label(label: str) -> tuple:
@@ -746,6 +876,7 @@ def build(job: dict) -> dict:
     tmp = ROOT / "work" / "jobs" / f"{name}-analiz"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
+    TMPDIRS.append(tmp)
     S = None
     if summary and job.get("summaryProxy"):  # analiz kopyası (yüzlerce MB) ve altyazı dosyası iş bitince silinir (başarısız olsa da)
         TRASH.extend([*srcs, *([Path(social["captionsFile"])] if (social or {}).get("captionsFile") else [])])
@@ -765,8 +896,12 @@ def build(job: dict) -> dict:
             info["scenes"] = info["cuts"][::max(1, math.ceil(len(info["cuts"]) / 150))]
         else:
             info["scenes"] = scenes(p)
-        # fragman ve özette konuşma dili kendiliğinden algılanır (uzun video İngilizce röportaj olabilir)
-        info["speech"] = (transcript(p, tmp, None) if trailer or summary else transcript(p, tmp)) if info["audio"] else []
+        # fragman ve özette konuşma dili kendiliğinden algılanır (uzun video İngilizce röportaj olabilir); özette 1. aşamada bilinen dil
+        # (altyazının dili ya da videonun ortasından algılanan) verilir: kısa anın ilk saniyeleri müzik/alkış olabilir
+        lang = S.get("lang") if summary else None
+        info["speech"] = (transcript(p, tmp, lang) if trailer or summary else transcript(p, tmp)) if info["audio"] else []
+        if lang and info["speech"]:
+            LANGS[str(p)] = LANGS.get(str(p)) or lang
         sec = S["secs"][i - 1] if summary else None
         if summary and S["analysis"] is not None and (SPEECH_OFF or not info["speech"]) and S["lines"]:
             # konuşma tanıma bu anda bir şey çıkarmadı: videonun tamamının dökümünden (altyazı/konuşma tanıma) bu anın satırları
@@ -806,7 +941,10 @@ def build(job: dict) -> dict:
                        "kareler_dosyasi": info["sheet"], "kareler": info["frames"]})
         if summary:  # anın uzun videodaki yeri ve seçilme nedeni (kurgu editörü bağlamı görsün)
             blocks[-1].update({"kaynak_zamani": f"{hms(sec['start'])}–{hms(sec['end'])}", "konusma_dili": LANGS.get(str(p)),
-                               "an": [{"tur": x["tur"], "neden": x["neden"], **({"alinti": x["alinti"]} if x["alinti"] else {})} for x in sec["anlar"]]})
+                               "an": [{"tur": x["tur"], "neden": x["neden"], **({"alinti": x["alinti"]} if x["alinti"] else {}),
+                                       # anın bu videodaki yeri (birleşmiş bölümde kanca/alıntı nerede)
+                                       "start": round(max(0.0, x["start"] - sec["start"]), 1),
+                                       "end": round(min(info["duration"], x["end"] - sec["start"]), 1)} for x in sec["anlar"]]})
         if trailer:
             if info["audio"] and not SPEECH_OFF:
                 log(f"🎬 fragman konuşması: {len(info['speech'])} satır, dil: {LANGS.get(str(p)) or 'bilinmiyor'}")
@@ -882,6 +1020,9 @@ def build(job: dict) -> dict:
         segs.insert(0, {"kind": "hook", "title": h.get("title", ""), "narration": re.split(r"(?<=[.!?])\s", h["narration"])[0],
                         "category": h.get("category"), "clips": h.get("clips")})
     segs = [segs[0]] + [s for s in segs[1:] if s["kind"] in ("haber", "sesli")][:6]
+    if summary and S["analysis"] is not None:  # özet: uzun videonun saniyesiyle yazılmış parçalar anın saniyesine çevrilir
+        for x in segs:
+            x["clips"] = local_clips(x.get("clips"), S["secs"], infos)
     if want_sound and not any(s["kind"] == "sesli" for s in segs):
         # Claude eklemediyse: konuşması en çok olan videonun tamamı (baştaki/sondaki yarım saniye hariç) ilk haberden sonra
         v = max(range(len(infos)), key=lambda i: (len(infos[i]["speech"]), infos[i]["duration"]))
@@ -918,7 +1059,17 @@ def build(job: dict) -> dict:
         if (trailer or summary) and sound_left < 0.8:  # fragman/özet: bütçe (8 sn) bitti, fazla sesli bölüm atılır (cap_clips ilk parçayı kırpmadan verirdi)
             segs.remove(x)
             continue
-        clips = clean_clips(x.get("clips"), infos, 6.0, dict(seed), seed.get(1, 0.0))
+        if summary and sound_left < max_sound:  # özet: en çok BİR alıntı (ozet.md); ikincisi bütçe kalsa da atılır
+            segs.remove(x)
+            log("🔊 özet: ikinci sesli bölüm atıldı (en çok bir alıntı)")
+            continue
+        # fragman/özet: geçerli parçası olmayan sesli bölüm atılır (yedek parça başka görüntüyü — çoğu zaman kancayı — "açıklama" diye
+        # kendi sesiyle oynatıyordu; sesli bölüm isteğe bağlı)
+        clips = clean_clips(x.get("clips"), infos, 6.0, dict(seed), seed.get(1, 0.0), fallback=not (trailer or summary))
+        if not clips:
+            segs.remove(x)
+            log("🔊 sesli bölümün parçaları geçersiz: bölüm atıldı (başka görüntü yerine konmadı)")
+            continue
         if trailer or summary:  # fragman/özet: bütçeden uzun tek parça baştan kırpılmaz; o parçanın içindeki en iyi bütün-cümle penceresi
             clips = trailer_sound_clips(clips, infos, [y for y in segs if y is not x], sound_left)
         x["clips"] = cap_clips(clips, sound_left)
@@ -1057,17 +1208,34 @@ def build(job: dict) -> dict:
     return res
 
 
+def _stop(*_):
+    """Panel zaman aşımında SIGTERM: çıkış temizlikten (finally) geçer; subprocess.run süren çocuğu (claude, ffmpeg) öldürür."""
+    global STOPPED
+    STOPPED = True
+    sys.exit(143)
+
+
+STOPPED = False
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _stop)
+    res = {"ok": False, "error": "durduruldu"}
     try:
-        if "--job" in sys.argv:
-            res = build(json.loads(Path(sys.argv[sys.argv.index("--job") + 1]).read_text(encoding="utf-8")))
-        else:
-            res = {"ok": False, "error": "kullanım: --job IS.json"}
-    except Exception as ex:
-        res = {"ok": False, "error": str(ex)[:300]}
-    for f in TRASH:  # uzun video özeti: analiz kopyası, altyazı ve HD anlar (parçalar iş klasörüne kopyalandı; hata olsa da yer kaplamasın)
         try:
-            Path(f).unlink(missing_ok=True)
-        except OSError:
-            pass
+            if "--job" in sys.argv:
+                res = build(json.loads(Path(sys.argv[sys.argv.index("--job") + 1]).read_text(encoding="utf-8")))
+            else:
+                res = {"ok": False, "error": "kullanım: --job IS.json"}
+        except Exception as ex:
+            res = {"ok": False, "error": str(ex)[:300]}
+    finally:
+        # uzun video özeti: analiz kopyası, altyazı ve HD anlar (parçalar iş klasörüne kopyalandı; hata ya da durdurma olsa da yer kaplamasın)
+        for f in [*TRASH, *(x for d, pat in TRASH_GLOBS for x in Path(d).glob(pat))]:
+            try:
+                Path(f).unlink(missing_ok=True)
+            except OSError:
+                pass
+        if STOPPED:
+            for d in TMPDIRS:
+                shutil.rmtree(d, ignore_errors=True)
     print(json.dumps(res, ensure_ascii=False))

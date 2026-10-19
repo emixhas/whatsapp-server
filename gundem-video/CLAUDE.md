@@ -610,6 +610,28 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   DURATION 30), assemble + build_caption + playlist_names. Özet olmayan 6 wa_video işi (sosyal medya tam ses, sesi kapalı, WhatsApp, iki video,
   sesli, fragman) HEAD ile: istem, Claude argümanları, log ve iş klasörü bayt bayt aynı. Gerçek YouTube indirmesi (analiz kopyası boyutu,
   `--download-sections` hızı, bot doğrulaması), uzun videoda konuşma tanıma süresi ve Claude'un 48 kareyi okuması DENENMEDİ.
+  İnceleme düzeltmeleri (19 Ekim): fragman başlıklı YouTube linki "analiz et" / "özetle" dense de fragman analizine gider (fragman analizi
+  açık ve başlıktan tanıma açıkken, açık haber isteği yoksa; `wants_summary` + server.js savunması: özet yalnız uzun videonun analiz kopyası
+  indiyse kalır). Kendi ses isteği olumsuzuyla ayrılır (`keep_sound`: "sesi kapat", "orijinal ses olmasın", "kendi sesini kullanma",
+  "videonun sesi gelmesin", "sessiz", "yalnız seslendirme" kendi ses isteği DEĞİL; "ses" sözcüğü bitmeli — "kendi seslendirmenle" değil —;
+  "tamamı/baştan sona" yalnız paylaş/oynat/yayınla ile). Talimat Türkçe harfsiz yazımla da tanınır (`_fold`: "ozetle", "carpici sahneler";
+  İngilizce summarize/summary/highlights/recap); sıra fragman → açık özet → kendi ses → genel sözler (analiz, en önemli an, öne çıkan) →
+  kendiliğinden. Geçersiz sesli parça başka görüntüyle doldurulmaz: özet ve fragmanda geçerli parçası kalmayan sesli bölüm atılır
+  (`clean_clips(fallback=False)`), özette tek sesli bölüm kalır; uzun videonun saniyesiyle yazılmış parça anın kendi saniyesine çevrilir
+  (`local_clips`), numarası doğru ama saniyesi geçersiz parça önce aynı anın içinden doldurulur. 1. aşama dökümü satır başına zaman
+  damgalı ("[12:30.5] …", cümle sonunda ya da en çok 8 sn'de bir; `dokum_lines`), bütçe aşılırsa satırlar EŞİT aralıkla atılır ve girdiye
+  `dokum_seyreltildi` yazılır (eskiden 25 sn'lik paragrafların sonu kesiliyordu); alıntı anı döküm satırlarına oturtulur (`quote_span`,
+  ±60 sn içinde alıntı kelimelerinin %60'ı, 2 sn pay). 2. aşamada her anın `an` bilgisine bölüm içindeki start/end eklenir (birleşmiş
+  bölümde kanca/alıntının yeri). Konuşma dili altyazı yoksa videonun %40'ındaki 30 sn'lik örnekten algılanır (`detect_lang`; ilk 30 sn
+  çoğu zaman jenerik/müzik), anlar da o dille (ya da altyazı diliyle) yazıya dökülür. Panel süre aşımında (SIGTERM) analiz kopyası,
+  altyazı dosyası, HD bölümler (yarım/reddedilmiş/.part dahil, `TRASH_GLOBS`) ve analiz klasörü silinir (`_stop` → 143, `finally`).
+  Özet süresi kaynak videonun uzunluğunu ("45 dakikalık programı özetle") süre saymaz (`summary_secs`: önce saniye, kaynak adını niteleyen
+  dakika değil). Paylaşım hazırlanırken WhatsApp'tan gelen yeni link sıraya girer (`socialQueue`, en çok 5, 3 saat; "⏳ Sıraya alındı";
+  ⏸ durdurma sırayı boşaltır; güncelleme sıra bitmeden yeniden başlatmaz); eskiden "Başladı" yanıtından sonra sessizce kayboluyordu.
+  `runLines` çıktıyı utf8 akışıyla okur (parça sınırında bölünen Türkçe harf � olmasın). Sandbox'ta önce/sonra denendi (sahte yt-dlp,
+  iki aşamalı sahte Claude, sahte konuşma tanıma): fragman başlığı + "analiz et/özetle", 22 ses talimatı, harfsiz/İngilizce tetikleyiciler,
+  uzun video saniyeli/geçersiz/çift sesli parçalar, 3 saatlik altyazıda seyreltme, alıntı oturtma, dil algılama, SIGTERM temizliği; özet
+  olmayan 6 iş eski kodla aynı.
 - Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;
   saat yazmazsam direkt paylaşsın"): `app/when.js parseWhen` Türkçe saat ifadelerini çözer ("18:30'da", "18.30 da", "saat 8'de" —
   dönemsizse bugünün en yakın gelecekteki 08:00/20:00'ı —, "akşam 9", "sabah 9", "öğlen 12", "öğleden sonra 4", "gece 1", "yarın 10:00",
