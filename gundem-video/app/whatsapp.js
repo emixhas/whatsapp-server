@@ -1,6 +1,6 @@
 // WhatsApp köprüsü (Baileys, WhatsApp Web protokolü). Panelden QR okutulur; yalnızca sahip numarası komut verebilir.
 // Video bitince: metin + izleme linkleri + (isteğe bağlı) video dosyası gönderir; "onay" gelince yayınlar.
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import QRCode from "qrcode";
@@ -10,6 +10,14 @@ import { whenLabel } from "./when.js";
 export async function makeWhatsApp({ handleVideo = null, videoInstruction = null, autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
   const st = { status: "disconnected", qr: null, qrSvg: null, phone: null, error: null, pending: null, lastMsgAt: null, retries: 0 };
+  // bekleyen yayın onayı diske yazılır: panel yeniden başlayınca ("güncelle", çökme) "onay" kaybolmasın (6 saatten eskisi okunmaz)
+  const PENDING_FILE = path.join(ROOT, "data", "wa_pending.json");
+  let pendingVal = null;
+  try { const p = JSON.parse(readFileSync(PENDING_FILE, "utf8")); if (p?.video && Array.isArray(p.platforms) && Date.now() - Number(p.at || 0) < 6 * 3600000) pendingVal = p; } catch { /* yok */ }
+  Object.defineProperty(st, "pending", { enumerable: true, get: () => pendingVal, set: (v) => {
+    pendingVal = v || null;
+    try { if (pendingVal) writeFileSync(PENDING_FILE, JSON.stringify(pendingVal)); else rmSync(PENDING_FILE, { force: true }); } catch { /* yazılamadı: bellekte kalır */ }
+  } });
   let sock = null, stopping = false, baileys = null;
 
   const digits = (s) => String(s || "").replace(/\D/g, "");

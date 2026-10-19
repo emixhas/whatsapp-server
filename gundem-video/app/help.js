@@ -58,6 +58,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • zamanlayıcıyı aç / zamanlayıcıyı kapat
 • sistemi durdur · sistemi başlat
 • tünel aç / tünel kapat
+• güncelle — paneli GitHub'daki son sürüme günceller ve yeniden başlatır (paneldeki ⬇ Güncelle düğmesi gibi); üretim sürüyorsa bitince yapar, açılınca "✅ Güncellendi" yazar · güncelleme var mı — yalnız bakar
 • komutlar — bu liste
 
 Bunların dışındaki her mesaj (soru, birden çok istek) Emixhas'ın beynine gider.`;

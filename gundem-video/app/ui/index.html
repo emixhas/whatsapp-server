@@ -633,7 +633,7 @@ $('#stMac').onclick=async()=>{const on=!$('#stMac').classList.contains('on');awa
 $('#mediaVideo').onclick=async()=>{const on=!$('#mediaVideo').classList.contains('on');await post('/api/settings',{media:{video:on}});refreshStatus();};
 $('#waDigest').onclick=async()=>{const on=!$('#waDigest').classList.contains('on');await post('/api/settings',{whatsapp:{digest:on}});refreshStatus();};
 $('#waStages').onclick=async()=>{const on=!$('#waStages').classList.contains('on');await post('/api/settings',{whatsapp:{notifyStages:on}});refreshStatus();};
-$('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor; sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
+$('#updateBtn').onclick=async()=>{addMsg('j','Güncelleme alınıyor…');const r=await post('/api/update');if(!r.ok){addMsg('j','Güncelleme alınamadı: '+(r.error||''));return;}if(r.upToDate){addMsg('j','Zaten güncel, çalışan kod da son sürüm.');return;}if(r.deferred){addMsg('j','Yeni sürüm var ('+r.count+' değişiklik) ama şu an '+r.busy+'; bitince güncellenip panel yeniden başlayacak.');return;}if(r.waitRestart){addMsg('j','Güncelleme alındı; '+r.busy+', bitince panel yeniden başlayacak.');return;}addMsg('j','Panel yeni sürümle yeniden başlıyor ('+(r.count||0)+' değişiklik); sayfa 6 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),6000);};
 $('#selfTestBtn').onclick=async()=>{addMsg('j','Sistem kontrolü başladı; satırlar canlı logda.');const r=await post('/api/selftest');addMsg('j',r.summary||'bitti');};
 $('#restartBtn').onclick=async()=>{await post('/api/restart');addMsg('j','Panel yeniden başlıyor; sayfa 5 saniye sonra yenilenecek.');setTimeout(()=>location.reload(),5000);};
 $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:e.target.value});addMsg('j','Video anlatım motoru: '+e.target.options[e.target.selectedIndex].text);};
@@ -1041,6 +1041,7 @@ async function handle(text){if(!text)return;addMsg('u',text);$('#heard').textCon
   if(r.action==='share'){await loadVideos();openVideo(r.payload.name);showShare();}
   if(r.action==='refresh')loadVideos();if(r.action==='generate'||r.action==='anlik'||r.action==='sync_metrics')refreshStatus();
   if(r.action==='confirm')renderPending(r.payload.actions);
+  if(r.action==='self_update'&&r.restarting)setTimeout(()=>location.reload(),8000);
   if(r.report){addMsg('j',r.report);loadReports(r.reportFile);}
   if(r.done?.length)loadVideos();
   addMsg('j',r.reply);await speak(r.reply);}

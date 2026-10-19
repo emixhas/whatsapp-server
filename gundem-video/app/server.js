@@ -1467,6 +1467,7 @@ function waVideoText(text) {
   const v = waVid;
   if (!v || !v.files.length || v.instruction || v.running) return null;
   if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
+  if (["self_update", "update_check"].includes(parseCommand(text).action)) return null; // "güncelle" videonun talimatı değil
   if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
   v.instruction = text.trim(); clearTimeout(v.timer);
   { const wn = parseWhen(text); if (wn.at) v.publishAt = wn.at.toISOString(); }
@@ -1487,7 +1488,8 @@ const sendW = async (t) => { try { await wa.send(t); } catch { /* WhatsApp bağl
 // kısa mesaj modu (kullanıcı isteği, 14 Ekim): WhatsApp'a yalnız "başladı", "sorun", "başarılı" gider; ara aşamalar yalnız logda
 const waBrief = () => settings().whatsapp?.brief !== false;
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
-async function runVideoNews(v) {
+async function runVideoNews(v) { videoNewsN++; try { return await runVideoNews0(v); } finally { videoNewsN--; } } // güncelleme beklesin
+async function runVideoNews0(v) {
   push(`🎬 ${v.trailer ? "fragman analizi" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${v.instruction.slice(0, 120)}`);
   if (!waBrief()) await sendW(v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
@@ -1899,7 +1901,9 @@ const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace
 const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
 const SAFE = new Set(["command", "generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
-async function execAction(a) {
+// elle yayın sürerken (WhatsApp "onay", panel) güncelleme paneli yeniden başlatmasın: süren yayın sayılır
+async function execAction(a) { if (a?.type !== "publish") return execAction0(a); pubN++; try { return await execAction0(a); } finally { pubN--; } }
+async function execAction0(a) {
   switch (a.type) {
     case "generate": return startPipeline(a.duration);
     case "breaking_news": return prepareAnlik(a.topic, a.duration);
@@ -1909,7 +1913,7 @@ async function execAction(a) {
     case "autopublish": patchSettings({ autopublish: { youtube: !!a.youtube, instagram: !!a.instagram, tiktok: !!a.tiktok } }); return { ok: true };
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
-    case "restart": setTimeout(() => process.exit(75), 800); return { ok: true, restarting: true };
+    case "restart": restartPanel(800); return { ok: true, restarting: true };
     case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶|♪|💬)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "command": { const r = await handleCommand(String(a.text || ""), { source: "brain", direct: true }); return { ok: !/tanımadım/.test(r.reply || ""), reply: r.reply, report: r.report }; }
     case "open_video": return { ok: true };
@@ -2167,23 +2171,160 @@ app.post("/api/voices/preview", async (req, res) => {
 app.get("/api/settings", (_req, res) => res.json(settings()));
 app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
-app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 500); });
-// Panelden güncelleme: git pull, bağımlılık değiştiyse npm install, sonra yeniden başlat (terminal gerekmez)
+app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); restartPanel(500); });
+// Panel yeniden başlatma: panel.sh döngüsünde (npm run panel, launchd servisi, basla.sh) 75 ile çıkmak yeniden açar; launchd doğrudan
+// çalıştırıyorsa (üst süreç 1) KeepAlive açar. Elle "node app/server.js" ile açılmışsa döngü yok: önce panel.sh ayrık başlatılır
+// (2 sn sonra, port boşalınca; log work/panel.log), sonra çıkılır; yoksa panel kapanır ve WhatsApp'tan geri açılamazdı.
+const underLoop = () => { if (process.ppid === 1) return true; try { return /panel\.sh/.test(spawnSync("ps", ["-o", "command=", "-p", String(process.ppid)], { encoding: "utf8" }).stdout || ""); } catch { return false; } };
+function restartPanel(delay = 800) {
+  setTimeout(() => {
+    if (underLoop()) process.exit(75);
+    try {
+      const log = openSync(path.join(WORK, "panel.log"), "a");
+      spawn("/bin/bash", ["-c", "sleep 2; exec bash scripts/panel.sh"], { cwd: ROOT, env: process.env, detached: true, stdio: ["ignore", log, log] }).unref();
+      console.log("↻ panel döngü dışında açılmıştı; yeni panel arka planda başlatıldı (log: work/panel.log)");
+      process.exit(0);
+    } catch (e) { push(`✖ panel yeniden başlatılamadı: ${e.message}`); }
+  }, delay);
+}
+// Kendini güncelleme (kullanıcı isteği, 19 Ekim: "WhatsApp'tan güncelle yazayım, panel kendini yeniden güncellesin, güncelle butonuna
+// basmışım gibi"): panel düğmesi (POST /api/update), komut "güncelle" (WhatsApp hızlı yolu, panel sohbeti, beynin command eylemi) aynı yol:
+// git pull --ff-only → package*.json değiştiyse npm install → app/*.js sözdizimi denetimi → yeniden başlatma. Yarım kalacak iş sürerken
+// (üretim, sıradaki video, indirilen paylaşım, yayın…) çekmez: yeni sürüm varsa iş bitince kendiliğinden günceller (en çok 3 saat bekler).
+// Yeniden açılınca data/update_last.json okunur, sonuç loga ve (panel düğmesi dışında) WhatsApp'a yazılır.
+const GIT_ENV = { ...ENV, GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" }; // parola istemi beklemesin; hata metni İngilizce (çeviri için)
+const git = (args, timeout = 120000) => run("git", args, { env: GIT_ENV, timeout });
 const headCommit = () => spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout?.trim() || "";
 const BOOT_COMMIT = headCommit(); // çalışan kodun sürümü; terminalden git pull yapıldıysa HEAD bundan ileride olur
-app.post("/api/update", async (_req, res) => {
-  push("⬇ güncelleme: git pull");
-  const r = await run("git", ["pull", "--ff-only"]);
-  const out = (r.stdout || r.stderr || "").trim();
-  for (const line of out.split("\n").slice(-8)) push("  " + line);
-  if (!r.ok) return res.json({ ok: false, error: out.slice(-300) });
-  const changed = /package(-lock)?\.json/.test(out);
-  if (changed) { push("⬇ bağımlılıklar güncelleniyor (npm install)"); await run("npm", ["install", "--no-audit", "--no-fund"]); }
-  const stale = headCommit() !== BOOT_COMMIT; // yeni kod var ama panel eski sürümü çalıştırıyor
-  const pulled = !/Already up to date|Zaten güncel/i.test(out);
-  res.json({ ok: true, upToDate: !pulled && !stale, restarting: pulled || stale, summary: out.split("\n").pop() });
-  if (pulled || stale) { push(pulled ? "↻ güncelleme alındı, panel yeniden başlatılıyor" : "↻ yeni kod zaten çekilmiş, panel yeniden başlatılıyor"); setTimeout(() => process.exit(75), 800); }
-});
+const UPDATE_FILE = path.join(DATA, "update_last.json");
+let updateRun = false, updatePending = null, restartPending = null; // bekleyen güncelleme / yeniden başlatma {at, source}
+let videoNewsN = 0, pubN = 0; // süren video haberi kurgusu ve elle yayın
+// Türkçe neden: git'in İngilizce hata metninden
+function gitHint(r) {
+  const o = `${r.stderr || ""}\n${r.stdout || ""}`;
+  const files = (re) => { const m = o.match(re); return m ? m[1].split("\n").map((x) => x.trim()).filter(Boolean).slice(0, 4).join(", ") : ""; };
+  if (/untracked working tree files would be (overwritten|removed)/.test(o)) { const f = files(/would be (?:overwritten|removed) by merge:\n([\s\S]*?)\n(?:Please|Aborting)/); return `Mac'te güncellemeyle gelen dosyalarla aynı adda dosyalar var${f ? ` (${f})` : ""}; taşıyın ya da silin, sonra yeniden güncelleyin.`; }
+  if (/would be overwritten by merge|Please commit your changes or stash them/.test(o)) { const f = files(/overwritten by merge:\n([\s\S]*?)\n(?:Please|Aborting)/); return `Mac'te elle değiştirilmiş dosya var${f ? ` (${f})` : ""}; güncelleme bunların üstüne yazamaz. Terminalde: git stash, sonra yeniden güncelle.`; }
+  if (/Not possible to fast-forward|diverg|non-fast-forward/i.test(o)) return "Mac'teki kod ile GitHub'daki kod ayrışmış (Mac'te ayrı değişiklik yapılmış); kendiliğinden birleştirilmez, terminalde bakılmalı.";
+  if (/no tracking information|no upstream configured|does not point to a branch|HEAD detached|not currently on a branch/i.test(o)) return "Mac'teki kod bir GitHub dalını izlemiyor; terminalde bir kez: git branch --set-upstream-to=origin/<dal>.";
+  if (/Could not resolve host|unable to access|Failed to connect|Connection timed out|Operation timed out|Network is unreachable|Could not read from remote/i.test(o)) return "GitHub'a ulaşılamadı (internet bağlantısı?).";
+  if (/Authentication failed|could not read Username|Permission denied|terminal prompts disabled|Repository not found/i.test(o)) return "GitHub girişi reddedildi (Mac'te git oturumu/anahtarı).";
+  if (r.err?.killed || r.err?.signal) return "git 2 dakikada yanıt vermedi (internet yavaş?).";
+  if (/not a git repository/i.test(o)) return "Proje klasörü bir git deposu değil; panelden güncellenemez.";
+  return o.trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200) || "git hatası";
+}
+// yeniden başlatma yarım bırakacak iş varsa nedeni (yoksa "")
+function updateBusy() {
+  if (pipelineBusy()) return "üretim sürüyor";
+  if (anlikQueue.length) return `${anlikQueue.length} video sırada`;
+  if (anlikInflight.size || valueBatch.length || dequeueBusy) return "son dakika haberi hazırlanıyor";
+  if (socialBusy || videoNewsN) return "video haberi hazırlanıyor";
+  if (waVid?.files?.length && Date.now() - waVid.at < Number(waVideoCfg().waitMin) * 60000) return "gönderdiğiniz video talimat bekliyor";
+  if (digestPending) return "video WhatsApp'a gönderiliyor";
+  if (infoBusy || peakBusy) return "otomatik içerik hazırlanıyor";
+  if (pubN || schedBusy || storiesBusy || igAutoBusy || replyBusy) return "yayın işlemi sürüyor";
+  if (watchScanning || sondakikaBusy) return "haber taraması sürüyor";
+  return "";
+}
+const commitsSince = async (from, to) => { if (!from || !to || from === to) return []; const r = await git(["log", "--no-merges", "--format=%s", `${from}..${to}`]); return r.ok ? String(r.stdout).split("\n").filter(Boolean) : []; };
+const subjectOf = (c) => spawnSync("git", ["log", "-1", "--format=%s", c || "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout?.trim() || "";
+// "güncelleme var mı": yalnız bakar (fetch), çekmez
+async function updateCheck() {
+  const f = await git(["fetch", "--quiet"]);
+  if (!f.ok) return { ok: false, error: gitHint(f) };
+  const c = await git(["rev-list", "--count", "HEAD..@{u}"]);
+  if (!c.ok) return { ok: false, error: gitHint(c) };
+  const n = Number(String(c.stdout).trim()) || 0, stale = headCommit() !== BOOT_COMMIT;
+  const subjects = n ? await commitsSince("HEAD", "@{u}") : stale ? await commitsSince(BOOT_COMMIT, "HEAD") : [];
+  return { ok: true, count: n, stale, subjects, current: subjectOf(BOOT_COMMIT) };
+}
+async function selfUpdate({ source = "panel" } = {}) {
+  if (updateRun) return { ok: false, error: "Güncelleme zaten sürüyor." };
+  if (restartPending) return { ok: true, waitRestart: true, busy: updateBusy() || "iş bitiyor" };
+  updateRun = true;
+  try {
+    const busy = updateBusy();
+    if (busy) { // önce yeni sürüm var mı bak; varsa iş bitince güncelle (çekilen yeni kod süren üretimle karışmasın)
+      const c = await updateCheck();
+      if (!c.ok) return c;
+      if (!c.count && !c.stale) return { ok: true, upToDate: true, current: c.current };
+      if (!updatePending) push(`⬇ güncelleme: yeni sürüm var (${c.count || c.subjects.length} değişiklik) ama ${busy}; iş bitince alınacak`);
+      updatePending = { at: updatePending?.at || Date.now(), source };
+      return { ok: true, deferred: true, busy, count: c.count || c.subjects.length, subjects: c.subjects };
+    }
+    updatePending = null;
+    push("⬇ güncelleme: git pull");
+    const r = await git(["pull", "--ff-only"]);
+    const out = `${r.stdout || ""}${r.stderr ? "\n" + r.stderr : ""}`.trim();
+    for (const line of out.split("\n").filter(Boolean).slice(-8)) push("  " + line);
+    if (!r.ok) { const error = gitHint(r); push(`✖ güncelleme alınamadı: ${error}`); return { ok: false, error }; }
+    const head = headCommit();
+    if (!head || head === BOOT_COMMIT) return { ok: true, upToDate: true, current: subjectOf(BOOT_COMMIT), summary: out.split("\n").pop() };
+    const subjects = await commitsSince(BOOT_COMMIT, head);
+    const changed = BOOT_COMMIT ? String((await git(["diff", "--name-only", BOOT_COMMIT, head])).stdout || "").split("\n").filter(Boolean) : [];
+    const notes = [];
+    // yeni sürüm kullanılamıyorsa dosyalar çalışan sürüme geri döner (diskteki kod çalışan kodla aynı kalsın: panel çökerse ya da Mac
+    // yeniden açılırsa bozuk sürümle açılmasın); --keep yerel değişikliği silmez, çakışırsa geri almaz
+    const rollback = async (why) => { const k = BOOT_COMMIT ? await git(["reset", "--keep", BOOT_COMMIT]) : { ok: false }; const error = `${why} ${k.ok ? "Değişiklik geri alındı; panel eski sürümle çalışmaya devam ediyor." : "Panel yeniden başlatılmadı (eski sürüm çalışıyor) ama yeni dosyalar diskte; panel kapanırsa açılamayabilir, terminalde bakılmalı."}`; push(`✖ güncelleme: ${error}`); return { ok: false, error }; };
+    if (changed.some((f) => /^package(-lock)?\.json$/.test(f)) || (!changed.length && /package(-lock)?\.json/.test(out))) {
+      push("⬇ bağımlılıklar güncelleniyor (npm install)");
+      const n = await run("npm", ["install", "--no-audit", "--no-fund"], { timeout: 10 * 60000 });
+      if (!n.ok) return rollback(`npm install başarısız (${String(n.stderr || n.err?.message || "").trim().split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 200)}).`);
+    }
+    if (changed.includes("requirements.txt")) notes.push("Python paketleri değişti (requirements.txt); gerekirse Mac'te bir kez: pip install -r requirements.txt");
+    // yeni kodda sözdizimi hatası varsa yeniden başlatma: panel açılamaz, WhatsApp'tan da geri getirilemezdi
+    for (const f of readdirSync(path.join(ROOT, "app")).filter((x) => x.endsWith(".js"))) {
+      const c = spawnSync(process.execPath, ["--check", path.join("app", f)], { cwd: ROOT, encoding: "utf8", timeout: 30000 });
+      if (c.status !== 0) return rollback(`Yeni sürümde hata var (app/${f}: ${String(c.stderr || "").split("\n").find((l) => /Error/.test(l)) || "sözdizimi"}).`);
+    }
+    writeJson(UPDATE_FILE, { at: Date.now(), from: BOOT_COMMIT, to: head, count: subjects.length, subjects: subjects.slice(0, 5), source, notes, notified: false });
+    for (const n of notes) push(`⬇ not: ${n}`);
+    const again = updateBusy(); // çekilirken üretim başladıysa yeniden başlatma iş bitince
+    if (again) { restartPending = { at: Date.now(), source }; push(`↻ güncelleme alındı (${subjects.length} değişiklik); ${again}, bitince panel yeniden başlatılacak`); return { ok: true, waitRestart: true, busy: again, count: subjects.length, subjects, notes }; }
+    push(`↻ güncelleme alındı (${subjects.length} değişiklik), panel yeniden başlatılıyor`);
+    restartPanel(source === "panel" ? 800 : 6000); // WhatsApp yanıtı gidebilsin
+    return { ok: true, restarting: true, count: subjects.length, subjects, notes, summary: out.split("\n").pop() };
+  } finally { updateRun = false; }
+}
+app.post("/api/update", async (_req, res) => res.json(await selfUpdate({ source: "panel" })));
+const updateText = (r) => {
+  const last = (r.subjects || [])[0] ? `: ${String(r.subjects[0]).slice(0, 110)}` : "";
+  if (!r.ok) return `❌ Güncellenemedi: ${r.error}`;
+  if (r.upToDate) return `✅ Zaten güncel${r.current ? ` (son sürüm: ${String(r.current).slice(0, 90)})` : ""}.`;
+  if (r.deferred) return `⏳ Yeni sürüm var (${r.count} değişiklik) ama şu an ${r.busy}; bitince güncelleyip panel yeniden başlayacak. Beklemeden almak için: *sistemi durdur*`;
+  if (r.waitRestart) return `⬇ Güncelleme alındı${r.count ? ` (${r.count} değişiklik)` : ""}; ${r.busy}, bitince panel yeniden başlayacak.`;
+  return `⬇ Güncelleme alındı (${r.count} değişiklik)${last}. Panel yeniden başlıyor; açılınca haber vereceğim.`;
+};
+// bekleyen güncelleme ve yeniden başlatma: iş bitince (15 sn'de bir bakılır); 3 saatten uzun beklerse vazgeçilir
+setInterval(async () => {
+  if (updateRun) return;
+  const p = restartPending || updatePending;
+  if (!p) return;
+  const busy = updateBusy();
+  if (busy && Date.now() - p.at > 3 * 3600000) {
+    restartPending = updatePending = null;
+    const t = `⚠️ Güncelleme 3 saattir bekliyordu (${busy}); yapılmadı. Tekrar *güncelle* yazın.`;
+    push(t); if (p.source !== "panel") sendW(t);
+    return;
+  }
+  if (busy) return;
+  if (restartPending) { restartPending = null; push("↻ iş bitti, güncellenen panel yeniden başlatılıyor"); restartPanel(800); return; }
+  const r = await selfUpdate({ source: p.source }).catch((e) => ({ ok: false, error: e.message }));
+  if (!r.restarting && !r.deferred && !r.waitRestart && p.source !== "panel") sendW(updateText(r)); // yeniden başlarsa sonuç açılışta gider
+}, 15000);
+// açılış: güncellemeyle yeniden başladıysak sonucu bildir
+setTimeout(() => {
+  const u = readJson(UPDATE_FILE, null);
+  if (!u || u.notified || Date.now() - Number(u.at || 0) > 3 * 3600000) return;
+  writeJson(UPDATE_FILE, { ...u, notified: true });
+  const ok = BOOT_COMMIT === u.to;
+  const subj = (u.subjects || [])[0] ? `: ${String(u.subjects[0]).slice(0, 110)}` : "";
+  const stopped = resting() && restInfo().reason === "elle durduruldu" ? "\n⏸ Sistem durdurulmuş durumda; başlatmak için: *sistemi başlat*" : "";
+  const t = ok ? `✅ Güncellendi, panel yeni sürümle açıldı (${u.count} değişiklik)${subj}${(u.notes || []).length ? `\n${u.notes.join("\n")}` : ""}${stopped}`
+    : `⚠️ Panel yeniden başladı ama beklenen sürüm yüklenmedi (beklenen ${String(u.to).slice(0, 7)}, çalışan ${BOOT_COMMIT.slice(0, 7) || "?"}); tekrar *güncelle* yazın.`;
+  push(t.split("\n")[0]);
+  if (u.source !== "panel" && settings().whatsapp?.enabled) sendW(t); // bağlantı henüz kurulmadıysa kuyruğa girer, bağlanınca gider
+}, 8000);
 
 // ---------- API: yayın, metrik, analiz, raporlar, hafıza
 app.get("/api/connections", async (_req, res) => res.json(await brain.connections()));
@@ -2270,6 +2411,7 @@ async function smartWhatsApp(text) {
   const t = text.toLocaleLowerCase("tr-TR").replace(/[.!?]+$/, "").trim();
   // şemasız video linki de ("youtu.be/… 18:30'da paylaş") hızlı yol: Claude'dan geçince breaking_news yayın saatini kaybediyordu (inceleme, 18 Ekim)
   if (settings().whatsapp?.smart === false || !t || /https?:\/\/|www\./i.test(text) || findLink(text) || WA_DIRECT.test(t)) return null;
+  if (["self_update", "update_check"].includes(parseCommand(text).action)) return null; // "güncelle": Claude'a gitmeden, butona basmış gibi
   push(`💬 WhatsApp mesajı Claude'a soruluyor: ${text.slice(0, 80)}`);
   const r = await think(text, "chat", { channel: "whatsapp" });
   if (r.error) { push("💬 Claude'a ulaşılamadı; mesaj kurallarla işleniyor"); return null; }
@@ -2301,6 +2443,13 @@ async function handleCommand(text, opts = {}) {
     case "ig_cleanup_confirm": {
       const r = await igCleanupRun({ notify: opts.source !== "whatsapp" });
       reply = r.text || r.error; break;
+    }
+    case "self_update": { const r = await selfUpdate({ source: opts.source || "panel" }); reply = updateText(r); extra = { restarting: !!r.restarting }; break; }
+    case "update_check": {
+      const r = await updateCheck();
+      reply = !r.ok ? `❌ Güncelleme denetlenemedi: ${r.error}` : r.count ? `🆕 Yeni sürüm var (${r.count} değişiklik): ${String(r.subjects[0] || "").slice(0, 110)}. Almak için: *güncelle*`
+        : r.stale ? "🆕 Yeni sürüm indirilmiş ama panel eski sürümle çalışıyor. Yeniden başlatmak için: *güncelle*" : `✅ Güncel${r.current ? ` (son sürüm: ${String(r.current).slice(0, 90)})` : ""}.`;
+      break;
     }
     case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }

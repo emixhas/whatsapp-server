@@ -664,6 +664,31 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - `scripts/panel.sh` paneli döngüde çalıştırır; çıkış kodu 75 = yeniden başlat (`restart` eylemi).
   `scripts/install_panel_service.sh` paneli launchd servisi yapar (KeepAlive, log work/panel.log).
   `POST /api/update`: `git pull --ff-only` (+ npm install gerekirse) ve yeniden başlat; UI "⬇ Güncelle".
+  Kendini güncelleme (kullanıcı isteği, 19 Ekim: "WhatsApp'tan güncelle yazayım, panel kendini yeniden güncellesin, güncelle butonuna basmışım
+  gibi"; `server.js selfUpdate/updateCheck/restartPanel`): düğme, komut "güncelle" (`commands.js SELF_UPDATE`, YALNIZ tüm mesaj bu kalıpsa:
+  güncelle, sistemi/paneli/kendini güncelle, güncelle lütfen, hemen güncelle, güncellemeleri al, son sürüme geç, update, *güncelle*;
+  "izlenmeleri güncelle" sync_metrics, "kendini güncelleyebilir mi?" soru → beyin) ve beynin `command` eylemi aynı yol. WhatsApp'ta
+  hızlı yol (Claude'a gitmez; `smartWhatsApp`), talimat bekleyen WhatsApp videosunun talimatı sayılmaz. "güncelleme var mı" (`update_check`)
+  yalnız `git fetch` + `HEAD..@{u}` sayar, çekmez. Adımlar: git (GIT_TERMINAL_PROMPT=0, LC_ALL=C, 2 dk) `pull --ff-only` → HEAD açılıştaki
+  sürümle (`BOOT_COMMIT`) aynıysa "✅ Zaten güncel" → `git diff --name-only BOOT..HEAD`'de package*.json varsa `npm install` → app/*.js
+  `node --check` → başarısızsa `git reset --keep BOOT_COMMIT` (yerel değişikliği silmez; diskteki kod çalışan kodla aynı kalır, panel çökerse
+  bozuk sürümle açılmasın), yeniden başlatılmaz → `data/update_last.json` {from, to, count, subjects, source, notes, notified} → yeniden başlat
+  (panelde 0,8 sn; WhatsApp/beyinde 6 sn, yanıt gidebilsin). Git hataları Türkçe (`gitHint`): elle değiştirilmiş dosya (git stash), aynı adda
+  izlenmeyen dosya, ayrışmış dal, izlenen dal yok, GitHub'a ulaşılamadı, giriş reddedildi, zaman aşımı. requirements.txt değiştiyse not.
+  Yarım kalacak iş sürerken (`updateBusy`: üretim/kilit, anlık sırası, yoldaki ve toplayıcıdaki son dakika, paylaşım indirme ve video kurgusu
+  `videoNewsN`, talimat bekleyen WhatsApp videosu, WhatsApp özeti, şablon/tekrar hazırlığı, elle yayın `pubN`, planlı yayın, hikâye, Instagram
+  silme, yorum yanıtı, haber taraması) önce yeni sürüm var mı bakılır: yoksa "Zaten güncel", varsa `updatePending` → "⏳ Yeni sürüm var (N
+  değişiklik) ama şu an üretim sürüyor; bitince güncelleyip panel yeniden başlayacak. Beklemeden almak için: *sistemi durdur*"; 15 sn'de bir
+  bakılır, iş bitince güncellenir (çekerken üretim başladıysa `restartPending`: yeniden başlatma iş bitince), 3 saatten uzun bekleyen vazgeçilir.
+  Açılışta `update_last.json` bildirilmemişse ve 3 saatten yeniyse log + (panel düğmesi dışında, WhatsApp açıksa) WhatsApp: "✅ Güncellendi,
+  panel yeni sürümle açıldı (N değişiklik): <son commit konusu>" (+ elle durdurulmuşsa "*sistemi başlat*"); çalışan sürüm beklenenden farklıysa
+  "⚠️". `restartPanel`: üst süreç panel.sh ya da launchd (pid 1) ise çıkış 75; elle "node app/server.js" ile açılmışsa panel.sh'ı ayrık başlatıp
+  (2 sn sonra, log work/panel.log) çıkar (eskiden panel kapanır, WhatsApp'tan geri açılamazdı); `restart` eylemi ve `/api/restart` de bunu
+  kullanır. Bekleyen yayın onayı (`whatsapp.js st.pending`) `data/wa_pending.json`a yazılır, yeniden başlayınca okunur (6 saatten eskisi değil):
+  güncelleme/çökme sonrası "onay" kaybolmaz. İLK KEZ: Mac'teki eski kod bu komutu bilmez; bir kez panelde "⬇ Güncelle"ye basılmalı (ya da
+  terminalde git pull + yeniden başlatma). Sandbox'ta sahte GitHub (bare repo) + Mac kopyası + panel.sh döngüsünde denendi: güncel, yeni sürüm
+  (yeniden başladı, açılış mesajı), "güncelleme var mı", üretim kilidi varken bekleme ve kilit kalkınca güncelleme, elle değiştirilmiş dosya,
+  aynı adda dosya, ulaşılamayan uzak depo, bozuk yeni sürümde geri alma (yerel değişiklik korundu); bekleyen onayın diske yazılması.
   `scripts/setup_tunnel.sh HOST` kalıcı Cloudflare adlı tüneli kurar (login, create, route dns, .env).
   Tünel hazır olunca log Instagram/TikTok geri dönüş adreslerini tam haliyle yazar.
 - Canlı log (`push()` → SSE): üretim adımları, beyin (🧠 düşünüyor / ⚡ eylem / ⏸ onay), yayın (📤),

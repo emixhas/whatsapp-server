@@ -90,9 +90,17 @@ const OPEN_ONLY = /^(?:(?:şunu|bunu|şu|bu|videoyu|linki|lütfen|hemen)\s+)*(?:
 // talimatta harf/rakam yoksa (linkin çevresindeki parantez, tırnak, WhatsApp *kalın* işareti) talimat boştur: varsayılan haber talimatı geçer
 const insOf = (s) => { const x = String(s || "").replace(/\s+/g, " ").trim(); return /[\p{L}\p{N}]/u.test(x) ? x : ""; };
 
+const SELF_UPDATE = /^(?:(?:emixhas|lütfen|hemen|şimdi) )*(?:(?:sistemi|paneli|kendini|kodu|yazılımı|programı|uygulamayı|emixhas ı|emixhası|sistem|panel|kod) )?(?:güncelle|güncellemeyi al|güncellemeleri al|güncellemeyi yükle|güncellemeleri yükle|güncellemeyi yap|güncelleme yap|son sürüme geç|son sürümü al|yeni sürümü al|update)(?: (?:lütfen|hemen|şimdi|emixhas))*$/;
+const UPDATE_CHECK = /^(?:emixhas )?(?:(?:yeni )?(?:güncelleme|sürüm)(?:ler)? var mı|güncel misin|(?:sistem|panel|kod) güncel mi|son sürümde misin)$/;
 export function parseCommand(raw) {
   const t = norm(raw);
   if (!t) return { action: "none", reply: "Sizi duyamadım." };
+  // Kendini güncelleme (kullanıcı isteği, 19 Ekim: "WhatsApp'tan güncelle yazayım, panel kendini güncellesin, güncelle butonuna basmışım
+  // gibi"): yalnız tüm mesaj bu kalıpsa ("izlenmeleri güncelle", "kapakları güncelle" başka komut; "kendini güncelleyebilir mi?" soru,
+  // beyne gider). "güncelleme var mı" yalnız bakar, çekmez.
+  const tu = t.replace(/[*_~`]/g, "").trim(); // WhatsApp biçim işareti (*güncelle*)
+  if (SELF_UPDATE.test(tu)) return { action: "self_update", reply: "" };
+  if (UPDATE_CHECK.test(tu)) return { action: "update_check", reply: "" };
   // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat". Linkli mesajda fiil tam kelime olmalı: YouTube linkinin yanına
   // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
   // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider. Kibar/ekli emir biçimleri yine açar ("açar mısın",
