@@ -1207,7 +1207,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   bir, CO2 → karbondioksit, A400M, MP3, COVID-19 → kovid on dokuz); `settings.pronunciations` ({"M4": "em dört"}) hepsinden önce gelir.
   4 harften uzun kelimeli kod ve küçük harfli adlar (iPhone 15, Mi-17) değişmez; yalnız harfli kısaltmalara (CHP, MHP) dokunulmaz.
   Ayrıca rakamdan sonra ünlüyle başlayan ekte ünsüz yumuşar (`tr_numbers.normalize_tr`: 4'ü → dördü, 4'e → dörde, 104'üncü → yüz
-  dördüncü; eskiden "dörtü"). Altyazı hizalaması aynı `prep_text`i kullandığı için söylenen uzunluk uyumlu (C4 → 6 harf). `PRON_VER` 6. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
+  dördüncü; eskiden "dörtü"). Altyazı hizalaması aynı `prep_text`i kullandığı için söylenen uzunluk uyumlu (C4 → 6 harf).
+  Web adresleri ve noktalı saat (kullanıcı isteği, 20 Ekim: "haber.com ve sondakika.com'u mantıklı seslendirsin"; `voices._domains`, `prep_text`
+  ve `speakable`in başında): alan adı Türkçe okunur — site adı bilinen okunuşuyla (`SITE_SAY`: sondakika → son dakika, haberturk → Habertürk,
+  hurriyet → Hürriyet, cnnturk → ce en en türk, aa → a a; harfsiz kısa ad harf harf: trt → te re te; bilinmeyen ad yazıldığı gibi, rakam
+  ayrı: haber7 → haber yedi), nokta "nokta", uzantı `TLD_SAY` (com → kom, tr → te re, tv → teve, gov, org, net); https://, www. ve yol
+  okunmaz, ek son heceye uyar: sondakika.com'un → son dakika nokta kom'un, haber.com'da → haber nokta kom'da, aa.com.tr'ye → a a nokta kom
+  nokta te re'ye; uzantısı bilinmeyen nokta (3.5, A.Ş.) değişmez; tek başına "Sondakika" → son dakika (`PRONOUNCE`);
+  `settings.pronunciations`ta tam alan adı ({"sondakika.com": "Son Dakika sitesi"}) önce gelir. Noktalı saat (`tr_numbers.dot_times`;
+  eskiden "saat 14.30'da" → "on dört virgül otuzda"): önünde "saat" ya da ardından zaman eki ('da, 'den, 'daki, 'a…) ya da
+  itibarıyla/sularında/civarında varsa saat (0-23, dakika iki hane): "on dört otuzda"; "41.85 lira", "4.8 büyüklüğünde", "1.250 kişi"
+  değişmez; `align._pairs` komşu kelimedeki bağlamı da görür. 28.428 metinlik derlemde fark yalnız alan adı, "sondakika" ve noktalı
+  saatte (sürüm numarası "Node 18.20'de" de saat okunur: haber dilinde ekli noktalı sayı saattir). `PRON_VER` 7. Emixhas'ın konuşması (`speak.py`) `voice.engine` kimliğini ya da auto'da hızlı sırayı
   (ema → chatterbox → yelda → piper) kullanır; `voice.rate` EMA hızına (0.7-1.4) çevrilir.
 - Isınma önlemi (kullanıcı isteği, geri alma): `reap()` üretim sürmüyorken bizim başlattığımız ağır süreçleri
   (`HEAVY`: ses modelleri, yt-dlp, kapak çizimi, Remotion ve onun Chrome'u — yalnızca node_modules/.remotion

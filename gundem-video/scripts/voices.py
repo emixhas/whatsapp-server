@@ -190,7 +190,7 @@ _PARTY_CTX = re.compile(r"\b(AK|DEM|İYİ|TİP)\b(?=\s+(?:Parti|PARTİ|parti))|\
 # Okunuş sözlüğü: yabancı kökenli marka/adların Türkçe okunuşu (yalnız seslendirmede; ekranda yazım değişmez).
 # Ekler korunur: "Mynet'in" → "Maynet'in". settings.pronunciations {"Kelime": "Okunuş"} ile genişletilir.
 # TV: ses motorları İngilizce "tivi" okuyor (kullanıcı bildirimi) → "Teve" ("Halk TV'de" → "Halk Teve'de", "TV8" → "Teve 8"; ATV, NTV de).
-PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka", "TV": "Teve", "ATV": "Ateve", "NTV": "Enteve"}
+PRONOUNCE = {"Mynet": "Maynet", "PKK": "Pekaka", "TV": "Teve", "ATV": "Ateve", "NTV": "Enteve", "Sondakika": "son dakika"}
 _GLUED_NUM = re.compile(r"(?<![\wçğıöşüÇĞİÖŞÜ])(TV)(?=\d)")  # kanal adındaki bitişik sayı ayrılır: TV8 → TV 8 (sayı yazıya çevrilsin)
 
 
@@ -285,12 +285,60 @@ def _codes(text: str) -> str:
     return _CODE.sub(say, text)
 
 
+# Web adresleri (kullanıcı isteği, 20 Ekim: "haber.com ve sondakika.com'u mantıklı seslendirsin"): ses modelleri alan adını bitişik
+# ya da İngilizce okuyordu. Türkçe okunur: site adı bilinen okunuşuyla (sondakika → son dakika, haberturk → Habertürk; harfsiz kısa ad
+# harf harf: trt → te re te), nokta "nokta", uzantı com → kom, tr → te re, tv → teve; "https://", "www." ve yol okunmaz, ek yeni son
+# heceye uyar: sondakika.com'un → son dakika nokta kom'un, aa.com.tr'ye → a a nokta kom nokta te re'ye. Uzantısı bilinmeyen nokta
+# (3.5, A.Ş.) değişmez. settings.pronunciations'ta tam alan adı ({"sondakika.com": "Son Dakika sitesi"}) önce gelir.
+SITE_SAY = {"sondakika": "son dakika", "haberturk": "Habertürk", "hurriyet": "Hürriyet", "sozcu": "Sözcü", "cnnturk": "ce en en türk",
+            "trthaber": "te re te haber", "ensonhaber": "en son haber", "gazeteduvar": "gazete duvar", "yenisafak": "Yeni Şafak",
+            "aksam": "Akşam", "ahaber": "a haber", "aa": "a a", "dha": "de ha a", "iha": "i ha a", "bbc": "bi bi si", "cnn": "ce en en",
+            "ntv": "Enteve", "mynet": "Maynet", "birgun": "BirGün", "dunya": "Dünya", "fotomac": "Fotomaç", "ajansspor": "ajans spor",
+            "halktv": "Halk Teve", "sozcutv": "Sözcü Teve", "tv100": "Teve yüz", "odatv": "Oda Teve", "bloomberght": "Bloomberg ha te",
+            "haberler": "haberler", "gazeteoksijen": "gazete oksijen", "medyascope": "medyaskop", "evrensel": "Evrensel"}
+TLD_SAY = {"com": "kom", "net": "net", "org": "org", "tv": "teve", "gov": "gov", "edu": "edu", "info": "info", "io": "i o", "co": "ko",
+           "biz": "biz", "news": "nyuz", "tr": "te re", "uk": "yu ke", "de": "de", "eu": "e u", "az": "a ze", "cy": "si vay"}
+_DOMAIN = re.compile(r"(?<![\w@./-])(?:https?://)?(?:www\.)?((?:[a-zçğıöşü0-9](?:[a-zçğıöşü0-9-]*[a-zçğıöşü0-9])?\.)+[a-z]{2,6})"
+                     r"(?:/[^\s'’\"]*[^\s'’\".,;:!?)*_])?(?![\wçğıöşü])(?:['’]([a-zçğıöşü]+))?", re.IGNORECASE)
+
+
+def _site_word(label: str) -> str:
+    if tr_lower(label) in SITE_SAY:
+        return SITE_SAY[tr_lower(label)]
+    out = []
+    for p in re.findall(r"[^\W\d_]+|\d+", label):  # bilinmeyen ad yazıldığı gibi (Instagram, Haber), rakam ayrı (haber7 → haber 7)
+        lp = tr_lower(p)
+        if p.isdigit() or lp in SITE_SAY:
+            out.append(SITE_SAY.get(lp, p))
+        elif len(p) <= 3 and not re.search(r"[aeıioöuü]", lp):  # harfsiz kısa ad (trt, cnn): harf harf
+            out.append(" ".join(LETTER_TR.get(ch, ch) for ch in lp.replace("i", "İ").replace("ı", "I").upper()))
+        else:
+            out.append(p)
+    return " ".join(out) or label
+
+
+def _domains(text: str) -> str:
+    user = {tr_lower(k): v for k, v in (settings().get("pronunciations") or {}).items() if k and v and "." in k}
+
+    def say(m):
+        host, suf = m.group(1), m.group(2)
+        labels = host.split(".")
+        n = 0  # sondaki uzantı etiketleri (com, com.tr); en az bir ad etiketi kalmalı
+        while n < len(labels) - 1 and tr_lower(labels[-1 - n]) in TLD_SAY:
+            n += 1
+        if not n or (n == 1 and len(labels) > 2 and tr_lower(labels[-1]) not in ("com", "net", "org", "tv", "gov", "edu", "info", "io", "co", "biz", "news")):
+            return m.group(0)
+        spoken = user.get(tr_lower(host)) or " nokta ".join([_site_word(x) for x in labels[:-n]] + [TLD_SAY[tr_lower(x)] for x in labels[-n:]])
+        return spoken + (f"'{_reharmonize(spoken.split()[-1], tr_lower(suf))}" if suf else "")
+    return _DOMAIN.sub(say, text)
+
+
 def speakable(text: str) -> str:
     """Parti adları gibi kelime olarak okunması gereken kısaltmaları normal yazıma çevirir (AK Parti → Ak Parti),
     okunuş sözlüğünü uygular (Mynet → Maynet)."""
     def fix(m):
         return " ".join(SPOKEN_WORDS.get(g, g) for g in m.groups() if g)
-    t = _PARTY_CTX.sub(fix, _pronounce(_codes(text)))
+    t = _PARTY_CTX.sub(fix, _pronounce(_codes(_domains(text))))
     t = re.sub(r"\bAK\b(?=[\s-]*(?:Parti|PARTİ|parti))", "Ak", t)
     # Kesme işaretinden sonraki büyük harfli ekler harf harf okunmasın: PARTİ'YE → PARTİ'ye, PKK'NIN → PKK'nın
     return re.sub(r"(?<=[A-Za-zÇĞİÖŞÜçğıöşü])['’]([A-ZÇĞİÖŞÜ]{1,6})\b", lambda m: "'" + tr_lower(m.group(1)), t)
@@ -298,7 +346,7 @@ def speakable(text: str) -> str:
 
 def prep_text(text: str) -> str:
     """Yerel modeller için: rakamlar yazıya, parti adları kelime olarak, BÜYÜK HARFLİ kelimeler (NATO, TÜİK) normal yazıma."""
-    t = speakable(normalize_tr(_codes(_GLUED_NUM.sub(r"\1 ", text))))  # kod rakamı sonra yazıya çevrilsin (C4 → ce 4 → ce dört)
+    t = speakable(normalize_tr(_codes(_GLUED_NUM.sub(r"\1 ", _domains(text)))))  # kod ve site rakamı sonra yazıya: C4 → ce 4 → ce dört
     return re.sub(r"\b([A-ZÇĞİÖŞÜ]{4,})\b", lambda m: m.group(1)[0] + tr_lower(m.group(1)[1:]), t)
 
 

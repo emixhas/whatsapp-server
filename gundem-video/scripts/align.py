@@ -267,12 +267,17 @@ _MMS_CACHE: dict = {}  # wav yolu → kelime zamanları (mms_batch doldurur; mod
 
 def _pairs(words: list, spoken: list | None):
     try:
-        from tr_numbers import _SCORE, _SPORT
+        from tr_numbers import _SCORE, _SPORT, dot_times
         from voices import prep_text
         src = list(spoken or words)
         # skor bağlamı cümle düzeyinde (tek kelimede "4-1" bağlamsız kalır): seslendirmeyle aynı okunuş ("dört bir")
         sport = bool(_SPORT.search(" ".join(src)))
-        sp = [prep_text(_SCORE.sub(r"\1 \2", w) if sport else w.replace("*", "")) for w in src]
+        # noktalı saatin bağlamı komşu kelimede ("saat 14.30", "14.30 itibarıyla"): seslendirmeyle aynı okunuş ("on dört otuz")
+        def tm(i, w):
+            prev = src[i - 1].lower().strip(".,;:!?") if i else ""
+            nxt = src[i + 1].lower() if i + 1 < len(src) else ""
+            return dot_times("saat " + w)[5:] if prev == "saat" or re.match(r"(itibar|sular|civar)", nxt) else w
+        sp = [prep_text(_SCORE.sub(r"\1 \2", w) if sport else tm(i, w).replace("*", "")) for i, w in enumerate(src)]
     except Exception:
         sp = list(spoken or words)
     if len(sp) != len(words):

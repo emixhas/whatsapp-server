@@ -80,6 +80,17 @@ def _repl(m: re.Match) -> str:
 _TIME = re.compile(r"(?<![\w:])(\d{1,2}):(\d{2})(?!\d)(?:'(\w+))?")
 
 
+# Noktalı saat (haber dilinde yaygın: "saat 14.30'da"; eskiden "on dört virgül otuzda" okunuyordu): yalnız bağlamla saat sayılır —
+# önünde "saat" ya da ardından zaman eki ('da/'de/'ta/'te, 'dan/'den, 'daki, 'a/'e/'ya/'ye) ya da itibarıyla/itibaren/sularında/
+# civarında; saat 0-23, dakika iki hane. "41.85 lira", "4.8 büyüklüğünde", "1.250 kişi" değişmez. align._pairs kelime kelime aynı kuralı uygular.
+_DOT_TIME = re.compile(r"(?<![\w.,])(saat\s+)?([01]?\d|2[0-3])\.([0-5]\d)(?![\d.,])"
+                       r"(?=(['’](?:[dt][ae](?:n|ki)?|y?[ae])(?![^\W\d_])|\s+(?:itibar|sular|civar))?)", re.IGNORECASE)
+
+
+def dot_times(t: str) -> str:
+    return _DOT_TIME.sub(lambda m: f"{m.group(1) or ''}{m.group(2)}:{m.group(3)}" if m.group(1) or m.group(4) else m.group(0), t)
+
+
 def _time_repl(m: re.Match) -> str:
     h, mi, suffix = int(m.group(1)), int(m.group(2)), m.group(3) or ""
     out = int_to_tr(h) if mi == 0 else f"{int_to_tr(h)} {int_to_tr(mi)}"
@@ -100,7 +111,7 @@ def _scores(t: str) -> str:
 def normalize_tr(text: str) -> str:
     """Rakamları Türkçe yazıya çevirir; yüzde işaretini ve bazı sembolleri okunur yapar."""
     t = text.replace("%", "yüzde ")
-    t = _TIME.sub(_time_repl, t)  # 14:00'te → on dörtte, 09:30 → dokuz otuz
+    t = _TIME.sub(_time_repl, dot_times(t))  # 14:00'te → on dörtte, 09:30 → dokuz otuz, saat 14.30'da → on dört otuzda
     t = re.sub(r"(\d)\s*\+\s*(\d)", r"\1 artı \2", t)  # 90+3. dakika → doksan artı üçüncü dakika
     t = _scores(t)  # spor skoru: "4-1 yendi" → "dört bir yendi" (kullanıcı isteği; "dört ile bir" yanlış)
     t = re.sub(r"(\d)\s*-\s*(\d)", r"\1 ile \2", t)  # 3-5 derece → 3 ile 5 derece
