@@ -228,8 +228,8 @@ async function nextPlanned() {
   try { cands.push(...infoNext()); } catch { /* henüz tanımlı değil */ }
   return cands.sort((a, b) => a.at - b.at)[0] || null;
 }
-// Biten üretim yalnız yoldaki haber yüzünden dinlenmeye geçmediyse nedeni; o haber üretime, sıraya ya da toplayıcıya girmeden
-// düşerse (sayfa okunamadı, aynı olay, bayat) restRecheck dinlenmeyi şimdi başlatır (yoksa sonraki üretim bitene kadar uyanık kalırdı)
+// Biten üretim yalnız sıradaki ya da yoldaki iş yüzünden dinlenmeye geçmediyse nedeni; o iş üretime ya da toplayıcıya girmeden düşerse
+// (sayfa okunamadı, aynı olay, bayat, sıradan çıkarken tekrar) restRecheck dinlenmeyi şimdi başlatır (yoksa sonraki üretim bitene kadar uyanık kalırdı)
 let restPending = null;
 async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
   restPending = null;
@@ -253,13 +253,14 @@ let lastFinishAt = 0;
 function finishProduction(reason = "üretim bitti") {
   if (Date.now() - lastFinishAt < 30000 || pipelineBusy()) return;
   lastFinishAt = Date.now(); restPending = null;
-  const waiting = anlikQueue.length + anlikInflight.size; // yoldaki haber (sayfası/diğer siteleri okunuyor) da sıradaki iş sayılır
-  if (waiting) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı`); if (!anlikQueue.length) restPending = reason; return; }
+  if (resting()) { reap({ minAgeSec: 0, reason }); return; } // zaten dinlenmede (⏸ süren üretimi kapattı): dinlenmenin nedeni ("elle durduruldu") ezilmesin
+  const waiting = anlikQueue.length + anlikInflight.size + (dequeueBusy ? 1 : 0); // yoldaki haber (sayfası/diğer siteleri okunuyor) ve sıradan çıkıp hafızaya bakılan iş de sıradaki iş sayılır
+  if (waiting) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı`); restPending = reason; return; }
   if (settings().restAfterProduction !== false) restStart({ reason, stop: false }).catch(() => {});
   else reap({ minAgeSec: 0, reason, announceIdle: true });
 }
-function restRecheck() { // yoldaki kayıt çıktı: başka iş yoksa ertelenen dinlenme kararı yeniden verilir
-  if (!restPending || anlikInflight.size || anlikQueue.length || valueBatch.length || pipelineBusy() || resting()) return;
+function restRecheck() { // yoldaki kayıt çıktı ya da sıradan çıkan işin denetimi bitti: başka iş yoksa ertelenen dinlenme kararı yeniden verilir
+  if (!restPending || anlikInflight.size || anlikQueue.length || valueBatch.length || dequeueBusy || pipelineBusy() || resting()) return;
   const why = restPending; restPending = null; lastFinishAt = 0; finishProduction(why);
 }
 // planlı zaman geldi: dinlenme biter (launchd üretimi zaten kendiliğinden başlar, günün özeti panel başlatır)
@@ -311,9 +312,12 @@ function startAnlik(topic, duration, opts = {}) {
   duration = Math.min(opts.recreate ? 90 : 60, Math.max(20, Number(duration) || 30)); // benzer video: referansın süresi (en çok 90 sn)
   if (resting()) { if (opts.auto) { push(`⏸ sistem durduruldu: otomatik anlık haber başlatılmadı (${topic.slice(0, 70)}); elle "🎬 Video üret" ile üretebilirsiniz`); return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; } restEnd("elle anlık haber talimatı"); }
   if (pipelineBusy()) {
-    anlikQueue.push({ topic, duration, opts, at: Date.now() });
-    push(`⚡ anlık haber sıraya alındı (${anlikQueue.length}. sırada, şu an başka üretim sürüyor): ${topic.slice(0, 80)}`);
-    return { ok: true, queued: true, position: anlikQueue.length, duration };
+    // priority (değerli sondakika.com haberi, 20 Ekim): sıradaki sıradan OTOMATİK işlerin önüne; elle verilen, öncelikli ve
+    // değerli (toplayıcı: valuable, çoklu) işlerin arkasına
+    const pos = !opts.priority ? anlikQueue.length : anlikQueue.reduce((n, q, i) => (!q.opts?.auto || q.opts.priority || q.opts.valuable || q.multi ? i + 1 : n), 0);
+    anlikQueue.splice(pos, 0, { topic, duration, opts, at: Date.now() });
+    push(`⚡ anlık haber sıraya alındı (${pos + 1}. sırada, şu an başka üretim sürüyor): ${topic.slice(0, 80)}`);
+    return { ok: true, queued: true, position: pos + 1, duration };
   }
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), topic + "\n");
@@ -372,6 +376,8 @@ function startAnlikMulti(items, { auto = true } = {}) {
 // yakalamayalım"): beklerken biten üretim (ör. 5 saatlik video; assemble'da yazar) aynı haberi anlatmış olabilir. Panelin işaretleri
 // (kind "mark": bu işin kendisi ve sıradaki diğer işler) sayılmaz; önceki üretimlerin gerçek kayıtları bu anda yazılmıştır. Viral devam
 // haberi kendi kuralıyla denetlendi, bakılmaz; elle istekler engellenmez. Denetim sürerken ikinci tik iş başlatmasın (dequeueBusy).
+// Denetim sürerken iş ne sırada ne yoldadır: biten üretim onu sıradaki iş sayar (finishProduction; sayılmazsa sistem dinlenmeye geçip işi —
+// değerli sondakika.com haberi dahil — reddettiriyor, iş kayboluyordu); iş düşerse ertelenen dinlenme şimdi başlar (restRecheck).
 let dequeueBusy = false;
 setInterval(async () => {
   if (dequeueBusy || !anlikQueue.length || pipelineBusy()) return;
@@ -410,7 +416,7 @@ setInterval(async () => {
     push(`⚡ sıradaki anlık haber başlıyor: ${q.topic.slice(0, 80)}`); const r = startAnlik(q.topic, q.duration, q.opts || {});
     if (q.opts?.sondakika) { if (r.ok) sondakikaMark(q.opts.sondakika, "üretildi"); else sondakikaUnqueue(q, r.error || "başlatılamadı"); } // panel kartındaki "sırada" durumu
     else if (!r.ok) unmarkQueued(q); // başlatılamadı (ör. dinlenme): video yok, işareti haberi engellemesin
-  } finally { dequeueBusy = false; }
+  } finally { dequeueBusy = false; restRecheck(); }
 }, 10000);
 
 // ---------- Değerli manşet toplayıcı: Mynet ve son dakika taramalarından gelen DEĞERLİ haberler 20 sn biriktirilir.
@@ -494,7 +500,7 @@ async function flushValuable0() {
     ? await inflight(one.title, async (tok) => {
       tok.item = one;
       const src = await allSources(one.title, one.url, one.source);
-      return startAnlik([one.title, one.text].filter(Boolean).join(". ").slice(0, 1500), one.duration, { source: one.source, url: one.url, sourceCount: one.sourceCount || 1, pages: src.pages, related: src.related, title: one.title, auto: true, followUp: !!one.followUp });
+      return startAnlik([one.title, one.text].filter(Boolean).join(". ").slice(0, 1500), one.duration, { source: one.source, url: one.url, sourceCount: one.sourceCount || 1, pages: src.pages, related: src.related, title: one.title, auto: true, followUp: !!one.followUp, valuable: true }); // valuable: öncelikli işler bunu geçmez
     }, { firm: true })
     : startAnlikMulti(items);
   for (const it of items) { try { await it.onStarted?.(r); } catch { /* kayıt */ } }
@@ -1122,15 +1128,22 @@ app.post("/api/breaking/produce", async (req, res) => {
 // settings.dedup.hours; --check'te başlık + açıklama + adres, sayfa okununca gövdeyle yeniden), günlük sınır (maxPerDay), tarama
 // başına sınır (maxPerCheck), anlık sırası maxQueue'ya ulaştı (birikmiş haber bayatlamasın), yayın zamanı (sayfadaki, yoksa
 // akıştaki) maxAgeHours'tan eski, aynı olay şu an üretimde/sırada/toplayıcıda.
+// Değerli haber (kullanıcı isteği, 20 Ekim: "haber sınırını kaldır, değerlileri yakala"; settings.sondakika.valuableUnlimited, varsayılan
+// açık): --check (başlık + akış açıklaması) ya da sayfa (--article: başlık + açıklama + gövdenin ilk cümlesi) değerli derse günlük,
+// tarama başına ve sıra sınırına takılmaz, sayaca girmez (günlük kayıtta valuable), yaş sınırı valuableMaxAgeHours; taramada önce
+// değerliler, sırada sıradan otomatik işlerin önüne (startAnlik priority). --check'te sıradan görünen haber sınıra takılacaksa önce
+// sayfası okunur (gövdeyle değerli çıkabilir). Tekrar, aynı olay ve elle durdurma kuralları değişmedi. Kapalıysa eski davranış.
 // Ortak tarama (Mynet + son dakika siteleri) ile sırayla çalışır: biri sürerken diğeri bekler, aynı olay iki kez üretilmesin.
 // Yayın anlikAutoPublish ile bağlı tüm hesaplara onaysız.
-const SONDAKIKA_DONE = path.join(DATA, "sondakika_daily.json");     // {gün: [{url, title, at, manual}]}
-const SONDAKIKA_STATUS = path.join(DATA, "sondakika_status.json");  // {url: {state, why, at}} — panelde haberin üretildi/sırada/atlandı durumu
-const sondakikaCfg = () => ({ enabled: true, intervalMin: 5, maxPerCheck: 3, maxPerDay: 40, maxQueue: 6, duration: 30, maxAgeHours: 3, ...(settings().sondakika || {}) });
+const SONDAKIKA_DONE = path.join(DATA, "sondakika_daily.json");     // {gün: [{url, title, at, manual, valuable}]}
+const SONDAKIKA_STATUS = path.join(DATA, "sondakika_status.json");  // {url: {state, why, at, valuable, valueReason}} — panelde haberin üretildi/sırada/atlandı durumu
+const sondakikaCfg = () => ({ enabled: true, intervalMin: 5, maxPerCheck: 3, maxPerDay: 40, maxQueue: 6, duration: 30, maxAgeHours: 3, valuableUnlimited: true, valuableMaxAgeHours: 12, ...(settings().sondakika || {}) });
 const sondakikaEvery = () => Math.min(60, Math.max(2, Number(sondakikaCfg().intervalMin) || 5));
 const sondakikaDone = () => readJson(SONDAKIKA_DONE, {});
-function sondakikaMark(url, state, why = "") {
-  const s = readJson(SONDAKIKA_STATUS, {}); s[url] = { state, why, at: Date.now() };
+function sondakikaMark(url, state, why = "", extra = {}) {
+  // sayfa okununca bulunan değer sonraki yazımlarda kalır (kuyruktan başlayınca, sıradan çıkınca ⭐ kaybolmasın)
+  const s = readJson(SONDAKIKA_STATUS, {}), old = s[url] || {};
+  s[url] = { ...(old.valuable ? { valuable: true, valueReason: old.valueReason } : {}), ...extra, state, why, at: Date.now() };
   writeJson(SONDAKIKA_STATUS, Object.fromEntries(Object.entries(s).sort((a, b) => b[1].at - a[1].at).slice(0, 100)));
 }
 // Sıradaki iş iptal edildi, atlandı ya da başlatılamadı (video yapılmadı): panelin üretime alırken yazdığı işaretler
@@ -1162,54 +1175,78 @@ const anlikBusyWith = (t, self = null) => valueBatch.some((x) => sameEvent(x.tit
 let sondakikaBusy = false, sondakikaLast = 0;
 // Tek haber: sayfa okunur (başlık + açıklama + gövde, yayın zamanı, sayfada video var mı), anlık video başlar, aynı olay işaretlenir.
 // Elle (panel "🎬 Video üret") günlük sınıra ve sıra sınırına takılmaz, sayaca girmez; aynı haber günde bir (force ile yine).
-async function sondakikaProduce(url, { manual = false, force = false, item = null } = {}) {
+// limit: sondakikaCheck'in tarama başına sınırı ({why, note}); held: değerli habere uygulanmayan sınır ya da elle durdurma;
+// peek: sınıra takılan sıradan haberin sayfasına bakılabilir mi (taramanın sayfa okuma bütçesi). Sınıra ya da elle durdurmaya takılıp
+// sayfası okunan ama üretilmeyen haberin (sıradan çıktı, okunamadı, tekrar, bayat, aynı olay) sonucu peeked taşır; akıştaki yayın
+// zamanı valuableMaxAgeHours'tan eski sıradan haberin sayfası hiç okunmaz (değerli çıksa da bayat).
+async function sondakikaProduce(url, { manual = false, force = false, item = null, limit = null, peek = true } = {}) {
   url = String(url || "").trim();
   if (!/^https?:\/\//i.test(url)) return { ok: false, error: "Haber adresi yok." };
   const c = sondakikaCfg(), day = today(), list = sondakikaDone()[day] || [];
-  const skip = (why, title = item?.title || url) => { sondakikaMark(url, "atlandı", why); push(`🔴 sondakika.com: "${String(title).slice(0, 70)}" atlandı — ${why}`); return { ok: false, skipped: true, error: why }; };
+  const skip = (why, title = item?.title || url, note = why, extra = {}) => { sondakikaMark(url, "atlandı", note, extra); push(`🔴 sondakika.com: "${String(title).slice(0, 70)}" atlandı — ${why}`); return { ok: false, skipped: true, error: why }; };
   const fail = (error) => { push(`🔴 sondakika.com (elle): ${error} — ${url}`); return { ok: false, error }; }; // elle yolda da her sonuç loglanır
   if (list.some((x) => x.url === url) && !force) { push(`🔴 sondakika.com${manual ? " (elle)" : ""}: "${String(item?.title || url).slice(0, 70)}" için bugün zaten video üretildi`); return { ok: false, produced: true, error: "Bu haber için bugün zaten video üretildi." }; }
+  const stopWhy = "sistem elle durduruldu, yalnız değerli haber uyandırır (kartta 🎬 Video üret ile elle üretilebilir)";
+  let held = null;
   if (!manual) {
     if (item?.dup && item.dupInfo?.reason === "aynı haber adresi") return skip(dupWhy(item.dupInfo)); // başlık/açıklama eşleşmesine sayfa okununca gövdeyle bakılır
-    const autoCount = list.filter((x) => !x.manual).length;
-    if (autoCount >= Number(c.maxPerDay)) return skip(`günlük sınır (${c.maxPerDay}) doldu`);
-    if (anlikQueue.length >= Number(c.maxQueue)) return skip(`anlık sırada ${anlikQueue.length} iş bekliyor (en çok ${c.maxQueue}), haber bayatlamasın diye`);
+    // değerli haber sınırsız (valuableUnlimited): sayaca girmez; --check'te sıradan görünen haber sınıra takılacaksa sayfası okunur,
+    // gövdeyle de sıradansa aynı satırla atlanır. Kapalıysa eski kural: sınır her habere, sayfa okunmadan.
+    const pubH = item?.published ? (Date.now() - Date.parse(item.published)) / 3600000 : 0;
+    const vip = c.valuableUnlimited !== false, look = vip && peek && !(pubH > Number(c.valuableMaxAgeHours));
+    const autoCount = list.filter((x) => !x.manual && !(vip && x.valuable)).length;
+    held = limit || (autoCount >= Number(c.maxPerDay) ? { why: `günlük sınır (${c.maxPerDay}) doldu` }
+      : anlikQueue.length >= Number(c.maxQueue) ? { why: `anlık sırada ${anlikQueue.length} iş bekliyor (en çok ${c.maxQueue}), haber bayatlamasın diye` } : null);
+    if (held && !(look || (vip && item?.valuable))) return skip(held.why, undefined, held.note);
     // elle "⏸ Tüm sistemi durdur" (ısınma) sürerken sıradan haber sistemi uyandırmaz; değerli haber uyandırır (toplayıcıyla aynı kural).
     // Üretim sonrası kendiliğinden dinlenmede her yeni haber uyandırır (kullanıcı "anında" dedi).
-    if (resting() && restInfo().reason === "elle durduruldu" && !item?.valuable) return skip("sistem elle durduruldu, yalnız değerli haber uyandırır (kartta 🎬 Video üret ile elle üretilebilir)");
+    if (!held && resting() && restInfo().reason === "elle durduruldu" && !item?.valuable) {
+      if (!look) return skip(stopWhy);
+      held = { why: stopWhy, stop: true };
+    }
   }
-  return inflight(item?.title || url, (tok) => sondakikaStart(url, { manual, item, c, day, skip, fail, tok }), { sourceCount: item?.sources?.length || 1 });
+  const res = await inflight(item?.title || url, (tok) => sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held, stopWhy }), { sourceCount: item?.sources?.length || 1 });
+  return held && !res.ok ? { ...res, peeked: true } : res; // boşa okuma: taramanın sayfa okuma bütçesinden düşer
 }
-async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok }) {
+async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held = null, stopWhy }) {
   const a = await pyJson(["scripts/sondakika_watch.py", "--article", url], 60000);
   if (a?.title) tok.title = a.title;
-  if (!a || a.ok === false || !a.title) return manual ? fail(`Haber sayfası okunamadı (${a?.error || "başlık yok"}).`) : skip(`haber sayfası okunamadı (${a?.error || "başlık yok"})`);
-  if (!manual && a.dup) return skip(dupWhy(a.dupInfo), a.title); // --check'ten bu yana başka kaynak üretmiş olabilir; gövdeyle yeniden bakıldı
+  if (!a || a.ok === false || !a.title) return manual ? fail(`Haber sayfası okunamadı (${a?.error || "başlık yok"}).`) : held && !item?.valuable ? skip(held.why, undefined, held.note) : skip(`haber sayfası okunamadı (${a?.error || "başlık yok"})`);
+  // değerli: --check ya da sayfa (başlık + açıklama + gövdenin ilk cümlesi) öyle derse
+  const vip = !manual && c.valuableUnlimited !== false, valuable = !!(item?.valuable || a.valuable);
+  const val = valuable ? { valuable: true, valueReason: item?.valuable ? item.valueReason : `${a.valueReason}; haber metninden` } : {};
+  if (held && !valuable) return skip(held.why, a.title, held.note); // sıradan haber: sınır ya da elle durdurma (eski satır)
+  if (!manual && a.dup) return skip(dupWhy(a.dupInfo), a.title, undefined, val); // --check'ten bu yana başka kaynak üretmiş olabilir; gövdeyle yeniden bakıldı
   if (manual && a.dup) push(`🔴 sondakika.com (elle): "${a.title.slice(0, 70)}" — ${dupWhy(a.dupInfo)}; elle istendiği için yine üretiliyor`);
   const pub = a.published || item?.published; // sayfada yayın zamanı yoksa akıştaki (RSS pubDate)
   const ageH = pub ? (Date.now() - Date.parse(pub)) / 3600000 : 0;
-  if (!manual && ageH > Number(c.maxAgeHours)) return skip(`haber ${Math.round(ageH)} saat önce yayınlanmış (bayat)`, a.title);
-  if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay zaten üretimde ya da sırada", a.title);
+  if (!manual && ageH > Number(vip && valuable ? c.valuableMaxAgeHours : c.maxAgeHours)) return skip(`haber ${Math.round(ageH)} saat önce yayınlanmış (bayat)`, a.title, undefined, val);
+  if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay zaten üretimde ya da sırada", a.title, undefined, val);
   tok.firm = true; // kendi denetimleri (okuma, tekrar, bayat, meşgul) geçti: bundan sonra aynı olay buna yol verir
   const topic = [a.title, a.description, a.body].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
   // kaynak: makalenin site adı (og:site_name); boş, uzun ya da genel "Son Dakika" ise Sondakika.com
   const source = a.site && a.site.length <= 30 && !/^son ?dakika( haber(ler)?i?)?$/i.test(a.site.trim()) ? a.site.trim() : "Sondakika.com";
+  // sayfa okunurken elle "⏸ Tüm sistemi durdur" basıldıysa sıradan haber uyandırmaz (sondakikaProduce'daki kural; kapalıyken --check değeri)
+  if (!manual && resting() && restInfo().reason === "elle durduruldu" && !(vip ? valuable : item?.valuable)) return skip(stopWhy, a.title, undefined, val);
   if (!manual && resting()) restEnd(`sondakika.com'da yeni haber: ${a.title.slice(0, 60)}`); // kullanıcı "anında" dedi: dinlenme beklenmez
   push(`🔴 sondakika.com${manual ? " (elle)" : ": yeni haber"}: ${a.title.slice(0, 90)}${a.video ? " (haber sayfasında video var)" : ""} → video üretiliyor`);
   // title: aynı olay denetimi başlıkla yapılsın; sondakika: sıradan çıkınca/iptalde panel durumu güncellensin
   const src = await allSources(a.title, url, source); // haberin tüm kaynakları: bilgi + video + farklı fotoğraflar
-  if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay bu sırada başka kaynaktan üretime alındı", a.title);
-  const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: tok.item.sourceCount, auto: !manual, title: a.title, sondakika: url });
+  if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay bu sırada başka kaynaktan üretime alındı", a.title, undefined, val);
+  // değerli otomatik haber sırada sıradan otomatik işlerin önüne geçer; bir sınır atlatacakken üretildiyse loga yazılır
+  const prio = vip && valuable, over = held && !held.stop ? held.why : prio && ageH > Number(c.maxAgeHours) ? `haber ${Math.round(ageH)} saat önce yayınlanmış` : "";
+  if (prio && over) push(`🔴 sondakika.com: ⭐ değerli haber (${val.valueReason}) → sınırsız, öne alındı: "${a.title.slice(0, 70)}" — ${over}`);
+  const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: tok.item.sourceCount, auto: !manual, title: a.title, sondakika: url, ...(prio ? { priority: true } : {}) });
   anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
   if (r.ok) {
     await pyJson(["scripts/breaking_watch.py", "--mark", a.title, "--url", url, "--text", topic]).catch(() => {}); // Mynet/son dakika siteleri aynı haberi tekrar üretmesin
-    const d = sondakikaDone(); d[day] = [...(d[day] || []), { url, title: a.title, at: Date.now(), manual }];
+    const d = sondakikaDone(); d[day] = [...(d[day] || []), { url, title: a.title, at: Date.now(), manual, ...(valuable ? { valuable: true } : {}) }];
     const cut = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
     writeJson(SONDAKIKA_DONE, Object.fromEntries(Object.entries(d).filter(([k]) => k >= cut)));
-    sondakikaMark(url, r.queued ? "sırada" : "üretildi", r.queued ? `${r.position}. sırada` : "");
-  } else if (!manual) sondakikaMark(url, "atlandı", r.error || "başlatılamadı");
+    sondakikaMark(url, r.queued ? "sırada" : "üretildi", r.queued ? `${r.position}. sırada` : "", val);
+  } else if (!manual) sondakikaMark(url, "atlandı", r.error || "başlatılamadı", val);
   else fail(`video başlatılamadı (${r.error || "bilinmeyen hata"})`);
-  return { ...r, title: a.title };
+  return { ...r, title: a.title, valuable };
 }
 async function sondakikaCheck({ manual = false } = {}) {
   if (sondakikaBusy) return { ok: false, busy: true, error: "sondakika.com taraması zaten sürüyor." };
@@ -1227,11 +1264,19 @@ async function sondakikaCheck({ manual = false } = {}) {
       return { ...r, produced: [] };
     }
     if (manual || r.new.length) push(`🔴 sondakika.com kontrol edildi (${via}): ${r.items.length} haber, ${r.new.length} yeni`);
-    const produced = [];
-    for (const it of r.new || []) { // en yeniden eskiye; tarama başına en çok maxPerCheck
-      if (produced.length >= Number(c.maxPerCheck)) { sondakikaMark(it.url, "atlandı", `tarama başına sınır (${c.maxPerCheck})`); push(`🔴 sondakika.com: "${String(it.title || it.url).slice(0, 70)}" atlandı — tarama başına en çok ${c.maxPerCheck} haber`); continue; }
-      const res = await sondakikaProduce(it.url, { item: it }).catch((e) => ({ ok: false, error: e.message }));
-      if (res.ok) produced.push(res.title);
+    const produced = [], vip = c.valuableUnlimited !== false, max = Number(c.maxPerCheck);
+    // değerli haberler önce (kendi içinde en yeniden eskiye), sonra sıradanlar; değerli haber tarama başına sınırı tüketmez. Sınıra
+    // takılan sıradan haberin sayfasına (gövdeyle değerli mi) üretime dönüşmeyen bu okumaların toplamı 4 dakikayı geçene kadar bakılır;
+    // üretimlerin süresi sayılmaz (sel gibi düşen haberde değerliler ve ilk sıradanlar üretilirken bütçe bitmesin). Sonra sayfa okunmadan
+    // atlanır (site yavaşken sonraki taramalar beklemesin)
+    const news = vip ? [...(r.new || []).filter((x) => x.valuable), ...(r.new || []).filter((x) => !x.valuable)] : r.new || [];
+    let plain = 0, peekMs = 0;
+    for (const it of news) { // en yeniden eskiye; sıradan haberde tarama başına en çok maxPerCheck
+      const limit = (vip && it.valuable ? produced.length : plain) >= max ? { why: `tarama başına en çok ${c.maxPerCheck} haber`, note: `tarama başına sınır (${c.maxPerCheck})` } : null;
+      if (limit && !vip) { sondakikaMark(it.url, "atlandı", limit.note); push(`🔴 sondakika.com: "${String(it.title || it.url).slice(0, 70)}" atlandı — ${limit.why}`); continue; }
+      const t1 = Date.now(), res = await sondakikaProduce(it.url, { item: it, limit, peek: peekMs < 4 * 60000 }).catch((e) => ({ ok: false, error: e.message }));
+      if (res.peeked) peekMs += Date.now() - t1; // sınıra takılıp sayfası okunan, üretilmeyen haber (sıradan, okunamadı, tekrar, bayat, aynı olay) bütçeden düşer
+      if (res.ok) { produced.push(res.title); if (!(vip && res.valuable)) plain++; }
     }
     return { ...r, produced };
   } finally { sondakikaBusy = false; }
@@ -1240,8 +1285,12 @@ setInterval(() => { if (sondakikaCfg().enabled !== false && !sondakikaBusy && Da
 app.get("/api/sondakika", (_req, res) => {
   const st = readJson(path.join(DATA, "sondakika_state.json"), {}) || {}, stat = readJson(SONDAKIKA_STATUS, {}), c = sondakikaCfg(), done = sondakikaDone();
   const made = new Set(Object.values(done).flat().map((x) => x.url));
+  // sıradaki haberin yeri canlı okunur (öne alınan değerli haber ya da başlayan iş sırayı kaydırır); sayfayla değerli çıkan haber ⭐ alır
+  const pos = new Map(anlikQueue.flatMap((q, i) => (q.opts?.sondakika ? [[q.opts.sondakika, i + 1]] : [])));
+  const status = (u) => (stat[u]?.state === "sırada" && pos.has(u) ? { ...stat[u], why: `${pos.get(u)}. sırada` } : stat[u] || null);
+  const val = (it, s) => (!it.valuable && s?.valuable ? { valuable: true, valueReason: s.valueReason || "" } : {});
   // sırada bekleyen haber "üretildi" sayılmaz (sıradan çıkarılırsa günlük kayıttan da silinir)
-  res.json({ cfg: { ...c, intervalMin: sondakikaEvery() }, items: (Array.isArray(st.items) ? st.items : []).map((it) => ({ ...it, status: stat[it.url] || null, produced: made.has(it.url) && stat[it.url]?.state !== "sırada" })),
+  res.json({ cfg: { ...c, intervalMin: sondakikaEvery() }, items: (Array.isArray(st.items) ? st.items : []).map((it) => { const s = status(it.url); return { ...it, ...val(it, s), status: s, produced: made.has(it.url) && s?.state !== "sırada" }; }),
     lastCheck: st.lastCheck || null, method: st.method || null, source: st.source || null, producedToday: done[today()] || [], scanning: sondakikaBusy,
     nextCheckIn: c.enabled !== false ? Math.max(0, sondakikaLast + sondakikaEvery() * 60000 - Date.now()) : null });
 });

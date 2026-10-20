@@ -5,7 +5,7 @@ onaysız son dakika videosu üretir (kullanıcı isteği, 17 Ekim).
 Kullanım:
   python3 scripts/sondakika_watch.py --list            son haberler (JSON)
   python3 scripts/sondakika_watch.py --check           yeni girenler; ilk çalıştırmada mevcutları "görüldü" sayar (video üretilmez)
-  python3 scripts/sondakika_watch.py --article URL     haberin başlığı, özeti, metni, görseli + yayın zamanı ve sayfadaki video
+  python3 scripts/sondakika_watch.py --article URL     haberin başlığı, özeti, metni, görseli + yayın zamanı, sayfadaki video ve haber değeri
 
 Sayfa yapısı görülmeden yazıldığı için tek bir sınıf adına bağlı değildir; katmanlı keşif:
   1. RSS/Atom: önce son çalışan akış, sonra settings.sondakika.rss adayları, sonra ana sayfadaki
@@ -474,10 +474,56 @@ def _video(page: str, base: str) -> str:
     return urllib.parse.urljoin(base, html.unescape(v)) if v else ""
 
 
+LEAD = 250  # gövdenin haber değerine katılan başı: ilk cümle (en çok 250 harf)
+# cümle sonu: nokta/ünlem/soru, ardından varsa kapanan tırnak ya da parantez (`…"Şüpheli yakalandı." Soruşturma`), sonra boşluk +
+# büyük harf/rakam ya da metnin sonu. Rakamdan sonraki nokta sıra sayısıdır ("İstanbul 26. Ağır Ceza", "2. Dünya Savaşı"), bitirmez.
+SENT_END = re.compile(r"(?<!\d)([.!?…])[\"'”’»)]?(?=\s+[\"'“‘«(]?[A-ZÇĞİÖŞÜ\d]|\s*$)")
+# noktası cümle bitirmeyen unvan, rütbe, kurum, şirket ve adres kısaltmaları ("Prof. Dr. Ahmet Yılmaz", "Av. Ayşe Kaya", "Atatürk
+# Cad. No. 5", "Uzm. Çvş.", "Gnkur. Bşk.", "Bel. Bşk.", "İl Emn. Md.", "Ege Üniv.", "Eğt. ve Araş. Hst.", "San. ve Tic. Ltd. Şti.",
+# "Yıldırım Blv.", "Bağdat Cd.", "Gül Sk."): büyük harfle yazılmışsa ("25 sn." saniyedir, cümle bitirebilir); ABBR_LOW küçük harfle de
+# ("temizlik vb. ürünler")
+ABBR = frozenset("prof doç dr av op uzm yrd öğr gör arş araş arşt müh dt ecz psk dyt hem sn hz st no "
+                 "mah mh cad cd sok sk bul blv bulv apt sit evl "
+                 "org korg tümg tuğg alb yb bnb yzb ütğm tğm asb astsb kd çvş bçvş üçvş onb em mlz plt ord hv dz kuv "
+                 "gnkur gn gen kur yön bşk başk bel bld md müd mdr emn şb vek kom bkm muh "
+                 "üniv fak eğt hst hast uyg merk san tic ltd şti inş taah hiz nak koop koll".split())
+ABBR_LOW = frozenset("vb vs vd bkz örn".split())
+
+
+def _abbr_dot(b: str, m) -> bool:
+    """Bulunan nokta kısaltmanın ("Prof.", "Dr.", "vb.") ya da baş harfin ("Ahmet H. Yılmaz", "A.Ş.") noktası mı."""
+    w = re.search(r"(?<![^\W\d_])([^\W\d_]+)\.$", b[:m.start(1) + 1])
+    if m.group(1) != "." or not w:
+        return False
+    w = w.group(1)
+    lw = w.replace("İ", "i").replace("I", "ı").lower()  # büyük harfli metin: "ÜNİV." → üniv (str.lower "İ"yi "i̇" yapar)
+    return lw in ABBR_LOW or (w[0].isupper() and (lw in ABBR or len(w) == 1))
+
+
+def lead(body: str) -> str:
+    """Gövdenin ilk cümlesi ("9. hafta"daki sıra sayısı, "Prof. Dr."daki kısaltma ve "Ahmet H. Yılmaz"daki baş harf noktası cümle
+    sonu değildir: cümle ortasında kesilirse sonraki değer sözleri — "3 kişi hayatını kaybetti" — kaçar); yoksa ilk LEAD harf,
+    kelime sınırında."""
+    b = re.sub(r"\s+", " ", body or "").strip()[:LEAD + 1]
+    m = next((x for x in SENT_END.finditer(b, 20) if not _abbr_dot(b, x)), None)
+    return b[:m.end()] if m and m.end() <= LEAD else (re.sub(r"\s+\S*$", "", b) if len(b) > LEAD else b)[:LEAD]
+
+
+def value(a: dict) -> dict:
+    """Okunan haberin değeri (kullanıcı isteği, 20 Ekim: "haber sınırını kaldır, değerlileri yakala"; news_value, YouTube kuralıyla
+    aynı): başlık + açıklama + gövdenin ilk cümlesi. --check yalnız başlık + akış açıklamasına bakar; başlığı belirsiz haberin
+    ("Kadıköy'de korkutan anlar") değeri açıklamada ya da ilk cümlededir. Gövdenin tamamı katılmaz: borsa/ihracat haberindeki
+    "faiz", festival haberindeki "okullar" sıradan haberi de değerli yapar (elle yazılmış 12 sıradan haberde tüm gövdeyle 7,
+    ilk cümleyle 2 — ikisi de başlıktan, ilk 5 takım —; başlığı belirsiz 6 değerli haberin 6'sı ilk cümleyle yakalanır)."""
+    from news_value import score
+    text = " ".join(x for x in (a.get("title"), a.get("description"), lead(a.get("body") or "")) if x)
+    return score(text, (settings().get("youtubePolicy") or {}).get("extraKeywords"))
+
+
 def article(url: str) -> dict:
-    """mynet_watch.article ile aynı biçim + published (yayın zamanı, UTC ISO), video (sayfadaki video adresi) ve dup/dupInfo (bu
-    haberin videosu üretildi mi — başlık + açıklama + gövde + adresle: --check'ten bu yana başka kaynak üretmiş olabilir,
-    üretimden hemen önce yeniden)."""
+    """mynet_watch.article ile aynı biçim + published (yayın zamanı, UTC ISO), video (sayfadaki video adresi), valuable/valueReason
+    (value: başlık + açıklama + gövdenin ilk cümlesi) ve dup/dupInfo (bu haberin videosu üretildi mi — başlık + açıklama + gövde +
+    adresle: --check'ten bu yana başka kaynak üretmiş olabilir, üretimden hemen önce yeniden)."""
     page = fetch(url)
     orig = mw.get
     mw.get = lambda _u: page  # article() sayfayı get() ile alır; aynı sayfa ikinci kez indirilmesin
@@ -491,6 +537,8 @@ def article(url: str) -> dict:
         if v and len(v) > len(cur) and v.startswith(cur):
             a[k] = v
     a["published"], a["video"] = _published(page), _video(page, url)
+    v = value(a)
+    a["valuable"], a["valueReason"] = v["valuable"], v["reason"]
     return mw.with_dup(a)
 
 

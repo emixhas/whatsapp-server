@@ -254,7 +254,8 @@
         <label class="row"><span class="sw" id="waStages"></span><span>Her aşamayı WhatsApp'a bildir (yalnız tek mesaj kapalıyken: üretim, ses, render, yükleme, yayın)</span></label>
       </details>
       <details class="grp"><summary>📡 Otomatik içerikler <span class="sum" id="infoSum"></span></summary>
-        <label class="row"><span class="sw" id="sdkOn"></span><span>🔴 sondakika.com takibi: her <input id="sdkEvery" type="number" min="2" max="60" class="inl" style="width:52px"> dakikada bir bakılır; düşen her yeni haber için anında, onaysız son dakika videosu üretilip bağlı tüm hesaplarda yayınlanır (görüntüde önce video, yoksa farklı fotoğraflar). Günde en çok <input id="sdkMax" type="number" min="1" max="200" class="inl" style="width:60px"> video; videosu üretilmiş haber tekrar üretilmez (aşağıdaki hafıza). Sistem durdurulmuşsa yeni haber için uyanır</span></label>
+        <label class="row"><span class="sw" id="sdkOn"></span><span>🔴 sondakika.com takibi: her <input id="sdkEvery" type="number" min="2" max="60" class="inl" style="width:52px"> dakikada bir bakılır; düşen her yeni haber için anında, onaysız son dakika videosu üretilip bağlı tüm hesaplarda yayınlanır (görüntüde önce video, yoksa farklı fotoğraflar). Sıradan haberde günde en çok <input id="sdkMax" type="number" min="1" max="200" class="inl" style="width:60px"> video; videosu üretilmiş haber tekrar üretilmez (aşağıdaki hafıza). Sistem durdurulmuşsa yeni haber için uyanır</span></label>
+        <label class="row"><span class="sw" id="sdkVip"></span><span>⭐ Değerli haberlere sınır uygulama: başlığında, özetinde ya da ilk cümlesinde değer taşıyan haber (can kaybı, kaza, zam, maaş, resmi uyarı… — YouTube kuralındaki haber değeri) günlük, tarama başına ve sıra sınırına takılmaz, sayaca girmez; sırada sıradan otomatik haberlerin önüne geçer; <span id="sdkVipAge">12</span> saate kadar eski olsa da üretilir (sıradanda <span id="sdkAge">3</span> saat)</span></label>
         <div class="conninfo" id="sdkInfo">Yükleniyor…</div>
         <div id="sdkList" style="display:grid;gap:6px;margin:6px 0;font-size:13px"></div>
         <div class="acts"><button class="ghost" id="sdkCheck">🔄 Şimdi kontrol et</button></div>
@@ -912,13 +913,15 @@ setTimeout(loadInfo,1500);
 // sondakika.com takibi: her N dakikada yeni haber → onaysız son dakika videosu (/api/sondakika); son 8 haber ve durumları
 let sdkItems=[];
 async function loadSdk(){try{const s=await api('/api/sondakika');const c=s.cfg||{};const escA=t=>esc(t).replace(/"/g,'&quot;');
-  $('#sdkOn').classList.toggle('on',c.enabled!==false);
+  $('#sdkOn').classList.toggle('on',c.enabled!==false);const vip=c.valuableUnlimited!==false;$('#sdkVip').classList.toggle('on',vip);
+  $('#sdkVipAge').textContent=c.valuableMaxAgeHours||12;$('#sdkAge').textContent=c.maxAgeHours||3;
   if(document.activeElement!==$('#sdkEvery'))$('#sdkEvery').value=c.intervalMin||5;if(document.activeElement!==$('#sdkMax'))$('#sdkMax').value=c.maxPerDay||40;
   const hm=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
   const via=s.method==='rss'?'RSS':s.method==='html'?'ana sayfa':'—';
   const next=c.enabled===false?'kapalı':s.scanning?'şimdi taranıyor':s.nextCheckIn!=null?Math.ceil(s.nextCheckIn/60000)+' dk sonra':'—';
-  const all=s.producedToday||[],auto=all.filter(x=>!x.manual).length;
-  $('#sdkInfo').innerHTML=`Son kontrol: <b>${s.lastCheck?hm(s.lastCheck):'henüz yok'}</b> · yöntem: <b title="${escA(s.source||'')}">${via}</b> · sonraki: ${next} · bugün üretilen: ${auto}/${c.maxPerDay}${all.length>auto?` (+${all.length-auto} elle)`:''}`;
+  // günlük sınıra yalnız sıradan otomatik haber sayılır (değerli sınırsız; anahtar kapalıysa hepsi)
+  const all=s.producedToday||[],auto=all.filter(x=>!x.manual).length,nv=all.filter(x=>!x.manual&&x.valuable).length,np=auto-nv;
+  $('#sdkInfo').innerHTML=`Son kontrol: <b>${s.lastCheck?hm(s.lastCheck):'henüz yok'}</b> · yöntem: <b title="${escA(s.source||'')}">${via}</b> · sonraki: ${next} · bugün üretilen: ${vip?np:auto}/${c.maxPerDay}${vip?' sıradan':''}${all.length>auto?` (+${all.length-auto} elle)`:''}<br>⭐ ${vip?'değerli haberler sınırsız':'değerli haberler de sınıra sayılıyor'} (bugün ${nv} değerli + ${np} sıradan)`;
   sdkItems=(s.items||[]).slice(0,8);
   // sırada bekleyen haber "üretildi" gösterilmez (iptal edilirse video hiç yapılmaz)
   const queued=it=>it.status?.state==='sırada';
@@ -931,6 +934,7 @@ $('#sdkList').onclick=async e=>{const b=e.target.closest('[data-si]');if(!b)retu
   toast(r.ok?(r.queued?'Sıraya alındı ⏳':'Video üretiliyor ⚡'):(r.error||'Üretilemedi'),!r.ok);if(r.ok)addMsg('j',`Son dakika videosu ${r.queued?'sıraya alındı':'üretiliyor'}: ${r.title}. Bitince bağlı hesaplarda paylaşılacak.`);loadSdk();refreshStatus();};
 const sdkSet=async p=>{await post('/api/settings',{sondakika:p});await refreshStatus();loadSdk();loadInfo();};
 $('#sdkOn').onclick=()=>sdkSet({enabled:!$('#sdkOn').classList.contains('on')});
+$('#sdkVip').onclick=()=>sdkSet({valuableUnlimited:!$('#sdkVip').classList.contains('on')});
 $('#sdkEvery').onchange=()=>sdkSet({intervalMin:Math.min(60,Math.max(2,Number($('#sdkEvery').value)||5))});
 $('#sdkMax').onchange=()=>sdkSet({maxPerDay:Math.min(200,Math.max(1,Number($('#sdkMax').value)||40))});
 $('#sdkCheck').onclick=async()=>{$('#sdkInfo').textContent='Kontrol ediliyor…';const r=await post('/api/sondakika/check');
