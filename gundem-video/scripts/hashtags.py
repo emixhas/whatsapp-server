@@ -34,17 +34,21 @@ def for_meta(meta: dict, base: str = "", extra=()) -> list:
     out = []
 
     calm = meta.get("contentKind") in ("trend", "mizah")  # viral/mizah videosu son dakika değil: haber değeri etiketinden de #sondakika gelmez
+    # benzer video (sıfırdan çizilmiş hikâye): #sondakika hiç yok, haber değeri grupları (#asayiş, #kaza…) hikâyenin konusu için eklenmez,
+    # haber de değil: kanalın ortak etiketlerindeki (ya da planın) #haber de eklenmez
+    calm = calm or bool(meta.get("recreated"))
+    skip = ({"#sondakika"} if calm else set()) | ({"#haber"} if meta.get("recreated") else set())
 
     def add(t):
         t = clean(t)
-        if t and t not in out and not (calm and t == "#sondakika"):
+        if t and t not in out and t not in skip:
             out.append(t)
 
     for t in meta.get("hashtags") or []:
         add(t)
     for t in extra:
         add(t)
-    for r in (meta.get("value") or {}).get("reasons") or []:
+    for r in [] if meta.get("recreated") else (meta.get("value") or {}).get("reasons") or []:
         if r in VALUE_TAGS:
             add(VALUE_TAGS[r])
         elif r.startswith("ilk 5 takım: "):  # Süper Lig ilk 5 takımı: takımın etiketi + #futbol

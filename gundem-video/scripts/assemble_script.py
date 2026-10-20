@@ -30,6 +30,9 @@ CATEGORIES = {"finans", "siyaset", "spor", "hava", "toplum", "teknoloji", "sagli
 # videoda karar haber başına değil olay başınadır (main: real_story): bir kartta gerçek zarar varsa tüm sinema kartları asayiş olur
 ASAYIS_MUAF = ("asayis", "dunya", "hava", "sinema", "trend", "mizah")  # "komik kaza" videosu polis sirenli asayiş kartı olmasın
 TRAILER = os.environ.get("TRAILER") == "1"
+# Benzer video, sıfırdan (RECREATE=1; wa_video.build_recreate): çizilmiş hikâye/kıssa — "yılan fareleri avladı" asayiş haberi değil,
+# kategori Claude'un seçtiği gibi kalır (polis sirenli kart ve #asayiş zorlanmaz)
+RECREATE = os.environ.get("RECREATE") == "1"
 GERCEK_OLAY = re.compile(r"(hayatını kaybet|can verdi|şehit|öldü(?!r)|ölü\b|öldürül|yaralan|yaralı|gözaltı|tutuklan|kaçırıl|rehin)", re.I)
 ASAYIS = re.compile(r"(şehit|saldırı|saldırgan|terör|bombalı|patlama|cinayet|öldür|katlet|bıçakl|silahl|kurşun|ateş aç|kaza(?!n)|yaralan|yaralı|yangın|kaçırıl|gasp|rehin|çatışma|infaz|intihar|boğul|polis memuru|jandarma)", re.I)
 # Sabit kapanış cümlesi (src/scenes/Outro.tsx animasyonuyla uyumlu, ~7 sn)
@@ -420,7 +423,7 @@ def main(src: str, dst: str):
             s["category"] = "genel"
         txt = f"{s.get('title', '')} {s['narration']}"
         cat = s.get("category")
-        if s["kind"] in ("haber", "hook") and not TRAILER and (ASAYIS.search(txt) or (real_story and cat == "sinema")) and (
+        if s["kind"] in ("haber", "hook") and not TRAILER and not RECREATE and (ASAYIS.search(txt) or (real_story and cat == "sinema")) and (
                 cat not in ASAYIS_MUAF or (cat == "sinema" and (real_story or GERCEK_OLAY.search(txt)))):
             print(f"  kategori {s.get('category')} → asayis ({s.get('title', '')[:40]})", file=sys.stderr)
             s["category"] = "asayis"
@@ -510,6 +513,7 @@ def main(src: str, dst: str):
         "userVideo": os.environ.get("USER_VIDEO") == "1" or None,
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
         "summary": os.environ.get("SUMMARY") == "1" or None,
+        "recreated": RECREATE or None,  # benzer video (sıfırdan): açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video: …"
         # sosyal medya videosunun türü (trend | mizah): son dakika değil; intro etiketi, açıklama başlığı, kapanış notu, etiketler
         "contentKind": os.environ.get("CONTENT_KIND", "").strip() if os.environ.get("CONTENT_KIND", "").strip() in ("trend", "mizah") else None,  # uzun video özeti: intro ve açıklamada kendi etiketi (ÖZET…), son dakika değil
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)

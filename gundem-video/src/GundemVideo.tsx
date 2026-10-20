@@ -47,7 +47,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
         cursor += seg.duration;
         const haberIndex = haberler.indexOf(seg);
         const st = styleFor(seg.category);
-        const sceneSfx = seg.kind === "hook" ? (episode.contentKind ? st.sfx : "sfx/sondakika.wav") : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
+        // kanca sesi: viral/mizah ve benzer video (sıfırdan çizim) son dakika değildir → kategori sesi
+        const sceneSfx = seg.kind === "hook" ? (episode.contentKind || episode.recreated ? st.sfx : "sfx/sondakika.wav") : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
         const breakingSfx = seg.kind === "haber" && seg.breaking ? "sfx/sondakika.wav" : null;
         const sceneVol = seg.kind === "haber" ? st.sfxVolume : seg.kind === "hook" ? 0.75 : 0.5;
         return (
@@ -68,7 +69,7 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
                 videoLabel={episode.infoKind === "video" ? episode.slotLabel : undefined} words={seg.words} />
             ) : seg.kind === "outro" ? (
               <Outro words={seg.words} note={episode.contentKind === "mizah" ? "BU VİDEO MİZAH AMAÇLIDIR" : undefined}
-                slogan={episode.contentKind ? ["SOSYAL MEDYANIN", "VİRALLERİ"] : undefined} />
+                slogan={episode.recreated ? ["HER GÜN", "YENİ BİR VİDEO"] : episode.contentKind ? ["SOSYAL MEDYANIN", "VİRALLERİ"] : undefined} />
             ) : seg.kind === "sesli" || seg.fullFrame ? (
               <FullFrame index={seg.displayIndex != null ? seg.displayIndex - 1 : Math.max(0, haberIndex)} total={haberler.length} title={seg.title ?? ""} source={seg.source}
                 category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} durationInFrames={dur} words={seg.words}

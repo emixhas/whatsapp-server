@@ -3,6 +3,8 @@ import { GundemVideo } from "./GundemVideo";
 import { GunlukOzet, WIDE_H, WIDE_W } from "./GunlukOzet";
 import { Thumb } from "./Thumb";
 import { InfoCard } from "./InfoCard";
+import { SvgScene, calculateSvgSceneMetadata } from "./SvgScene";
+import { sampleScene } from "./sampleScene";
 import { Still } from "remotion";
 import { Episode, FPS, HEIGHT, WIDTH } from "./types";
 import { sampleEpisode } from "./sampleEpisode";
@@ -40,6 +42,17 @@ export const Root = () => (
     durationInFrames={30 * FPS}
     defaultProps={{ episode: sampleEpisode }}
     calculateMetadata={calculateMetadata}
+  />
+  {/* benzer video sahnesi: Claude'un çizdiği SVG kâğıt üzerinde canlanır; scripts/render_scenes.mjs sessiz mp4'e çizer (süre props.seconds) */}
+  <Composition
+    id="SvgScene"
+    component={SvgScene}
+    fps={FPS}
+    width={WIDTH}
+    height={HEIGHT}
+    durationInFrames={6 * FPS}
+    defaultProps={sampleScene}
+    calculateMetadata={calculateSvgSceneMetadata}
   />
   {/* günlük uzun özet: yatay, YouTube (pipeline GUNLUK=1) */}
   <Composition

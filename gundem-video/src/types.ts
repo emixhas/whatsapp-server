@@ -69,6 +69,9 @@ export type Episode = {
   /** sosyal medya videosunun türü (assemble meta contentKind): trend | mizah → son dakika değil; intro'da etiket (VİRAL), kancada
    *  son dakika sesi yerine kategori sesi, mizahta kapanışta "BU VİDEO MİZAH AMAÇLIDIR" */
   contentKind?: string | null;
+  /** benzer video (assemble meta recreated; kullanıcı isteği, 19 Ekim: "o videodaki gibi sıfırdan video üretmesini"): sahneler
+   *  sıfırdan çizildi (SvgScene) → son dakika değil: kancada son dakika sesi yerine kategori sesi, kapanış sloganı "HER GÜN / YENİ BİR VİDEO" */
+  recreated?: boolean;
   /** şablon/video türü (assemble meta infoKind): video → intro'da kurgu planının etiketi (SON DAKİKA değilse, ör. GÖRÜNTÜLÜ HABER) */
   infoKind?: string | null;
   segments: Segment[];

@@ -47,7 +47,7 @@ from urllib.parse import urljoin
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SECRETS, content_kind, settings, summary_cfg, summary_secs  # noqa: E402
+from common import ROOT, SECRETS, content_kind, news_request, recreate_ask, recreate_on, settings, summary_cfg, summary_secs, trailer_ask  # noqa: E402
 
 PLATFORMS = [(r"instagram\.com", "Instagram"), (r"tiktok\.com", "TikTok"), (r"(^|\.)(x|twitter)\.com", "X"),
              (r"youtube\.com|youtu\.be", "YouTube"), (r"facebook\.com|fb\.watch", "Facebook")]
@@ -273,9 +273,6 @@ NO_KEEP_SOUND = re.compile(r"(?<!\w)ses(?:i|ini|in|leri|lerini)?\s+(?:kapat(?!ma
 KEEP_SOUND = re.compile(r"(?:orijinal|kendi|videonun|gercek|asil|dogal)\s+ses(?:i|ini|iyle|le|leri|lerini|leriyle)?(?!\w)|(?<!\w)sesiyle(?!\w)|"
                         r"(?<!\w)ses(?:i|ini)\s+(?:kullan|koru|kalsin|acik|duyulsun|olsun)|"
                         r"(?<!\w)(?:tamam\w*|hepsini|bastan\s+sona)\s+(?:paylas|oynat|yayinla|ver|koy|kullan)\w*", re.I)
-# fragman başlıklı YouTube linkinde özet yerine fragman analizi (server.js NEWS_ASK ile aynı kural: açık haber isteği varsa haber özeti)
-NEWS_ASK = re.compile(r"(?<!\w)(?:haber(?:i|ini)?\s+(?:yap|olarak|gibi|hazırla|üret|çek)(?!(?:ma|me)(?:y[ıi]n|s[ıi]n|z|d[ae]n)?(?!\w))\w*|"
-                      r"haber\s+olarak|son\s?dakika)(?!\w)(?!\s*(?:olarak\s+)?(?:değil|olmasın|olmasin|yazma|koyma|deme|istemiyorum))", re.I)
 # altyazı/başlık eşleşmesinde sayılmayan kelimeler (topic_news.STOP + haber videolarının kalıp sözleri, zaman ve kurgu talimatı)
 KW_STOP = {"için", "ile", "olan", "olarak", "sonra", "daha", "göre", "yeni", "oldu", "etti", "dedi", "açıkladı", "haber", "son", "dakika",
            "bugün", "şimdi", "hakkında", "ilgili", "konu", "video", "anlık", "gündem", "olay", "olayı", "kadar", "gibi", "çok", "bir", "iki",
@@ -637,12 +634,15 @@ def wants_summary(instruction: str, dur: float, plat: str = "YouTube", title: st
     c = summary_cfg()
     if not c["enabled"] or dur <= 90:
         return False, ""
+    if recreate_ask(instruction) and recreate_on():  # benzer video (sıfırdan): "bu videoyu analiz edip benzerini yap" özet değil
+        return False, ""
     t = _fold(instruction)
-    if TRAILER.search(t):  # fragman analizi kendi yolunda
+    if trailer_ask(instruction):  # fragman analizi kendi yolunda (yalnız istek biçimi: server.js trailerAsk aynı; "fragman çekimleri" değil)
         return False, ""
     # fragman başlıklı YouTube videosu (inceleme, 19 Ekim: "analiz et", "özetle" fragman analizini özet yoluna çeviriyordu; fragman
-    # analizi zaten fragmanın özetidir): fragman analizi açık ve başlıktan tanıma açıkken açık haber isteği yoksa özet değil
-    if plat == "YouTube" and (title or caption) and is_trailer(title, caption) and trailer_auto() and not NEWS_ASK.search(_low(instruction)):
+    # analizi zaten fragmanın özetidir): fragman analizi açık ve başlıktan tanıma açıkken açık haber isteği (common.news_request, server.js
+    # newsRequest aynı kural) yoksa özet değil
+    if plat == "YouTube" and (title or caption) and is_trailer(title, caption) and trailer_auto() and not news_request(instruction):
         return False, ""
     if SUMMARY_ASK.search(t):
         return True, "talimatta özet istendi"
@@ -856,8 +856,10 @@ def fetch(url: str, instruction: str = "") -> dict:
     series = bool(bolum or re.search(r"sezon|season|episode|dizi|series", f"{title} {caption[:200]}", re.I))
     social.update({"trailer": trailer, "film": film, "bolum": bolum,
                    "tags": [str(x) for x in (info.get("tags") or [])[:15]]})
-    # mizah videosu haber sitelerinde aranmaz (haber değil; 75 sn boşuna beklenmesin)
-    rel = [] if kind_of(instruction) == "mizah" else related(caption, title, film if trailer and film else "", series)
+    # mizah videosu haber sitelerinde aranmaz (haber değil; 75 sn boşuna beklenmesin); benzer video (sıfırdan) da: bilgi yalnız
+    # referansın kendisinden (döküm, kareler, açıklama)
+    skip = kind_of(instruction) == "mizah" or (recreate_ask(instruction) and recreate_on())
+    rel = [] if skip else related(caption, title, film if trailer and film else "", series)
     return {"ok": True, "file": str(video), "social": social, "related": rel}
 
 

@@ -66,24 +66,48 @@ export function findLink(text) {
 }
 // Tür etiketi → video türü (linke bitişik "/mizah" ya da linkin yanında yalnız "mizah", "#trend", "haber"; serbest cümledeki kelime değil:
 // "trende yangın", "şakalaşırken" haberi viral/mizah olmasın — inceleme, 19 Ekim). {kind, rest}: rest'ten etiket kelimesi atılır.
-const KIND_TAG = { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" };
-const KIND_FILL = /^(?:saniye|saniyelik|sn|dakika|dakikalik|dk|lutfen|olarak|bunu|sunu|at|atar|misin|paylas\p{L}*|yayinla\p{L}*|yayimla\p{L}*|gonder\p{L}*|yukle\p{L}*)$/u;
-const kfold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğ]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g" })[c]);
+// (prototipsiz nesne: "constructor", "tostring" gibi kelimeler etiket sanılmasın; Python `in` ile aynı sonuç)
+const KIND_TAG = Object.assign(Object.create(null), { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" });
+// olumsuz fiil eki (katlanmış metinde fiil kökünden hemen sonra; scripts/common.py VERB_NEG aynı kalıp, server.js de kullanır): yapma,
+// yapmayın(ız), yapmasın, yapmasana, yapmadan, yapmaz, yapmam(alı), yapmayan, yapmayız, yapmayacak (yapmayacaz/yapmayacam), yapmayalım,
+// yapmıyor, yapmıcaz/yapmıycaz/yapmıcan (konuşma dili; inceleme, 19 Ekim); "yapmak", "yapmasını" istek
+export const VERB_NEG = String.raw`m(?:[ae](?:yin(?:iz)?|sin|s[ae]n[ae]|d[ae]n|z|m(?:[ae]li)?|y[ae]n|y[iu]z|y[ae]c[ae][kgmnz]\p{L}*|y[ae]lim)?(?!\p{L})|[iu](?:yor|y?c[ae][kgmnz])\p{L}*)`;
+// etiketin yanında sayılan dolgu: süre birimi, lütfen/olarak/bunu/şunu, yayın fiili — olumsuzu değil ("mizah olarak paylaşma" etiket
+// değil; inceleme, 19 Ekim). server.js contentKindOf ve scripts/common.py _KIND_FILL aynı kural
+export const KIND_FILL = new RegExp(String.raw`^(?:saniye|saniyelik|sn|dakika|dakikalik|dk|lutfen|olarak|bunu|sunu|at|atar|misin|(?:paylas|yayinla|yayimla|gonder|yukle)(?!${VERB_NEG})\p{L}*)$`, "u");
+// haber dışındaki etiketin (mizah/komik/viral/trend) yanında "yap"/"olsun" da dolgu: "mizah yap", "komik yapar mısın", "trend olsun", "haber
+// yapma mizah yap" (inceleme, 19 Ekim; "haber yap" zaten haber isteği, etiket sayılmaz; "viral olsun" kayıp çocuk/yardım çağrısıdır: "Paylaşın
+// viral olsun 🙏" etiket değil). scripts/common.py _KIND_DO, server.js aynı kural
+export const KIND_DO = /^(?:yap(?:in(?:iz)?|sana|alim|sin|ar|abilir)?|olsun)$/u;
+// (server.js kindFold ve scripts/common.py kind_fold ile aynı: şapkalı â/î/û da; uzunluk korunur, kesim asıl metinde)
+const kfold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğâîû]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g", â: "a", î: "i", û: "u" })[c]);
+// başta ayraçla etiket (tagKind; scripts/common.py _KIND_LEAD ve server.js KIND_LEAD aynı kural, istek fiili kökleri server.js ASK_V ile aynı);
+// başlık biçimli iki nokta yalnız kısa metinde (ardından en çok 4 kelime, kesme işaretli ek aynı kelime: "#trend: sesi kalsın"; inceleme,
+// 19 Ekim: linkin yanına yapıştırılan "Trend: Gençler arasında yayılan tehlikeli akım iki can aldı" viral video oluyordu)
+const LEAD_ASK_V = String.raw`(?:anlat|yap|hazirla|uret|sun(?!un(?![a-z]))|yaz|paylas|kurgula|ver|yayinla|yayimla|goster|cek|at|gonder|yukle|isle|seslendir|oku|cevir|donustur|olustur|canlandir|tasarla|ciz|koy(?!un(?![a-z]))|ekle|kullan|tut|ozetle|duzenle)`;
+const LEAD_WORD = String.raw`\p{L}+(?:['’]\p{L}+)*(?!\p{L}|['’]\p{L})`;
+const LEAD_RE = new RegExp(String.raw`^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*(?:[,;\-–/]|:(?=(?:(?:(?!\p{L})[\s\S])*${LEAD_WORD}){0,4}(?:(?!\p{L})[\s\S])*$))`
+  + String.raw`(?!\s*#?(?:mizah|mizahi|komik|trend|viral|haber)(?!\p{L})`
+  + String.raw`(?!\s+(?:gibi|seklinde|tarzinda|formatinda|diliyle|olarak|amacli|olsun|(?:video|icerik|paylasim|${LEAD_ASK_V})\p{L}*)(?!\p{L})))\s*`, "u");
 export function tagKind(tag, rest) {
   if (KIND_TAG[kfold(tag)]) return { kind: KIND_TAG[kfold(tag)], rest };
-  // başta ayraçla yazılmış etiket: "mizah, kısa kes", "#trend: sesi kalsın" (kfold uzunluğu korur: kesim asıl metinde)
-  const lead = kfold(rest).match(/^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*[,;:\-–/]\s*/);
+  // başta ayraçla yazılmış etiket: "mizah, kısa kes", "#trend: sesi kalsın" (kfold uzunluğu korur: kesim asıl metinde); ardından başka
+  // yalın etiket gelirse seçim açık bırakılmıştır ("haber, mizah, viral fark etmez sen seç", "haber/mizah sen karar ver"), etiket değil;
+  // ikinci etiket ifadenin başıysa ("mizah, haber gibi anlat", "mizah, komik video yapma") baştaki etiket geçer (common.py _KIND_LEAD aynı)
+  const lead = kfold(rest).match(LEAD_RE);
   if (lead) return { kind: KIND_TAG[lead[1]], rest: String(rest).slice(lead[0].length) };
   // yalnız etiket: "mizah", "#trend", "_viral_" (haber > mizah > trend); yanında yalnız yayın fiili, süre ya da dolgu kelimesi de
-  // olabilir: "mizah 18:30'da paylaş", "trend 40 saniye", "bunu mizah olarak paylaş" (inceleme, 19 Ekim). Etiket atılır, süre kalır.
-  const f = kfold(rest), words = f.match(/[\p{L}]+/gu) || [];
-  if (words.some((w) => KIND_TAG[w]) && words.every((w) => KIND_TAG[w] || KIND_FILL.test(w))) {
+  // olabilir: "mizah 18:30'da paylaş", "trend 40 saniye", "bunu mizah olarak paylaş" (inceleme, 19 Ekim); haber dışındaki etiketin
+  // yanında "yap"/"olsun" da ("mizah yap", KIND_DO). Etiket atılır, süre kalır.
+  const f = kfold(rest), words = f.match(/[\p{L}]+/gu) || [], soft = !words.includes("haber") && !(words.includes("viral") && words.includes("olsun"));
+  const fill = (w) => KIND_FILL.test(w) || (soft && KIND_DO.test(w));
+  if (words.some((w) => KIND_TAG[w]) && words.every((w) => KIND_TAG[w] || fill(w))) {
     const ks = new Set(words.filter((w) => KIND_TAG[w]).map((w) => KIND_TAG[w]));
     let out = "", at = 0;
-    for (const m of f.matchAll(/[#_*]*(\p{L}+)[_*]*/gu)) if (KIND_TAG[m[1]]) { out += String(rest).slice(at, m.index) + " "; at = m.index + m[0].length; }
+    for (const m of f.matchAll(/[#_*]*(\p{L}+)[_*]*/gu)) if (KIND_TAG[m[1]] || (soft && KIND_DO.test(m[1]))) { out += String(rest).slice(at, m.index) + " "; at = m.index + m[0].length; }
     out = (out + String(rest).slice(at)).replace(/\s+/g, " ").trim();
     const left = kfold(out).match(/[\p{L}\d]+/gu) || [];
-    return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: left.every((w) => KIND_FILL.test(w)) ? "" : out };
+    return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: left.every(fill) ? "" : out };
   }
   return { kind: "", rest };
 }
@@ -176,12 +200,14 @@ export function parseCommand(raw) {
   // İki nokta (ya da tire) zorunlu: "son dakika haberleri neler" gibi sorular tetiklemesin.
   const an = String(raw).trim().match(/^(?:emixhas[,\s]*)?(?:son ?dakika|anl[ıi]k haber)(?: videosu)?(?: (?:üret|yap|hazırla|çek))?\s*[:\-–]\s*([\s\S]{8,})$/i);
   // "son dakika: <YouTube/sosyal medya video linki>" haber sayfası değil, videodan son dakika haberidir (talimatta "son dakika" kalır:
-  // fragman analizine dönmez); kanal/oynatma listesi linkine Türkçe yanıt
+  // fragman analizine dönmez); mizah/viral etiketli linke "son dakika" eklenmez (panel ANLIK kartı gibi; inceleme, 19 Ekim: Claude'a
+  // istenen tür mizahken "son dakika" talimatı gidiyordu); kanal/oynatma listesi linkine Türkçe yanıt
   if (an && vl && an[1].includes(lk.raw)) {
     if (vl.kind !== "video") return { action: "none", reply: vl.reply };
     const w = whenKeepingPositions(an[1].replace(lk.raw, " "), vl.platform === "YouTube");
     const tk = tagKind(lk.tag, w.rest);
-    return { action: "social_video", url: vl.url, instruction: `son dakika ${tk.rest}`.replace(/\s+/g, " ").trim(), ...(tk.kind ? { kind: tk.kind } : {}), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
+    const ins = ["trend", "mizah"].includes(tk.kind) ? tk.rest : `son dakika ${tk.rest}`;
+    return { action: "social_video", url: vl.url, instruction: ins.replace(/\s+/g, " ").trim(), ...(tk.kind ? { kind: tk.kind } : {}), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
   }
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
   // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)

@@ -432,7 +432,8 @@ def playlist_names(meta: dict) -> list:
     ch = settings().get("channelName", "Türkiye Gündemi")
     fmt = meta.get("format")
     # uzun video özeti ve viral/mizah videosu son dakika değil: yalnız kategori listesi
-    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah")
+    # benzer video (sıfırdan çizilmiş hikâye) de son dakika değil
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated")
     names = [] if meta.get("trailer") or calm else [
              f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"

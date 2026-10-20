@@ -244,7 +244,10 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
         // oturumuyla şifrelenen yanıtı çözemiyordu ("Mesaj bekleniyor", 19 Ekim). v7 numarayı da aynı LID oturumuna çevirir.
         const replyTo = normJid(from) || await ownerTarget();
         if (vm && handleVideo) { // sahibin gönderdiği video: indir, açıklaması haber talimatıdır (yoksa sorulur)
-          try { await onOwnerVideo(replyTo, { ...m, message: inner }, vm, text); } catch (e) { push(`✖ WhatsApp videosu alınamadı: ${e.message}`); try { await send(replyTo, `Video alınamadı: ${e.message}`); } catch { /* bağlantı yok */ } }
+          // iletilen video (başka sohbetten "İlet"): açıklama paylaşanın sözüdür, sahibin talimatı değil (inceleme, 19 Ekim: haber hesabının
+          // "aynısını yapın", "#viral", "SON DAKİKA" açıklaması benzer video/tür/haber isteği sanılıyordu); panel bilgi olarak taşır
+          const ci = vm.contextInfo || {}, forwarded = !!ci.isForwarded || Number(ci.forwardingScore) > 0;
+          try { await onOwnerVideo(replyTo, { ...m, message: inner }, vm, text, forwarded); } catch (e) { push(`✖ WhatsApp videosu alınamadı: ${e.message}`); try { await send(replyTo, `Video alınamadı: ${e.message}`); } catch { /* bağlantı yok */ } }
           continue;
         }
         if (!text) continue;
@@ -259,12 +262,12 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
   let sending = 0, downloading = 0;
   const busy = () => sending > 0 || downloading > 0;
   async function onOwnerVideo(...a) { downloading++; try { return await onOwnerVideo0(...a); } finally { downloading--; } }
-  async function onOwnerVideo0(jid, msg, vm, caption) {
+  async function onOwnerVideo0(jid, msg, vm, caption, forwarded = false) {
     const mb = Number(vm.fileLength || 0) / 1048576;
     if (mb > 500) { await send(jid, `Video çok büyük (${Math.round(mb)} MB); en çok 500 MB gönderin.`); return; }
     const dir = path.join(ROOT, "work", "wa_inbox"); mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${Date.now()}-${String(msg.key.id || "v").replace(/[^\w-]/g, "").slice(0, 24)}.mp4`);
-    push(`🎬 WhatsApp'tan video geliyor (${mb ? mb.toFixed(1) + " MB" : "boyut bilinmiyor"}${vm.seconds ? `, ${vm.seconds} sn` : ""})${caption ? `: ${caption.slice(0, 80)}` : ""}`);
+    push(`🎬 WhatsApp'tan ${forwarded ? "iletilen " : ""}video geliyor (${mb ? mb.toFixed(1) + " MB" : "boyut bilinmiyor"}${vm.seconds ? `, ${vm.seconds} sn` : ""})${caption ? `: ${caption.slice(0, 80)}` : ""}`);
     const pino = (await import("pino")).default;
     const s0 = sock, dl = () => baileys.downloadMediaMessage(msg, "stream", {}, { logger: pino({ level: "silent" }), reuploadRequest: s0.updateMediaMessage });
     let stream;
@@ -276,7 +279,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       await s0.updateMediaMessage(msg); stream = await dl();
     }
     await pipeline(stream, createWriteStream(file));
-    const r = await handleVideo({ file, caption, seconds: vm.seconds || null });
+    // gönderim anı (albüm penceresi indirme süresinden bağımsız ölçülsün: büyük albüm videosu 8 sn'den uzun inebilir)
+    const sentAt = Number(msg.messageTimestamp) * 1000;
+    const r = await handleVideo({ file, caption, seconds: vm.seconds || null, forwarded, sentAt: Number.isFinite(sentAt) && sentAt > 0 ? sentAt : Date.now() });
     if (r) await send(jid, r);
   }
 
