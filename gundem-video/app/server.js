@@ -69,7 +69,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
-  stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 },
+  stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 }, muted: false,
   whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true, digest: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
@@ -2556,7 +2556,14 @@ app.post("/api/voices/preview", async (req, res) => {
   res.json({ ok: true, url: `/previews/${id}.wav?t=${Date.now()}` });
 });
 app.get("/api/settings", (_req, res) => res.json(settings()));
-app.post("/api/settings", (req, res) => res.json(patchSettings(req.body)));
+// muted (başlıktaki 🔊/🔇 düğmesi) yalnız true/false saklanır; değişince açık sekmelere SSE "mute" (muteChanged)
+app.post("/api/settings", (req, res) => {
+  const body = req.body || {}, was = settings().muted === true;
+  if ("muted" in body) body.muted = body.muted === true;
+  const s = patchSettings(body);
+  if ("muted" in body && s.muted !== was) muteChanged(s.muted);
+  res.json(s);
+});
 app.get("/api/improvements", (_req, res) => res.type("text/markdown").send(existsSync(IMPROVEMENTS) ? readFileSync(IMPROVEMENTS, "utf8") : ""));
 app.post("/api/restart", (_req, res) => { res.json({ ok: true }); push("↻ panel yeniden başlatılıyor"); restartPanel(500); });
 // Panel yeniden başlatma: panel.sh döngüsünde (npm run panel, launchd servisi, basla.sh) 75 ile çıkmak yeniden açar (üst süreç panel.sh:
@@ -3132,11 +3139,20 @@ const STAGE_VOICE = [
 ];
 const STAGE_PHRASES = [...new Set(STAGE_VOICE.map(([, t]) => t))];
 let lastStage = { text: "", at: 0 }, macQueue = Promise.resolve();
+// Sessiz (kullanıcı isteği, 20 Ekim: "paneli sessise alma butonu ekle"; başlıktaki 🔊/🔇 düğmesi, settings.muted): aşama cümleleri ne
+// panele ("stage" olayı) ne Mac hoparlörüne gider, ses açılınca kaçırılanlar okunmaz. Açık sekmeler SSE "mute" olayıyla aynı duruma geçer
+// (çalan sesi keserler); sessize alınırken çalmakta olan Mac sesi (afplay) de kesilir. Sık cümlelerin ön hazırlığı (QUICK_PHRASES) sürer.
+let macAbort = new AbortController();
+function muteChanged(on) {
+  for (const r of clients) r.write(`event: mute\ndata: ${JSON.stringify({ muted: on })}\n\n`);
+  if (on) { macAbort.abort(); macAbort = new AbortController(); }
+  push(on ? "🔇 panel sessize alındı: yanıtlar ve aşama duyuruları yalnız yazıyla, Mac hoparlörü de susar" : "🔊 panel sesi açıldı");
+}
 let stageMute = 0; // komut yanıtı aynı şeyi zaten söylüyorsa (sistemi durdur/başlat) aşama cümlesi 3 sn susar
 function stageVoice(line) {
   if (Date.now() - stageMute < 3000 && /^(⏸|▶ SİSTEM)/.test(String(line))) return;
-  const cfg = settings().stageVoice || {};
-  if (cfg.enabled === false) return;
+  const all = settings(), cfg = all.stageVoice || {};
+  if (cfg.enabled === false || all.muted === true) return; // sessiz: ne panele ne Mac hoparlörüne
   const hit = STAGE_VOICE.find(([re]) => re.test(String(line)));
   if (!hit) return;
   const text = hit[1];
@@ -3147,7 +3163,7 @@ function stageVoice(line) {
   if (!isMac || cfg.macSpeaker === false) return;
   const h = new Date().getHours(), qf = Number(cfg.quietFrom ?? 23), qt = Number(cfg.quietTo ?? 8);
   if (qf > qt ? h >= qf || h < qt : h >= qf && h < qt) return; // gece sessiz saatleri
-  macQueue = macQueue.then(async () => { const f = await synthSpeech(text); if (f) await run("afplay", [f]); }).catch(() => {});
+  macQueue = macQueue.then(async () => { const f = await synthSpeech(text); if (f && settings().muted !== true) await run("afplay", [f], { signal: macAbort.signal }); }).catch(() => {});
 }
 // Sık söylenen kısa cümleler panel açılınca arka planda bir kez hazırlanır (ses ayarı değişince yeniden)
 const QUICK_PHRASES = ["Bir saniye, bakıyorum.", "Hemen bakıyorum.", "Tamam.", "Buyur.", "Son dakika videosu üretiliyor.", ...STAGE_PHRASES];

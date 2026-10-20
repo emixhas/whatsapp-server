@@ -1325,6 +1325,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   10 dk; kurulum betikleri siler) ki her yanıtta torch yüklemesi tekrarlanmasın. Sohbet `claudeEffort.chat`
   (varsayılan low) ile düşünür; rapor ve plan `brain` (high). Prompt sesli yanıtı ≤ 2 kısa cümle ister.
 - Yanıtlar `scripts/speak.py` ile seslendirilir (EMA ya da Yelda; yoksa tarayıcı sesi).
+- Sessiz düğmesi (kullanıcı isteği, 20 Ekim: "paneli sessise alma butonu ekle"): başlıkta "⏸ Tüm sistemi durdur"un yanında 🔊 /
+  "🔇 Sessiz" (`.hbtns` ikisini birlikte tutar, iki hâl aynı genişlikte; sığmayan bağlantı çipleri bütün olarak alt satıra iner). Durum
+  sunucuda `settings.muted` (varsayılan false, yalnız true sessiz; `POST /api/settings {muted}`, değişince SSE `mute` + log 🔇/🔊; durum yükü
+  yeniden yüklemede ve yoklamada düzeltir, ama son değişiklikten — tıklama, kayıt yanıtı, SSE — önce istenmiş yoklama yanıtı yok sayılır:
+  `/api/status` ayarı bağlantı denetiminden önce okur, eski yanıt düğmeyi geri çevirmesin), her sekme aynı. Sessizde `speak()` yalnız yazıyı
+  gösterir (/api/speak isteği ve tarayıcı sesi yok; "bakıyorum" sesini beklerken sessize alınırsa da), "Bir saniye, bakıyorum." çalmaz,
+  `jarvis` (günlük/haftalık rapor) okunmaz; `stageVoice()` hiç çalışmaz (SSE `stage` yok, panel kapalıyken Mac `afplay` yok; log satırı
+  kalır). Sessize alınca çalan konuşma, "bakıyorum" sesi, aşama sırası ve çalan `afplay` (`macAbort`) hemen kesilir, açılınca kaçırılan
+  okunmaz. "🔊 Sesi test et" (`speak(t, {force:true})`), Sesler önizlemesi ve video oynatıcı yine çalar; dinleme çalışır, yanıt yazıyla.
+  `playBlob` durdurulunca da biter (`onpause`): eskiden ■ Dur bekleyen `speak()`i ve aşama sırasını (`stageBusy`) kalıcı kilitliyordu. Yeni
+  konuşma (aşama cümlesi çalarken jarvis/sohbet yanıtı) eskisini keser: ses düğümü kopan eski ses donup aynı kilidi yapıyor, sessize alma da
+  onu susturamıyordu.
 - Üretim: süre kaydırıcısı → `POST /api/generate` → `pipeline.sh` spawn, log SSE ile canlı akar.
 - Videolar: `out/*.mp4` + yanındaki `.json` meta. Küçük resimler `work/thumbs/` (ffmpeg). Video araması (kullanıcı isteği):
   `listVideos()` her videoya `search` metni koyar (yayın başlığı, A/B başlık, gün, slot, format, kaynak, hashtag, her
