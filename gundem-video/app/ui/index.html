@@ -300,6 +300,7 @@
       <h2>INSTAGRAM</h2><div class="conninfo" id="igInfo"></div><div class="acts"><button class="ghost ok" id="igConnect">Instagram'ı bağla</button><button class="ghost" id="igDiag">🩺 Instagram'ı sına</button><button class="ghost danger" id="igClean" title="Son 7 günde 1000 izlenmenin altındaki Instagram gönderilerini listeler; onaylarsanız siler">🗑 Düşük izlenenleri sil</button></div>
       <div id="igAuto" style="margin:6px 0 16px;padding:10px 12px;border:1px solid var(--line);border-radius:12px">
         <label class="row"><span class="sw" id="igAutoOn"></span><span>🗑 <b>Otomatik sil</b>: Instagram'da <input id="igAutoMax" type="number" min="0" step="500" class="inl" style="width:84px"> izlenmenin altında kalan videolar yayından <input id="igAutoWait" type="number" min="12" max="240" class="inl" style="width:58px"> saat sonra silinsin · en çok <input id="igAutoAge" type="number" min="3" max="90" class="inl" style="width:50px"> günlük gönderilere bakılır · her <input id="igAutoEvery" type="number" min="1" max="24" class="inl" style="width:46px"> saatte bir kontrol (YouTube, TikTok ve Mac'teki kopya kalır)</span></label>
+        <div id="igAutoWarn" style="display:none;color:var(--amber);font-size:13px;margin:6px 0;padding:8px 10px;border:1px solid #4a3a0a;border-radius:10px"></div>
         <div id="igAutoInfo" style="color:var(--mut);font-size:13px;margin:6px 0"></div>
         <div id="igAutoList" style="font-size:13px;display:grid;gap:3px;max-height:340px;overflow:auto"></div>
         <div class="acts"><button class="ghost" id="igAutoRefresh">🔄 İzlenmeleri tazele</button><button class="ghost danger" id="igAutoNow">🗑 Silinecekleri şimdi sil</button></div>
@@ -672,19 +673,33 @@ $('#cleanNow').onclick=async()=>{const d=await post('/api/cleanup',{dryRun:true}
 // Instagram temizliği: önce liste (silmez), onaylanırsa siler; sonuç loga ve WhatsApp'a
 $('#igClean').onclick=async()=>{toast('Liste hazırlanıyor…');const p=await post('/api/instagram/cleanup/plan',{days:7,max:1000});
   if(!p.ok||!(p.items||[]).length){toast(p.text||p.error||'Silinecek video yok',!p.ok);return;}
-  if(!await ask(p.text.replace(/\*/g,'').replace(/Silmek için evet sil yazın, vazgeçmek için iptal \(15 dk geçerli\)\./,'Silinsin mi?')))return;
-  toast('Siliniyor…');const r=await post('/api/instagram/cleanup/run',{});toast(r.ok?`${(r.deleted||[]).length} video silindi${(r.failed||[]).length?`, ${r.failed.length} silinemedi`:''}`:(r.error||'Silinemedi'),!r.ok);refreshStatus();};
-// Otomatik Instagram temizliği: sınırlar panelden değişir, silinecek / karar bekleyen / korunan videolar görünür
-async function loadIgAuto(sync){const r=await api('/api/igclean'+(sync?'?sync=1':'')).catch(()=>null);if(!r)return;const c=r.cfg||{},p=r.plan||{};
+  if(!await ask(p.text.replace(/\*/g,'').replace(/(Silmek|Denetlemek) için evet sil yazın, vazgeçmek için iptal \(15 dk geçerli\)\./,(_,w)=>w==='Silmek'?'Silinsin mi?':'Denetlensin mi?')))return;
+  toast(p.verifyOnly?'Denetleniyor…':'Siliniyor…');const r=await post('/api/instagram/cleanup/run',{});
+  if(r.ok&&(r.manual||[]).length)addMsg('j',String(r.text||'').replace(/\*/g,''));
+  toast(r.ok?igRunMsg(r):(r.error||'Silinemedi'),!r.ok);refreshStatus();};
+// Temizlik sonucu kısaca: API silmiyorsa (verifyOnly) elle silinip düşenler ve hâlâ duranlar
+const igRunMsg=r=>{const k=a=>(r[a]||[]).length,v=r.verifyOnly;return [v?(k('gone')?`${k('gone')} video elle silinmiş, listeden düştü`:'Elle silinen yok'):`${k('deleted')} video silindi`,!v&&k('gone')?`${k('gone')} zaten silinmiş`:'',
+  k('manual')?(v?`${k('manual')} video hâlâ Instagram'da`:`${k('manual')} video elle silinmeli${r.unsupported?' (API izin vermiyor)':''}`):'',k('failed')?`${k('failed')} silinemedi`:'',k('unknown')?`${k('unknown')} doğrulanamadı`:''].filter(Boolean).join(' · ');};
+// Otomatik Instagram temizliği: sınırlar panelden değişir, silinecek / karar bekleyen / korunan videolar görünür. Instagram Girişi
+// silmeye izin vermiyorsa (support.unsupported) uyarı, "Elle silinecek" listesi (↗ Aç) ve silmeden yalnız denetleyen düğme.
+async function loadIgAuto(sync){const r=await api('/api/igclean'+(sync?'?sync=1':'')).catch(()=>null);if(!r)return;const c=r.cfg||{},p=r.plan||{},s=r.support||{};
+  const man=!!(s.unsupported&&s.sameConnection),known=!!s.known;
   $('#igAutoOn').classList.toggle('on',c.enabled!==false);
   for(const [id,k] of [['igAutoMax','maxViews'],['igAutoWait','waitHours'],['igAutoAge','maxAgeDays'],['igAutoEvery','everyHours']])if(document.activeElement!==$('#'+id))$('#'+id).value=c[k];
-  const n=x=>Number(x||0).toLocaleString('tr-TR'),h=x=>x>=48?`${Math.round(x/24)} gün`:`${Math.round(x)} sa`;
-  const ready=p.ready||[],up=p.upcoming||[],kept=p.kept||[];
-  const last=r.lastRun?`son temizlik ${new Date(r.lastRun).toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}${(r.runs||[]).length?` (${r.runs[r.runs.length-1].deleted} silindi)`:''}`:'henüz temizlik yapılmadı';
-  $('#igAutoInfo').innerHTML=p.ok===false?`❌ Liste çıkarılamadı: ${esc(p.error)}`:`<b>${ready.length}</b> silinecek · <b>${up.length}</b> karar bekliyor · <b>${kept.length}</b> korunuyor${(p.unknown||[]).length?` · ${p.unknown.length} videonun izlenmesi henüz ölçülmedi (silinmez)`:''} · ${last}${c.enabled===false?' · <b>otomatik silme kapalı</b>':''}`;
-  const row=(x,extra,btn)=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:3px 0"><span>${x.url?`<a href="${esc(x.url)}" target="_blank" style="color:var(--cyan)">${esc(x.title)}</a>`:esc(x.title)} <span style="color:var(--mut)">· ${n(x.views)} izlenme · ${h(x.ageH)} önce${extra}</span></span>${btn}</div>`;
+  const n=x=>Number(x||0).toLocaleString('tr-TR'),h=x=>x>=48?`${Math.round(x/24)} gün`:`${Math.round(x)} sa`,day=x=>new Date(x).toLocaleString('tr-TR',{day:'numeric',month:'short'});
+  const ready=p.ready||[],up=p.upcoming||[],kept=p.kept||[],L=r.last;
+  const lastBits=L?[L.deleted||!known?`${L.deleted||0} silindi`:'',L.gone?`${L.gone} elle silinmiş`:'',L.manual?`${L.manual} elle silinmeli`:''].filter(Boolean).join(', '):'';
+  const last=r.lastRun?`son ${known?'denetim':'temizlik'} ${new Date(r.lastRun).toLocaleString('tr-TR',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}${lastBits?` (${lastBits})`:''}`:'henüz temizlik yapılmadı';
+  $('#igAutoWarn').style.display=man?'block':'none';
+  $('#igAutoWarn').innerHTML=man?`⚠️ <b>Instagram API bu bağlantıyla (${esc(s.viaName||'Instagram Girişi')}) gönderi silmeye izin vermiyor.</b>${s.reason?` <span style="color:var(--mut)">API yanıtı: ${esc(String(s.reason).slice(0,140))}</span>`:''}<br>`+
+    (ready.length?'Aşağıdakileri Instagram uygulamasından elle silin (↗ Aç); sildikleriniz her denetimde listeden kendiliğinden düşer. ':p.ok===false?'':'Elle silinecek video kalmadı. ')+esc(r.fix||'')+
+    (known?(s.retryAt?` Silme ${day(s.retryAt)} tarihinde bir kez yeniden denenecek.`:''):' Silme bir sonraki denetimde bir kez yeniden denenecek.'):'';
+  $('#igAutoNow').textContent=known?'🔄 Elle silinenleri denetle':'🗑 Silinecekleri şimdi sil';$('#igAutoNow').classList.toggle('danger',!known);
+  $('#igAutoInfo').innerHTML=p.ok===false?`❌ Liste çıkarılamadı: ${esc(p.error)}`:`<b>${ready.length}</b> ${man?'elle silinecek':'silinecek'} · <b>${up.length}</b> karar bekliyor · <b>${kept.length}</b> korunuyor${(p.unknown||[]).length?` · ${p.unknown.length} videonun izlenmesi henüz ölçülmedi (silinmez)`:''} · ${last}${c.enabled===false?' · <b>otomatik silme kapalı</b>':''}`;
+  const row=(x,extra,btn)=>`<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding:3px 0"><span style="min-width:0;overflow-wrap:anywhere">${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener" style="color:var(--cyan)">${esc(x.title)}</a>`:esc(x.title)} <span style="color:var(--mut)">· ${n(x.views)} izlenme · ${h(x.ageH)} önce${extra}</span></span><span style="display:flex;gap:6px;flex-shrink:0">${btn}</span></div>`;
   const keepBtn=(x,k)=>`<button class="ghost" style="padding:2px 8px;font-size:12px" data-keep="${esc(x.name)}" data-k="${k}">${k?'🛡 Koru':'Korumayı kaldır'}</button>`;
-  $('#igAutoList').innerHTML=(ready.length?`<b style="color:var(--red)">Silinecek (${h(c.waitHours)} geçti, ${n(c.maxViews)} altında)</b>`+ready.map(x=>row(x,'',keepBtn(x,1))).join(''):'')+
+  const openBtn=x=>x.url?`<a class="ghost" href="${esc(x.url)}" target="_blank" rel="noopener" title="Gönderiyi Instagram'da aç" style="padding:2px 8px;font-size:12px;text-decoration:none;white-space:nowrap">↗ Aç</a>`:'';
+  $('#igAutoList').innerHTML=(ready.length?(man?`<b style="color:var(--amber)">Elle silinecek (Instagram uygulamasından)</b>`:`<b style="color:var(--red)">Silinecek (${h(c.waitHours)} geçti, ${n(c.maxViews)} altında)</b>`)+ready.map(x=>row(x,'',(man?openBtn(x):'')+keepBtn(x,1))).join(''):'')+
     (up.length?`<b style="margin-top:6px">Silinmeye aday — karar saati bekleniyor</b>`+up.map(x=>row(x,` · ${h(x.hoursLeft)} sonra karar`,keepBtn(x,1))).join(''):'')+
     (kept.length?`<b style="margin-top:6px">Korunanlar (silinmez)</b>`+kept.map(x=>row(x,'',keepBtn(x,0))).join(''):'')||'<span style="color:var(--mut)">Sınırın altında video yok.</span>';
   $('#igAutoList').querySelectorAll('[data-keep]').forEach(b=>b.onclick=async()=>{await post('/api/igclean/keep',{name:b.dataset.keep,keep:b.dataset.k==='1'});loadIgAuto();});}
@@ -693,9 +708,10 @@ $('#igAutoOn').onclick=()=>igAutoSet({enabled:!$('#igAutoOn').classList.contains
 for(const [id,k,lo,hi] of [['igAutoMax','maxViews',0,10000000],['igAutoWait','waitHours',12,240],['igAutoAge','maxAgeDays',3,90],['igAutoEvery','everyHours',1,24]])
   $('#'+id).onchange=()=>{const v=Math.min(hi,Math.max(lo,Math.round(Number($('#'+id).value)||0)));igAutoSet({[k]:v});};
 $('#igAutoRefresh').onclick=async()=>{toast('İzlenmeler tazeleniyor…');await loadIgAuto(true);toast('Liste güncellendi ✓');};
-$('#igAutoNow').onclick=async()=>{const r0=await api('/api/igclean');const k=(r0.plan?.ready||[]).length;if(!k){toast('Şu an silinecek video yok');return;}
-  if(!await ask(`${k} Instagram gönderisi kalıcı olarak silinecek (silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır). Silinsin mi?`))return;
-  toast('Siliniyor…');const r=await post('/api/igclean/run',{});toast(r.ok?`${(r.deleted||[]).length} video silindi${(r.failed||[]).length?`, ${r.failed.length} silinemedi`:''}`:(r.error||'Silinemedi'),!r.ok);loadIgAuto();};
+$('#igAutoNow').onclick=async()=>{const r0=await api('/api/igclean');const k=(r0.plan?.ready||[]).length,known=!!r0.support?.known;if(!k){toast(known?'Elle silinecek video yok':'Şu an silinecek video yok');return;}
+  // API bu bağlantıyla silmiyorsa hiçbir şey silinmez, yalnız elle silinenler denetlenir: onay sorulmaz
+  if(!known&&!await ask(`${k} Instagram gönderisi kalıcı olarak silinecek (silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır). Silinsin mi?`))return;
+  toast(known?'Denetleniyor…':'Siliniyor…');const r=await post('/api/igclean/run',{});toast(r.ok?igRunMsg(r):(r.error||(known?'Denetlenemedi':'Silinemedi')),!r.ok);loadIgAuto();};
 setTimeout(()=>loadIgAuto(),2000);setInterval(()=>loadIgAuto(),5*60000);
 $('#capLead').onchange=async()=>{const v=Math.min(0.5,Math.max(-0.5,Number($('#capLead').value)));await post('/api/settings',{captions:{leadSec:Number.isFinite(v)?v:0.06}});refreshStatus();};
 $('#replyOn').onclick=async()=>{const on=!$('#replyOn').classList.contains('on');await post('/api/settings',{autoReply:{enabled:on}});refreshStatus();};

@@ -736,9 +736,32 @@ app.post("/api/info/:kind/run", async (req, res) => {
 // ---------- Instagram temizliği (kullanıcı isteği: "7 gün içinde Instagram'da 1000 izlenmenin altında olan tümünü sil"):
 // önce liste (hiçbir şey silinmez) + "evet sil" onayı (15 dk geçerli). Silmeden hemen önce güncel izlenme tekrar okunur, bu arada
 // sınırı geçen silinmez. Yalnız Instagram gönderisi silinir (YouTube/TikTok/Mac kopyası kalır). Her silme loga (🗑) ve
-// data/ig_cleanup_log.json'a; özet WhatsApp'a (komut WhatsApp'tan geldiyse yanıtın kendisi özettir).
+// data/ig_cleanup_log.json'a; özet WhatsApp'a (komut WhatsApp'tan geldiyse yanıtın kendisi özettir). Instagram Girişi gönderi
+// silmeyi desteklemez (yalnız Facebook Girişi + instagram_manage_contents): ig_cleanup.py bunu data/ig_delete_support.json'a yazar,
+// sonra DELETE denemez; liste elle silmek için verilir, elle silinenler doğrulanıp kayıttan düşer. Panel yanıtı en çok 15 link ve
+// bütün adımları verir; WhatsApp kısa mesaj modunda (yanıt ~700 karakterde kesilir) en çok 5 link + "tamamı panelde".
 let igCleanupPending = null;
 const igLine = (x) => `• ${x.title.slice(0, 60)} — ${x.views.toLocaleString("tr-TR")} izlenme, ${x.ageH < 24 ? `${Math.round(x.ageH)} saatlik` : `${Math.round(x.ageH / 24)} günlük`}`;
+// hata metnini kelime sınırında kısaltır (yarım kelime ya da yarım kalmış talimat gitmesin)
+const igCut = (s, n) => { s = String(s || ""); if (s.length <= n) return s; const c = s.slice(0, n), i = c.lastIndexOf(" "); return (i > n / 2 ? c.slice(0, i) : c).replace(/[\s,;:(]+$/, "") + "…"; };
+const igSupport = () => pyJson(["scripts/ig_cleanup.py", "--support"], 20000).catch(() => ({}));
+const igWhy = (j) => j?.unsupported ? `Instagram API bu bağlantıyla (${j.via || "Instagram Girişi"}) gönderi silmeye izin vermiyor` : "Instagram API bu gönderileri silemedi";
+// otomatik silmeyi açmanın yolu: full = panel (bütün adımlar), değilse WhatsApp için tek kısa satır
+const igFix = (j, full) => j?.via === "Facebook Girişi"
+  ? "Otomatik silme için Meta uygulamasına instagram_manage_contents iznini ekleyin, .env'e IG_EXTRA_SCOPES=instagram_manage_contents yazın ve Instagram'ı yeniden bağlayın."
+  : full ? "Otomatik silme yalnız Instagram, Facebook Girişi ile bağlıyken çalışır: Instagram hesabı bir Facebook Sayfasına bağlı olmalı; Meta uygulamasında Facebook Login ve instagram_manage_contents izni eklenmeli; secrets/.env'de IG_LOGIN=facebook, IG_EXTRA_SCOPES=instagram_manage_contents ve IG_APP_ID/IG_APP_SECRET olarak Meta uygulamasının kimliği ve gizli anahtarı (Instagram uygulama kimliği değil) olmalı; sonra Instagram'ı yeniden bağlayın."
+  : "Otomatik silme yalnız Facebook Girişi ile çalışır (IG_LOGIN=facebook, Facebook Sayfası, instagram_manage_contents izni; adımlar panelde).";
+const igCounts = (j) => [(j.deleted || []).length || !j.verifyOnly ? `${(j.deleted || []).length} silindi` : "", (j.gone || []).length ? `${j.gone.length} elle silinmiş (kayıttan düştü)` : "",
+  (j.manual || []).length ? `${j.manual.length} elle silinmeli` : "", (j.failed || []).length ? `${j.failed.length} silinemedi` : "",
+  (j.unknown || []).length ? `${j.unknown.length} doğrulanamadı` : "", (j.kept || []).length ? `${j.kept.length} bırakıldı (izlenmesi arttı)` : ""].filter(Boolean).join(", ") || "değişiklik yok";
+// betik satırları loga (elle silinecekler için betiğin özet satırı atlanır: çağıran tek özet yazar); bu bağlantıda ilk "izin yok"
+// tespitinde API'nin kısa nedeni bir kez loga (gerçek hata görünsün)
+function igRunLog(r) {
+  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🗑") && !l.endsWith("elle silinmeli — liste panelde")) push(l);
+  const j = r.json || {};
+  if (j.supportNew && j.reason) push(`🗑 Instagram API'nin silme yanıtı (${j.via}): ${j.reason}`);
+  return j;
+}
 async function igCleanupPlan({ days = 7, max = 1000, minAgeH = 0 } = {}) {
   const m = readJson(path.join(DATA, "metrics.json"), {});
   if (!m.lastSync || Date.now() - Date.parse(m.lastSync) > 20 * 60000) await execAction({ type: "sync_metrics" }).catch(() => {});
@@ -747,37 +770,59 @@ async function igCleanupPlan({ days = 7, max = 1000, minAgeH = 0 } = {}) {
   const items = r.items || [];
   push(`🗑 Instagram temizliği planı: son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında ${items.length} video${r.unknown?.length ? ` (${r.unknown.length} videonun izlenmesi henüz ölçülmedi, listeye alınmadı)` : ""}`);
   if (!items.length) { igCleanupPending = null; return { ok: true, items, text: `Instagram'da son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında video yok. Hiçbir şey silinmedi.` }; }
-  igCleanupPending = { names: items.map((x) => x.name), max, days, at: Date.now() };
+  const sup = await igSupport();
+  igCleanupPending = { names: items.map((x) => x.name), max, days, at: Date.now(), known: !!sup.known };
   const young = items.filter((x) => x.ageH < 24).length;
   const text = `🗑 Instagram'da son ${days} günde ${max.toLocaleString("tr-TR")} izlenmenin altında *${items.length} video* var:\n` +
     items.slice(0, 25).map(igLine).join("\n") + (items.length > 25 ? `\n… ve ${items.length - 25} video daha` : "") +
     (young ? `\n\n⚠️ ${young} tanesi 1 günden yeni; izlenmesi henüz birikmemiş olabilir.` : "") +
-    `\n\nYalnız Instagram'dan kalıcı olarak silinir (YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`;
-  return { ok: true, items, unknown: r.unknown, text };
+    (sup.known ? `\n\n⚠️ ${igWhy({ unsupported: true, via: sup.viaName })}; bu videoları Instagram uygulamasından elle silin. Onaylarsanız hiçbir şey silinmez: elle sildikleriniz kayıttan düşer, kalanların linki verilir. Denetlemek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`
+      : `\n\nYalnız Instagram'dan kalıcı olarak silinir (YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`);
+  return { ok: true, items, unknown: r.unknown, verifyOnly: !!sup.known, text };
 }
 const igCleanupRun = counted(igCleanupRun0);
 async function igCleanupRun0({ notify = true } = {}) {
   const p = igCleanupPending;
   if (!p || Date.now() - p.at > 15 * 60000) { igCleanupPending = null; return { ok: false, error: "Bekleyen Instagram silme listesi yok ya da 15 dakikalık onay süresi doldu. Önce listeyi isteyin (ör. \"instagramda son 7 günde 1000 izlenmenin altındakileri sil\")." }; }
   igCleanupPending = null;
-  push(`🗑 Instagram temizliği başladı: ${p.names.length} video siliniyor`);
+  push(`🗑 Instagram temizliği başladı: ${p.names.length} video ${p.known ? "denetleniyor (API bu bağlantıyla silmiyor; hiçbir şey silinmez)" : "siliniyor"}`);
   const r = await py("ig_cleanup.py", ["--run", "--names", p.names.join(","), "--max", String(p.max)]);
-  for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🗑")) push(l);
-  const j = r.json || {};
-  const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [];
-  const text = `🗑 *Instagram temizliği bitti*: ${del.length} video silindi` + (fail.length ? `, ${fail.length} silinemedi` : "") + (kept.length ? `, ${kept.length} bırakıldı` : "") + "." +
+  const j = igRunLog(r);
+  if (!j.ok) { const error = `Instagram temizliği çalışmadı: ${j.error || String(r.stderr || "yanıt yok").slice(-160)}`; push(`🗑 ${error}`); return { ok: false, error, text: error }; }
+  const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [], man = j.manual || [], gone = j.gone || [];
+  const head = `🗑 *Instagram temizliği bitti*: ${igCounts(j)}.`;
+  // panel (ve kısa mesaj modu kapalıyken WhatsApp): neden + başlıklarıyla en çok 15 link + bütün adımlar
+  const text = head +
     (del.length ? "\n\nSilinenler:\n" + del.slice(0, 30).map((x) => `• ${String(x.title).slice(0, 60)} (${x.views ?? "?"} izlenme)`).join("\n") : "") +
-    (fail.length ? "\n\nSilinemeyenler (Instagram uygulamasından elle silin):\n" + fail.slice(0, 15).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n") : "") +
+    (man.length ? `\n\n${igWhy(j)}${j.reason ? ` (${String(j.reason).slice(0, 100)})` : ""}. Instagram uygulamasından elle silin:\n` +
+      man.slice(0, 15).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n") + (man.length > 15 ? `\n… ve ${man.length - 15} video daha` : "") + (j.unsupported ? `\n${igFix(j, true)}` : "") : "") +
+    (fail.length ? "\n\nSilinemeyenler:\n" + fail.slice(0, 10).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""} — ${igCut(x.message, 160)}`).join("\n") : "") +
     (kept.length ? "\n\nBırakılanlar:\n" + kept.slice(0, 10).map((x) => `• ${x.name}: ${x.why}`).join("\n") : "");
-  push(`🗑 Instagram temizliği bitti: ${del.length} silindi, ${fail.length} silinemedi, ${kept.length} bırakıldı`);
-  if (notify) { try { await wa.send(text); } catch { push("💬 Instagram temizliği özeti WhatsApp'a gönderilemedi (bağlı değil)"); } }
-  return { ok: true, deleted: del, failed: fail, kept, text };
+  // WhatsApp kısa mesaj modu (yanıt ~700 karakterde kesilir): neden tek cümle, en çok 5 link, tamamı panelde; sığmazsa önce silinen
+  // başlıkları ve hata ayrıntısı, sonra linkler azalır (lean)
+  const linked = man.filter((x) => x.url), tokFail = fail.some((x) => x.token);
+  const shortText = (k, lean) => { const shown = Math.min(k, linked.length); return head +
+    (del.length && !lean ? `\nSilinenler: ${del.slice(0, 3).map((x) => String(x.title).slice(0, 40)).join(", ")}${del.length > 3 ? ` ve ${del.length - 3} video daha` : ""}.` : "") +
+    (man.length ? `\n${igWhy(j)}; Instagram uygulamasından elle silin:` + linked.slice(0, shown).map((x) => `\n• ${x.url}`).join("") +
+      `\n${man.length > shown ? `… ve ${man.length - shown} video daha; tamamı` : "Liste"} panelde: Ayarlar → Yayın hesapları → Instagram.${j.unsupported ? `\n${igFix(j)}` : ""}` : "") +
+    // geçersiz bağlantıda sabit kısa satır (nedenin ardındaki yeniden bağlama talimatı kesilmesin); diğer hatada kelime sınırında kısalır
+    (fail.length ? `\n❌ ${fail.length} silinemedi${tokFail ? ": Instagram bağlantısı geçersiz; panelde Ayarlar → Yayın hesapları → Instagram'ı yeniden bağlayın." : lean ? " (ayrıntı panelde)" : `: ${igCut(fail[0].message, 200)}`}` : ""); };
+  let short = shortText(5, false);
+  for (let k = 5; k >= 0 && short.length > 690; k--) short = shortText(k, true);
+  const waText = waBrief() ? short : text;
+  push(`🗑 Instagram temizliği bitti: ${igCounts(j)}${man.length ? ` — ${igWhy(j)}` : ""}`);
+  if (notify) { try { await wa.send(waText); } catch { push("💬 Instagram temizliği özeti WhatsApp'a gönderilemedi (bağlı değil)"); } }
+  return { ok: true, deleted: del, failed: fail, kept, manual: man, gone, unknown: j.unknown || [], unsupported: !!j.unsupported, verifyOnly: !!j.verifyOnly, via: j.via,
+    text: notify ? text : waText };
 }
 // Otomatik Instagram temizliği (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim; sayıları panelde göreyim,
 // değiştireyim, silinmeye adayları da göreyim"; kullanıcı kararı: yalnız Instagram, 72 saat bekleme). settings.igAutoClean
 // {enabled, maxViews 5000, waitHours 72, maxAgeDays 30, everyHours 3, keep []}. Her `everyHours` saatte: izlenmeler 30 dk'dan eskiyse
 // senkron → ig_cleanup.py --auto-plan → hazır olanlar --run (silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır).
-// Kayıt data/ig_autoclean.json; log 🗑; WhatsApp'a yalnız sonuç (silinen sayısı) ve sorun.
+// API bu bağlantıyla silmiyorsa (Instagram Girişi) --run yalnız denetler: elle silinen kayıttan düşer, kalan "elle silinmeli" olur.
+// Kayıt data/ig_autoclean.json; log 🗑 (çalışma başına tek özet); WhatsApp'a silinen sayısı, elle silinecekler yalnız listeye
+// bildirilmemiş video girince (st.manualNotified, 24 saatte en çok bir kez), geçersiz bağlantı 24 saatte bir. Aynı listeyi yeniden
+// denetleyen çalışma mesaj göndermez.
 const igAutoCfg = () => ({ enabled: true, maxViews: 5000, waitHours: 72, maxAgeDays: 30, everyHours: 3, keep: [], ...(settings().igAutoClean || {}) });
 const IG_AUTO_FILE = path.join(DATA, "ig_autoclean.json");
 let igAutoBusy = false;
@@ -798,21 +843,34 @@ async function igAutoRun({ manual = false } = {}) {
     if (!p?.ok) { push(`🗑 otomatik Instagram temizliği: liste çıkarılamadı (${p?.error || "yanıt yok"})`); return { ok: false, error: p?.error || "liste çıkarılamadı" }; }
     st.lastCheck = Date.now();
     const names = (p.ready || []).map((x) => x.name);
-    if (!names.length) { writeJson(IG_AUTO_FILE, st); if (manual) push("🗑 otomatik Instagram temizliği: silinecek video yok"); return { ok: true, deleted: [], failed: [], kept: [], plan: p }; }
-    push(`🗑 otomatik Instagram temizliği: ${names.length} video ${Number(c.maxViews).toLocaleString("tr-TR")} izlenmenin altında ve ${c.waitHours} saati geçti, siliniyor`);
+    if (!names.length) { writeJson(IG_AUTO_FILE, st); if (manual) push("🗑 otomatik Instagram temizliği: silinecek video yok"); return { ok: true, deleted: [], failed: [], kept: [], manual: [], gone: [], unknown: [], plan: p }; }
+    if (!(await igSupport()).known) push(`🗑 otomatik Instagram temizliği: ${names.length} video ${Number(c.maxViews).toLocaleString("tr-TR")} izlenmenin altında ve ${c.waitHours} saati geçti, siliniyor`);
     const r = await py("ig_cleanup.py", ["--run", "--names", names.join(","), "--max", String(Number(c.maxViews) || 5000)]);
-    for (const l of String(r.stdout || "").split("\n")) if (l.startsWith("🗑")) push(l);
-    const j = r.json || {};
-    const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [];
-    st.lastRun = Date.now(); st.runs = [...(st.runs || []).slice(-30), { at: Date.now(), deleted: del.length, failed: fail.length, kept: kept.length }];
-    writeJson(IG_AUTO_FILE, st);
-    push(`🗑 otomatik Instagram temizliği bitti: ${del.length} silindi, ${fail.length} silinemedi, ${kept.length} bırakıldı (izlenmesi arttı)`);
-    if (del.length || fail.length) {
-      const msg = (del.length ? `🗑 Instagram: ${del.length} düşük izlenen video silindi (${Number(c.maxViews).toLocaleString("tr-TR")} altı, ${c.waitHours} saati geçmiş).` : "") +
-        (fail.length ? `${del.length ? "\n" : ""}❌ ${fail.length} video silinemedi; Instagram uygulamasından elle silin:\n${fail.slice(0, 5).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n")}` : "");
-      try { await wa.send(msg); } catch { /* WhatsApp bağlı değil: log yeterli */ }
+    const j = igRunLog(r);
+    if (!j.ok) { writeJson(IG_AUTO_FILE, st); const error = j.error || String(r.stderr || "yanıt yok").slice(-160); push(`🗑 otomatik Instagram temizliği çalışmadı: ${error}`); return { ok: false, error }; }
+    const del = j.deleted || [], fail = j.failed || [], kept = j.kept || [], man = j.manual || [], gone = j.gone || [], unk = j.unknown || [];
+    st.lastRun = Date.now(); st.runs = [...(st.runs || []).slice(-30), { at: Date.now(), deleted: del.length, failed: fail.length, kept: kept.length, manual: man.length, gone: gone.length, unknown: unk.length }];
+    push(`🗑 otomatik Instagram temizliği ${j.verifyOnly ? "denetimi" : "bitti"}: ${igCounts(j)}${man.length ? ` — ${igWhy(j)}; liste panelde` : ""}`);
+    const msg = [], told = new Set(st.manualNotified?.names || []), fresh = man.filter((x) => !told.has(x.name));
+    if (del.length) msg.push(`🗑 Instagram: ${del.length} düşük izlenen video silindi (${Number(c.maxViews).toLocaleString("tr-TR")} altı, ${c.waitHours} saati geçmiş).`);
+    const tellManual = fresh.length > 0 && Date.now() - (st.manualNotified?.at || 0) >= 24 * 3600000;
+    if (tellManual) {
+      const links = [...fresh, ...man.filter((x) => told.has(x.name))].filter((x) => x.url).slice(0, 5);
+      msg.push(`🗑 Instagram: ${man.length} düşük izlenen video elle silinmeli${fresh.length < man.length ? ` (${fresh.length} yeni)` : ""}. ${igWhy(j)}.` +
+        links.map((x) => `\n• ${x.url}`).join("") + "\nTamamı panelde: Ayarlar → Yayın hesapları → Instagram; elle sildikleriniz listeden kendiliğinden düşer." +
+        `${j.unsupported ? `\n${igFix(j)}` : ""}\nOtomatik silmeyi kapatmak için *otomatik silmeyi kapat* yazın.`);
     }
-    return { ok: true, deleted: del, failed: fail, kept, plan: p };
+    const tok = fail.find((x) => x.token), tellTok = !!tok && Date.now() - (st.tokenNotifiedAt || 0) >= 24 * 3600000;
+    if (tellTok) msg.push(`⚠️ Instagram temizliği: ${tok.message}`);
+    if (msg.length) {
+      try {
+        await wa.send(msg.join("\n\n"));
+        if (tellManual) st.manualNotified = { at: Date.now(), names: [...new Set([...told, ...man.map((x) => x.name)])].slice(-300) };
+        if (tellTok) st.tokenNotifiedAt = Date.now();
+      } catch { /* WhatsApp bağlı değil: log yeterli, sonraki denetimde yeniden denenir */ }
+    }
+    writeJson(IG_AUTO_FILE, st);
+    return { ok: true, deleted: del, failed: fail, kept, manual: man, gone, unknown: unk, unsupported: !!j.unsupported, verifyOnly: !!j.verifyOnly, via: j.via, plan: p };
   } finally { igAutoBusy = false; }
 }
 setInterval(() => {
@@ -829,7 +887,11 @@ setInterval(() => {
   if (Date.now() - (st.lastCheck || 0) < Math.max(1, Number(c.everyHours) || 3) * 3600000) return;
   igAutoRun().catch((e) => push(`🗑 otomatik Instagram temizliği hatası: ${e.message}`));
 }, 10 * 60000);
-app.get("/api/igclean", async (req, res) => { const p = await igAutoPlan({ sync: req.query.sync === "1" }); const st = readJson(IG_AUTO_FILE, {}); res.json({ cfg: igAutoCfg(), plan: p, lastRun: st.lastRun || null, lastCheck: st.lastCheck || null, runs: (st.runs || []).slice(-5), busy: igAutoBusy }); });
+app.get("/api/igclean", async (req, res) => { const [p, support] = await Promise.all([igAutoPlan({ sync: req.query.sync === "1" }), igSupport()]); const st = readJson(IG_AUTO_FILE, {});
+  const l = (st.runs || []).slice(-1)[0];
+  res.json({ cfg: igAutoCfg(), plan: p, lastRun: st.lastRun || null, lastCheck: st.lastCheck || null, runs: (st.runs || []).slice(-5), busy: igAutoBusy, support,
+    fix: igFix({ via: support?.viaName }, true),
+    last: l ? { at: l.at, deleted: l.deleted || 0, manual: l.manual || 0, gone: l.gone || 0, failed: l.failed || 0, unknown: l.unknown || 0 } : null }); });
 app.post("/api/igclean/run", async (_req, res) => res.json(await igAutoRun({ manual: true })));
 app.post("/api/igclean/keep", (req, res) => {
   const name = String(req.body?.name || ""); if (!name) return res.json({ ok: false });

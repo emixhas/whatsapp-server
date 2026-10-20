@@ -13,6 +13,7 @@ beklemeye alınır (data/publish_hold.json), video sıraya eklenir; panel saatte
 sınır açılınca sıradakiler en yeniden eskiye yüklenir. QUEUE_MAX_HOURS'ten eski haberler bayatladığı için atılır.
 """
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -485,7 +486,9 @@ FB_API = "https://graph.facebook.com/v21.0"
 IG_CALLBACK_PORT = 3138
 # Facebook Login yolu izinleri. Her biri Meta uygulamasında Kullanım senaryosu → "Permissions and features" listesinde
 # "Add" ile eklenmiş olmalı; eklenmemiş izin "Invalid Scopes" hatası verir. İş portföyüne bağlı sayfalar için
-# .env'de IG_EXTRA_SCOPES=business_management eklenebilir.
+# .env'de IG_EXTRA_SCOPES=business_management eklenebilir. Gönderi silme (Instagram temizliği, panel "🗑 Sil") yalnız bu yolda
+# ve instagram_manage_contents izniyle çalışır: Meta uygulamasında izni ekleyip .env'e IG_EXTRA_SCOPES=instagram_manage_contents
+# yazın (ikisi birlikte virgülle) ve yeniden bağlanın; varsayılan listede yok çünkü eklenmemiş izin bağlanmayı bozar.
 FB_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,instagram_manage_comments,pages_show_list,pages_read_engagement"
 
 
@@ -733,7 +736,9 @@ def ig_upload(path: Path):
         except Exception as e:
             fc = {"commentError": str(e)[:160]}
             print(f"  ! Instagram ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
-    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **fc}
+    # owner: yükleyen Instagram hesabının kimliği (silme denetiminde "hesap bizim mi" sorusu buna bakar; ig_exists)
+    own = {"owner": str(uid)} if uid and str(uid) != "me" else {}
+    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **own, **fc}
 
 
 def ig_story_publish(paths: list) -> list:
@@ -1186,28 +1191,297 @@ def tt_check(limit=5) -> list:
     return out
 
 
-# ---------------- platformlardan silme (panel "Sil")
-def ig_delete(ig: dict) -> dict:
-    """Instagram gönderisini siler: DELETE /{media-id}. API reddederse elle silmek için link döner."""
+# ---------------- platformlardan silme (panel "Sil", Instagram temizliği)
+# Meta gönderi silmeyi (DELETE /{media-id}) yalnız "Instagram API with Facebook Login" için belgeliyor (graph.facebook.com,
+# instagram_manage_contents izni). Instagram Login (graph.instagram.com, instagram_business_* izinleri) silmeyi desteklemez: API
+# reddeder, gönderi Instagram uygulamasından elle silinir. DELETE hata metnine tek başına güvenilmez: Meta'nın genel yanıtı
+# "Unsupported delete request. Object with ID … does not exist, cannot be loaded due to missing permissions, or does not support
+# this operation" (kod 100, alt kod 33) var olan gönderide de gelir; gönderinin gerçekten olup olmadığı ig_exists ile sınanır.
+IG_VIA_TR = {"instagram": "Instagram Girişi", "facebook": "Facebook Girişi", "env": "Facebook Girişi"}
+IG_TOKEN_CODES = {190, 102, 463, 467}                              # token süresi dolmuş ya da geçersiz: yeniden bağlanmak gerekir
+IG_RETRY_CODES = {1, 2, 4, 17, 32, 341, 368, 613, 80001, 80002}    # geçici hata, istek sınırı, geçici engel (368)
+IG_RETRY_STATUS = {408, 409, 425, 429}                             # bunlar, 5xx ve ağ hatası: sonra yeniden denenir
+IG_RETRY_RE = re.compile(r"temporar|try again|too fast|too many|please wait|rate limit|request limit", re.I)
+IG_DENY_CODES = {3, 10, 100}                                       # yetenek/izin yok, desteklenmeyen istek (200-299 izin kodları da)
+IG_DENY_RE = re.compile(r"permission|not supported|unsupported|does not support|not allowed|capability|cannot be loaded", re.I)
+IG_MISSING_RE = re.compile(r"does not exist|not available|not found", re.I)
+IG_THROTTLE_CODES = {4, 17, 32, 341, 368, 613, 80001, 80002}       # istek sınırı / geçici engel: o çalışmada başka istek atılmaz
+IG_THROTTLE_RE = re.compile(r"temporar\w* block|limit reached|rate limit|request limit|too many|too fast|please wait", re.I)
+IG_LATER = "daha sonra yeniden deneyin ya da Instagram uygulamasından elle silin"
+IG_ACCOUNT_PAGES = 6  # kontrol listesi en çok 6 sayfa (300 gönderi) okunur; süreçte bir kez, yalnız gerektikçe uzatılır
+_IG_CTL = {}  # bu süreçteki kontrol çağrısı (API kökü + token → hesabın gönderi listesi ya da None): her gönderide yeniden sorulmaz
+
+
+def _graph(method: str, url: str, timeout=30):
+    """Graph isteği; HTTP hatası istisna olmaz: (HTTP durumu, gövde sözlüğü). Ağ hatasında durum None. 2xx dışındaki her yanıtta
+    gövdede error olur; JSON olmayan gövde (vekil/giriş sayfası, boş 3xx) raw işaretlidir: Graph'ın kendi yanıtı sayılmaz."""
     try:
-        uid, token, base = ig_creds()
-        req = urllib.request.Request(f"{base}/{ig['id']}?" + urllib.parse.urlencode({"access_token": token}), method="DELETE")
-        with urllib.request.urlopen(req, timeout=30) as r:
-            r.read()
-        return {"ok": True, "message": "Instagram'dan silindi"}
+        with urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=timeout) as r:
+            st, txt = r.status, r.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
-        txt = e.read().decode("utf-8", "replace")[:200]
-        gone = e.code == 404 or "does not exist" in txt
-        return {"ok": gone, "message": "Instagram'da zaten yok" if gone else
-                "Instagram API bu gönderiyi silmeye izin vermedi; Instagram uygulamasından elle silin", "url": ig.get("url"), "detail": txt}
+        st, txt = e.code, e.read().decode("utf-8", "replace")
     except Exception as e:
-        return {"ok": False, "message": f"Instagram silinemedi: {str(e)[:160]}; uygulamadan elle silin", "url": ig.get("url")}
+        return None, {"error": {"message": f"bağlantı hatası: {str(e)[:160]}", "raw": True}}
+    ok = 200 <= st < 300
+    try:
+        body = json.loads(txt) if txt.strip() else {}
+    except Exception:
+        body = None
+    if body is True and ok:  # eski Graph sürümleri DELETE'e düz true döner
+        body = {"success": True}
+    if not isinstance(body, dict):
+        body = {} if ok else {"error": {"message": re.sub(r"\s+", " ", txt).strip()[:200] or f"HTTP {st}", "raw": True}}
+    elif not ok and not isinstance(body.get("error"), dict):
+        body = {**body, "error": {"message": str(body.get("error") or re.sub(r"\s+", " ", txt).strip()[:200] or f"HTTP {st}"), "raw": True}}
+    return st, body
+
+
+def graph_error(st, body: dict) -> dict | None:
+    """Graph yanıtındaki hata → {status, code, subcode, message, transient, raw}; yalnız 2xx ve hatasız yanıtta None."""
+    e = body.get("error")
+    if st is not None and 200 <= st < 300 and not e and body.get("success") is not False:
+        return None
+    e = e if isinstance(e, dict) else {"message": str(e or "işlem başarısız")}
+
+    def num(x):
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
+    return {"status": st, "code": num(e.get("code")), "subcode": num(e.get("error_subcode")),
+            "message": str(e.get("message") or "")[:240], "transient": bool(e.get("is_transient")), "raw": bool(e.get("raw"))}
+
+
+def graph_reason(err: dict | None) -> str:
+    """Kısa neden: "HTTP 400, kod 10: Application does not have permission for this action"."""
+    if not err:
+        return ""
+    head = ", ".join(x for x in (f"HTTP {err['status']}" if err.get("status") else "",
+                                 f"kod {err['code']}" + (f"/{err['subcode']}" if err.get("subcode") else "") if err.get("code") is not None else "") if x)
+    return (head + ": " if head else "") + (err.get("message") or "")[:160]
+
+
+def _token_err(err) -> bool:
+    return err.get("code") in IG_TOKEN_CODES
+
+
+def _retry_err(err) -> bool:
+    st = err.get("status")
+    return bool(st is None or st in IG_RETRY_STATUS or st >= 500 or err.get("code") in IG_RETRY_CODES or err.get("transient")
+                or IG_RETRY_RE.search(err.get("message") or ""))
+
+
+def _throttle_err(err) -> bool:
+    """İstek sınırı ya da geçici engel (HTTP 429, kod 4/17/32/341/368/613/80001/80002, "temporarily blocked", "limit reached"…):
+    aynı hesabın bütçesi yüklemelerle ortak, sınırlanmışken başka istek atılmaz."""
+    return bool(err.get("status") == 429 or err.get("code") in IG_THROTTLE_CODES or IG_THROTTLE_RE.search(err.get("message") or ""))
+
+
+def ig_halt(err) -> str | None:
+    """Hesabın tamamını etkileyen hata: "token" (bağlantı geçersiz), "throttled" (istek sınırı/geçici engel), "offline" (ağ hatası).
+    ig_cleanup.run bu durumda çalışmayı durdurur, kalan videoları denemeden "silinemedi" sayar (ağ hatasında ancak art arda ikincisinde)."""
+    if not err:
+        return None
+    if _token_err(err):
+        return "token"
+    if _throttle_err(err):
+        return "throttled"
+    return "offline" if err.get("status") is None else None
+
+
+def _deny_err(err) -> bool:
+    """API bu isteğe izin vermiyor/desteklemiyor: yalnız Graph'ın kendi JSON hatası (vekil sayfası değil) ve yalnız izin/destek kodu
+    (3, 10, 100, 200-299) ya da izin/destek sözü. Graph hemen her hatayı HTTP 400 ile verir: durum kodu tek başına "izin yok" değildir
+    (sınıflanamayan kod — ör. 2500 — retry)."""
+    c = err.get("code")
+    return not err.get("raw") and (c in IG_DENY_CODES or (c is not None and 200 <= c < 300)
+                                   or bool(IG_DENY_RE.search(err.get("message") or "")))
+
+
+def _missing_err(err) -> bool:
+    """Graph'ın "nesne yok" yanıtı (kod 100, alt kod 33 ya da "does not exist"); çıplak 404 ve HTML sayılmaz."""
+    return not err.get("raw") and err.get("code") == 100 and (err.get("subcode") == 33 or bool(IG_MISSING_RE.search(err.get("message") or "")))
+
+
+def _ig_page(creds, acc: dict | None) -> dict | None:
+    """Kontrol listesinin bir sayfası (50 gönderi, en yeniden): acc None ise ilk sayfa (okunamazsa None), değilse acc["after"]
+    imleciyle sonraki sayfa acc'ye eklenir (okunamazsa ya da yeni kimlik gelmezse liste orada biter)."""
+    uid, token, base = creds
+    owner = "me" if base == IG_API else uid
+    q = {"fields": "id", "limit": 50, "access_token": token, **({"after": acc["after"]} if acc else {})}
+    st, body = _graph("GET", f"{base}/{owner}/media?" + urllib.parse.urlencode(q))
+    data = None if graph_error(st, body) else body.get("data")
+    if not isinstance(data, list):
+        if acc:
+            acc["after"] = None
+        return acc
+    ids = {str(x["id"]) for x in data if isinstance(x, dict) and x.get("id")}
+    acc = acc or {"media": set(), "pages": 0, "after": None}
+    new = ids - acc["media"]
+    acc["media"] |= ids
+    acc["pages"] += 1
+    pg = body.get("paging") if isinstance(body.get("paging"), dict) else {}
+    cur = (pg.get("cursors") or {}).get("after") if isinstance(pg.get("cursors"), dict) else None
+    acc["after"] = str(cur) if pg.get("next") and cur and new else None
+    return acc
+
+
+def _ig_account(creds, need=None) -> dict | None:
+    """Kontrol çağrısı: bu token'la hesabın gönderi listesi (Instagram Login `/me/media`, Facebook Login `/{hesap}/media`; süreçte
+    bir kez okunur). need(kimlikler) verilirse ve sağlanmıyorsa liste sonraki sayfalarla uzatılır (en çok IG_ACCOUNT_PAGES sayfa,
+    süreç boyunca ortak). {media: kimlikler, pages, after} ya da None (ilk sayfa okunamadı)."""
+    key = (creds[2], creds[1])
+    if key not in _IG_CTL:
+        _IG_CTL[key] = _ig_page(creds, None)
+    acc = _IG_CTL[key]
+    while acc and need and not need(acc["media"]) and acc.get("after") and acc["pages"] < IG_ACCOUNT_PAGES:
+        _ig_page(creds, acc)
+    return acc
+
+
+def _ts(v):
+    """ISO zaman → saat dilimli datetime (dilimsiz UTC sayılır) ya da None."""
+    try:
+        d = datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def _ig_records() -> dict:
+    """Metriklerdeki Instagram kayıtlarımız: {kimlik: {owner (yükleyen hesap; eski kayıtta None), at (yayın anı)}}."""
+    out = {}
+    for v in (metrics().get("videos") or {}).values():
+        g = v.get("instagram") if isinstance(v, dict) else None
+        if isinstance(g, dict) and g.get("id"):
+            out[str(g["id"])] = {"owner": str(g["owner"]) if g.get("owner") else None, "at": _ts(g.get("publishedAt"))}
+    return out
+
+
+def ig_conn() -> dict:
+    """Bağlantı kimliği (ağ çağrısı yok): via instagram|facebook|env, tokenAt (token alınma anı; .env yolunda token'ın kısa özeti),
+    name (Instagram Girişi / Facebook Girişi). Silme desteği kaydı bağlantı değişince geçersiz olur (ig_cleanup.py)."""
+    if IG_TOKEN_FILE.exists():
+        tok = load_json(IG_TOKEN_FILE, {}) or {}
+        via = "facebook" if tok.get("via") == "facebook" else "instagram"
+        return {"via": via, "tokenAt": tok.get("obtained_at"), "name": IG_VIA_TR[via]}
+    env = load_env()
+    if env.get("IG_USER_ID") and env.get("IG_ACCESS_TOKEN"):
+        return {"via": "env", "tokenAt": "env:" + hashlib.sha256(env["IG_ACCESS_TOKEN"].encode()).hexdigest()[:12], "name": IG_VIA_TR["env"]}
+    return {"via": None, "tokenAt": None, "name": None}
+
+
+def ig_exists(ig: dict, creds=None, why: dict | None = None) -> bool | None:
+    """Gönderi Instagram'da hâlâ var mı: True / False / None (bilinmiyor). GET /{id}?fields=id: kimlikli 2xx → True. Graph'ın
+    "yok" yanıtı (kod 100 + alt kod 33 ya da "does not exist") başka hesabın gönderisinde de gelir; yalnız kontrol çağrısı (aynı
+    token'la hesabın gönderi listesi) token'ın gönderiyi YÜKLEYEN hesaba ait olduğunu gösterirse False (gönderi listedeyse True):
+    listede aynı hesabın yüklediği başka kaydımız olmalı — kayıtta yükleyen hesap (owner) varsa aynı owner'lı kayıt, owner'sız eski
+    kayıtta bu gönderiden önce (ya da aynı anda) yayınlanmış kayıt (hesap değişince listede yalnız sonraki yüklemeler olur; tek bir
+    yeni yükleme eski hesabın gönderilerini "yok" yaptırmasın). Liste gerektikçe sonraki sayfalarla uzar (_ig_account). Token, izin,
+    ağ sorunu, çıplak 404/HTML, başka hesap, okunamayan liste ve başka her yanıt None; None hiçbir zaman "silinmiş" sayılmaz.
+    why sözlüğü verilirse GET'in Graph hatası why["err"]e yazılır (istek sınırı/bağlantı sorununu görmek için)."""
+    try:
+        uid, token, base = creds or ig_creds()
+    except Exception:
+        return None
+    tid = str(ig["id"])
+    st, body = _graph("GET", f"{base}/{tid}?" + urllib.parse.urlencode({"fields": "id", "access_token": token}))
+    err = graph_error(st, body)
+    if why is not None:
+        why["err"] = err
+    if not err:
+        return True if body.get("id") else None
+    if _token_err(err) or not _missing_err(err):
+        return None
+    rec = _ig_records()
+    mine = rec.get(tid) or {}
+    owner = str(ig.get("owner") or "") or mine.get("owner")
+    at = _ts(ig.get("publishedAt")) or mine.get("at")
+
+    def need(media):  # gönderi listede ya da hesabın bizim (bu gönderiyi yükleyen) hesap olduğuna kanıt var
+        if tid in media:
+            return True
+        for r in media:
+            m = rec.get(r)
+            if r == tid or not m:
+                continue
+            if owner and m["owner"] == owner:
+                return True
+            if not owner and at is not None and m["at"] is not None and m["at"] <= at:
+                return True
+        return False
+    acc = _ig_account((uid, token, base), need)
+    if not acc:
+        return None
+    if tid in acc["media"]:
+        return True
+    return False if need(acc["media"]) else None
+
+
+def ig_delete(ig: dict) -> dict:
+    """Instagram gönderisini siler: DELETE /{media-id}. Sonuç {ok, message, url, via, reason, detail} ve durum bayrakları:
+    gone (zaten yok, doğrulandı), manual + unsupported (API bu bağlantıyla silmeye izin vermiyor: uygulamadan elle silinmeli),
+    token (bağlantı geçersiz: yeniden bağlanmalı), retry (geçici hata, sınıflanamayan hata ya da durum doğrulanamadı); halt
+    (ig_halt: token / throttled / offline — hesabın tamamını etkiler, çağıran o çalışmada başka istek atmaz).
+    Başarı yalnız 2xx + {"success": true}; başka 2xx/3xx silindi sayılmaz. DELETE hata metnine tek başına güvenilmez; "yok" yalnız
+    ig_exists doğrularsa ok sayılır (kayıt metriklerden düşer)."""
+    url = ig.get("url")
+    try:
+        creds = ig_creds()
+    except Exception as e:
+        return {"ok": False, "message": f"Instagram silinemedi: {str(e)[:160]}", "url": url}
+    uid, token, base = creds
+    via = IG_VIA_TR["instagram" if base == IG_API else "facebook"]
+    st, body = _graph("DELETE", f"{base}/{ig['id']}?" + urllib.parse.urlencode({"access_token": token}))
+    err = graph_error(st, body)
+    if not err and body.get("success") is True:
+        return {"ok": True, "message": "Instagram'dan silindi", "via": via}
+    if not err:  # 2xx ama başarı bildirilmedi: silindiği söylenemez, gönderiye bakılır
+        err = {"status": st, "code": None, "subcode": None, "message": "silme yanıtında başarı bilgisi yok", "transient": False, "raw": True}
+    reason = graph_reason(err)
+    fail = {"ok": False, "url": url, "via": via, "reason": reason, "detail": json.dumps(body, ensure_ascii=False)[:300]}
+    if _token_err(err):
+        return {**fail, "token": True, "halt": "token", "haltReason": reason, "message": f"Instagram bağlantısı geçersiz ya da süresi dolmuş ({reason[:90]}); panelde "
+                "Ayarlar → Yayın hesapları → Instagram'ı yeniden bağlayın, sonra tekrar deneyin"}
+    if _retry_err(err):
+        h = ig_halt(err)
+        return {**fail, "retry": True, **({"halt": h, "haltReason": reason} if h else {}),
+                "message": (f"Instagram şu an istekleri sınırlıyor ({reason[:90]}); daha sonra yeniden deneyin" if h == "throttled"
+                            else f"Instagram şu an yanıt vermedi ({reason[:90]}); {IG_LATER}")}
+    why = {}
+    exists = ig_exists(ig, creds, why)
+    if exists is False:
+        return {"ok": True, "gone": True, "message": "Instagram'da zaten yok", "via": via, "detail": fail["detail"]}
+    if exists is None:
+        h = ig_halt(why.get("err"))
+        return {**fail, "retry": True, **({"halt": h, "haltReason": graph_reason(why["err"])} if h else {}),
+                "message": f"Instagram silinemedi ({reason[:90]}) ve gönderinin durumu doğrulanamadı; {IG_LATER}"}
+    if _deny_err(err):
+        return {**fail, "manual": True, "unsupported": True,
+                "message": f"Instagram API bu bağlantıyla ({via}) gönderi silmeye izin vermiyor; Instagram uygulamasından elle silin ({reason[:90]})"}
+    return {**fail, "retry": True, "message": f"Instagram silinemedi ({reason[:90]}); {IG_LATER}"}
+
+
+def ig_check_known(ig: dict, sup: dict) -> dict:
+    """API bu bağlantıyla silmiyor diye biliniyorken (ig_cleanup.support known) DELETE yerine yalnız gönderiye bakar: yok → ok + gone
+    (elle silinmiş), var → manual + unsupported, bilinmiyor → retry. Sonuç ig_delete ile aynı biçimde."""
+    via = sup.get("viaName") or "Instagram Girişi"
+    reason = sup.get("reason") or ""
+    ex = ig_exists(ig)
+    if ex is False:
+        return {"ok": True, "gone": True, "message": "Instagram'da yok (elle silinmiş)", "via": via}
+    base = {"ok": False, "url": ig.get("url"), "via": via, "reason": reason}
+    if ex:
+        return {**base, "manual": True, "unsupported": True, "message": f"Instagram API bu bağlantıyla ({via}) gönderi silmeye izin vermiyor; "
+                f"Instagram uygulamasından elle silin{f' ({reason[:90]})' if reason else ''}"}
+    return {**base, "retry": True, "message": f"Instagram'daki durumu doğrulanamadı; {IG_LATER}"}
 
 
 def delete_remote(name: str) -> dict:
     """Videoyu yüklendiği platformlardan kaldırır. Sonuç {platform: {ok, message}}; silinenler metriklerden düşülür.
-    YouTube: videos.delete ("youtube" izni gerekir). Instagram: DELETE /{media-id} (API izin vermezse elle silinmeli).
-    TikTok: Content Posting API silme sunmaz; gelen kutusu taslağı herkese açık değildir, yayınlandıysa uygulamadan silinir."""
+    YouTube: videos.delete ("youtube" izni gerekir). Instagram: ig_delete (Instagram Girişi silmeyi desteklemez: manual + link;
+    "yok" yalnız doğrulanınca ok; desteklemediği biliniyorsa DELETE yerine ig_check_known). TikTok: Content Posting API silme sunmaz;
+    gelen kutusu taslağı herkese açık değildir, yayınlandıysa uygulamadan silinir."""
     m = metrics()
     entry = m["videos"].get(name, {})
     out = {}
@@ -1226,7 +1500,20 @@ def delete_remote(name: str) -> dict:
                 out["youtube"] = {"ok": False, "message": f"YouTube silinemedi: {msg[:160]}", "url": yt.get("url")}
     ig = entry.get("instagram") or {}
     if ig.get("id"):
-        out["instagram"] = ig_delete(ig)
+        try:
+            import ig_cleanup
+            sup = ig_cleanup.support()
+        except Exception:
+            ig_cleanup, sup = None, {}
+        if sup.get("known"):  # API bu bağlantıyla silmiyor: DELETE denenmez, kayıt (7 günlük süre) uzamaz
+            out["instagram"] = ig_check_known(ig, sup)
+        else:
+            out["instagram"] = ig_delete(ig)
+            try:  # otomatik temizlik de bilsin: API bu bağlantıyla silmiyorsa boşuna DELETE denemez (ig_cleanup.py); bu bağlantıyla
+                if ig_cleanup:  # silme çalışıyorsa tek gönderinin reddi bağlantıyı "desteklemiyor" yapmaz (settle → per_post)
+                    out["instagram"] = ig_cleanup.settle(out["instagram"])[0]
+            except Exception:
+                pass
     tt = entry.get("tiktok") or {}
     if tt.get("publish_id") or tt.get("id"):
         out["tiktok"] = {"ok": False, "manual": True, "url": tt.get("url"),

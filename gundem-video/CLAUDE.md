@@ -1691,7 +1691,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   siler. Panel: bağlıyken düğme "🔄 Yeniden bağla", yanında "Bağlantıyı kes" (`POST /api/disconnect/youtube`).
 - Sil (panel video penceresi "🗑 Sil" → `DELETE /api/videos/:name`, `?local=1` yalnız yerel): önce
   `publish.py --delete-remote` (`delete_remote`): YouTube `videos.delete` ("youtube" izni; yoksa "Yeniden bağla"
-  der), Instagram `DELETE /{media-id}` (API reddederse "uygulamadan elle silin" + link), TikTok API silme sunmaz
+  der), Instagram `ig_delete` (Instagram Girişi silmeyi desteklemez → "elle silin" + link; "zaten yok" yalnız doğrulanınca;
+  desteklemediği biliniyorsa DELETE denenmez, yalnız bakılır: `ig_check_known`; bkz. Instagram silme desteği), TikTok API silme sunmaz
   (elle; inbox taslağı herkese açık değil), Hostinger kopyası, sınır sırası. Silinen platform kaydı metriklerden
   düşer, silinemeyen kalır (link kaybolmasın). Sonra Mac'teki mp4/json/kapaklar silinir; sonuç sohbete ve loga (🗑).
 - Instagram temizliği (kullanıcı isteği: "7 gün içinde Instagram'da 1000 izlenmenin altında olan tümünü sil"; `scripts/ig_cleanup.py`,
@@ -1701,7 +1702,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yayın onayı "evet"iyle karışmaz) siler, "iptal" vazgeçer. Silmeden hemen önce güncel izlenme yeniden okunur, sınırı geçen bırakılır.
   Yalnız Instagram gönderisi silinir (`publish.ig_delete`; YouTube/TikTok/Mac kopyası kalır), metriklerden IG kaydı düşer; her
   satır loga "🗑 Instagram: silindi/SİLİNEMEDİ/SİLİNMEDİ …", kayıt `data/ig_cleanup_log.json`, özet WhatsApp'a (komut WhatsApp'tan
-  geldiyse yanıtın kendisi). API reddederse link verilir (uygulamadan elle). Panel Instagram kartı "🗑 Düşük izlenenleri sil"
+  geldiyse yanıtın kendisi). API silmezse neden + panelde en çok 15 link ve bütün adımlar; WhatsApp kısa mesaj modunda (yanıt ~700
+  karakterde kesilir) neden, en çok 5 link (sığmazsa daha az), "tamamı panelde" ve tek satır Facebook Girişi notu. Silmediği biliniyorsa
+  liste metni bunu söyler ve "evet sil" yalnız denetler (log "… denetleniyor"; elle silinen kayıttan düşer). Panel Instagram kartı "🗑 Düşük izlenenleri sil"
   (`POST /api/instagram/cleanup/plan`, `/run`).
 - Otomatik Instagram temizliği (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim, sayıları panelde göreyim,
   değiştireyim, silinmeye adayları da göreyim"; kullanıcı kararları: YALNIZ Instagram, 72 saat bekleme; `settings.igAutoClean` {enabled true,
@@ -1709,11 +1712,69 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   upcoming (sınır altı, karar saatini bekliyor, `hoursLeft`), kept (🛡 korunan), unknown (izlenme ölçülmemiş → silinmez). `server.js`
   `igAutoRun` her `everyHours`ta (10 dk'lık denetim): izlenmeler 30 dk'dan eskiyse senkron, ready → `--run` (silmeden hemen önce güncel izlenme
   yeniden okunur, sınırı geçen bırakılır); `data/ig_autoclean.json` {armedAt, lastCheck, lastRun, runs}. İLK AÇILIŞTA 2 saat inceleme süresi
-  (`armedAt`; WhatsApp'a "2 saat sonra N video silinecek"). WhatsApp'a yalnız sonuç ("🗑 Instagram: N düşük izlenen video silindi") ve
-  silinemeyenler. Panel Ayarlar → Yayın hesapları → Instagram kartının altında: anahtar, sınır/bekleme/en eski gün/kontrol aralığı kutuları,
+  (`armedAt`; WhatsApp'a "2 saat sonra N video silinecek"). WhatsApp'a yalnız sonuç ("🗑 Instagram: N düşük izlenen video silindi");
+  elle silinecekler için aşağıdaki kural. Panel Ayarlar → Yayın hesapları → Instagram kartının altında: anahtar, sınır/bekleme/en eski gün/kontrol aralığı kutuları,
   üç liste (silinecek / karar bekleyen / korunan; her satırda 🛡 Koru ya da Korumayı kaldır), "🔄 İzlenmeleri tazele", "🗑 Silinecekleri şimdi sil"
   (`ask()` onayı). `GET /api/igclean[?sync=1]`, `POST /api/igclean/run`, `POST /api/igclean/keep {name, keep}`; komutlar "silinecek videolar",
   "otomatik silmeyi kapat/aç" (`ig_autoclean`). YouTube/TikTok/Mac kopyası silinmez.
+- Instagram silme desteği (20 Ekim, panel logu: otomatik temizlik 41 videonun hepsinde "SİLİNEMEDİ", her 3 saatte aynı liste WhatsApp'a,
+  API'nin asıl hatası hiç yazılmıyordu). Neden: Meta `DELETE /{media-id}`'yi yalnız "Instagram API with Facebook Login" için belgeliyor
+  (graph.facebook.com, `instagram_manage_contents`); Instagram Login (graph.instagram.com, `IG_SCOPES`) silmeyi desteklemez.
+  `publish.ig_delete`: Graph hatası ayrıştırılır (`graph_error`: HTTP, kod, alt kod; `graph_reason` kısa neden). DELETE metnine tek
+  başına güvenilmez: Meta'nın 100/33 "does not exist, cannot be loaded due to missing permissions, or does not support this operation"
+  yanıtı var olan gönderide de gelir (eskiden "zaten yok" sayılıp kayıt düşüyordu). Silindi yalnız 2xx + `{"success": true}`; 3xx
+  (vekil/giriş yönlendirmesi), başarısız ya da boş 2xx asla silindi sayılmaz (gönderiye bakılır: yoksa "zaten yok", varsa `retry`).
+  JSON olmayan gövde (`_graph` raw) Graph'ın yanıtı sayılmaz. `ig_exists` (GET `/{id}?fields=id`): kimlikli 2xx → var; yalnız Graph'ın
+  JSON hatası kod 100 + alt kod 33 (ya da kod 100 + "does not exist") "yok" adayıdır (bu yanıt BAŞKA HESABIN gönderisinde de gelir) ve
+  kontrol çağrısı (`_ig_account`: aynı token'la hesabın gönderi listesi, Instagram Login `/me/media`, Facebook Login `/{hesap}/media`;
+  süreçte bir kez, 50'lik sayfalar, kanıt bulunmazsa sonraki sayfalarla en çok 6 sayfa/300 gönderi) token'ın gönderiyi YÜKLEYEN hesaba
+  ait olduğunu göstermeli: listede aynı hesabın yüklediği başka kaydımız — kayıtta yükleyen hesap (`owner`; `ig_upload` her yeni
+  yüklemeye token'ın kullanıcı kimliğini yazar) varsa aynı owner'lı kayıt (giriş yolu değişip kimlik biçimi değişse de eski yüklemeler
+  listede olur), owner'sız eski kayıtta bu gönderiden ÖNCE (ya da aynı anda) yayınlanmış kayıt (hesap değişince listede yalnız sonraki
+  yüklemeler olur: tek yeni yükleme eski hesabın duran gönderilerini "yok" yaptırmaz). Kanıt varsa yok, gönderi listedeyse var;
+  çıplak 404/HTML, başka hesap, okunamayan liste, kanıtsız liste ve başka her şey None (bilinmiyor, asla silinmiş sayılmaz). Sonuç: yok →
+  ok "zaten yok"; var + Graph'ın izin/desteklenmeyen hatası (kod 3/10/100/200-299 ya da izin/destek sözü; HTTP 400/403/405 tek başına
+  değil — Graph hemen her hatayı 400 ile verir) → `manual`+`unsupported`+`via` ("Instagram API bu bağlantıyla (Instagram Girişi) gönderi
+  silmeye izin vermiyor; … elle silin (HTTP 400, kod 10: …)"); token 190/102/463/467 → yeniden bağla; 408/409/425/429, 5xx, ağ, sınır
+  kodları, 368 ve "temporarily blocked/try again later/too fast" → `retry` (geçici engel "izin yok" sayılmaz); sınıflanamayan hata (ör.
+  400 kod 2500) da `retry` (elle silme listesine girmez, kayıt yazılmaz). `retry` mesajı söz vermez: "… daha sonra yeniden deneyin ya da
+  Instagram uygulamasından elle silin". Hesabın tamamını etkileyen hata `halt` (`ig_halt`): token, istek sınırı/geçici engel (429, kod
+  4/17/32/341/368/613/80001/80002, "temporarily blocked", "limit reached"), ağ.
+  `ig_cleanup.py`: ilk "izin yok" `data/ig_delete_support.json` {unsupported, at, via, tokenAt (token `obtained_at`; .env yolunda
+  token özeti), reason, detail} (panel "🗑 Sil" de yazar; `--support` JSON + known; nesne olmayan dosya kayıt yok, gelecek tarihli kayıt
+  geçersiz sayılır). Panel "🗑 Sil" kayıt biliniyorken DELETE denemez (`ig_check_known`: yok → kayıt düşer, var → elle, bilinmiyor →
+  retry) ve 7 günlük süreyi uzatmaz. Aynı bağlantıda en çok 7 gün "biliniyor":
+  `--run` DELETE ve izlenme sorgusu yapmaz, yalnız `ig_exists` → yok: IG kaydı metrikten düşer ("🗑 Instagram: elle silindiği
+  görüldü …"), var: `manual`, bilinmiyor: `unknown` (kayıt kalır, hata sayılmaz); ilk tespitten sonra aynı çalışmanın kalanları da
+  bu yoldan. 7 gün dolunca ya da bağlantı değişince bir kez gerçek DELETE; başarılı silme `unsupported: false` yazar. Bu bağlantıyla
+  silme çalışıyorsa (bu çalışmada gerçek silme oldu ya da kayıt son 7 günde `unsupported: false`; `support()` `deleteWorks`) gelen "izin
+  yok" yalnız o gönderinindir (`settle` → `per_post`: elle silinecek, "bu gönderiyi silmeye izin vermedi", kayıt yazılmaz, çalışma
+  denetime dönmez; logda `deny: "post"` + bağlantı); böyle reddedilmiş gönderiler sonraki çalışmalarda sona alınır (7 günlük yeniden
+  denemenin tek DELETE'i onlara düşmesin). Panel "🗑 Sil" (`delete_remote`) de `settle`'dan geçer. Hesabın tamamını etkileyen hatada
+  (`halt`: geçersiz token, istek sınırı/geçici engel — içgörü sorgusunda da —; ağ hatası ancak art arda iki videoda) çalışma durur: kalan
+  videolar denenmeden `failed` (`notTried`, sınırda/ağda `retry`, token'da `token`), stdout'a tek "… N video bu çalışmada denenmedi"
+  satırı (eskiden sınırlanmış hesapta video başına 3 istek ve 41 "SİLİNEMEDİ" satırı). stdout:
+  silinen/düşen/gerçek hata satırları + elle silinecekler için TEK satır; `ig_cleanup_log.json`a yalnız durum değişikliği. `server.js`:
+  çalışma başına tek log özeti, bağlantıdaki ilk tespitte API'nin kısa nedeni bir kez loga ("Instagram API'nin silme yanıtı");
+  WhatsApp yalnız listeye bildirilmemiş video girince (`ig_autoclean.json` `manualNotified`, 24 saatte en çok bir kez; gönderilemezse
+  sonraki denetimde): neden, sayı, en çok 5 link, panel yeri, Facebook Girişi notu, "otomatik silmeyi kapat". Aynı listeyi denetleyen
+  çalışma mesaj göndermez (geçersiz token 24 saatte bir). Facebook Girişi notu ve açma adımları (`igFix`) yalnız bağlantı silmeyi
+  desteklemiyorsa (`unsupported`); tek tek reddedilen gönderide yazılmaz. "evet sil" kısa yanıtında geçersiz bağlantı sabit satır ("❌ N
+  silinemedi: Instagram bağlantısı geçersiz; panelde … yeniden bağlayın."; eskiden neden önce geldiği için talimat 110. karakterde
+  kesiliyordu), diğer hata metinleri kelime sınırında kısalır (`igCut`). Denetim yine her `everyHours`ta (ucuz). `/api/igclean` `support` ve `last`
+  {deleted, manual, gone} ve `fix` (açma adımları); panel kutusunda uyarı satırı (liste boşsa "Elle silinecek video kalmadı"), "Elle
+  silinecek (Instagram uygulamasından)" + "↗ Aç", düğme "🔄 Elle silinenleri denetle" (onaysız, hiçbir şey silmez). Otomatik silmeyi
+  açmak (`igFix`): Instagram hesabı bir Facebook Sayfasına bağlı olmalı; Meta uygulamasında Facebook Login ve `instagram_manage_contents`
+  izni eklenmeli; `secrets/.env`'de `IG_LOGIN=facebook`, `IG_EXTRA_SCOPES=instagram_manage_contents` ve `IG_APP_ID`/`IG_APP_SECRET`
+  olarak Meta uygulamasının kimliği ve gizli anahtarı (Facebook Login bunları `client_id` olarak kullanır; Instagram uygulama kimliği
+  değil); sonra Instagram yeniden bağlanır (varsayılan `FB_SCOPES`'a eklenmedi: eklenmemiş izin "Invalid Scopes" verir). Panel bütün
+  adımları, WhatsApp tek kısa satırı gösterir. Bilinen eksik: "silinecek videolar" komutu (`handleCommand` `ig_autoclean`) destek
+  kaydına bakmaz, "N silinecek" der. Sandbox'ta sahte Graph API ile denendi; gerçek Meta yanıtı ilk çalışmada logdaki "Instagram
+  API'nin silme yanıtı" satırında görünür. Doğrulama düzeltmeleri (20 Ekim, sahte Graph ile): başka hesaba geçilip bir video yüklenince
+  eski hesabın duran gönderileri "zaten yok" sayılıp kayıttan düşüyordu (artık None, kayıt kalır); bir gönderinin reddi aynı çalışmada
+  silme başarılıyken bağlantıyı 7 gün "desteklemiyor" yapıyordu; sınıflanamayan 400 "izin yok" sayılıyordu; istek sınırında 41 videoya
+  123 istek atılıyordu (artık 1). DENENMEDİ: gerçek Meta'nın `/media` sayfalaması (`paging.cursors.after`) ve owner'sız eski kayıtta
+  yoğun yayında (günde 50+ gönderi) 300 gönderilik sınırın yetip yetmediği; yetmezse eski kayıtta "yok" yerine "doğrulanamadı" kalır.
 - WhatsApp komut listesi `app/help.js` (`HELP_TEXT`; "yardım", "komutlar"): yeni kural eklerken buraya da yaz. `commands.js` `norm`
   "ınstagram"ı "instagram"a çevirir (Türkçe küçük harfte I → ı; büyük harfle yazılan Instagram komutları tanınmıyordu).
 - YouTube API kotası: günde 10.000 birim, bir yükleme ~1.600 → günde en fazla 6 yükleme.
