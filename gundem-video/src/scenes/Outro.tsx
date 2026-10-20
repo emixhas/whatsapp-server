@@ -98,7 +98,8 @@ export const Outro = ({ words, note, slogan = ["HER 5 SAATTE BİR", "SON DAKİKA
           <div style={{ fontSize: 40, fontWeight: 900, letterSpacing: 2, color: "#0B0F1A", background: "#C6FF00", padding: "12px 34px", borderRadius: 999, boxShadow: "0 8px 30px rgba(198,255,0,0.35)" }}>{note}</div>
         </div>
       ) : null}
-      <Captions words={words} accent={theme.red} bottom={340} size={54} />
+      {/* yanan altyazı: takip düğmeleri ve mizah notunun altında (1380'e kadar yer var) */}
+      <Captions words={words} bottom={340} size={72} maxHeight={190} />
     </AbsoluteFill>
   );
 };

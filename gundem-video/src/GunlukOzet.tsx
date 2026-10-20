@@ -6,7 +6,8 @@ import { MediaBg } from "./scenes/MediaBg";
 import { InstagramIcon, TikTokIcon, YouTubeIcon } from "./scenes/Outro";
 import { TurkeyMap } from "./scenes/TurkeyMap";
 import { theme } from "./theme";
-import { currentWord, setCaptionLead, Word } from "./captionGroups";
+import { setCaptionLead, Word } from "./captionGroups";
+import { CaptionText, useCaption } from "./scenes/Captions";
 import { Thumb } from "./Thumb";
 import { Episode, FPS, Segment } from "./types";
 
@@ -16,19 +17,12 @@ export const WIDE_W = 1920;
 export const WIDE_H = 1080;
 const WHOOSH = 17;
 
-/** Geniş altyazı: TEK ve büyük kelime (Shorts ile aynı kural), söylendiği anda belirir, bitince kalkar. */
-const WideCaptions = ({ words, accent }: { words?: Word[]; accent: string }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const cur = currentWord(words, frame / fps);
-  if (!cur) return null;
-  const pop = Math.min(1, Math.max(0, cur.age / 0.1));
-  return (
-    <div style={{ display: "flex", lineHeight: 1.15 }}>
-      <span key={cur.idx} lang="tr" style={{ fontSize: 76, fontWeight: 900, whiteSpace: "nowrap", color: "#0B0F1A", background: accent, padding: "2px 18px",
-        borderRadius: 12, transform: `scale(${0.85 + 0.15 * pop})`, transformOrigin: "left center", opacity: 0.4 + 0.6 * pop }}>{cur.word.w}</span>
-    </div>
-  );
+/** Geniş altyazı: Shorts ile aynı kural ve görünüm (en çok 3 kelimelik grup, kelimeler söylendikçe görünür; içi siyah, dışı sarı),
+ *  sağ sütunda sola dayalı, 62 px'ten başlar, 2 satırda en çok 56 px'e kadar küçülür, daha uzun grup 3. satıra geçer (4 satırlık
+ *  başlık ve kaynak satırıyla sütunda ~350 px yer kalır, blok en çok 300 px). */
+const WideCaptions = ({ words }: { words?: Word[] }) => {
+  const cap = useCaption(words, { width: 720, base: 62, min: 56, maxLines: 2, maxHeight: 300 });
+  return cap ? <CaptionText cap={cap} align="left" /> : null;
 };
 
 /** Kategori illüstrasyonları 920x560 kutuya çizilir; bulunduğu alanın ortasına yerleştirir. */
@@ -139,7 +133,7 @@ const WideNews = ({ seg, index, total, dur }: { seg: Segment; index: number; tot
         </div>
         <div lang="tr" style={{ marginTop: 30, fontSize: tSize, fontWeight: 900, lineHeight: 1.07, wordBreak: "keep-all" }}>{seg.title}</div>
         <div style={{ width: 120, height: 8, background: st.accent, borderRadius: 4, margin: "28px 0" }} />
-        <WideCaptions words={seg.words} accent={st.accent} />
+        <WideCaptions words={seg.words} />
         <div style={{ marginTop: "auto", fontSize: 26, color: theme.muted }}>{seg.source ? `Kaynak: ${seg.source}` : ""}</div>
         <div style={{ marginTop: 14, height: 8, background: theme.card, borderRadius: 4 }}><div style={{ width: `${progress * 100}%`, height: "100%", background: st.accent, borderRadius: 4 }} /></div>
       </div>

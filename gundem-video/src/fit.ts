@@ -22,24 +22,43 @@ export function textWidth(text: string, size: number, weight = 900, family = the
   return w;
 }
 
-type FitOpts = { text: string; maxWidth: number; base: number; min: number; maxLines: number; weight?: number; family?: string; upper?: boolean; letterSpacing?: number };
+type FitOpts = {
+  text: string; maxWidth: number; base: number; min: number; maxLines: number; weight?: number; family?: string; upper?: boolean; letterSpacing?: number;
+  /** kelime arası (em); verilmezse boşluk karakterinin genişliği */
+  gap?: number;
+  /** her satıra ve tek kelimeye eklenen genişlik (em): örneğin harflerin DIŞINA çizilen kontür, iki yanda */
+  pad?: number;
+  /** maxHeight verilirse satır sayısı × lineHeight + pad (em) bu yüksekliği (px) aşmaz */
+  lineHeight?: number; maxHeight?: number;
+};
 
-/** Kelimeler bölünmeden maxWidth'e ve en çok maxLines satıra sığan en büyük punto. */
-export function fitFontSize({ text, maxWidth, base, min, maxLines, weight = 900, family = theme.font, upper = true, letterSpacing = 0 }: FitOpts): number {
+/** Kelimeler bölünmeden maxWidth'e, en çok maxLines satıra (ve varsa maxHeight'e) sığan en büyük punto; ok: base..min
+ *  arasında sığan punto bulundu mu (bulunamazsa size = min, lines o puntodaki satır sayısı). */
+export function fitText({ text, maxWidth, base, min, maxLines, weight = 900, family = theme.font, upper = true, letterSpacing = 0, gap, pad = 0, lineHeight = 1.1, maxHeight }: FitOpts): { size: number; lines: number; ok: boolean } {
   const t = upper ? trUpper(text) : text;
   const words = t.split(/\s+/).filter(Boolean);
   const limit = maxWidth * 0.95; // gölge, satır dengeleme ve büyüme animasyonu için pay
-  for (let size = base; size > min; size -= 2) {
-    const space = textWidth(" ", size, weight, family, letterSpacing);
-    let lines = 1, cur = 0, ok = true;
+  let lines = 1;
+  for (let size = base; ; size -= 2) {
+    if (size <= min) size = min;
+    const space = gap !== undefined ? gap * size : textWidth(" ", size, weight, family, letterSpacing);
+    const extra = pad * size;
+    let cur = 0, ok = true;
+    lines = 1;
     for (const w of words) {
       const ww = textWidth(w, size, weight, family, letterSpacing);
-      if (ww > limit) { ok = false; break; }
-      if (cur === 0) cur = ww;
+      if (ww + extra > limit) { ok = false; break; }
+      if (cur === 0) cur = ww + extra;
       else if (cur + space + ww <= limit) cur += space + ww;
-      else { lines++; cur = ww; }
+      else { lines++; cur = ww + extra; }
     }
-    if (ok && lines <= maxLines) return size;
+    if (ok && maxHeight !== undefined && (lines * lineHeight + pad) * size > maxHeight) ok = false;
+    if (ok && lines <= maxLines) return { size, lines, ok: true };
+    if (size === min) return { size: min, lines, ok: false };
   }
-  return min;
+}
+
+/** Kelimeler bölünmeden maxWidth'e ve en çok maxLines satıra sığan en büyük punto. */
+export function fitFontSize(opts: FitOpts): number {
+  return fitText(opts).size;
 }

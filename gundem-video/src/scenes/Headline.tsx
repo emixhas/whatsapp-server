@@ -59,8 +59,8 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
         )}
       </div>
 
-      {/* yanan altyazı: görselin HEMEN altında (kullanıcı isteği: göz görselden kaymadan okusun) */}
-      <Captions words={words} accent={st.accent} top={812} size={64} />
+      {/* yanan altyazı: görselin HEMEN altında (kullanıcı isteği: göz görselden kaymadan okusun); en çok 2 satır, başlık bloğuna (1110) binmez */}
+      <Captions words={words} top={812} size={78} maxHeight={1110 - 812 - 24} />
 
       {/* başlık bloğu: altyazının altında, ekranın alt bölümünde (kullanıcı isteği: başlık aşağıda) */}
       <div style={{ position: "absolute", top: 1110, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>

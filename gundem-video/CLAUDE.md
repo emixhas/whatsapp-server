@@ -106,7 +106,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   söylenişi uzun; 14 Ekim "altyazı sesle eşit gitmiyor" şikâyetinin ana nedeni buydu). Eşik uyarlanır (`noise_floor`: ortalama
   sesin 17 dB altı) ve duraklamalar SIKIŞTIRMA ÖNCESİ ham seste aranır (`seg-XX.align.wav`, sonra silinir); gürültülü
   sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
-  (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` vurguyu 0,06 sn önde gösterir; bipli segmentte parçaların
+  (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` kelimeyi 0,06 sn önde gösterir; bipli segmentte parçaların
   kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
   0) Metni sese zorla hizalama (kullanıcı isteği, en isabetlisi; `scripts/mms_align.py`, `align.mms_batch/by_mms`): bilinen metin
   torchaudio MMS_FA (Meta, çok dilli, Türkçe) ile sesin karelerine CTC ile oturtulur; Türkçe harfler a-z'ye çevrilir (ç→c, ı→i…),
@@ -125,10 +125,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   karşılaştırılır: "🔤 altyazı denetimi: N kelime, 150 ms içinde olan yüzde X, ortanca kayma Y ms geç/erken". Sorun (150 ms içinde
   < %70 ya da |ortanca| > 120 ms) → "⚠️" + öneri (sabit kayma: kaydırma ayarını şu kadar değiştir; dağınık: metin hizalamayı kur)
   + WhatsApp sağlık uyarısı (12 saatte bir); `data/caption_qa.json`. `teshis.sh` iki aracın kurulu olup olmadığını ve son satırları yazar.
-  Altyazı TEK ve BÜYÜK kelime (kullanıcı kararı, 14 Ekim; önceki 3 kelimelik grup kaldırıldı; `src/captionGroups.ts currentWord`):
-  ekranda yalnız o an söylenen kelime, söylendiği anda belirir (0,1 sn'de büyür), bittikten 0,18 sn sonra kalkar; duraklamada ekran
-  boş (söylenmeyen kelime gösterilmez). Kategori renginde kutu, Shorts'ta `size × 1,7` punto (`fitFontSize` tek satır, en az 48 px),
-  yatayda 76 px. Altyazı kaydırma `settings.captions.leadSec` (varsayılan 0,06 sn önde; panel Ayarlar → Gelişmiş "🔤 Altyazı
+  Altyazı 3'er kelime, içi siyah dışı sarı, orta boy (kullanıcı kararı, 20 Ekim; 14 Ekim'deki tek büyük kelime + kategori renginde
+  kutu kalktı; `src/captionGroups.ts`, `src/scenes/Captions.tsx`): grup en çok 3 kelime, kelime sonu noktalaması ya da 0,6 sn'den uzun
+  duraklama erken kapatır; grup ilk kelimesiyle bütün dizilir (söylenmemiş kelime görünmez, yeri ayrılır, yazı kaymaz), her kelime
+  söylendiği anda 0,09 sn'de büyüyerek belirir, grup son kelimeden 0,18 sn sonra ya da sonraki grup başlayınca kalkar, uzun duraklamada
+  ekran boş. Harf içi siyah, dışa ~0,11 em #FFD400 kontür (arkada kalın kontürlü kopya, önde siyah dolgu), koyu gölge. Punto `fitText`
+  (kontür ve kelime arası dahil), gruptan gruba sıçramasın diye en çok 2 satıra sığan en büyüğü (tek satır ancak %5'ten az küçülerek
+  sığıyorsa), en az 48 px (yatayda 56); daha uzun grup yükseklik sınırı içinde 3. satıra geçer. İki satıra düşen üç kelimede kırılım
+  dengeli (uzun satır en kısa, eşite yakınsa üst satır kısa: TRAFİK / KAZASINDA ÜÇ). Başlığa binmesin diye yerleşime göre yükseklik
+  sınırı; Headline/Hook 78 px, FullFrame 76 px (tek satır 1090'da, iki satır başlığa kadar yukarı büyür), Outro 72 px, yatay özette sola
+  dayalı 62 px. Altyazı kaydırma `settings.captions.leadSec` (varsayılan 0,06 sn önde; panel Ayarlar → Gelişmiş "🔤 Altyazı
   kaydırma") → tts.py `episode.captionLead` → `setCaptionLead`. Konuşma tanıma modeli varsayılanı mlx-community/whisper-large-v3-turbo
   (Türkçede small'dan isabetli; açılamazsa bir kez small'a düşer); log "🔤 altyazı senkronu" konuşma tanımanın kelimelerin yüzde
   kaçını sesle doğrudan eşlediğini (`captionCoverage`) ya da çalışmadığını ve kurulum komutunu yazar. Ölçüm (espeak-ng Türkçe
@@ -1066,7 +1072,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `assemble_script` GUNLUK: intro "Günün özeti…", `OUTRO_GUNLUK`, slotLabel "GÜNÜN ÖZETİ", timeRange 00:00–saat,
   format "gunluk" (5 saatlik sayıma ve sağlık "kaçan üretim" kontrolüne girmez). Remotion `GunlukOzet` (1920x1080,
   `src/GunlukOzet.tsx`): sinematik kanca, intro'da başlık listesi, haberde solda büyük medya + sağda başlık, yanan
-  altyazı (7 kelime), üst bant, altta "SIRADAKİ" kayan bant; 0. kare ThumbWide ×1,5. Yayın: yalnız YouTube
+  altyazı (Shorts ile aynı 3'er kelimelik grup, sola dayalı), üst bant, altta "SIRADAKİ" kayan bant; 0. kare ThumbWide ×1,5. Yayın: yalnız YouTube
   (`post_pipeline`; Reels/TikTok atlanır), `watch?v=` adresi, açıklamada YouTube bölümleri (00:00 Giriş + her haber),
   #Shorts yok, oynatma listesi "Günün Özeti (uzun)". Panel `settings.daily` {enabled, hour 21, minute 30, duration,
   stories, autoPublish} saatinde başlatır (meşgulse gün bitene kadar her dakika dener, `data/daily_last.json`),

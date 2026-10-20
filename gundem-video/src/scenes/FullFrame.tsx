@@ -81,8 +81,8 @@ export const FullFrame = ({ categoryLabel, index, total, title, source, category
         {sound ? null : <div style={{ fontSize: 40, fontWeight: 800, ...stroke }}>{index + 1} / {total}</div>}
       </div>
 
-      {/* yanan altyazı: seslendirme ya da videodaki konuşma */}
-      <Captions words={words} accent={accent} top={1090} size={64} />
+      {/* yanan altyazı: seslendirme ya da videodaki konuşma; tek satır 1090'da, iki satır başlığa (1260) binmesin diye yukarı (videoya) doğru büyür */}
+      <Captions words={words} top={1090} limit={1260 - 14} size={76} maxHeight={1260 - 14 - 1010} />
 
       {/* başlık bloğu: altta, Shorts arayüzünün üstünde */}
       <div style={{ position: "absolute", top: 1260, left: 70, right: 70, transform: `translateX(${interpolate(slide, [0, 1], [120, 0])}px)`, opacity: slide }}>

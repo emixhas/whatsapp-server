@@ -124,7 +124,8 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
       <AbsoluteFill style={{ background: "repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0px, rgba(0,0,0,.18) 2px, transparent 2px, transparent 5px)", opacity: 0.18 }} />
       <AbsoluteFill style={{ boxShadow: "inset 0 0 260px rgba(0,0,0,.9)" }} />
 
-      <Captions words={words} accent={accent} bottom={breaking ? 560 : 500} size={64} />
+      {/* yanan altyazı: başlığın altında, SON DAKİKA bandının üstünde; yukarı doğru büyür, başlığa binmesin diye yüksekliği sınırlı */}
+      <Captions words={words} bottom={breaking ? 560 : 500} size={78} maxHeight={breaking ? 200 : 260} />
 
       {/* SON DAKİKA kayan bant */}
       {breaking ? (
