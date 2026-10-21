@@ -58,22 +58,51 @@ def ordinal_tr(n: int) -> str:
     return " ".join(words[:-1] + [last])
 
 
-# 1.250.000 / 1250000 / 3,5 / 12.5 / 2026'da / 7. (sıralı)
-_NUM = re.compile(r"(?<![\w])(\d{1,3}(?:\.\d{3})+|\d+)(?:([,.])(\d+))?(\.(?=\s*[a-zçğıöşü]))?(?:'(\w+))?")
+# 1.250.000 / 1250000 / 3,5 / 12.5 / 2026'da / 7. (sıralı; ardından gelen kelime 5. grupta)
+_NUM = re.compile(r"(?<![\w])(\d{1,3}(?:\.\d{3})+|\d+)(?:([,.])(\d+))?(\.(?=\s*([^\W\d_]+)))?(?:'(\w+))?")
+
+# Rakamdan sonraki nokta sıra sayısıdır ("7. gün" → yedinci gün) — küçük harfle başlayan her kelimeden önce; BÜYÜK harfle başlayan kelime
+# cümle başı da olabilir ("Ölü sayısı 12. Yaralılar…" → on iki), bu yüzden yalnız sıra sayısından sonra gelmesi beklenen adlarda
+# (kullanıcı şikâyeti, 21 Ekim: "100. Yıl" → "yüz yıl" okunuyordu; "100. Yıl Marşı", "1. Lig", "26. Ağır Ceza", "5. İstanbul Maratonu").
+_ORD_NEXT = ("yıl", "lig", "ağır", "asliye", "sulh", "icra", "idar", "aile", "hukuk", "vergi", "tüketici", "çocuk", "ceza", "madde", "bölüm",
+             "sezon", "hafta", "dönem", "etap", "olağan", "kongre", "kurultay", "ulus", "gelenek", "kolordu", "ordu", "tümen", "tugay", "alay",
+             "tabur", "ana jet", "hava", "kara", "deniz", "jandarma", "cadde", "sokak", "bölge", "daire", "noter", "sınıf", "yüzyıl", "sıra",
+             "randevu", "bölüm", "fasıl", "perde", "sayı", "basamak", "kuşak", "nesil", "türkiye", "dünya", "avrupa", "akdeniz", "balkan",
+             "anadolu", "istanbul", "ankara", "izmir", "antalya", "bursa", "adana", "konya", "gaziantep", "mersin", "diyarbakır", "kayseri",
+             "eskişehir", "samsun", "trabzon", "erzurum", "sakarya", "kocaeli", "uluslararası", "kıta", "büyük", "ağustos", "kasım", "ekim",
+             "mayıs", "mart", "nisan", "haziran", "temmuz", "eylül", "aralık", "ocak", "şubat")
+_ORD_SHORT = {"ay", "ayı", "ayın", "ayında", "gün", "günü", "günün", "gününde", "kat", "katı", "katta", "katında", "tur", "turu", "turda", "iş",
+              "kez", "kere", "defa", "yer", "yerde"}
+
+
+def _tr_lower(w: str) -> str:
+    return w.replace("İ", "i").replace("I", "ı").lower()
+
+
+def _is_ordinal(nxt: str | None) -> bool:
+    if not nxt:
+        return False
+    if nxt[0] == _tr_lower(nxt[0]):  # küçük harfle başlıyor: eskisi gibi sıra sayısı
+        return True
+    w = _tr_lower(nxt)
+    return w in _ORD_SHORT or w.startswith(_ORD_NEXT)
 
 
 def _repl(m: re.Match) -> str:
     whole = m.group(1).replace(".", "")
-    sep, frac, ordinal, suffix = m.group(2), m.group(3), m.group(4), m.group(5)
+    sep, frac, dot, suffix = m.group(2), m.group(3), m.group(4), m.group(6)
+    ordinal = bool(dot) and _is_ordinal(m.group(5))
     n = int(whole)
     if ordinal and not frac:
-        out = ordinal_tr(n)
+        out = ordinal_tr(n) + ("" if m.string[m.end():m.end() + 1].isspace() else " ")  # "100.Yıl" → "yüzüncü Yıl"
     elif frac and sep == "," or (frac and sep == "." and len(frac) != 3):
         out = f"{int_to_tr(n)} virgül {' '.join(int_to_tr(int(d)) for d in frac) if frac.startswith('0') else int_to_tr(int(frac))}"
     elif frac and sep == ".":
         out = int_to_tr(int(whole + frac))  # 12.500 → on iki bin beş yüz
     else:
         out = int_to_tr(n)
+    if dot and not ordinal:
+        out += "."  # cümle sonu noktası kalır ("Ölü sayısı 12. Yaralılar…")
     return out + (suffix if suffix else "")
 
 
