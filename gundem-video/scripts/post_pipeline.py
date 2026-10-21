@@ -78,6 +78,9 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     meta = episode_meta(Path(video).name) or {}
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
     conn = connected()
+    # video kuyruğunun videosu (meta queue): yalnız numaralı onayla ya da panelden yayınlanır (waVideo.autoPublish de geçmez)
+    if (meta.get("queue") or {}).get("no"):
+        return [], "anlık", f"video kuyruğundan gelen video (#{meta['queue']['no']}) yalnız onayınızla yayınlanır"
     # WhatsApp'tan gönderilen görüntüyle yapılan haber: sahibi önce izlesin, "onay" ile yayınlansın (waVideo.autoPublish açılabilir)
     if meta.get("userVideo") and not (s.get("waVideo") or {}).get("autoPublish"):
         return [], "anlık", "gönderdiğiniz görüntü ya da sosyal medya linkiyle yapılan haber önce size gelir, onayınızla yayınlanır"
@@ -136,7 +139,7 @@ video = sys.argv[1]
 s = settings()
 scheduled = None
 _meta = episode_meta(Path(video).name) or {}
-_at = schedule_at(_meta)
+_at = None if (_meta.get("queue") or {}).get("no") else schedule_at(_meta)  # kuyruk videosu planlanmaz (yalnız onayla)
 plats, kind, why = ([], "anlık" if _meta.get("anlik") else "", "") if _at else targets(video, s)
 if _at:
     # kullanıcının verdiği saat açık yayın talimatıdır: bağlı tüm hesaplar (YouTube değer kuralı ve görüntü onayı aranmaz)

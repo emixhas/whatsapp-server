@@ -12,6 +12,8 @@ import { parseCommand, findLink, videoLink, VERB_NEG, KIND_FILL, KIND_DO } from 
 import { parseWhen, whenLabel } from "./when.js";
 import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_LEAN, claudeCwd } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
+import { makeVideoQueue, vqCtx, vqTag, vqWho, queueCommand, normUrl, parseBatch, cancelTopic } from "./videoqueue.js";
+import { makeTrendAuto } from "./trendauto.js";
 
 // WhatsApp şifreleme kütüphanesi (libsignal) oturum açılıp kapanırken oturumun TAMAMINI (özel anahtarlar dahil)
 // konsola ve work/panel.log'a basıyor. Gizli bilgi loga ve terminale düşmesin diye bu satırlar susturulur.
@@ -52,6 +54,7 @@ const run = (cmd, args, opts = {}) => new Promise((res) => execFile(cmd, args, {
 // uzun işlerde (sosyal medya indirme, video kurgusu) ilerleme satırları beklemeden loga düşsün: satır satır okur (sonuç run() ile aynı)
 const runLines = (cmd, args, { timeout = 0, onLine = null } = {}) => new Promise((res) => {
   const c = spawn(cmd, args, { cwd: ROOT, env: ENV });
+  vqCtx()?.child(c, args); // video kuyruğundaki iş (videoqueue.js): iptal edilirse bu süreç ve altındakiler öldürülür
   c.stdout.setEncoding("utf8"); c.stderr.setEncoding("utf8"); // Türkçe harf/emoji iki parçaya bölünürse � olmasın
   let out = "", err = "", buf = "", killed = false;
   const t = timeout ? setTimeout(() => { killed = true; try { c.kill("SIGTERM"); } catch { /* yok */ } }, timeout) : null;
@@ -136,6 +139,7 @@ const waDigest = () => settings().whatsapp?.digest !== false;
 let digestPending = null; // {mp4, at, logFrom}
 async function sendDigest(why) {
   const d = digestPending; if (!d) return;
+  if (vqCancelledVideos.has(d.mp4)) { digestPending = null; push(`⏹ ${d.mp4}: video kuyruğundan iptal edilen işin videosu; WhatsApp'a bildirilmedi`); return; }
   digestPending = null;
   const summary = state.log.slice(Math.max(0, state.log.length - 200)).filter((l) => /^📤 /.test(l) && !/tekrar denenecek/.test(l));
   try { const r = await wa.notifyVideo(d.mp4, { ask: true, summary }); if (!r.ok) push(`💬 WhatsApp özeti gönderilemedi: ${r.error}`); } catch (e) { push(`💬 WhatsApp özeti gönderilemedi: ${e.message}`); }
@@ -185,9 +189,21 @@ function killTree(pid) {
   setTimeout(() => { for (const id of all) { try { process.kill(id, "SIGKILL"); } catch { /* kapandı */ } } }, 4000);
   return all.length;
 }
+// video kuyruğunda hazırlanan işin süreç ağacı: runLines'ın kaydettiği süreçler (social_video.py, wa_video.py) ve torunları (yt-dlp, ffmpeg,
+// konuşma tanıma, sahne çizimi tarayıcısı); zorlamasız temizlik (reap) bunlara dokunmaz (4. tur, inceleme, 20 Ekim: önceki videonun üretimi
+// bitince sıradakinin kurgusundaki tarayıcı kapatılıyordu; eskiden yalnız yt-dlp korunuyordu)
+function vqSpare() {
+  let roots = []; try { roots = vq.ownPids(); } catch { /* kuyruk henüz kurulmadı */ }
+  if (!roots.length) return new Set();
+  const table = processTable(), out = new Set(roots), todo = [...roots];
+  while (todo.length) { const id = todo.pop(); for (const p of table) if (p.ppid === id && !out.has(p.pid)) { out.add(p.pid); todo.push(p.pid); } }
+  return out;
+}
 function reap({ minAgeSec = 600, reason = "boşta", force = false, announceIdle = false } = {}) {
   if (!force && pipelineBusy()) return { ok: true, killed: [] };
-  const victims = heavyProcs().filter((p) => p.age >= minAgeSec && !(minAgeSec === 0 && !force && /speak\.py/.test(p.cmd) && p.age < 60));
+  const spare = force ? new Set() : vqSpare();
+  const victims = heavyProcs().filter((p) => p.age >= minAgeSec && !(minAgeSec === 0 && !force && /speak\.py/.test(p.cmd) && p.age < 60)
+    && !spare.has(p.pid) && !(!force && socialBusy && /yt_dlp/.test(p.cmd))); // video kuyruğunun süren işi (üretim bitince ya da 10 dk'lık temizlikte) kesilmesin
   for (const p of victims) killTree(p.pid);
   if (victims.length) push(`🧹 ${reason}: ${[...new Set(victims.map((v) => v.what))].join(", ")} kapatıldı (${victims.length} süreç)`);
   else if (announceIdle) push(`🧹 ${reason}: modeller kapalı, arka planda açık süreç kalmadı`);
@@ -202,11 +218,11 @@ function stopAll({ quiet = false } = {}) {
   if (existsSync(lock)) { try { const pid = Number(readFileSync(lock, "utf8").trim()); process.kill(pid, 0); n += killTree(pid); } catch { /* eski kilit */ } }
   for (const q of anlikQueue) { if (q.opts?.sondakika) sondakikaUnqueue(q); else unmarkQueued(q); } // sondakika.com haberi "üretildi" görünmesin; işaretler silinir (video yok)
   anlikQueue.length = 0;
-  if (socialQueue.length) { push(`🔗 sıradaki ${socialQueue.length} paylaşım iptal edildi (durduruldu)`); socialQueue.length = 0; }
+  const video = vq.stop(); // video kuyruğu: sıradakiler boşalır, hazırlanan iş (indirme/kurgu süreçleri) kesilir; sayılar durdurma yanıtında
   const r = reap({ minAgeSec: 0, reason: "durduruldu", force: true });
   try { stopTts(); } catch { /* yok */ }
   if (!quiet) push(`⏹ hepsi durduruldu: üretim ${n ? "kapatıldı" : "yoktu"}, ${r.killed.length} arka plan süreci kapatıldı`);
-  return { ok: true, pipeline: n > 0, killed: r.killed };
+  return { ok: true, pipeline: n > 0, killed: r.killed, video };
 }
 // ---------- Dinlenme ("⏸ Sistemi durdur" ve her üretimin sonu): üretim, modeller ve sıradaki anlık haberler kapatılır;
 // bir sonraki PLANLI üretime (launchd 5 saatlik slot ya da günün özeti saati) ya da elle verilen talimata kadar otomatik
@@ -239,7 +255,7 @@ async function restStart({ reason = "elle durduruldu", stop = true } = {}) {
   const killed = r.killed?.length || 0;
   push(`⏸ SİSTEM DURDURULDU (${reason}): ${r.pipeline ? "süren üretim kapatıldı, " : ""}${killed ? `${killed} arka plan süreci kapatıldı` : "açık model kalmadı"}. ` +
     (next ? `Sıradaki planlı iş ${hhmm(next.at)} (${next.what}); ` : "Zamanlayıcı kapalı; ") + "o zamana kadar ya da siz talimat verene kadar hiçbir şey başlamayacak.");
-  return { ok: true, rest: restInfo(), pipeline: !!r.pipeline, killed: r.killed || [] };
+  return { ok: true, rest: restInfo(), pipeline: !!r.pipeline, killed: r.killed || [], video: r.video || null };
 }
 function restEnd(why) {
   if (!resting()) return false;
@@ -255,12 +271,13 @@ function finishProduction(reason = "üretim bitti") {
   lastFinishAt = Date.now(); restPending = null;
   if (resting()) { reap({ minAgeSec: 0, reason }); return; } // zaten dinlenmede (⏸ süren üretimi kapattı): dinlenmenin nedeni ("elle durduruldu") ezilmesin
   const waiting = anlikQueue.length + anlikInflight.size + (dequeueBusy ? 1 : 0); // yoldaki haber (sayfası/diğer siteleri okunuyor) ve sıradan çıkıp hafızaya bakılan iş de sıradaki iş sayılır
-  if (waiting) { reap({ minAgeSec: 0, reason }); push(`⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı`); restPending = reason; return; }
+  const vw = vq.waiting(); // video kuyruğu (sıradaki/indirilen linkler) da sıradaki iş: sistem her videodan sonra dinlenip uyanmasın
+  if (waiting || vw) { reap({ minAgeSec: 0, reason }); push(waiting ? `⏭ sırada ${waiting} anlık haber var, sistem durdurulmadı` : `⏭ video kuyruğunda ${vw} video var, sistem durdurulmadı`); restPending = reason; return; }
   if (settings().restAfterProduction !== false) restStart({ reason, stop: false }).catch(() => {});
   else reap({ minAgeSec: 0, reason, announceIdle: true });
 }
 function restRecheck() { // yoldaki kayıt çıktı ya da sıradan çıkan işin denetimi bitti: başka iş yoksa ertelenen dinlenme kararı yeniden verilir
-  if (!restPending || anlikInflight.size || anlikQueue.length || valueBatch.length || dequeueBusy || pipelineBusy() || resting()) return;
+  if (!restPending || anlikInflight.size || anlikQueue.length || valueBatch.length || dequeueBusy || vq.waiting() || pipelineBusy() || resting()) return;
   const why = restPending; restPending = null; lastFinishAt = 0; finishProduction(why);
 }
 // planlı zaman geldi: dinlenme biter (launchd üretimi zaten kendiliğinden başlar, günün özeti panel başlatır)
@@ -284,9 +301,9 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, ...(formatDuration ? {} : { DURATION: String(duration) }), ...extraEnv } });
   pipelineProc = child;
-  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) state.lastVideo = path.basename(m[1]); });
+  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) { state.lastVideo = path.basename(m[1]); vqProduced(state.lastVideo); } });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (vq.wasCancelled(child)) push("⏹ üretim durduruldu (video kuyruğundan iptal edildi)"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -307,11 +324,15 @@ async function inflight(title, fn, { firm = false, sourceCount = 1 } = {}) {
 }
 const pipelineBusy = () => { if (state.running) return true; const lock = path.join(WORK, "pipeline.lock", "pid"); if (!existsSync(lock)) return false; try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return true; } catch { return false; } };
 function startAnlik(topic, duration, opts = {}) {
+  // video kuyruğundaki iş (videoqueue.js bağlamı): iptal edildiyse başlatılmaz; iş etiketlenir (opts.vq: anlık sırasından çıkarma, yalnız onun üretimini durdurma)
+  const vc = vqCtx(); if (vc) { if (vc.cancelled) return { ok: false, error: "video kuyruğundan iptal edildi" }; opts = { ...opts, vq: vc.id, vqNo: vc.no, vqSrc: vc.src }; }
   topic = String(topic || "").replace(/\s+/g, " ").trim().slice(0, 1500);
   if (topic.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın (en az birkaç kelime)." };
   duration = Math.min(opts.recreate ? 90 : 60, Math.max(20, Number(duration) || 30)); // benzer video: referansın süresi (en çok 90 sn)
   if (resting()) { if (opts.auto) { push(`⏸ sistem durduruldu: otomatik anlık haber başlatılmadı (${topic.slice(0, 70)}); elle "🎬 Video üret" ile üretebilirsiniz`); return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; } restEnd("elle anlık haber talimatı"); }
-  if (pipelineBusy()) {
+  // video kuyruğunun işi, anlık sırasında bekleyen iş varken (üretim bitip sıranın 10 sn'lik kontrolü gelmeden) öne geçmez, sıranın sonuna girer
+  // (7. tur, inceleme, 21 Ekim: 5 linkli mesajda üretim sırası #1 → #4 → #2 → #3 → #5 oluyordu)
+  if (pipelineBusy() || (vc && anlikQueue.length)) {
     // priority (değerli sondakika.com haberi, 20 Ekim): sıradaki sıradan OTOMATİK işlerin önüne; elle verilen, öncelikli ve
     // değerli (toplayıcı: valuable, çoklu) işlerin arkasına
     const pos = !opts.priority ? anlikQueue.length : anlikQueue.reduce((n, q, i) => (!q.opts?.auto || q.opts.priority || q.opts.valuable || q.multi ? i + 1 : n), 0);
@@ -332,6 +353,9 @@ function startAnlik(topic, duration, opts = {}) {
   // şablon video (deprem/maç/piyasa/takvim): senaryo ve bilgi kartları work/jobs/<ad>/ içinde hazır, Claude çağrılmaz
   if (opts.templateDir) env.TEMPLATE_DIR = String(opts.templateDir);
   if (opts.userVideo) env.USER_VIDEO = "1"; // WhatsApp'tan gönderilen video: yayın onayla (waVideo.autoPublish)
+  // video kuyruğunun işi (6. tur, karar 3): meta queue {no, source} → yalnız numaralı onayla ya da panel düğmesiyle yayınlanır (yeniden başlatma
+  // ve gönderim hatasından etkilenmez); post_pipeline ne otomatik yayınlar ne planlar
+  if (Number(opts.vqNo) > 0) { env.VQ_NO = String(opts.vqNo); if (opts.vqSrc) env.VQ_SRC = String(opts.vqSrc); }
   if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
   if (opts.recreate) env.RECREATE = "1"; // benzer video (sıfırdan): meta recreated → açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video"
   if (opts.summary) env.SUMMARY = "1"; // uzun video özeti: meta summary → intro ve açıklamada özet etiketi (SON DAKİKA değilse #sondakika yok)
@@ -343,7 +367,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (opts.sourceCount) env.ANLIK_SOURCE_COUNT = String(opts.sourceCount);
   if (opts.title) env.ANLIK_TITLE = String(opts.title).slice(0, 300); // kaynağın başlığı: üretilen haber hafızasına (assemble → news_memory)
   const r = startPipeline(duration, env, { auto: !!opts.auto });
-  if (r.ok) anlikNow = { titles: anlikTitles({ topic, opts }), at: state.startedAt };
+  if (r.ok) anlikNow = { titles: anlikTitles({ topic, opts }), at: state.startedAt, vq: opts.vq || null };
   return { ...r, anlik: true };
 }
 // Sıradaki ya da çalışan anlık işin başlık(lar)ı (aynı olay denetimi için): opts.title, yoksa konu metninin ilk cümlesi.
@@ -512,6 +536,13 @@ async function flushValuable0() {
 const URL_RE = /https?:\/\/[^\s<>"']+/i;
 const prepareAnlik = counted(prepareAnlik0);
 async function prepareAnlik0(input, duration, opts = {}) {
+  // konu yalnız iptal sözüyse ("son dakika videosunu iptal et"; 5. tur, inceleme, 20 Ekim): haber aranmaz, video üretilmez
+  if (cancelTopic(input)) return { ok: false, error: "Bu bir iptal sözü; haber aranmadı, video üretilmedi. Kuyruk: *kuyruk*, iptal: *#N iptal*." };
+  if (parseBatch(input)) { // birden çok video linki (panel ANLIK kartı, beyin): WhatsApp'taki çok linkli mesaj gibi hepsi sırayla video kuyruğuna
+    const vb = await vq.handleText(String(input), { source: "panel", noOpen: true });
+    if (vb?.action === "vqueue") return { ok: true, social: true, batch: true, reply: vb.reply, title: "video kuyruğu", source: "video kuyruğu" };
+    if (vb) return { ok: false, error: vb.reply };
+  }
   input = String(input || "").replace(/\s+/g, " ").trim();
   // YouTube/sosyal medya video linki haber sayfası değildir (kullanıcı isteği, 18 Ekim: "attığım youtube haber linklerini de alsın"):
   // beyin breaking_news'i ya da panel kartı ile gelse de videosu indirilip kurgulanır (socialVideoNews; talimatta "son dakika" kalır,
@@ -519,7 +550,6 @@ async function prepareAnlik0(input, duration, opts = {}) {
   const vlk = findLink(input), vl = vlk ? videoLink(vlk.url) : null;
   if (vl && vl.kind !== "video") return { ok: false, error: vl.reply };
   if (vl) {
-    if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
     if (waVideoCfg().enabled === false) return { ok: false, error: "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)." };
     // yayın saati ve videodaki konum komut kuralıyla ayrılır ("youtu.be/… 18:30'da paylaş" → publishAt; "12:30'dan itibaren" talimatta kalır;
     // inceleme, 18 Ekim: saat talimatta kalıp videodaki konum sanılıyordu, yayın planlanmıyordu)
@@ -530,9 +560,12 @@ async function prepareAnlik0(input, duration, opts = {}) {
     const tagged = ["trend", "mizah"].includes(kindOf({ kind: pc.kind, instruction: rest }));
     const instruction = tagged || /^son ?dakika(\s|$)/i.test(rest) ? rest : `son dakika ${rest}`.trim();
     push(`🔗 ${vl.platform} video linki son dakika haberi olarak alındı (haber sayfası gibi okunmaz): ${vl.url.slice(0, 120)}`);
-    socialVideoNews({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null, kind: pc.kind || "" }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
+    // video kuyruğuna (videoqueue.js): başka paylaşım hazırlanırken reddedilmez, sırasını bekler
+    const vqr = vq.add({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null, kind: pc.kind || "", source: "panel" });
+    if (!vqr.ok) return { ok: false, error: vqr.error };
+    if (vqr.queued) return { ok: true, social: true, queued: true, position: vqr.position, no: vqr.no, ahead: vqr.ahead, title: `${vl.platform} videosu`, source: vl.platform };
     // haber sayfası okunmadı ve süre kurgudan gelir: panel kartı "Haberi okudum … (N sn)" yazmasın (viaLink/duration yok)
-    return { ok: true, social: true, title: `${vl.platform} videosu indiriliyor`, source: vl.platform };
+    return { ok: true, social: true, no: vqr.no, title: `${vl.platform} videosu indiriliyor`, source: vl.platform };
   }
   const link = (input.match(URL_RE) || [""])[0].replace(/[).,;!?]+$/, "");
   if (link) {
@@ -1301,12 +1334,13 @@ app.post("/api/sondakika/produce", async (req, res) => {
 });
 
 // ---------- Instagram trend radarı (kullanıcı isteği, 18 Ekim: "bazen çok izlenen videolar oluyor, trend; onlara nasıl bir yol
-// izleyebiliriz"; kullanıcı kararları: trendler YALNIZ panelde — WhatsApp mesajı yok, otomatik üretim yok —, kaynak Instagram trendleri).
+// izleyebiliriz"; kaynak Instagram trendleri; 20 Ekim'den beri — kullanıcı isteği: "trend videolardan da otomatik üretelim, çok aşırı
+// izlenme varsa WhatsApp'tan göndersin" — yeni trend otomatik video kuyruğuna, çok izlenen WhatsApp'a: trendauto.js, aşağıda trendAuto).
 // scripts/ig_trends.py: Facebook Girişi varsa resmi API (Business Discovery + hashtag), yoksa herkese açık profil (girişsiz), çerezli
 // yalnız settings.igTrends.useCookies açıksa. Kendi zamanlayıcısı her dakika bakar, intervalMin dolunca tarar (hafif: dinlenmede de
 // tarar, kendi busy bayrağıyla süren taramanın üstüne asla). Log yalnız: elle tarama sonucu, yeni beliren trendler (tek satır), hatalar
-// (otomatik taramada en çok 6 saatte bir). Panel "🎬 Haber yap / Fragman yap" → socialVideoNews (indirme + kurgu; yayın onayı aynı,
-// userVideo), üretime alınanlar data/ig_trends_done.json (7 gün).
+// (otomatik taramada en çok 6 saatte bir). Panel "🎬 Haber yap / Fragman yap" ve seçilenler → video kuyruğu (videoqueue.js; indirme + kurgu;
+// yayın onayı aynı, userVideo), durumları data/ig_trends_done.json (sırada → hazırlanıyor → üretildi / hata / iptal; 7 gün).
 const IGT_FILE = path.join(DATA, "ig_trends.json");
 const IGT_DONE = path.join(DATA, "ig_trends_done.json"); // {url: {at, mode, state: hazırlanıyor|üretildi|hata, error}}
 const IGT_THUMBS = path.join(WORK, "ig_thumbs");
@@ -1314,7 +1348,8 @@ const IGT_THUMBS = path.join(WORK, "ig_thumbs");
 const IGT_DEFAULTS = { enabled: true, intervalMin: 60, accounts: ["cnnturk", "haberturk", "trthaber", "ntv", "ahaber", "anadoluajansi", "onedio", "gzt", "bpthaber", "tv100"],
   hashtags: ["sondakika", "gundem"], maxAgeHours: 48, minRatio: 2, minViews: 20000, minLikes: 2000, top: 15, useCookies: false };
 const igTrendsCfg = () => { const raw = settings().igTrends; return { ...IGT_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) }; };
-const igtEvery = () => Math.min(1440, Math.max(15, Number(igTrendsCfg().intervalMin) || 60));
+// aralık: kayıtlı değer; yoksa son tarama resmi API ile yapıldıysa 20 dk (istek sınırı geniş), değilse 60 dk (kullanıcı isteği, 20 Ekim: "yeni trend düşerse anında listeme girsin")
+const igtEvery = () => Math.min(1440, Math.max(15, Number((settings().igTrends || {}).intervalMin) || (/resmi/.test(String((readJson(IGT_FILE, {}) || {}).method || "")) ? 20 : 60)));
 const igtDone = () => { const d = readJson(IGT_DONE, {}); return d && typeof d === "object" && !Array.isArray(d) ? d : {}; };
 // üretim bu süreçte (socialVideoNews) çalışır: açılışta kalan "hazırlanıyor" kaydı yarım kalmıştır (panel üretim sürerken yeniden başladı).
 // "hata" yapılır ki kart yeniden "🎬 Haber yap" göstersin (inceleme, 18 Ekim: 7 gün boyunca yalnız devre dışı "⏳ Hazırlanıyor" kalıyordu)
@@ -1341,6 +1376,7 @@ async function igTrendsScan({ manual = false } = {}) {
     const minR = Number(igTrendsCfg().minRatio) || 2; // hızla yükselen taze videonun katı düşük olabilir (0,4): onu "kat" diye yazma
     if (nt.length) push(`🔥 Instagram trendi: ${nt.slice(0, 3).map((it) => `${it.account ? "@" + it.account : it.source} "${String(it.caption || "").slice(0, 50)}" ${igtMetric(it)}${it.ratio >= minR ? ` (hesabın ${it.ratio.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} katı)` : it.fast ? " (hızla yükseliyor)" : ""}`).join(" · ")}${nt.length > 3 ? ` (+${nt.length - 3} daha)` : ""} — panelde 📈 INSTAGRAM TRENDLERİ`);
     try { for (const f of existsSync(IGT_THUMBS) ? readdirSync(IGT_THUMBS) : []) if (Date.now() - statSync(path.join(IGT_THUMBS, f)).mtimeMs > 3 * 864e5) unlinkSync(path.join(IGT_THUMBS, f)); } catch { /* temizlik */ }
+    await trendAuto.afterScan(r).catch((e) => push(`📈 trend otomatik üretimi: ${e.message}`)); // 🆕, otomatik üretim, çok izlenme uyarısı, kart yenilenir (SSE)
     return r;
   } finally { igtBusy = false; }
 }
@@ -1348,12 +1384,12 @@ setInterval(() => { if (igTrendsCfg().enabled !== false && !igtBusy && Date.now(
 // producedNews: trendin haberi bizde üretildi mi (üretilen haber hafızası; kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar
 // yakalamayalım") — kart "✓ Bu haber üretildi" gösterir, "Haber yap" düğmesi kalır. produced: bu gönderiden üretim kaydı (ig_trends_done)
 app.get("/api/igtrends", async (_req, res) => {
-  const d = readJson(IGT_FILE, {}) || {}, c = igTrendsCfg(), done = igtDone(), top = Math.min(30, Math.max(1, Number(c.top) || 15));
+  const d = readJson(IGT_FILE, {}) || {}, c = igTrendsCfg(), done = igtDone(), top = Math.min(30, Math.max(1, Number(c.top) || 15)), mk = trendAuto.marker();
   const mem = Array.isArray(d.items) && d.items.length ? ((await pyJson(["scripts/ig_trends.py", "--produced"], 20000).catch(() => null))?.produced || {}) : {};
   res.json({ cfg: { ...c, intervalMin: igtEvery() }, at: d.at || null, lastTry: d.lastTry || null, method: d.method || null, accounts: d.accounts || {},
-    items: (Array.isArray(d.items) ? d.items : []).slice(0, top).map((it) => ({ ...it, produced: done[it.url] || null, producedNews: mem[it.url] || null })),
+    items: (Array.isArray(d.items) ? d.items : []).slice(0, top).map((it) => ({ ...it, produced: done[it.url] || null, producedNews: mem[it.url] || null, ...mk(it) })),
     errors: d.errors || [], notes: d.notes || [], error: d.error || null, pausedUntil: d.pausedUntil > Date.now() ? d.pausedUntil : null, pauseReason: d.pauseReason || null,
-    trailerEnabled: trailerCfg().enabled !== false, scanning: igtBusy, nextScanIn: c.enabled !== false ? Math.max(0, igtLast + igtEvery() * 60000 - Date.now()) : null });
+    trailerEnabled: trailerCfg().enabled !== false, scanning: igtBusy, auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() }, nextScanIn: c.enabled !== false ? Math.max(0, igtLast + igtEvery() * 60000 - Date.now()) : null });
 });
 app.post("/api/igtrends/scan", async (_req, res) => res.json(await igTrendsScan({ manual: true })));
 // Panelden üretim: yalnız Instagram gönderi adresi; indirme + kurgu socialVideoNews'te (yayın önce onaya gelir). Uzun sürer (≤ 8 dk
@@ -1362,17 +1398,14 @@ app.post("/api/igtrends/produce", (req, res) => {
   const url = String(req.body?.url || "").trim(), mode = req.body?.mode === "fragman" ? "fragman" : "haber";
   if (!/^https:\/\/www\.instagram\.com\/(reel|p|tv)\/[A-Za-z0-9_-]{5,64}\/?$/.test(url)) return res.json({ ok: false, error: "Geçerli bir Instagram gönderi adresi değil." });
   if (waVideoCfg().enabled === false) return res.json({ ok: false, error: "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)." }); // social_video komutuyla aynı kural
-  if (socialBusy) return res.json({ ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar deneyin." });
   const it = ((readJson(IGT_FILE, {}) || {}).items || []).find((x) => x.url === url) || {};
-  const mark = (st, extra = {}) => { const d = igtDone(); d[url] = { at: Date.now(), mode, state: st, ...extra }; writeJson(IGT_DONE, Object.fromEntries(Object.entries(d).filter(([, v]) => Date.now() - (v?.at || 0) < 7 * 864e5))); };
-  mark("hazırlanıyor");
-  push(`📈 Instagram trendi ${mode === "fragman" ? "fragman analizine" : "habere"} alındı: ${it.account ? "@" + it.account : it.source || "Instagram"} — ${url}`);
   // Instagram linkinde fragman kendiliğinden tanınmaz (yalnız YouTube): "🎬 Haber yap" açık haber isteğidir (tür "haber"; inceleme, 19 Ekim:
-  // talimat boş gidince Claude çok izlenen videoyu VİRAL yapabiliyordu), "fragman" fragman analizi (varsayılan analiz talimatı)
-  socialVideoNews({ url, instruction: mode === "fragman" ? "fragman" : "", kind: mode === "fragman" ? "" : "haber" })
-    .then((r) => mark(r?.ok ? "üretildi" : "hata", r?.ok ? {} : { error: String(r?.error || "üretilemedi").slice(0, 200) }))
-    .catch((e) => { mark("hata", { error: e.message }); push(`📈 Instagram trendinden haber hatası: ${e.message}`); });
-  res.json({ ok: true, started: true });
+  // talimat boş gidince Claude çok izlenen videoyu VİRAL yapabiliyordu), "fragman" fragman analizi (varsayılan analiz talimatı).
+  // Video kuyruğuna (kullanıcı isteği, 20 Ekim): başka paylaşım hazırlanırken reddedilmez, sırasını bekler; durum kuyruğun kancasıyla
+  // ig_trends_done.json'a (sırada → hazırlanıyor → üretildi / hata / iptal)
+  const r = vq.add({ url, instruction: mode === "fragman" ? "fragman" : "", kind: mode === "fragman" ? "" : "haber", mode, source: "panel", account: it.account, caption: it.caption, trend: true });
+  if (r.ok) push(`📈 Instagram trendi ${mode === "fragman" ? "fragman analizine" : "habere"} alındı (#${r.no}${r.queued ? `; önünde ${r.ahead} video` : ""}): ${it.account ? "@" + it.account : it.source || "Instagram"} — ${url}`);
+  res.json({ ...r, started: !!(r.ok && !r.queued) });
 });
 // Kapak resmi vekili: Instagram CDN'i başka siteye gömülen resmi engelleyebilir (CORP); kart önce doğrudan dener, olmazsa buradan.
 // Yalnız Instagram/Facebook CDN adresleri (https), ≤ 3 MB resim, work/ig_thumbs/ önbelleği (3 gün).
@@ -1869,7 +1902,7 @@ function waVideoText(text) {
   if (!v || !v.files.length || v.instruction || v.running) return null;
   if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
   // kontrol komutları videonun talimatı değil ("güncelle", "sistemi durdur", "sistemi başlat", "durum")
-  if (["self_update", "update_check", "stopall", "rest_end", "status"].includes(parseCommand(text).action)) return null;
+  if (["self_update", "update_check", "stopall", "rest_end", "status"].includes(parseCommand(text).action) || queueCommand(text)) return null; // "kuyruk", "trend 1 3" de
   if (v.caption && findLink(text)) return null; // iletilen videoyu beklerken gelen link kendi işidir (yeni bekleme penceresi eskiden yoktu)
   if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
   v.instruction = text.trim(); clearTimeout(v.timer);
@@ -1896,7 +1929,8 @@ async function waVideoGo(v = waVid) {
   v.running = true; if (waVid === v) waVid = null;
   return runVideoNews(v);
 }
-const sendW = async (t) => { try { await wa.send(t); } catch { /* WhatsApp bağlı değil: log yeterli */ } };
+// video kuyruğunun otomatik trend işi ve iptal edilen iş WhatsApp'a yazmaz (başlama/kurgu/hata mesajı yok; bitince normal video mesajı gelir)
+const sendW = async (t) => { if (vqCtx()?.quiet) return; try { await wa.send(t); } catch { /* WhatsApp bağlı değil: log yeterli */ } };
 // kısa mesaj modu (kullanıcı isteği, 14 Ekim): WhatsApp'a yalnız "başladı", "sorun", "başarılı" gider; ara aşamalar yalnız logda
 const waBrief = () => settings().whatsapp?.brief !== false;
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
@@ -1922,7 +1956,7 @@ async function runVideoNews0(v) {
   const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? 50 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); } });
   rmSync(jobFile, { force: true });
   let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
-  if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🎬 video haberi hazırlanamadı: ${err}`); await sendW(`❌ Video haberi hazırlanamadı: ${err}`); return { ok: false, error: err }; }
+  if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(vqCtx()?.cancelled ? `🎬 video haberi hazırlanmadı${vqTag()}: video kuyruğundan iptal edildi` : `🎬 video haberi hazırlanamadı${vqTag()}: ${err}`); await sendW(`❌ Video haberi hazırlanamadı${vqWho()}: ${err}`); return { ok: false, error: err }; }
   const p = j.plan || {};
   // özette parçalar seçilen anlardan (1. an, 2. an…): anın uzun videodaki yeri + parçanın saniyeleri
   const hm = (t) => { t = Math.round(t); return t >= 3600 ? `${Math.floor(t / 3600)}:${String(Math.floor(t % 3600 / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}` : `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
@@ -1958,7 +1992,7 @@ async function runVideoNews0(v) {
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
     source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}) });
   if (!res.ok) await sendW(`❌ Üretim başlatılamadı: ${res.error}`);
-  else if (res.queued) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`);
+  else if (res.queued && !vqCtx()) await sendW(`⏳ Şu an başka üretim sürüyor; video haberiniz ${res.position}. sırada.`); // kuyruk işinin sırası *kuyruk*ta
   return res;
 }
 
@@ -1966,14 +2000,7 @@ async function runVideoNews0(v) {
 // videoyu çekip bizim stilimizde haber yap"): scripts/social_video.py indirir + paylaşım bilgisi + haber sitelerinde aynı olay;
 // sonra runVideoNews (kurgu, kesim, seslendirme). Kaynak hesabı kartlarda ve açıklamada görünür; yayın onaylı (userVideo).
 let socialBusy = false;
-// paylaşım hazırlanırken (uzun video özetinde 10-20 dk) WhatsApp'tan gelen yeni linkler sıraya girer (en çok 5; 3 saatten eski düşer);
-// eskiden "Başladı" yanıtından sonra sessizce kayboluyordu
-const socialQueue = [];
-const socialNext = () => {
-  while (socialQueue.length && Date.now() - socialQueue[0].at > 3 * 3600000) { const q = socialQueue.shift(); push(`🔗 sıradaki paylaşım bayatladı, atlandı: ${q.url}`); }
-  const q = socialQueue.shift();
-  if (q) setTimeout(() => { push(`🔗 sıradaki paylaşım başlıyor: ${q.url}`); socialVideoNews(q).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`)); }, 1000);
-};
+// paylaşım hazırlanırken gelen linkler video kuyruğunda bekler (videoqueue.js, aşağıda vq; socialVideoNews'i yalnız kuyruk çağırır)
 async function socialVideoNews({ url, instruction = "", publishAt = null, kind = "" }) {
   kind = kindOf({ kind, instruction }); // linke bitişik etiket (commands.js) ya da talimattaki açık etiket
   if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
@@ -1986,7 +2013,7 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     const r = await runLines(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : []), ...(kind ? ["--kind", kind] : [])], { timeout: 30 * 60000, onLine: (l) => { if (/^(🔗|📡)/.test(l)) push(l.trim()); } });
     const outLines = String(r.stdout || "").trim().split("\n");
     let j = null; try { j = JSON.parse(outLines.pop()); } catch { /* yanıt yok */ }
-    if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(`🔗 paylaşım indirilemedi: ${err}`); await sendW(`❌ Paylaşım indirilemedi: ${err}`); return { ok: false, error: err }; }
+    if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(vqCtx()?.cancelled ? `🔗 paylaşım indirilmedi${vqTag()}: video kuyruğundan iptal edildi` : `🔗 paylaşım indirilemedi${vqTag()}: ${err}`); await sendW(`❌ Paylaşım indirilemedi${vqWho()}: ${err}`); return { ok: false, error: err }; }
     const s = j.social || {};
     const n = (x) => (x == null ? null : Number(x).toLocaleString("tr-TR"));
     // benzer video (sıfırdan): fragman ve özet kararından ÖNCE (referans fragman ya da uzun video olsa da benzeri çizilir); haber aranmaz
@@ -2030,8 +2057,75 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
     // her paylaşım son dakika haberi oluyordu; kullanıcı isteği, 19 Ekim)
     return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, kind });
-  } finally { socialBusy = false; socialNext(); }
+  } finally { socialBusy = false; vq.kick(); }
 }
+// ---------- Video kuyruğu (videoqueue.js) ve trendlerden otomatik üretim + çok izlenme uyarısı (trendauto.js); kullanıcı isteği, 20 Ekim:
+// "trend videolardan da otomatik üretelim … 3-5 video seçersem sıralasın, kuyruktan devam etsin". Panel kutusu SSE "vqueue" ile canlı.
+const sse = (ev, d) => { const s = `event: ${ev}\ndata: ${JSON.stringify(d)}\n\n`; for (const c of clients) c.write(s); };
+// kuyruk işi bir trend gönderisiyse (trend kartı, otomatik, "trend 1 3" ya da listede olan link) kartın durumu: sırada → hazırlanıyor →
+// üretildi / hata / iptal (data/ig_trends_done.json, 7 gün)
+function igtMarkDone(url, st, extra = {}) {
+  const d = igtDone(); d[url] = { ...(d[url] || {}), at: Date.now(), state: st, ...extra };
+  if (!["hata", "iptal"].includes(st)) delete d[url].error;
+  writeJson(IGT_DONE, Object.fromEntries(Object.entries(d).filter(([, v]) => Date.now() - (v?.at || 0) < 7 * 864e5)));
+}
+const igtUrlOf = (u) => { const k = normUrl(u); return ((readJson(IGT_FILE, {}) || {}).items || []).find((x) => normUrl(x.url) === k)?.url || null; };
+const vq = makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews, socialBusy: () => socialBusy, anlikQueue,
+  anlikRunning: () => (state.running && anlikNow && anlikNow.at === state.startedAt ? anlikNow.vq || null : null), pipelineAlive: () => pipelineBusy(),
+  pipelineProc: () => pipelineProc, killTree, resting, restInfo, restEnd, restRecheck, waEnabled: () => waVideoCfg().enabled !== false,
+  approvals: () => wa.status().pendingList || [], // tanınmayan iptal sözünün yanıtında yayın onayı bekleyenler (numaralarıyla)
+  openUrl: (u) => execAction({ type: "open_url", target: u }), // video linki + haber linki + "açar mısın": yalnız açılır (5. tur)
+  dropApproval: (n) => wa.dropApproval(n), onCancelVideo: (mp4) => cancelProducedVideo(mp4), // "#3 iptal": üretilmiş videonun onayı/planlı yayını
+  // yeniden başlatma (karar 5): kilitteki üretim pid'i; panel kapalıyken çıkan kuyruk videosu (meta queue.no, iş başladıktan sonra) ve onay mesajı
+  lockPid: () => { try { const pid = Number(readFileSync(path.join(WORK, "pipeline.lock", "pid"), "utf8").trim()); process.kill(pid, 0); return pid; } catch { return null; } },
+  heldNos: () => { try { return wa.heldNos?.() || []; } catch { return []; } }, // bekleyen ve süresi dolan (24 saat) onayların numaraları başka videoya verilmez (7. tur)
+  findProduced: (no, since) => { for (const f of readdirSync(OUT).filter((x) => x.endsWith(".json"))) { try { const p = path.join(OUT, f); if (statSync(p).mtimeMs < since - 1000) continue; const m = JSON.parse(readFileSync(p, "utf8")); if (Number(m?.queue?.no) === no && existsSync(p.replace(/\.json$/, ".mp4"))) return f.replace(/\.json$/, ".mp4"); } catch { /* bozuk */ } } return null; },
+  onRecovered: (mp4) => { if (settings().whatsapp?.enabled) wa.notifyVideo(mp4, { ask: true, summary: [] }).catch((e) => push(`💬 kuyruk videosunun onay mesajı gönderilemedi: ${e.message}`)); },
+  onTrend: (it, st, err) => { const u = it.trend ? it.url : igtUrlOf(it.url); if (u) igtMarkDone(u, st, { mode: it.mode || "haber", auto: it.source === "trend-auto", ...(err ? { error: err } : {}) }); } });
+const trendAuto = makeTrendAuto({ DATA, push, settings, patchSettings, igtFile: IGT_FILE, igtDone, vq, dupCheck, dupWhy, resting, restInfo, restEnd,
+  waEnabled: () => waVideoCfg().enabled !== false, sendWA: (t) => sendW(t), sse, minRatio: () => Number(igTrendsCfg().minRatio) || 2 });
+// Kuyruk işinin videosu: üretim sürerken out/'a çıkan dosya o işle eşlenir (vq.produced: onay numarası = iş numarası). İşi iptal edilen video
+// (5. tur, inceleme, 20 Ekim: yayın saatli link videosu üretim sonunda iptal edilince o saatte onaysız yayınlanıyordu): planlı yayını, WhatsApp
+// özeti ve onay kaydı kaldırılır; panelde durur, yalnız panelden elle yayınlanabilir (vqCancelledVideos, 24 saat)
+const vqCancelledVideos = new Map();
+function vqProduced(mp4) { try { const id = state.running && anlikNow && anlikNow.at === state.startedAt ? anlikNow.vq : null; if (id) vq.produced(id, path.basename(mp4)); } catch { /* kuyruk işi değil */ } }
+function cancelProducedVideo(mp4) {
+  mp4 = path.basename(String(mp4 || "")); if (!mp4) return null;
+  for (const [k, t] of vqCancelledVideos) if (Date.now() - t > 24 * 3600000) vqCancelledVideos.delete(k);
+  vqCancelledVideos.set(mp4, Date.now());
+  const all = readJson(path.join(DATA, "scheduled_publish.json"), []) || [], keep = all.filter((x) => x?.video !== mp4);
+  if (keep.length !== all.length) writeJson(path.join(DATA, "scheduled_publish.json"), keep);
+  const digest = digestPending?.mp4 === mp4; if (digest) digestPending = null;
+  let approval = false; try { approval = !!wa.dropApprovalVideo(mp4)?.ok; } catch { /* WhatsApp yok */ }
+  push(`⏹ video kuyruğundan iptal edilen işin videosu (${mp4}) yayınlanmayacak${all.length !== keep.length ? "; planlı yayını kaldırıldı" : ""}${approval ? "; onay kaydı kaldırıldı" : ""}${digest ? "; WhatsApp özeti gönderilmeyecek" : ""} (panelden elle yayınlanabilir)`);
+  return { scheduled: all.length - keep.length, approval, digest };
+}
+// Kuyruk videosu (6. tur, karar 3; video kuyruğundan üretilen userVideo, otomatik trend dahil): YALNIZ sahibin kendisine ulaşmış onay mesajına
+// numaralı ya da numarasız onayı (via: approval; whatsapp.js yalnız ulaşmış onayda çağırır) ya da panelin yayın düğmesiyle (via: panel)
+// yayınlanır. Doğal dil, sesli komut, beyin ("son videoyu yayınla", "hepsini yayınla") ve planlı yayın (via: scheduled) ASLA yayınlamaz. Sahiplik
+// videonun meta'sında (queue.no; assemble_script VQ_NO ile yazar), yedek olarak kuyruğun üretim eşlemesinde ve süren kuyruk üretiminde: panel
+// yeniden başlasa da onay mesajı gönderilemese de açık kalmaz (5. turun "onay mesajı ulaştı mı" kapısı yeniden başlatma, gönderim hatası ve kısa
+// aralıklarda açık kalıyordu; kaldırıldı). Diğer videolar HEAD'deki gibi
+function queueNoOf(video) {
+  const v = path.basename(String(video || "")); if (!v) return 0;
+  const m = readJson(path.join(OUT, v.replace(/\.mp4$/, ".json")), null);
+  const n = Number(m?.queue?.no) || 0; if (n) return n;
+  try { const k = vq.ownerNo(v); if (k) return k; } catch { /* kuyruk yok */ }
+  // üretimi süren kuyruk işinin videosu (meta henüz yazılmadı): üretim başladıktan sonra çıkan dosya
+  try { if (state.running && anlikNow?.vq && anlikNow.at === state.startedAt && statSync(path.join(OUT, v)).mtimeMs >= state.startedAt - 1000) return -1; } catch { /* dosya yok */ }
+  return 0;
+}
+// kuyruk videosunun yayın saati (karar 3): kendiliğinden uygulanmaz, yanıt bunu söyler
+function vqTimeTail(c, no) { return c.publishAt ? `\n${vq.timeLine(new Date(c.publishAt), no)}` : ""; }
+function queueGate(video) {
+  const v = path.basename(String(video || ""));
+  if (vqCancelledVideos.has(v)) return "Bu video video kuyruğundan iptal edildi; yayınlanmadı (isterseniz panelden yayınlayın).";
+  const n = queueNoOf(v);
+  return n ? `Bu video video kuyruğundan${n > 0 ? ` (#${n})` : ""}: yalnız size gelen onay mesajına *onay${n > 0 ? ` ${n}` : " <numara>"}* yazarak ya da panelden (video → yayınla) yayınlanır.` : null;
+}
+// açılış: kuyruğu kaybolmuş "sırada" kaydı (kuyruk dosyası silinmiş) kartta sonsuza dek "⏳ Sırada" kalmasın
+{ const d = igtDone(); let n = 0; for (const [u, v] of Object.entries(d)) if (v?.state === "sırada" && !vq.has(u)) { v.state = "hata"; v.error = "panel yeniden başladı, sıradan düştü"; n++; } if (n) writeJson(IGT_DONE, d); }
+app.post("/api/igtrends/auto", (req, res) => res.json({ ok: true, reply: trendAuto.setAuto(req.body?.on !== false), auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() } }));
 
 // ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu
 // data/scheduled_publish.json'a yazar; panel dakikada bir bakar, saati gelince bağlı hesaplara yayınlar ve WhatsApp'a yazar.
@@ -2041,12 +2135,14 @@ const schedItems = () => readJson(PUB_SCHED, []) || [];
 const vidTitle = (name) => { const m = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), {}); return m.publishTitle || m.titles?.A || name; };
 let schedBusy = false;
 async function publishScheduled(item, { late = false } = {}) {
+  if (vqCancelledVideos.has(item.video)) { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); push(`⏰ planlı yayın: ${item.video} video kuyruğundan iptal edilmişti, yayınlanmadı`); return { ok: false }; }
+  { const qn = queueNoOf(item.video); if (qn) { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); push(`⏰ planlı yayın: ${item.video} video kuyruğundan${qn > 0 ? ` (#${qn})` : ""}; kuyruk videosu planlı yayınla yayınlanmaz, yalnız onayla (karar 3)`); return { ok: false }; } }
   if (!existsSync(path.join(OUT, item.video))) { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); push(`⏰ planlı yayın: ${item.video} bulunamadı (silinmiş), atlandı`); return { ok: false }; }
   push(`⏰ planlı yayın zamanı geldi${late ? " (gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 80)} → ${item.platforms.join(", ")}`);
   // kayıt yükleme bitince silinir: o sürede saatlik disk temizliği (cleanup.py protected) videoyu ve kapağını silmesin; ikinci kez
   // yayınlanmasın diye dakikalık döngü schedBusy ile bekler
   let r;
-  try { r = await execAction({ type: "publish", video: item.video, platforms: item.platforms }); } finally { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); }
+  try { r = await execAction({ type: "publish", video: item.video, platforms: item.platforms, via: "scheduled" }); } finally { writeJson(PUB_SCHED, schedItems().filter((x) => x.video !== item.video)); }
   const lines = Object.entries(r.results || {}).map(([k, x]) => x.ok ? `✅ ${k}: ${x.skipped ? "zaten yayında" : (x.url || x.note || "tamam")}` : `❌ ${k}: ${String(x.error || "").slice(0, 140)}`);
   await sendW(`⏰ *Planlı yayın yapıldı*${late ? " (Mac uykudaydı, gecikmeli)" : ""}: ${vidTitle(item.video).slice(0, 90)}\n${lines.join("\n")}`);
   return r;
@@ -2387,7 +2483,9 @@ async function openYouTube(query) {
 const toUrl = (t) => /^https?:\/\//.test(t) ? t : /\.[a-z]{2,}$/i.test(t.replace(/\s/g, "")) ? "https://" + t.replace(/\s/g, "") : "https://www.google.com/search?q=" + encodeURIComponent(t) + "&btnI=1";
 
 // ---------- beyin
-const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY });
+// beyin bağlamına video kuyruğu ve yayın onayı bekleyenler kendi numaralarıyla (Claude da "kuyruk iptal 7"yi aynı numarayla verir; 4. tur)
+const brain = makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState: () => state, pythonBin: PY,
+  extraContext: () => { const o = {}; try { o.videoKuyrugu = vq.brief(); } catch { /* yok */ } try { o.yayinOnayi = (wa.status().pendingList || []).map((p) => ({ no: p.id, video: p.title || p.label || p.video, ulasti: p.delivered })); } catch { /* yok */ } return o; } });
 const SAFE = new Set(["command", "generate", "schedule", "note", "sync_metrics", "open_video", "settings", "improvement", "restart", "open_youtube", "open_url", "tunnel", "natural_voice", "whatsapp_send", "connect", "automode", "selftest", "breaking_news"]);
 const needsConfirm = (a) => !settings().fullAuthority && !SAFE.has(a.type);
 // elle yayın sürerken (WhatsApp "onay", panel) güncelleme paneli yeniden başlatmasın: süren yayın sayılır
@@ -2410,7 +2508,7 @@ async function execAction0(a) {
     case "settings": patchSettings(a.patch || {}); return { ok: true, settings: settings() };
     case "improvement": { const r = queueImprovement(a.task); push(`🛠 geliştirme kuyruğuna eklendi: ${a.task}`); return r; }
     case "restart": restartPanel(800); return { ok: true, restarting: true };
-    case "publish": { const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶|♪|💬)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
+    case "publish": { if (a.via !== "panel" && a.via !== "approval") { const why = queueGate(a.video); if (why) { push(`📤 yayın yapılmadı (${path.basename(String(a.video || ""))}): ${why}`); return { ok: false, blocked: true, error: why, results: {} }; } } const results = {}; for (const p of a.platforms || []) { push(`📤 ${p}: yükleniyor ${a.video}`); const r = await py("publish.py", ["--file", path.basename(a.video), "--platform", p]); for (const l of String(r.stderr || "").split("\n")) if (/^🌐|^  (video|geçici|!|▶|♪|💬)/.test(l)) push(l.trim()); results[p] = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-300) }; push(`📤 ${p}: ${results[p].ok ? (results[p].skipped ? "zaten yayında" : "tamam " + (results[p].url || results[p].note || "")) : (results[p].limit ? "sınır doldu — " : "hata ") + results[p].error}`); } await py("analyze.py"); try { wa.clearPending(path.basename(a.video)); } catch { /* yok */ } return { ok: Object.values(results).every((x) => x.ok), results }; }
     case "command": { const r = await handleCommand(String(a.text || ""), { source: "brain", direct: true }); return { ok: !/tanımadım/.test(r.reply || ""), reply: r.reply, report: r.report }; }
     case "open_video": return { ok: true };
     case "open_youtube": return openYouTube(String(a.query || ""));
@@ -2430,14 +2528,16 @@ async function think(text, mode = "chat", opts = {}) {
   const r = await brain.ask(text, mode, opts);
   push(`🧠 yanıt ${Math.round((Date.now() - t0) / 1000)} sn${r.actions.length ? `, ${r.actions.length} eylem` : ""}${r.error ? " (hata)" : ""}`);
   const done = [], pending = [];
-  for (const a of r.actions) { if (needsConfirm(a)) { pending.push(a); push(`⏸ onay bekliyor: ${a.type}`); } else { const res = await execAction(a); push(`⚡ ${a.type}${a.duration ? " " + a.duration + " sn" : ""}${a.platforms ? " → " + a.platforms.join(",") : ""}: ${res?.ok === false ? "hata " + (res.error || "") : "tamam"}`); done.push({ ...a, result: res }); } }
+  // beynin (Claude çıktısının) eylemi "via" taşıyamaz (6. tur: Claude'un yazdığı via: "panel"/"approval" kuyruk videosunun yayın kapısını atlıyordu)
+  for (const a0 of r.actions) { const a = { ...a0, via: undefined }; if (needsConfirm(a)) { pending.push(a); push(`⏸ onay bekliyor: ${a.type}`); } else { const res = await execAction(a); push(`⚡ ${a.type}${a.duration ? " " + a.duration + " sn" : ""}${a.platforms ? " → " + a.platforms.join(",") : ""}: ${res?.ok === false ? "hata " + (res.error || "") : "tamam"}`); done.push({ ...a, result: res }); } }
   const reportFile = brain.saveReport(mode === "chat" ? "not" : mode, r.report);
   if (!r.error) brain.addExchange(text, r.reply, [...done, ...pending]);
   return { ...r, done, pending, reportFile };
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok } }; };
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok },
+  queueNo: (() => { const n = queueNoOf(v.name); return n > 0 ? n : 0; })(), queueSource: meta.queue?.source || (() => { try { return vq.sourceOf(v.name); } catch { return null; } })() }; };
 const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const statusText = async () => {
   const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
@@ -2448,7 +2548,11 @@ const statusText = async () => {
   if (vids[0]) lines.push(`🎞 Son video: ${label(vids[0])}${vids[0].views ? " · ▶ " + vids[0].views : ""}`);
   return lines.join("\n");
 };
-const wa = await makeWhatsApp({ handleVideo: (v) => waVideoIn(v), videoInstruction: (t) => waVideoText(t), autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms }), automode: (on) => setAutoMode(on), statusText });
+const wa = await makeWhatsApp({ handleVideo: (v) => waVideoIn(v), videoInstruction: (t) => waVideoText(t),
+  // talimat bekleyen WhatsApp videosu var mı ("30 saniye, 18:30'da paylaş" talimatı numaralı söz korumasına girmesin; 7. tur)
+  videoWaiting: () => [waVid, ...waAsks].some((v) => v?.files?.length && !v.instruction && !v.running && Date.now() - v.at < Number(waVideoCfg().waitMin) * 60000), autoAll: () => existsSync(PLIST) || !!settings().autoMode, ROOT, settings, push, announce, handleCommand, videoInfo, links: waLinks, publishVideo: (video, platforms) => execAction({ type: "publish", video, platforms, via: "approval" }), automode: (on) => setAutoMode(on), statusText,
+  // video kuyruğu (5. tur): kuyruk komutu onay sayılmaz, onay numarası kuyruk numarasıdır, numaralı söz kuyruk işini gösteriyorsa durumu/iptali
+  queue: { cmd: (t) => !!queueCommand(t), number: (video, used, metaNo) => vq.numberFor(video, used, metaNo), state: (n) => vq.stateOf(n), cancel: (nos) => vq.cancelNos(nos), guard: (why) => vq.guardText(why || "") } });
 app.get("/api/whatsapp", (_req, res) => res.json(wa.status()));
 // WhatsApp bağlantı bekçisi (kullanıcı isteği): 2 dk'da bir; kopuksa yeniden bağlar, takılırsa soketi yeniler. 30 dk'da 5'ten fazla
 // yeniden bağlanma ya da QR beklemesi (oturum düştü) → sağlık uyarısı (log + ses; WhatsApp mesajı bağlanınca kuyruktan gider).
@@ -2471,7 +2575,7 @@ if (settings().whatsapp?.enabled && settings().whatsapp?.autoStart) setTimeout((
 
 // Yeni video (panelden veya launchd'den) → WhatsApp bildirimi. out/ klasörü izlenir, bilinen dosyalar atlanır.
 const knownVideos = new Set(readdirSync(OUT).filter((f) => f.endsWith(".mp4")));
-try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) {
+try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; const mp4 = file.replace(/\.json$/, ".mp4"); if (!knownVideos.has(mp4)) vqProduced(mp4); setTimeout(async () => { if (knownVideos.has(mp4) || !existsSync(path.join(OUT, mp4))) return; knownVideos.add(mp4); if (vqCancelledVideos.has(mp4)) { push(`⏹ ${mp4}: video kuyruğundan iptal edilen işin videosu; WhatsApp'a bildirilmedi`); return; } if (settings().whatsapp?.enabled && settings().whatsapp?.notifyOnVideo) {
   if (waDigest()) { // tek mesaj: yayın bitince gönderilir (yayın adımı zaten bittiyse hemen)
     if (digestPending && digestPending.mp4 !== mp4) await sendDigest("yeni video çıktığı için");
     digestPending = { mp4, at: Date.now() };
@@ -2729,7 +2833,7 @@ function updateBusy() {
   if (pipelineBusy()) return "üretim sürüyor";
   if (anlikQueue.length) return `${anlikQueue.length} video sırada`;
   if (anlikInflight.size || valueBatch.length || dequeueBusy) return "son dakika haberi hazırlanıyor";
-  if (socialBusy || videoNewsN || socialQueue.length) return "video haberi hazırlanıyor";
+  if (socialBusy || videoNewsN || vq.pending()) return "video haberi hazırlanıyor";
   if (waVid?.files?.length && Date.now() - waVid.at < Number(waVideoCfg().waitMin) * 60000) return "gönderdiğiniz video talimat bekliyor";
   if (digestPending) return "video WhatsApp'a gönderiliyor";
   if (infoBusy || peakBusy) return "otomatik içerik hazırlanıyor";
@@ -2876,7 +2980,7 @@ const updateText = (r) => {
   if (!r.ok) return `❌ Güncellenemedi: ${r.error}`;
   if (r.upToDate) return `✅ Zaten güncel${r.current ? ` (son sürüm: ${String(r.current).slice(0, 90)})` : ""}.`;
   // ipucu nedene göre: "sistemi durdur" yalnız üretim/sıra için (talimat bekleyen videoda bu yazı videonun talimatı sanılırdı)
-  const hint = /üretim sürüyor|video sırada|son dakika haberi/.test(r.busy || "") ? " Beklemeden almak için: *sistemi durdur*"
+  const vqn = vq.size(), hint = /üretim sürüyor|video sırada|son dakika haberi/.test(r.busy || "") ? ` Beklemeden almak için: *sistemi durdur*${vqn ? ` (video kuyruğundaki ${vqn} video da iptal edilir)` : ""}`
     : /talimat bekliyor/.test(r.busy || "") ? " Videonun talimatını yazın ya da *iptal* yazın; sonra güncellenir." : "";
   if (r.deferred) return `⏳ Yeni sürüm var (${r.count} değişiklik) ama şu an ${r.busy}; bitince güncelleyip panel yeniden başlayacak.${hint}`;
   if (r.restarting && r.again) return "↻ Güncelleme alındı, panel zaten yeniden başlıyor.";
@@ -2982,7 +3086,7 @@ app.post("/api/connect/tiktok", async (_req, res) => {
   try { const st = await py("publish.py", ["--status"]); if (st.json?.tiktok?.redirect) push(`♪ TikTok: gönderilen Redirect URI → ${st.json.tiktok.redirect} (Sandbox → Login Kit → Web'de AYNEN bu olmalı)`); } catch { /* yok */ }
   const r = await py("publish.py", ["--connect", "tiktok"]); const j = r.json || { ok: false, error: (r.stderr || r.stdout).slice(-400) };
   push(`${j.ok ? "✔" : "✖"} TikTok: ${j.ok ? "bağlandı" : j.error}`); res.json(j); });
-app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [] })));
+app.post("/api/publish", async (req, res) => res.json(await execAction({ type: "publish", video: req.body.name, platforms: req.body.platforms || [], via: "panel" })));
 app.post("/api/metrics/sync", async (_req, res) => res.json(await execAction({ type: "sync_metrics" })));
 app.get("/api/insights", (_req, res) => res.json(readJson(path.join(DATA, "insights.json"), null)));
 app.post("/api/analyze", async (_req, res) => { await py("analyze.py"); res.json(readJson(path.join(DATA, "insights.json"), null)); });
@@ -2992,13 +3096,17 @@ app.get("/api/memory", (_req, res) => res.json(brain.memory()));
 
 // ---------- API: Jarvis (beyin) ve eylem onayı
 app.post("/api/ask", async (req, res) => { state.busy = "düşünüyor"; try { res.json(await think(String(req.body?.text || ""), req.body?.mode || "chat")); } finally { state.busy = null; } });
-app.post("/api/actions", async (req, res) => { const out = []; for (const a of req.body?.actions || []) out.push({ ...a, result: await execAction(a) }); res.json(out); });
+// panelde onaylanan beyin/komut eylemi (karar 3): kuyruk videosunu yayınlamaz (yalnız video penceresinin yayınla düğmesi, /api/publish); diğer videolar HEAD gibi
+app.post("/api/actions", async (req, res) => { const out = []; for (const a of req.body?.actions || []) out.push({ ...a, result: await execAction({ ...a, via: undefined }) }); res.json(out); });
 
 // ---------- API: sesli komut → kural, kural yoksa beyin
 // WhatsApp mesajını önce Claude anlar (kullanıcı isteği, 14 Ekim: "WhatsApp'tan gönderdiğim mesajları Claude alsın, ne demek istediğimi
 // anlasın, yapsın"): beyin yanıtlar ve gerekirse kural komutlarını "command" eylemiyle çalıştırır. Link (haber/sosyal medya videosu),
 // kısa kesin komutlar (yardım, durum, iptal, evet sil) ve Claude'a ulaşılamazsa eski kural yolu. `settings.whatsapp.smart: false` kapatır.
 const WA_DIRECT = /^(yardım|komutlar|durum|status|iptal|vazgeç|hayır|evet sil|sil|dur|sus|tamam|teşekkürler|sağ ol)$/;
+// beynin breaking_news ile video kuyruğuna verdiği link: yanıta iş numarası (iptalin tutamağı; 4. tur — Claude yanıtı eylemden önce yazar)
+const brainQueueIds = (done) => (done || []).map((d) => (d.type === "breaking_news" && d.result?.ok && (d.result.no || d.result.batch) ? (d.result.batch ? "\n" + d.result.reply : vq.idLine(d.result))
+  : d.type === "publish" && d.result?.blocked ? `\n⚠️ ${d.result.error}` : "")).join("");
 async function smartWhatsApp(text) {
   const t = text.toLocaleLowerCase("tr-TR").replace(/[.!?]+$/, "").trim();
   // şemasız video linki de ("youtu.be/… 18:30'da paylaş") hızlı yol: Claude'dan geçince breaking_news yayın saatini kaybediyordu (inceleme, 18 Ekim)
@@ -3008,11 +3116,15 @@ async function smartWhatsApp(text) {
   const r = await think(text, "chat", { channel: "whatsapp" });
   if (r.error) { push("💬 Claude'a ulaşılamadı; mesaj kurallarla işleniyor"); return null; }
   const outs = r.done.filter((d) => d.type === "command").map((d) => [d.result?.reply, d.result?.report].filter(Boolean).join("\n\n")).filter(Boolean);
-  const reply = (waBrief() && outs.length ? outs : [r.reply, ...outs]).filter(Boolean).join("\n\n") || r.reply || "Tamam.";
+  const reply = ((waBrief() && outs.length ? outs : [r.reply, ...outs]).filter(Boolean).join("\n\n") || r.reply || "Tamam.") + brainQueueIds(r.done);
   return { action: "brain", reply, report: r.report, pending: r.pending, done: r.done };
 }
 async function handleCommand(text, opts = {}) {
   text = String(text || "");
+  // video kuyruğu ve trend komutları ("kuyruk", "kuyruk iptal 2", "şu ankini iptal et", "kuyruğu temizle", "trendler", "trend 1 3",
+  // "trend otomatiğini kapat") ve çok linkli mesaj (her link sırayla kuyruğa): Claude'a gitmez, kurallardan önce (eşleşmezse eski yol)
+  // otherCancel: Instagram temizliğinin "evet sil" onayı bekliyorsa "iptal/vazgeç" ona gider (aşağıda igCleanupPending; kuyruk listesi dönmez)
+  { const vr = await vq.handleText(text, { ...opts, otherCancel: !!igCleanupPending }, trendAuto.command); if (vr) { if (!opts.direct && vr.reply) brain.addExchange(text, vr.reply, [{ type: "vqueue" }]); return vr; } }
   if (opts.source === "whatsapp" && !opts.direct) { const sm = await smartWhatsApp(text).catch((e) => { push(`💬 Claude yorumu başarısız: ${e.message}`); return null; }); if (sm) return sm; }
   const cmd = parseCommand(text); const videos = listVideos();
   if (opts.direct && cmd.action === "brain") return { action: "none", reply: `Bu komutu tanımadım: "${text.slice(0, 80)}"` };
@@ -3043,7 +3155,7 @@ async function handleCommand(text, opts = {}) {
         : r.stale ? "🆕 Yeni sürüm indirilmiş ama panel eski sürümle çalışıyor. Yeniden başlatmak için: *güncelle*" : `✅ Güncel${r.current ? ` (son sürüm: ${String(r.current).slice(0, 90)})` : ""}.`;
       break;
     }
-    case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.`; break; }
+    case "stopall": { stageMute = Date.now(); const r = await restStart({ reason: "elle durduruldu" }); reply = `Sistemi durdurdum. ${r.pipeline ? "Süren üretim kapatıldı. " : ""}Bilgisayar ısınmasın diye tüm modeller kapatıldı. ${r.rest.until ? `Sıradaki planlı iş saat ${hhmm(r.rest.until)}; o zamana kadar` : "Siz talimat verene kadar"} hiçbir şey başlamayacak.${r.video?.total ? ` Video kuyruğundaki ${r.video.total} video da iptal edildi; yeniden istemek için linkleri tekrar gönderin.` : ""}`; break; }
     case "rest_end": { stageMute = Date.now(); reply = restEnd("elle başlatıldı") ? "Sistem yeniden çalışıyor. Son dakika ve Mynet takibi devam ediyor." : "Sistem zaten çalışıyor."; break; }
     case "sondakika": { // sondakika.com takibi: "sondakika.com'u kontrol et", "sondakika takibini kapat/aç"
       if (cmd.on != null) {
@@ -3124,14 +3236,13 @@ async function handleCommand(text, opts = {}) {
     case "scheduled": { reply = await scheduledCommand(cmd); break; }
     case "social_video": {
       if (waVideoCfg().enabled === false) { reply = "Videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler)."; break; }
-      if (socialBusy) {
-        if (socialQueue.length >= 5) { reply = "⏳ Sırada zaten 5 paylaşım var; bunlar bitince bu linki yeniden gönderin."; break; }
-        socialQueue.push({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "", at: Date.now() });
-        push(`🔗 paylaşım sıraya alındı (${socialQueue.length}. sırada; önceki paylaşım hazırlanıyor): ${cmd.url}`);
-        reply = `⏳ Sıraya alındı (${socialQueue.length}. sırada): önceki paylaşım hazırlanıyor (uzun videoda 10-20 dk sürebilir), bitince bu link başlayacak.`;
+      // video kuyruğu (videoqueue.js): boşsa hemen başlar, değilse sırasını bekler (sahibin işleri otomatik trend işlerinden önce)
+      const vqr = vq.add({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "", source: opts.source === "whatsapp" ? "whatsapp" : "panel" });
+      if (!vqr.ok) { reply = vqr.error; break; }
+      if (vqr.queued) {
+        reply = `⏳ Sıraya alındı (#${vqr.no}; önünde ${vqr.ahead} video var): ${vqr.ahead > 1 ? "önündeki videolar" : "önündeki video"} bitince bu link başlayacak (uzun videoda her biri 10-20 dk sürebilir). Sıra: *kuyruk* · iptal: *#${vqr.no} iptal*` + vqTimeTail(cmd, vqr.no);
         break;
       }
-      socialVideoNews({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "" }).catch((e) => push(`🔗 paylaşımdan haber hatası: ${e.message}`));
       // talimatta fragman geçiyorsa (açık haber isteği ve tür etiketi yoksa; socialVideoNews ile aynı öncelik ve aynı tür: "#haber
       // fragman" haber, "link/mizah fragman parodisi" mizah) yanıt fragman analizi der (başlıktan tanınan fragmanı socialVideoNews ayrıca
       // bildirir); süre talimattaki "N saniye"den
@@ -3143,7 +3254,8 @@ async function handleCommand(text, opts = {}) {
         : "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini sıfırdan çizeceğim (orijinal görüntü kullanılmaz). Her adımda haber vereceğim.")
         : fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
         : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[kindOf(cmd)] || "video"} hazırlanıyor. Bitince video gelecek.`
-        : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? ` ⏰ ${whenLabel(new Date(cmd.publishAt))}'de yayınlanacak.` : "");
+        : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + vqTimeTail(cmd, vqr.no);
+      reply += vq.idLine(vqr); // kuyruk numarası: iptalin tutamağı (4. tur)
       break;
     }
     case "comments_reply": { const r = await replyCheck({ manual: true }); reply = r.ok ? (r.replied ? `${r.replied} yoruma yanıt verdim.` : "Yanıt bekleyen yeni yorum yok.") : r.error; break; }
@@ -3154,7 +3266,7 @@ async function handleCommand(text, opts = {}) {
     case "sync_metrics": { const r = await execAction({ type: "sync_metrics" }); reply = r.ok ? `İzlenmeler güncellendi: YouTube ${r.youtube ?? 0}, Instagram ${r.instagram ?? 0}, TikTok ${r.tiktok ?? 0} video.` : "İzlenmeler güncellenemedi. Bağlantıları kontrol edin."; break; }
     case "publish": { if (!videos[0]) { reply = "Yayınlanacak video yok."; action = "none"; break; } const plats = cmd.platforms.length ? cmd.platforms : ["youtube", "instagram", "tiktok"]; const act = { type: "publish", video: videos[0].name, platforms: plats };
       if (needsConfirm(act)) { action = "confirm"; payload = { actions: [act] }; reply = `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlansın mı? Onaylamak için ekrandaki düğmeye basın.`; }
-      else { const r = await execAction(act); reply = r.ok ? `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlandı.` : "Yayında sorun oldu: " + Object.values(r.results || {}).map((x) => x.error).filter(Boolean).join("; "); } break; }
+      else { const r = await execAction(act); reply = r.blocked ? r.error : r.ok ? `${label(videos[0])} ${plats.join(" ve ")} üzerinde yayınlandı.` : "Yayında sorun oldu: " + Object.values(r.results || {}).map((x) => x.error).filter(Boolean).join("; "); } break; }
     case "voice_speed": { const v = settings().voice; const rate = Math.max(140, Math.min(280, Number(v.rate) + cmd.delta)); patchSettings({ voice: { rate } }); reply = cmd.delta > 0 ? `Tamam, daha hızlı konuşuyorum. Hız ${rate}.` : `Tamam, daha yavaş konuşuyorum. Hız ${rate}.`; break; }
     case "stop": reply = ""; break;
     case "tunnel_on": { const r = startTunnel(); reply = r.ok ? (r.url ? `Tünel açık: ${r.url.replace("https://", "")}.` : "Tünel başlatılıyor, adres gelince söylerim.") : `Tünel başlatılamadı: ${r.error}`; break; }
@@ -3165,7 +3277,7 @@ async function handleCommand(text, opts = {}) {
     case "voice_natural_off": stopTts(); patchSettings({ voice: { engine: "auto" } }); reply = "Doğal ses kapatıldı, sistem sesine döndüm."; break;
     case "open_youtube": { const r = await openYouTube(cmd.query); reply = r.ok ? (r.title ? `Açıyorum: ${r.title}.` : `YouTube'da "${cmd.query}" araması açıldı.`) : `Açamadım: ${r.error}`; payload = { url: r.url }; break; }
     case "open_url": { const r = await execAction({ type: "open_url", target: cmd.target }); reply = r.ok ? "Açıyorum." : "Açamadım."; payload = { url: r.url }; break; }
-    case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); reply = r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
+    case "report": case "plan": case "brain": { state.busy = "düşünüyor"; try { const r = await think(text, cmd.action === "brain" ? "chat" : cmd.action); const qi = brainQueueIds(r.done); reply = qi ? (r.reply || "") + qi : r.reply; extra = { report: r.report, reportFile: r.reportFile, done: r.done, pending: r.pending }; action = r.pending.length ? "confirm" : (r.done.find((d) => d.type === "open_video") ? "play_named" : cmd.action); if (r.pending.length) payload = { actions: r.pending }; const ov = r.done.find((d) => d.type === "open_video"); if (ov) payload = { name: ov.video }; } finally { state.busy = null; } break; }
     default: break;
   }
   if (!["report", "plan", "brain", "none", "stop"].includes(cmd.action) && reply && !opts.direct) brain.addExchange(text, reply, [{ type: cmd.action }]);

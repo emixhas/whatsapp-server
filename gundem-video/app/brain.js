@@ -35,7 +35,8 @@ export function claudeError(msg) {
   return m.split("\n").filter(Boolean).slice(-2).join(" ").slice(0, 300);
 }
 
-export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, pythonBin }) {
+// extraContext: panelin eklediği kısa bağlam (video kuyruğu ve yayın onayı bekleyenler, kendi numaralarıyla)
+export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, pythonBin, extraContext = () => ({}) }) {
   const MEM = path.join(DATA, "memory.json");
   const readJson = (p, d) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return d; } };
   const memory = () => readJson(MEM, { notes: [] });
@@ -65,6 +66,7 @@ export function makeBrain({ ROOT, OUT, DATA, listVideos, getSchedule, getState, 
       recentLog: getState().log.slice(-12),
       memory: { notes: memory().notes || [] },
       recentConversation: recentExchanges(),
+      ...(() => { try { return extraContext() || {}; } catch { return {}; } })(),
     };
   }
 

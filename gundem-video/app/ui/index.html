@@ -75,6 +75,13 @@
   .mynet .mi .t{flex:1;font-size:13px;line-height:1.3}.mynet .mi .t small{color:var(--mut)}
   .mynet .mi button{flex:none;font-size:12px;padding:6px 10px}
   .anlik{border-color:#5a1218;background:linear-gradient(180deg,rgba(227,10,23,.10),var(--panel) 60%)}.anlik h2{color:#ff6b74}
+  .vqbox .vq{display:flex;gap:8px;align-items:center;background:#070b16;border:1px solid var(--line);border-radius:12px;padding:7px 9px;font-size:13px}.vqbox .vq.act{border-color:#5a4a12;background:rgba(242,183,5,.07)}
+  .vqbox .vq .t{flex:1;min-width:0;overflow-wrap:anywhere;line-height:1.3}.vqbox .vq .t small{color:var(--mut)}.vqbox .vq .n{flex:none;min-width:30px;text-align:center;color:var(--mut);font-weight:800}.vqbox .vq button{flex:none;font-size:12px;padding:5px 8px}.vqbox .vq button:disabled{opacity:.35;cursor:default}
+  .src{display:inline-block;font-size:10px;letter-spacing:1px;padding:1px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin-left:6px;vertical-align:1px}.src.auto{background:#2b2350;color:#cfc6ff}.src.wa{background:#0f2a1a;color:#7ee2a8}
+  /* trend kartı 400 px'te sıkı (6. tur): düğmeler alt satırda yan yana, kapak küçük, açıklama en çok 3 satır */
+  @media(max-width:480px){#igtList .mi{flex-wrap:wrap;gap:8px}#igtList .mi .igtth{width:40px!important;height:52px!important}#igtList .mi .t{flex:1 1 0}#igtList .mi .igtb{flex-direction:row!important;flex-wrap:wrap;width:100%;justify-content:flex-end}#igtList .mi .igtcap{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+  .mynet .mi .igsel{flex:none;width:26px;height:26px;border-radius:50%;border:2px solid #34406a;background:transparent;color:#fff;font-weight:800;font-size:12px;cursor:pointer;padding:0;align-self:center}.mynet .mi .igsel.on{background:var(--red);border-color:var(--red)}.mynet .mi .igsel:disabled{opacity:.3;cursor:default}
+  .autobtn{border:1px solid var(--line);background:#0b1020;color:var(--mut);border-radius:999px;padding:7px 13px;font-weight:800;font-size:13px;cursor:pointer}.autobtn.on{background:rgba(46,204,113,.14);border-color:var(--green);color:var(--green)}.tag.new{background:#0f2a2e;color:#69f0e6}
   .anlik textarea{width:100%;box-sizing:border-box;resize:vertical;background:#070b16;color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:inherit;font-size:14px;margin-bottom:8px}.anlik textarea:focus{outline:none;border-color:var(--red)}
   .next{margin-top:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#070b16;font-size:13px}.next b{font-size:22px;font-variant-numeric:tabular-nums;color:var(--c)}
   .log{background:#05070e;border:1px solid var(--line);border-radius:12px;padding:10px;height:230px;overflow:auto;font:12px/1.55 ui-monospace,Menlo,monospace;color:#B8C2E6;white-space:pre-wrap;transition:height .2s}
@@ -162,15 +169,23 @@
       <div id="brkTrends" class="conninfo" style="margin-top:8px"></div>
       <div class="acts" style="margin-top:8px"><button class="ghost" id="brkCheck">Şimdi kontrol et</button></div>
     </div>
-    <!-- Instagram trend radarı (kullanıcı isteği, 18 Ekim: "bazen çok izlenen videolar oluyor, trend"; yalnız panelde, otomatik üretim yok) -->
+    <!-- Video kuyruğu (kullanıcı isteği, 20 Ekim: "3-5 video seçersem sıralasın, kuyruktan devam etsin; iptal de edebilelim"); SSE "vqueue" ile canlı -->
+    <div class="card mynet vqbox" id="vqCard">
+      <h2>🎞 VİDEO KUYRUĞU <span id="vqCount" style="color:var(--txt);letter-spacing:1px"></span></h2>
+      <div class="conninfo" style="margin:-4px 0 6px">WhatsApp'tan gelen linkler, trend kartında seçtikleriniz ve otomatik trend videoları sırayla hazırlanır (aynı anda tek video indirilir; sizin işleriniz otomatiklerden önce). Yayın her videoda onayınıza gelir.</div>
+      <div id="vqList" style="display:grid;grid-template-columns:minmax(0,1fr);gap:6px"></div>
+      <div class="acts" style="margin-top:8px"><button class="ghost danger" id="vqClear" style="display:none">Kuyruğu temizle</button></div>
+    </div>
+    <!-- Instagram trend radarı (kullanıcı isteği, 18 Ekim: "bazen çok izlenen videolar oluyor, trend"; 20 Ekim: yeni trend otomatik üretilir, çok izlenen WhatsApp'a bildirilir) -->
     <div class="card mynet" id="igtCard">
       <h2>📈 INSTAGRAM TRENDLERİ</h2>
-      <div class="conninfo" style="margin:-4px 0 6px">Haber ve viral hesaplarında hesabın normalinin çok üstünde izlenen ya da hızla yükselen videolar. Yalnız burada görünür: WhatsApp'a mesaj gitmez, kendiliğinden video üretilmez; istediğinizi "🎬 Haber yap" ile hazırlatırsınız (yayın yine onayınıza gelir).</div>
+      <div class="conninfo" style="margin:-4px 0 6px">Haber ve viral hesaplarında hesabın normalinin çok üstünde izlenen ya da hızla yükselen videolar; her taramadan sonra liste kendiliğinden yenilenir, yeni düşenlerde 🆕. Otomatik üretim açıkken yeni trend videolar kendiliğinden video kuyruğuna girer; çok aşırı izlenen video WhatsApp'a bildirilir. İstediklerinizi soldaki daireyle seçip sırayla hazırlatabilirsiniz; yayın yine onayınıza gelir.</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px"><button class="autobtn" id="igtAuto" title="Yeni düşen trend videolar kendiliğinden video kuyruğuna alınsın">🤖 Otomatik üretim: —</button><span id="igtAutoInfo" style="font-size:12px;color:var(--mut)"></span></div>
       <div class="next" id="igtInfo">Yükleniyor…</div>
       <div id="igtAcc" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"></div>
       <div id="igtMsgs" class="conninfo" style="margin-top:6px;font-size:12px"></div>
       <div id="igtList" style="display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin-top:8px"></div>
-      <div class="acts" style="margin-top:8px"><button class="ghost" id="igtScan">🔄 Şimdi tara</button><button class="ghost" id="igtMore" style="display:none"></button></div>
+      <div class="acts" style="margin-top:8px"><button class="ghost ok" id="igtQueue" style="display:none"></button><button class="ghost" id="igtQueueFr" style="display:none"></button><button class="ghost" id="igtSelClear" style="display:none">Seçimi temizle</button><button class="ghost" id="igtScan">🔄 Şimdi tara</button><button class="ghost" id="igtMore" style="display:none"></button></div>
       <details id="igtSet" style="margin-top:10px"><summary style="cursor:pointer;color:var(--mut);font-size:13px">⚙ Trend ayarları ve izlenen hesaplar</summary>
         <label class="row"><span class="sw" id="igtOn"></span><span>Her <input id="igtEvery" type="number" min="15" max="1440" class="inl" style="width:64px"> dakikada bir tara (hafif; sistem dinlenirken de taranır)</span></label>
         <div style="font-size:13px;color:var(--mut);margin:6px 0 4px">İzlenecek Instagram hesapları (kullanıcı adı ya da profil linki; satır başına ya da virgülle, en çok 20). Bulunamayan hesap yukarıda ❌ ile görünür:</div>
@@ -179,6 +194,8 @@
         <input id="igtTags" style="width:100%;box-sizing:border-box;background:#070b16;border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:7px 10px;font:inherit;font-size:13px" placeholder="sondakika, gundem">
         <div class="acts" style="margin-top:6px"><button class="ghost" id="igtSave">Hesapları ve hashtag'leri kaydet</button></div>
         <label class="row" style="flex-wrap:wrap"><span>Trend: hesabın normalinin en az <input id="igtRatio" type="number" min="1" max="50" step="0.5" class="inl" style="width:58px"> katı ve en az <input id="igtViews" type="number" min="0" step="1000" class="inl" style="width:88px"> izlenme ya da <input id="igtLikes" type="number" min="0" step="100" class="inl" style="width:76px"> beğeni; son <input id="igtAge" type="number" min="1" max="168" class="inl" style="width:54px"> saatin videoları; listede <input id="igtTop" type="number" min="1" max="30" class="inl" style="width:50px"> video</span></label>
+        <label class="row" style="flex-wrap:wrap"><span>🤖 Otomatik üretim: günde en çok <input id="igtAutoDay" type="number" min="0" max="50" class="inl" style="width:54px"> video, taramada en çok <input id="igtAutoScan" type="number" min="0" max="10" class="inl" style="width:50px">, en çok <input id="igtAutoAge" type="number" min="1" max="168" class="inl" style="width:54px"> saatlik trendler (sizin seçtikleriniz sayılmaz)</span></label>
+        <label class="row" style="flex-wrap:wrap"><span class="sw" id="igtAlertOn"></span><span>🔥 Çok izlenen videoyu WhatsApp'a bildir: en az <input id="igtAlertViews" type="number" min="1000" step="100000" class="inl" style="width:104px"> izlenme ya da hesabın <input id="igtAlertRatio" type="number" min="1" max="1000" class="inl" style="width:56px"> katı (en az 100 B izlenmeyle); her gönderi bir kez, günde en çok <input id="igtAlertDay" type="number" min="0" max="50" class="inl" style="width:50px"></span></label>
         <label class="row"><span class="sw" id="igtCookies"></span><span>🍪 Girişsiz okuma engellenirse tarayıcı çerezleriyle oku (çerez kaynağı: 📡 Otomatik içerikler → "Sosyal medya çerezleri")</span></label>
         <div class="conninfo" style="color:#F2B705">⚠️ Çerezli okuma, tarayıcıda giriş yapılı Instagram hesabınızla (kanalın yayın yaptığı hesap) istek atar. Instagram bunu otomatik istek sayıp hesabı geçici olarak kısıtlayabilir; gerekmedikçe kapalı tutun.</div>
       </details>
@@ -658,9 +675,9 @@ $('#narrEngine').onchange=async e=>{await post('/api/settings',{narrationEngine:
 $('#voiceEngine').onchange=async e=>{await post('/api/settings',{voice:{engine:e.target.value}});addMsg('j','Emixhas sesi: '+e.target.options[e.target.selectedIndex].text);};
 $('#exag').oninput=e=>$('#exagTxt').textContent=(+e.target.value).toFixed(2);$('#exag').onchange=e=>post('/api/settings',{chatterbox:{exaggeration:+e.target.value}});
 $('#claudeModel').onchange=e=>post('/api/settings',{claudeModel:e.target.value}).then(()=>addMsg('j','Claude modeli: '+(e.target.selectedOptions[0]?.textContent||e.target.value)));
-async function systemStop(){if(status.running&&!await ask('Süren üretim de durdurulacak ve sistem dinlenmeye geçecek. Emin misin?'))return;const b=$('#sysStop');b.dataset.busy=1;b.disabled=true;b.textContent='Durduruluyor…';
+async function systemStop(){if((status.running||vqN)&&!await ask((status.running?'Süren üretim de durdurulacak ve sistem dinlenmeye geçecek.':'Sistem dinlenmeye geçecek.')+(vqN?` Video kuyruğundaki ${vqN} video da iptal edilecek.`:'')+' Emin misin?'))return;const b=$('#sysStop');b.dataset.busy=1;b.disabled=true;b.textContent='Durduruluyor…';
   try{const r=await post('/api/rest',{on:true});const t=r.rest?.until?new Date(r.rest.until).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}):null;
-  const m=`Sistem durduruldu: ${r.pipeline?'süren üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı. ${t?`Sıradaki planlı iş ${t}; o zamana kadar`:'Siz başlatana kadar'} hiçbir şey başlamayacak.`;toast(m);addMsg('j',m);}finally{delete b.dataset.busy;b.disabled=false;refreshStatus();}}
+  const m=`Sistem durduruldu: ${r.pipeline?'süren üretim kapatıldı, ':''}${r.killed?.length||0} arka plan süreci kapatıldı. ${t?`Sıradaki planlı iş ${t}; o zamana kadar`:'Siz başlatana kadar'} hiçbir şey başlamayacak.${r.video?.total?` Video kuyruğundaki ${r.video.total} video da iptal edildi.`:''}`;toast(m);addMsg('j',m);}finally{delete b.dataset.busy;b.disabled=false;refreshStatus();}}
 async function systemStart(){const r=await post('/api/rest',{on:false});const m=r.ended?'Sistem yeniden çalışıyor: son dakika ve Mynet takibi, zamanlanmış işler devam ediyor.':'Sistem zaten çalışıyor.';toast(m);addMsg('j',m);refreshStatus();}
 $('#sysStop').onclick=()=>status.rest?.on?systemStart():systemStop();
 $('#stopAllBtn').onclick=systemStop;
@@ -762,7 +779,9 @@ $('#anlikBtn').onclick=async()=>{const topic=$('#anlikTxt').value.trim();if(topi
   try{const r=await post('/api/anlik',{topic,duration:Number($('#anlikDur').value)});
     if(!r.ok){toast(r.error||'Başlatılamadı',true);addMsg('j','Anlık haber başlatılamadı: '+(r.error||''));return;}
     // video linki (YouTube/Instagram…): sayfa okunmaz, süre kurgudan gelir; "Haberi okudum … (N sn)" yazılmaz
-    if(r.social){toast('Video indiriliyor 🎬');addMsg('j',`${r.source||'Video'} linki alındı. Video indiriliyor; kurgu ve üretim bitince size gelecek (aşamalar canlı logda).`);speak('Video indiriliyor.');$('#anlikTxt').value='';refreshStatus();return;}
+    if(r.batch){toast(String(r.reply||'').split('\n')[0]+' 🎞');addMsg('j',r.reply);speak('Videolar kuyruğa alındı.');$('#anlikTxt').value='';loadVq();return;}
+    if(r.social&&r.queued){toast(`Video kuyruğuna alındı (#${r.no}) 🎞`);addMsg('j',`${r.source||'Video'} linki video kuyruğuna alındı (#${r.no}; önünde ${r.ahead??Math.max(0,(r.position||1)-1)} video var); önceki paylaşım bitince indirilecek. İptal: kuyruk kutusunda ⏹ / ✖.`);speak('Video kuyruğa alındı.');$('#anlikTxt').value='';loadVq();return;}
+    if(r.social){toast('Video indiriliyor 🎬');addMsg('j',`${r.source||'Video'} linki alındı${r.no?` (#${r.no})`:''}. Video indiriliyor; kurgu ve üretim bitince size gelecek (aşamalar canlı logda).`);speak('Video indiriliyor.');$('#anlikTxt').value='';refreshStatus();return;}
     const head=r.title?(r.viaLink?'Haberi okudum':'Haberi buldum')+': '+r.title+' ('+r.source+'). ':(r.ok?'Sitelerde bulunamadı, yazdığın bilgiyle üretiliyor. ':'');
     const m=head+(r.queued?'Anlık haber '+(r.position||1)+'. sıraya alındı; süren üretim bitince başlayacak.':'Son dakika videosu üretiliyor ('+r.duration+' sn). Aşamalar canlı logda.');
     toast(r.queued?'Sıraya alındı ⏳':'Anlık haber başladı ⚡');addMsg('j',m);speak(r.queued?'Anlık haber sıraya alındı.':'Son dakika videosu üretiliyor.');$('#anlikTxt').value='';refreshStatus();
@@ -954,12 +973,18 @@ const igtEsc=t=>String(t??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>
 const igtN=n=>n>=1e6?(n/1e6).toLocaleString('tr-TR',{maximumFractionDigits:1})+' Mn':n>=1e4?Math.round(n/1e3).toLocaleString('tr-TR')+' B':Number(n||0).toLocaleString('tr-TR');
 const igtAgo=ms=>{const h=(Date.now()-ms)/36e5;return h<1?Math.max(1,Math.round(h*60))+' dk önce':h<48?Math.round(h)+' sa önce':Math.round(h/24)+' gün önce';};
 const igtHm=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+// açıklama kelime ortasından kesilmez (6. tur): son boşlukta (kelime çok uzunsa harfte) + "…"
+const igtCut=(t,n)=>{const a=[...String(t).replace(/\s+/g,' ').trim()];if(a.length<=n)return a.join('');let c=a.slice(0,n).join('');const sp=c.lastIndexOf(' ');if(sp>=n*0.6)c=c.slice(0,sp);return c.replace(/[\s,.;:!?…-]+$/,'')+'…';};
 const IGT_M={resmi:'resmi API',web:'herkese açık profil',cerez:'çerezli'};
 const IGT_TRAILER=/(^|[^\p{L}])(fragman|trailer|teaser)/iu;
 function igtImgErr(img){const u=img.dataset.px;if(!u){img.remove();return;}delete img.dataset.px;img.src='/api/igtrends/thumb?u='+encodeURIComponent(u);}
 async function loadIgt(){try{const s=await api('/api/igtrends');const c=s.cfg||{};
   $('#igtOn').classList.toggle('on',c.enabled!==false);$('#igtCookies').classList.toggle('on',c.useCookies===true);
+  const au=s.auto||{},auOn=au.autoProduce!==false;igtTr=s.trailerEnabled!==false;$('#igtAuto').classList.toggle('on',auOn);$('#igtAuto').textContent='🤖 Otomatik üretim: '+(auOn?'Açık':'Kapalı');
+  $('#igtAutoInfo').textContent=auOn?`bugün ${au.today||0}/${au.autoMaxPerDay??6} · taramada en çok ${au.autoPerScan??2} · ${au.autoMaxAgeHours??24} saatten genç yeni trendler`:'yeni trendler yalnız listede görünür; seçtiklerinizi sıraya alabilirsiniz';
+  $('#igtAlertOn').classList.toggle('on',au.alert?.enabled!==false);
   const setv=(id,v)=>{if(document.activeElement!==$(id))$(id).value=v;};
+  setv('#igtAutoDay',au.autoMaxPerDay??6);setv('#igtAutoScan',au.autoPerScan??2);setv('#igtAutoAge',au.autoMaxAgeHours??24);setv('#igtAlertViews',au.alert?.views??1000000);setv('#igtAlertRatio',au.alert?.ratio??10);setv('#igtAlertDay',au.alert?.maxPerDay??5);
   setv('#igtEvery',c.intervalMin||60);setv('#igtRatio',c.minRatio??2);setv('#igtViews',c.minViews??20000);setv('#igtLikes',c.minLikes??2000);setv('#igtAge',c.maxAgeHours??48);setv('#igtTop',c.top??15);
   if(!igtDirty&&document.activeElement!==$('#igtAccounts'))$('#igtAccounts').value=(c.accounts||[]).join('\n');
   if(!igtDirty&&document.activeElement!==$('#igtTags'))$('#igtTags').value=(c.hashtags||[]).join(', ');
@@ -975,20 +1000,22 @@ async function loadIgt(){try{const s=await api('/api/igtrends');const c=s.cfg||{
     // hız kuralıyla trend olan taze videonun katı düşük olabilir (0,4): "kat" yerine "hızla yükseliyor"
     const why=it.fast&&!(it.ratio>=(c.minRatio||2))?'⚡ hızla yükseliyor':it.ratio!=null?`hesabın ${Number(it.ratio).toLocaleString('tr-TR',{maximumFractionDigits:1})} katı${it.trend?' 🔥':''}`:'';
     const p=it.produced,done=p?.state==='üretildi',fr=s.trailerEnabled!==false&&IGT_TRAILER.test(it.caption||'');
+    const si=igtSel.indexOf(it.url),q=it.inQueue,busy=!!q||p?.state==='hazırlanıyor'||p?.state==='sırada'; // seçim sırası; video kuyruğundaki yeri
     const btn=mode=>`<button class="ghost" data-ig="${i}" data-mode="${mode}">${done&&p.mode===mode?'✓ Üretildi':mode==='fragman'?'🎬 Fragman yap':'🎬 Haber yap'}</button>`;
-    return `<div class="mi" style="align-items:flex-start${it.trend?';border-color:#5a1218':''}"><div style="position:relative;width:48px;height:64px;flex:none;border-radius:8px;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;font-size:18px">🎬${it.thumb?`<img src="${igtEsc(it.thumb)}" data-px="${igtEsc(it.thumb)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="igtImgErr(this)" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0">`:''}</div>`
-      +`<div class="t" style="min-width:0;overflow-wrap:anywhere"><b>${who}</b>${it.account&&it.source&&it.source!=='hesap'?` <small>${igtEsc(it.source)}</small>`:''}${it.trend?' <span class="tag brk">TREND</span>':''}<br>${igtEsc((it.caption||'(açıklama yok)').slice(0,140))}${(it.caption||'').length>140?'…':''}<br><small>${m} · ${igtAgo(it.takenAt)}${why?' · '+why:''}${it.producedNews?` · <span style="color:#2ECC71" title="${igtEsc(`${it.producedNews.video||'üretime alındı'} · ${it.producedNews.ago} önce · ${it.producedNews.reason||''}`)}">✓ Bu haber üretildi</span>`:''}${p?.state==='hata'?` · <span style="color:#ff7b86" title="${igtEsc(p.error)}">❌ son deneme başarısız</span>`:''}</small></div>`
-      +`<div style="display:flex;flex-direction:column;gap:4px;flex:none">${p?.state==='hazırlanıyor'?'<button class="ghost" disabled>⏳ Hazırlanıyor</button>':btn('haber')+(fr?btn('fragman'):'')}<a class="ghost" href="${igtEsc(it.url)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none;font-size:12px;padding:6px 10px">↗ Aç</a></div></div>`;}).join('')
+    return `<div class="mi" style="align-items:flex-start${it.trend?';border-color:#5a1218':''}"><button class="igsel${si>=0?' on':''}" data-sel="${i}" ${busy?'disabled':''} title="${busy?'Zaten video kuyruğunda':si>=0?'Seçimden çıkar':'Sıraya almak için seç (seçim sırası korunur)'}">${si>=0?si+1:''}</button><div class="igtth" style="position:relative;width:48px;height:64px;flex:none;border-radius:8px;overflow:hidden;background:#111;display:flex;align-items:center;justify-content:center;font-size:18px">🎬${it.thumb?`<img src="${igtEsc(it.thumb)}" data-px="${igtEsc(it.thumb)}" referrerpolicy="no-referrer" loading="lazy" alt="" onerror="igtImgErr(this)" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:0">`:''}</div>`
+      +`<div class="t" style="min-width:0;overflow-wrap:anywhere"><b>${who}</b>${it.account&&it.source&&it.source!=='hesap'?` <small>${igtEsc(it.source)}</small>`:''}${it.trend?' <span class="tag brk">TREND</span>':''}${it.isNew?' <span class="tag new">🆕 YENİ</span>':''}<br><span class="igtcap">${igtEsc(igtCut(it.caption||'(açıklama yok)',140))}</span><br><small>${m} · ${igtAgo(it.takenAt)}${why?' · '+why:''}${it.producedNews?` · <span style="color:#2ECC71" title="${igtEsc(`${it.producedNews.video||'üretime alındı'} · ${it.producedNews.ago} önce · ${it.producedNews.reason||''}`)}">✓ Bu haber üretildi</span>`:''}${p?.state==='hata'?` · <span style="color:#ff7b86" title="${igtEsc(p.error)}">❌ son deneme başarısız</span>`:''}${p?.state==='iptal'&&!q?` · <span title="${igtEsc(p.error||'')}">⏹ iptal edildi</span>`:''}${p?.auto&&p.state!=='iptal'?' · 🤖 otomatik':''}</small></div>`
+      +`<div class="igtb" style="display:flex;flex-direction:column;gap:4px;flex:none">${busy?`<button class="ghost" disabled>⏳ ${q?.queued?'#'+q.no+' sırada':q?.no?'#'+q.no+' hazırlanıyor':'Hazırlanıyor'}</button>`:btn('haber')+(fr?btn('fragman'):'')}<a class="ghost" href="${igtEsc(it.url)}" target="_blank" rel="noopener noreferrer" style="text-align:center;text-decoration:none;font-size:12px;padding:6px 10px">↗ Aç</a></div></div>`;}).join('')
     ||`<div class="conninfo">${s.at?`Son ${c.maxAgeHours||48} saatte izlenen hesaplarda video bulunamadı.`:'Henüz tarama yapılmadı. "🔄 Şimdi tara"ya basın (hesaplar arasında birkaç saniye beklenir).'}</div>`;
   $('#igtMore').style.display=igtItems.length>6?'':'none';$('#igtMore').textContent=igtAll?'Daha az göster':`Tümünü göster (${igtItems.length})`;
-  $('#igtScan').disabled=!!s.scanning;
+  $('#igtScan').disabled=!!s.scanning;igtSelUi();
 }catch{$('#igtInfo').textContent='Instagram trend bilgisi alınamadı.';}}
-$('#igtList').onclick=async e=>{const b=e.target.closest('[data-ig]');if(!b)return;const it=igtItems[Number(b.dataset.ig)];if(!it)return;const mode=b.dataset.mode;
+$('#igtList').onclick=async e=>{const sb=e.target.closest('[data-sel]');if(sb){igtToggle(Number(sb.dataset.sel));return;}const b=e.target.closest('[data-ig]');if(!b)return;const it=igtItems[Number(b.dataset.ig)];if(!it)return;const mode=b.dataset.mode;
   const who=it.account?'@'+it.account:it.source,what=mode==='fragman'?'fragman analizi videosu':'bizim stilimizde haber videosu';
   const again=it.produced?.state==='üretildi'&&it.produced.mode===mode;
   if(!await ask(`${again?`Bu Instagram videosundan zaten ${what} üretildi. Yine de yeniden hazırlansın mı?`:`Bu Instagram videosundan ${what} hazırlansın mı?`}\n\n${who}: ${(it.caption||'(açıklama yok)').slice(0,160)}\n\nVideo indirilir, kurgulanıp seslendirilir; yayından önce onayınız istenir.`))return;
   b.disabled=true;b.textContent='Hazırlanıyor…';const r=await post('/api/igtrends/produce',{url:it.url,mode});
-  toast(r.ok?'Video indiriliyor, kurgu hazırlanıyor 🎬':(r.error||'Başlatılamadı'),!r.ok);if(r.ok)addMsg('j',`Instagram trendinden ${mode==='fragman'?'fragman analizi':'haber videosu'} hazırlanıyor: ${who}. Bitince onayınıza gelecek.`);loadIgt();};
+  // 7. tur: işin değişmeyen numarası (#7; sıra yeri değil — "3. sırada" #3 sanılıyordu)
+  toast(r.ok?(r.queued?`Video kuyruğuna alındı (#${r.no}; önünde ${r.ahead??Math.max(0,(r.position||1)-1)} video) 🎞`:`Video alındı (#${r.no}), indiriliyor 🎬`):(r.error||'Başlatılamadı'),!r.ok);if(r.ok)addMsg('j',`Instagram trendinden ${mode==='fragman'?'fragman analizi':'haber videosu'} ${r.queued?`video kuyruğuna alındı (#${r.no}; önünde ${r.ahead??Math.max(0,(r.position||1)-1)} video var)`:`alındı (#${r.no}), hazırlanıyor`}: ${who}. Bitince onayınıza gelecek.`);loadIgt();loadVq();};
 $('#igtScan').onclick=async()=>{$('#igtScan').disabled=true;$('#igtInfo').textContent='Taranıyor… (hesaplar arasında 2-4 sn beklenir, birkaç dakika sürebilir)';const r=await post('/api/igtrends/scan');
   toast(r.ok?`${(r.items||[]).length} video, ${(r.items||[]).filter(x=>x.trend).length} trend`:(r.error||'Tarama başarısız'),!r.ok);loadIgt();};
 $('#igtMore').onclick=()=>{igtAll=!igtAll;loadIgt();};
@@ -1010,6 +1037,54 @@ $('#igtSave').onclick=async()=>{const acc=[...new Set($('#igtAccounts').value.sp
 $('#igtCookies').onclick=async()=>{const on=!$('#igtCookies').classList.contains('on');
   if(on&&!await ask('Çerezli okuma açılsın mı?\n\nGirişsiz okuma Instagram tarafından engellendiğinde istekler, tarayıcıda giriş yapılı Instagram hesabınızla (kanalın yayın yaptığı hesap) atılır. Instagram bunu otomatik istek sayıp hesabı geçici olarak kısıtlayabilir.'))return;igtSet({useCookies:on});};
 setTimeout(loadIgt,1800);setInterval(loadIgt,60000);
+// seçilenler seçim sırasıyla (1, 2, 3…) video kuyruğuna; 🤖 otomatik üretim anahtarı (settings.igTrends.autoProduce); her taramadan sonra
+// SSE "igtrends" kartı yeniler (kullanıcı isteği, 20 Ekim: "yeni trend düşerse anında listeme girsin")
+let igtSel=[],igtTr=true;
+const igtBusy=x=>!!x.inQueue||['hazırlanıyor','sırada'].includes(x.produced?.state);
+function igtSelUi(){igtSel=igtSel.filter(u=>{const x=igtItems.find(y=>y.url===u);return x&&!igtBusy(x);});
+  document.querySelectorAll('#igtList [data-sel]').forEach(b=>{const it=igtItems[Number(b.dataset.sel)],k=it?igtSel.indexOf(it.url):-1,bz=!!it&&igtBusy(it);b.disabled=bz;b.classList.toggle('on',k>=0);b.textContent=k>=0?String(k+1):'';b.title=bz?'Zaten video kuyruğunda':k>=0?'Seçimden çıkar':'Sıraya almak için seç (seçim sırası korunur)';});
+  const n=igtSel.length,fr=n&&igtTr&&igtSel.every(u=>IGT_TRAILER.test((igtItems.find(x=>x.url===u)||{}).caption||''));
+  $('#igtQueue').style.display=n?'':'none';$('#igtQueue').textContent=`🎬 Seçilenleri sıraya al (${n})`;$('#igtQueueFr').style.display=fr?'':'none';$('#igtQueueFr').textContent=`🎬 Fragman olarak sıraya al (${n})`;$('#igtSelClear').style.display=n?'':'none';}
+function igtToggle(i){const it=igtItems[i];if(!it||igtBusy(it))return;const k=igtSel.indexOf(it.url);if(k>=0)igtSel.splice(k,1);else igtSel.push(it.url);igtSelUi();}
+async function igtQueueSel(mode){const list=igtSel.map(u=>igtItems.find(x=>x.url===u)).filter(Boolean);if(!list.length)return;
+  if(!await ask(`${list.length} Instagram videosu seçim sırasıyla video kuyruğuna alınsın mı?\n\n${list.map((it,i)=>`${i+1}. ${it.account?'@'+it.account:it.source}: ${igtCut(it.caption||'(açıklama yok)',70)}`).join('\n')}\n\n${mode==='fragman'?'Fragman analizi':'Haber videosu'} olarak sırayla indirilir ve kurgulanır; her biri bitince yayın onayınıza gelir.`))return;
+  const r=await post('/api/vqueue',{items:list.map(it=>({url:it.url,account:it.account,caption:it.caption,trend:true,mode})),mode});
+  toast(r.ok?String(r.reply||'').split('\n')[0].replace(/\*/g,''):(r.results?.[0]?.error||r.error||'Sıraya alınamadı'),!r.ok);if(r.ok){addMsg('j',String(r.reply||'').replace(/\*/g,''));igtSel=[];}loadIgt();loadVq();}
+$('#igtQueue').onclick=()=>igtQueueSel('haber');$('#igtQueueFr').onclick=()=>igtQueueSel('fragman');$('#igtSelClear').onclick=()=>{igtSel=[];igtSelUi();};
+$('#igtAuto').onclick=async()=>{const on=!$('#igtAuto').classList.contains('on');const r=await post('/api/igtrends/auto',{on});toast(on?'🤖 Otomatik üretim açık: yeni düşen trendler sıraya alınır':'Otomatik üretim kapatıldı',!r.ok);loadIgt();};
+const igtAuSet=async p=>{await post('/api/settings',{igTrends:p});loadIgt();};
+$('#igtAlertOn').onclick=()=>igtAuSet({alert:{enabled:!$('#igtAlertOn').classList.contains('on')}});
+$('#igtAlertViews').onchange=()=>igtAuSet({alert:{views:Math.round(igtVal('#igtAlertViews',1000,1e10,1000000))}});
+$('#igtAlertRatio').onchange=()=>igtAuSet({alert:{ratio:igtVal('#igtAlertRatio',1,1000,10)}});
+$('#igtAlertDay').onchange=()=>igtAuSet({alert:{maxPerDay:Math.round(igtVal('#igtAlertDay',0,50,5))}});
+$('#igtAutoDay').onchange=()=>igtAuSet({autoMaxPerDay:Math.round(igtVal('#igtAutoDay',0,50,6))});
+$('#igtAutoScan').onchange=()=>igtAuSet({autoPerScan:Math.round(igtVal('#igtAutoScan',0,10,2))});
+$('#igtAutoAge').onchange=()=>igtAuSet({autoMaxAgeHours:Math.round(igtVal('#igtAutoAge',1,168,24))});
+es.addEventListener('igtrends',()=>loadIgt());
+// 🎞 video kuyruğu: hazırlanan/üretimdeki işler (⏹ İptal), bekleyenler sırayla (↑ ↓ ✖), "Kuyruğu temizle"; SSE "vqueue" ile canlı
+const VQ_SRC={whatsapp:['WhatsApp','wa'],panel:['panel',''],'trend-auto':['🤖 otomatik','auto']};
+const vqSrc=s=>{const [t,c]=VQ_SRC[s]||[s,''];return `<span class="src ${c}">${igtEsc(t)}</span>`;};
+let vqSig=null,vqT=null,vqN=0;
+function renderVq(v){const act=v?.active||[],it=v?.items||[];
+  // kuyruğa giren/çıkan iş trend kartındaki "N. sırada / Hazırlanıyor" durumunu da değiştirir: yalnız liste değişince kart yenilenir
+  const sig=[...act,...it].map(x=>x.url+'|'+x.state).join(' ');if(vqSig!==null&&sig!==vqSig){clearTimeout(vqT);vqT=setTimeout(loadIgt,700);}vqSig=sig;
+  const prod=act.filter(x=>x.step==='üretiliyor'||x.step==='sırada üretim').length;vqN=act.length+it.length;
+  $('#vqCount').textContent=vqN?`· ${[prod?prod+' üretimde':'',act.length-prod?(act.length-prod)+' hazırlanıyor':'',it.length+' sırada'].filter(Boolean).join(' · ')}`:'';
+  // numara WhatsApp'taki *kuyruk* listesiyle aynı (üretiliyor → üretimi bekliyor → hazırlanıyor → sırada)
+  // her satır işin değişmeyen numarasıyla (#7; WhatsApp'taki "#7 iptal" ile aynı): sıra yeri numara değildir
+  $('#vqList').innerHTML=act.map(x=>`<div class="vq act"><span class="n" title="İş numarası (WhatsApp: #${x.no} iptal)">#${x.no||''}</span><div class="t"><b>${x.step==='üretiliyor'||x.step==='sırada üretim'?'🎬':'▶'} ${igtEsc(x.label)}</b>${vqSrc(x.source)}<br><small>${igtEsc(x.stepText||'hazırlanıyor')}${x.startedAt?' · '+igtAgo(x.startedAt)+' başladı':''}</small></div><button class="ghost danger" data-vqc="${igtEsc(x.id)}" data-no="${x.no||''}" ${x.step==='iptal ediliyor'?'disabled':''}>⏹ İptal</button></div>`).join('')
+    +it.map((x,i)=>`<div class="vq"><span class="n" title="İş numarası (WhatsApp: #${x.no} iptal)">#${x.no||''}</span><div class="t">${igtEsc(x.label)}${vqSrc(x.source)}<br><small>${x.mode==='fragman'?'fragman · ':''}${igtAgo(x.at)} eklendi</small></div><button class="ghost" data-vqm="${igtEsc(x.id)}" data-d="-1" ${i?'':'disabled'} title="Yukarı al">↑</button><button class="ghost" data-vqm="${igtEsc(x.id)}" data-d="1" ${i<it.length-1?'':'disabled'} title="Aşağı al">↓</button><button class="ghost danger" data-vqx="${igtEsc(x.id)}" data-no="${x.no||''}" title="Kuyruktan çıkar">✖</button></div>`).join('')
+    ||'<div class="conninfo">Kuyruk boş. WhatsApp\'tan birden çok video linki (tek mesajda ya da arka arkaya) gönderin ya da trend kartında seçin; sırayla hazırlanır.</div>';
+  $('#vqClear').style.display=it.length?'':'none';}
+async function loadVq(){try{renderVq(await api('/api/vqueue'));}catch{}}
+$('#vqList').onclick=async e=>{const c=e.target.closest('[data-vqc]'),m=e.target.closest('[data-vqm]'),x=e.target.closest('[data-vqx]');if(!c&&!m&&!x)return;
+  if(c){if(!await ask(`#${c.dataset.no} iptal edilsin mi?\n\nİndirme ve kurgu süreçleri kapatılır; üretime geçtiyse yalnız bu videonun üretimi durdurulur, video çıktıysa yayınlanmaz (planlı yayını ve onay kaydı kaldırılır). Sıradaki video başlar.`))return;const r=await post('/api/vqueue/cancel',{id:c.dataset.vqc});toast(r.ok?`#${c.dataset.no} iptal edildi${r.removed?.scheduled?' · planlı yayını kaldırıldı':''}${r.removed?.approval?' · onay kaydı kaldırıldı':''}`:(r.error||'İptal edilemedi'),!r.ok);}
+  else if(m)await post('/api/vqueue/move',{id:m.dataset.vqm,dir:Number(m.dataset.d)});
+  else{const r=await post('/api/vqueue/cancel',{id:x.dataset.vqx});toast(r.ok?`#${x.dataset.no} kuyruktan çıkarıldı`:(r.error||'Çıkarılamadı'),!r.ok);}
+  loadVq();};
+$('#vqClear').onclick=async()=>{if(!await ask('Kuyrukta bekleyen tüm videolar çıkarılsın mı?\n\nŞu an hazırlanan video sürer (onu ⏹ İptal ile durdurabilirsiniz).'))return;const r=await post('/api/vqueue/clear');toast(`${r.removed||0} video kuyruktan çıkarıldı`);loadVq();};
+es.addEventListener('vqueue',e=>{try{renderVq(JSON.parse(e.data));}catch{}});
+setTimeout(loadVq,1200);setInterval(loadVq,30000);
 async function loadInsights(){loadPeak();const i=await api('/api/insights');renderFollowers(i?.followers);if(!i){$('#kpi').innerHTML='<div><b>0</b><span>video</span></div>';return;}
   $('#kpi').innerHTML=`<div><b>${i.videoCount}</b><span>üretilen video</span></div><div><b>${i.publishedCount}</b><span>yayınlanan</span></div><div><b>${(i.totalViews||0).toLocaleString('tr-TR')}</b><span>toplam izlenme</span></div><div><b>${i.breakingAvg??'-'}</b><span>SON DAKİKA ort.</span></div><div><b>${i.normalAvg??'-'}</b><span>normal ort.</span></div>`+(i.leadingPlatform?`<div><b>${PLAT[i.leadingPlatform].n}</b><span>en çok izlenen platform</span></div>`:'');
   const bp=i.byPlatform||{};

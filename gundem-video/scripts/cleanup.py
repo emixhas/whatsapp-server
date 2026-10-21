@@ -67,9 +67,12 @@ def protected() -> set:
     """Henüz yayınlanacak videolar: yükleme sırası, planlı yayın, WhatsApp onayı."""
     names = {x.get("video") for x in (load_json(DATA / "publish_queue.json", []) or []) if isinstance(x, dict)}
     names |= {x.get("video") for x in (load_json(DATA / "scheduled_publish.json", []) or []) if isinstance(x, dict)}
+    # wa_pending.json: eski tek nesne {video…}, dizi ya da {seq, seqAt, list: […]} (birden çok bekleyen onay; whatsapp.js)
     p = load_json(DATA / "wa_pending.json", None)
-    if isinstance(p, dict) and p.get("video"):
-        names.add(p["video"])
+    rows = [p] if isinstance(p, dict) and p.get("video") else p.get("list") if isinstance(p, dict) else p
+    for x in rows if isinstance(rows, list) else []:
+        if isinstance(x, dict) and x.get("video"):
+            names.add(x["video"])
     # panelin o an yüklediği video (server.js execAction publish; 3 saatten eski kayıt sayılmaz)
     names |= {x.get("video") for x in (load_json(DATA / "publishing.json", []) or []) if isinstance(x, dict) and time.time() * 1000 - float(x.get("at") or 0) < 3 * 3600000}
     return {str(n) for n in names if n}
