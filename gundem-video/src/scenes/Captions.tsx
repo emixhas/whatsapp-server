@@ -4,17 +4,19 @@ import { currentGroup, Word } from "../captionGroups";
 import { fitText, textWidth, trUpper } from "../fit";
 import { theme } from "../theme";
 
-// Yanan altyazının görünümü (kullanıcı kararı, 20 Ekim: "3'er kelime halinde, içleri siyah dışları sarı, orta büyüklükte"):
-// harfin içi siyah, harflerin DIŞINA canlı sarı kontür (~0,11 em), arkada yumuşak koyu gölge (açık renkli görüntüde sarı da
-// seçilsin); kutu yok, büyük harf (lang="tr": i → İ), kelime asla bölünmez. Kontür iki katmanla çizilir: arkada kalın sarı
-// -webkit-text-stroke, önde aynı yerde siyah dolgu; böylece kontürün içe düşen yarısı dolgunun altında kalır (paint-order
-// desteğine bağlı değil).
+// Yanan altyazının görünümü (kullanıcı kararı, 20 Ekim: "3'er kelime halinde, içleri siyah dışları sarı, orta büyüklükte";
+// 21 Ekim: "kelimeler önceden gelsin, sadece renklensin"): grubun bütün kelimeleri baştan görünür — harfin içi siyah, harflerin
+// DIŞINA canlı sarı kontür (~0,11 em) —; söylenen kelime tam söylendiği anda renklenir: içi sarı, dışı siyah kontür (renkler yer
+// değiştirir, kısa bir büyüme vurgusuyla) ve grup kalkana kadar sarı kalır. Arkada yumuşak koyu gölge (açık renkli görüntüde sarı
+// da seçilsin); kutu yok, büyük harf (lang="tr": i → İ), kelime asla bölünmez. Kontür iki katmanla çizilir: arkada kalın kontür
+// -webkit-text-stroke, önde aynı yerde dolgu; böylece kontürün içe düşen yarısı dolgunun altında kalır (paint-order desteğine
+// bağlı değil).
 export const CAPTION_FILL = "#000";
 export const CAPTION_OUTLINE = "#FFD400";
 const OUTLINE = 0.11; // dış kontür (em)
 const GAP = 0.45; // kelime arası (em): yan yana iki kelimenin kontürleri birbirine değmesin
 const LH = 1.2; // satır yüksekliği (em): alt satırın İ noktası, Ğ şapkası üst satırın Ş çengeline, kontürüne değmesin
-const POP = 0.09; // kelimenin belirmesi (sn): 0,9 → 1 büyür, yarı saydamdan tam görünür olur
+const POP = 0.09; // kelimenin renklenmesi (sn): renk değişirken 1 → 1,06 → 1 büyüyüp küçülür
 const FLOOR = 40; // hiçbir düzen sığmazsa başlığa binmektense bu puntoya kadar küçülür
 const ONE = 0.95; // tek satır ancak çok satırlı puntonun en çok %5 altında sığıyorsa: kısa grup komşusundan küçük çıkmasın
 
@@ -63,8 +65,9 @@ function lineBreak(words: string[], fs: number, lines: number): number {
   return Math.max(a, b + gap + c) <= Math.max(a + gap + b, c) * 1.04 ? 1 : 2;
 }
 
-/** Grubu çizer (konumsuz): bütün kelimeler baştan dizilir, söylenmemiş olan görünmez ama yerini tutar; söylenen kelime söylendiği
- *  karede belirir ve POP sn'de büyür. align: Shorts'ta ortalı, yatay özette sola dayalı. */
+/** Grubu çizer (konumsuz): bütün kelimeler baştan görünür (siyah dolgu, sarı kontür); söylenen kelime söylendiği karede
+ *  renklenir (sarı dolgu, siyah kontür) ve POP sn'lik küçük bir büyüme vurgusu alır. align: Shorts'ta ortalı, yatay özette sola
+ *  dayalı. */
 export const CaptionText = ({ cap, align = "center" }: { cap: NonNullable<ReturnType<typeof useCaption>>; align?: "center" | "left" }) => {
   const { fs } = cap;
   const ow = Math.max(3, Math.round(fs * OUTLINE));
@@ -79,18 +82,21 @@ export const CaptionText = ({ cap, align = "center" }: { cap: NonNullable<Return
     }}>
       {cap.words.map((w, k) => {
         const age = cap.ages[k];
+        const said = age >= 0; // söylendi: renkler yer değiştirir
         const p = Math.min(1, Math.max(0, age / POP));
+        const pop = said ? 1 + 0.06 * Math.sin(Math.PI * p) : 1; // renklenirken kısa vurgu, sonra aynı boy (yazı kaymaz)
+        const fill = said ? CAPTION_OUTLINE : CAPTION_FILL;
+        const outline = said ? CAPTION_FILL : CAPTION_OUTLINE;
         return (
           <Fragment key={k}>
             {/* satır kırılımı: tam genişlikte, yüksekliksiz öğe sonraki kelimeyi alt satıra iter */}
             {k === br ? <span data-br style={{ flexBasis: "100%", height: 0 }} /> : null}
-            <span style={{
+            <span data-said={said ? 1 : 0} style={{
               position: "relative", display: "inline-block", whiteSpace: "nowrap", wordBreak: "keep-all", hyphens: "none",
-              visibility: age < 0 ? "hidden" : "visible", opacity: age < 0 ? 0 : 0.5 + 0.5 * p,
-              transform: `scale(${0.9 + 0.1 * p})`, transformOrigin: "50% 60%",
+              transform: `scale(${pop})`, transformOrigin: "50% 60%",
             }}>
-              <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: CAPTION_OUTLINE, WebkitTextStroke: `${2 * ow}px ${CAPTION_OUTLINE}` }}>{w.w}</span>
-              <span style={{ position: "relative", color: CAPTION_FILL }}>{w.w}</span>
+              <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: outline, WebkitTextStroke: `${2 * ow}px ${outline}` }}>{w.w}</span>
+              <span style={{ position: "relative", color: fill }}>{w.w}</span>
             </span>
           </Fragment>
         );

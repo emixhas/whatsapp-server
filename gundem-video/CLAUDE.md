@@ -127,9 +127,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   + WhatsApp sağlık uyarısı (12 saatte bir); `data/caption_qa.json`. `teshis.sh` iki aracın kurulu olup olmadığını ve son satırları yazar.
   Altyazı 3'er kelime, içi siyah dışı sarı, orta boy (kullanıcı kararı, 20 Ekim; 14 Ekim'deki tek büyük kelime + kategori renginde
   kutu kalktı; `src/captionGroups.ts`, `src/scenes/Captions.tsx`): grup en çok 3 kelime, kelime sonu noktalaması ya da 0,6 sn'den uzun
-  duraklama erken kapatır; grup ilk kelimesiyle bütün dizilir (söylenmemiş kelime görünmez, yeri ayrılır, yazı kaymaz), her kelime
-  söylendiği anda 0,09 sn'de büyüyerek belirir, grup son kelimeden 0,18 sn sonra ya da sonraki grup başlayınca kalkar, uzun duraklamada
-  ekran boş. Harf içi siyah, dışa ~0,11 em #FFD400 kontür (arkada kalın kontürlü kopya, önde siyah dolgu), koyu gölge. Punto `fitText`
+  duraklama erken kapatır. Kelimeler önceden gelir, yalnız renklenir (kullanıcı kararı, 21 Ekim: "kelimeler önceden gelsin, sadece
+  renklensin"): grup BÜTÜN kelimeleriyle ilk kelimesinden en çok 0,5 sn önce gelir (`EARLY`; önceki grup kalkmadan değil: önceki grup
+  0,18 sn'lik kalışındayken yeni grup ancak kendi ilk kelimesi söylenince onu iter), söylenmemiş kelime siyah dolgu + sarı kontürle
+  görünür, her kelime tam söylendiği anda (s − kaydırma; `caption_qa.py` bunu ölçer) renklenir: içi sarı, dışı siyah kontür, 0,09 sn'lik
+  küçük bir büyüme vurgusu (sonra aynı boy, yazı kaymaz) ve grup kalkana kadar sarı kalır; grup son kelimeden 0,18 sn sonra ya da sonraki
+  grup başlayınca kalkar, 0,5 sn'den uzun duraklamada ekran boş. Harf içi siyah, dışa ~0,11 em #FFD400 kontür (arkada kalın kontürlü
+  kopya, önde dolgu; söylenen kelimede renkler yer değiştirir), koyu gölge. Punto `fitText`
   (kontür ve kelime arası dahil), gruptan gruba sıçramasın diye en çok 2 satıra sığan en büyüğü (tek satır ancak %5'ten az küçülerek
   sığıyorsa), en az 48 px (yatayda 56); daha uzun grup yükseklik sınırı içinde 3. satıra geçer. İki satıra düşen üç kelimede kırılım
   dengeli (uzun satır en kısa, eşite yakınsa üst satır kısa: TRAFİK / KAZASINDA ÜÇ). Başlığa binmesin diye yerleşime göre yükseklik
