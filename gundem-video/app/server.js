@@ -8,8 +8,8 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import QRCode from "qrcode";
-import { parseCommand, findLink, videoLink, VERB_NEG, KIND_FILL, KIND_DO } from "./commands.js";
-import { parseWhen, whenLabel } from "./when.js";
+import { parseCommand, findLink, videoLink, useDetectors, VERB_NEG, KIND_FILL, KIND_DO } from "./commands.js";
+import { parseWhen, whenLabel, timeNote, doubtNote, atLabel } from "./when.js";
 import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_LEAN, claudeCwd } from "./brain.js";
 import { makeWhatsApp } from "./whatsapp.js";
 import { makeVideoQueue, vqCtx, vqTag, vqWho, queueCommand, normUrl, parseBatch, cancelTopic } from "./videoqueue.js";
@@ -558,7 +558,8 @@ async function prepareAnlik0(input, duration, opts = {}) {
     // mizah/viral etiketli link (link/mizah ya da talimatta açık ifade: "mizah videosu", "#mizah sesi kalsın", "son dakika yazma, viral
     // video"; inceleme, 19 Ekim) son dakika haberi değildir: talimata "son dakika" eklenmez, tür ayrı alanla gider
     const tagged = ["trend", "mizah"].includes(kindOf({ kind: pc.kind, instruction: rest }));
-    const instruction = tagged || /^son ?dakika(\s|$)/i.test(rest) ? rest : `son dakika ${rest}`.trim();
+    // talimat "son dakika: …" (etiket biçimi): tür haber, şaka altyazısında talimattan (commands.js "son dakika: <link>" dalı gibi)
+    const instruction = tagged || /^son ?dakika(\s|$|:)/i.test(rest) ? rest : rest ? `son dakika: ${rest}` : "son dakika";
     push(`🔗 ${vl.platform} video linki son dakika haberi olarak alındı (haber sayfası gibi okunmaz): ${vl.url.slice(0, 120)}`);
     // video kuyruğuna (videoqueue.js): başka paylaşım hazırlanırken reddedilmez, sırasını bekler
     const vqr = vq.add({ url: vl.url, instruction, publishAt: opts.publishAt || pc.publishAt || null, kind: pc.kind || "", source: "panel" });
@@ -1633,7 +1634,10 @@ const trailerCfg = () => {
 // türünü değiştiriyordu): tetik yalnız ardından AÇIK İSTEK BİÇİMİ gelirse sayılır (beyaz liste); kaçırılan istek ucuz (link/mizah, link/haber
 // etiketi), yanlış tetik pahalı
 const KIND_WORDS = Object.assign(Object.create(null), { mizah: "mizah", mizahi: "mizah", komik: "mizah", trend: "trend", viral: "trend", haber: "haber" });
-const kindFold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğâîû]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g", â: "a", î: "i", û: "u" })[c]);
+// aynı işaretin uzun dizisi üçe iner (11. tur; common.py _kind_text aynı kural): kalıplar işaret sayısına bakmaz, 65.536 karakterlik "⟪⟪⟪…" ya da
+// "😂😂😂…" dizisinde her kalıbın ilk (yorumlanan) çalışması metin boyu sürüyordu
+const kindFold = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(/[ıöçşüğâîû]/g, (c) => ({ ı: "i", ö: "o", ç: "c", ş: "s", ü: "u", ğ: "g", â: "a", î: "i", û: "u" })[c])
+  .replace(/([^\p{L}\p{Nd}\s'’])\1{3,}/gu, "$1$1$1");
 const KIND_SIGN = String.raw`[^\p{L}\p{Nd}\s'’]`; // işaret: harf, rakam, boşluk ve kesme işareti dışı (noktalama, tire, emoji, #, ²…)
 const KIND_T = String.raw`[^\S\n]*(?:$|\n|${KIND_SIGN})`; // ifade sonu: metin ya da satır sonu, işaret ("son dakika'yı" değil)
 // İSTEK BİÇİMİ (common.py _REQ… aynı metin): yap, yapın(ız), yapsana, yapalım, yapsın(lar), yapar mısın(ız)/mıyız, yapabilir misin/miyiz,
@@ -1650,8 +1654,28 @@ const REQ1 = String.raw`y?[iu]n(?:[iu]z)?|s[ae]n[ae]|y?[ae]l[iu]m|s[iu]n(?:l[ae]
   + String.raw`m[ae]l[iu]s[iu]n(?:[iu]z)?|y?[aeiu]?c[ae](?:ks[iu]n(?:[iu]z)?|n|z|k\s*m[iu]s[iu]n(?:[iu]z)?)|m[ae](?:k|n[iu]|s[iu]n[iu])\s+${REQ_WANT}|m[ae](?:k|s[iu]|n(?:[iu]z)?)\s+${REQ_NEED}|`
   + String.raw`s[ae]n(?:[iu]z)?\s+(?:iyi|guzel|harika|super)\s+olur`;
 const REQ_FORM = String.raw`${REQ1}|y?[iu]p\s+(?:(?:bana|bize|hemen|sonra|lutfen|da|de)\s+)?${ASK_V}(?:${REQ1})?`;
+// benzer videonun istek biçimi (common.py _REQ_SG/_REQ_PL/_RC_REQ aynı metin; inceleme, 20 Ekim: izleyiciye yazılmış "Videodaki gibi yapmanız
+// lazım", "belediyelerin de benzerini yapması lazım", "aynısını yapalım mı?" benzer video sanılıyordu): gereklilik yalnız -mak/-man + lazım,
+// "yapalım mı?" soru; REQ_SG tekil/sahip biçimleri (işaretten ve "siz de"den sonra yalnız bunlar: "Ev hanımları dikkat! Videodaki gibi yapın"
+// izleyiciye; sahibin kibar sorusu "yapar mısınız", "yapabilir misiniz" de sayılır, 9. tur), REQ_PL çoğul/üçüncü kişi biçimleri
+// ("yapabilirsiniz" ifadedir, istek değil: "Bunun benzerini siz de yapabilirsiniz")
+const REQ_SG = String.raw`s[ae]n[ae]|y?[ae]l[iu]m(?!\s*m[iu](?![a-z]))|[aeiu]?r\s*m[iu](?:s[iu]n(?:[iu]z)?|y[iu]z)|y?[ae]bilir(?:\s*m[iu](?:s[iu]n(?:[iu]z)?|y[iu]z)|s[iu]n)|`
+  + String.raw`y?[iu]ver(?:s[ae]n[ae]|[iu]r\s*m[iu]s[iu]n)?|m[ae]l[iu]s[iu]n|y?[aeiu]?c[ae](?:ks[iu]n|n|z|k\s*m[iu]s[iu]n)|`
+  + String.raw`m[ae](?:k|n[iu]|s[iu]n[iu])\s+${REQ_WANT}|m[ae](?:k|n)\s+${REQ_NEED}|s[ae]n\s+(?:iyi|guzel|harika|super)\s+olur`;
+const REQ_PL = String.raw`y?[iu]n(?:[iu]z)?|s[iu]n(?:l[ae]r)?|[aeiu]?r\s*m[iu]s[iu]n[iu]z|y?[ae]bilir\s*m[iu]s[iu]n[iu]z|`
+  + String.raw`y?[iu]ver(?:[iu]n(?:[iu]z)?|[iu]r\s*m[iu]s[iu]n[iu]z)|m[ae]l[iu]s[iu]n[iu]z|y?[aeiu]?c[ae](?:ks[iu]n[iu]z|k\s*m[iu]s[iu]n[iu]z)|`
+  + String.raw`s[ae]n[iu]z\s+(?:iyi|guzel|harika|super)\s+olur`;
+const RC_REQ1 = String.raw`${REQ_PL}|${REQ_SG}`;
+const RC_REQ = String.raw`${RC_REQ1}|y?[iu]p\s+(?:(?:bana|bize|hemen|sonra|lutfen|da|de)\s+)?${ASK_V}(?:${RC_REQ1})?`;
+const RC_REQ_SG = String.raw`${REQ_SG}|y?[iu]p\s+(?:(?:bana|bize|hemen|sonra|lutfen|da|de)\s+)?${ASK_V}(?:${REQ_SG})?`;
+// benzer videonun tekil yolu kibar çoğul soruyu ("yapar mısınız", "yapabilir misiniz") almaz (12. tur; common.py _REQ_SG1 aynı metin; inceleme,
+// 20 Ekim: "Evde videodaki gibi yapar mısınız #challenge" izleyici sözüne bakılmadan benzer video oluyordu): o biçim çoğul yoldan (RECREATE_PL,
+// izleyici sözü yoksa) sayılır; "çizgi filme çevirir misiniz" tekil kolda kalır
+const REQ_SG1 = String.raw`s[ae]n[ae]|y?[ae]l[iu]m(?!\s*m[iu](?![a-z]))|[aeiu]?r\s*m[iu](?:s[iu]n|y[iu]z)|y?[ae]bilir(?:\s*m[iu](?:s[iu]n|y[iu]z)|s[iu]n)|`
+  + String.raw`y?[iu]ver(?:s[ae]n[ae]|[iu]r\s*m[iu]s[iu]n)?|m[ae]l[iu]s[iu]n|y?[aeiu]?c[ae](?:ks[iu]n|n|z|k\s*m[iu]s[iu]n)|`
+  + String.raw`m[ae](?:k|n[iu]|s[iu]n[iu])\s+${REQ_WANT}|m[ae](?:k|n)\s+${REQ_NEED}|s[ae]n\s+(?:iyi|guzel|harika|super)\s+olur`;
+const RC_REQ_SG1 = String.raw`${REQ_SG1}|y?[iu]p\s+(?:(?:bana|bize|hemen|sonra|lutfen|da|de)\s+)?${ASK_V}(?:${REQ_SG1})?`;
 const PASS_OPT = String.raw`(?:[iu]l|n)s[iu]n(?:l[ae]r)?`; // edilgen istek: yapılsın
-const PASS_FORM = String.raw`(?:[iu]l|n)(?:s[iu]n(?:l[ae]r)?|[ae]c[ae]k(?!\s*m[iu](?![a-z]))|m[ae]s[iu]\s+${REQ_NEED})`; // + yapılacak, yapılması lazım ("yapılmalı", "yapılacak mı?" değil)
 // dolgu/süre kelimesi ("haber olarak 30 sn", "18:30'da"); ardından ifade sonu gelirse sayılır. Sayıdan sonraki boşluk yalnız birimle
 // birlikte alınır (ölçüm, 19 Ekim: sayının boşluğu yutup yutmaması her sayıda iki yol açıyor, "1" + 100 boşluk + "1"… saniyeler sürüyordu)
 const FILLTOK = String.raw`(?:[0-9]+(?:[.,:][0-9]+)*(?:\s*(?:['’]\p{L}+|(?:saniye|sn|dakika|dk)\p{L}*))?|saniye\p{L}*|sn|dakika\p{L}*|dk|lutfen|bunu|sunu|hemen|olarak)(?!\p{L})`;
@@ -1660,13 +1684,19 @@ const TO_END = String.raw`(?:\s+${FILLTOK}){0,4}${KIND_T}`;
 // sonu değil ("Gerçek hayattan fragman: Kartal tilkiyi havada yakaladı", "Güzel bir haber olarak, kedimiz…"; inceleme, 19 Ekim). Her
 // parça tek yoldan eşleşir, uzun girdide geri izleme patlamaz
 const SIGN_END = String.raw`(?:[^\S\n]*(?:${KIND_SIGN}|\n))*(?:(?:[^\S\n]+|(?<!\p{L})(?<![0-9]))${FILLTOK}(?:[^\S\n]*(?:${KIND_SIGN}|\n))*){0,4}[^\S\n]*$`;
-// virgül, noktalı virgül, iki nokta, tire ya da satır sonundan sonra en çok dört kelime (ardından istek fiili gelmeli: "fragman, kısa olsun",
-// "fragman - orijinal sesini kullan", "haber gibi, özetle")
-const CLAUSE = String.raw`[^\S\n]*(?:[,;:\-–]|(?=\n))(?:\s+\p{L}+){0,4}`;
+// işaretten (virgül, iki nokta, tire, nokta, ünlem, emoji…) ya da satır sonundan sonra en çok dört kelime ya da süre (ardından istek fiili
+// gelmeli: "fragman, kısa olsun", "haber gibi, özetle"; inceleme, 20 Ekim: "fragman. kısa tut", "fragman 🎬 kısa olsun", "haber gibi! özetle")
+const CLAUSE = String.raw`[^\S\n]*(?:${KIND_SIGN}(?:[^\S\n]*${KIND_SIGN})*(?![^\S\n]*${KIND_SIGN})|(?=\n))(?:\s+(?:\p{L}+|${FILLTOK})){0,4}`; // işaret dizisi bütün
+// + yapılacak (yalnız talimatın sonunda, ardından yalnız işaret/dolgu/süre ya da işaretten sonra kısa "… olsun/kalsın" cümlesi: "mizah
+// videosu yapılacak.", "bundan mizah videosu yapılacak, 40 saniye", "bundan mizah videosu yapılacak, kısa olsun" — 9. tur; "haber yapılacak kadar önemli değil", "Mizah yapılacak bir durum değil", "Viral video çekilecek, herkes meydana" değil; inceleme,
+// 20 Ekim), yapılması lazım ("yapılmalı", "yapılacak mı?" değil)
+const PASS_FORM = String.raw`(?:[iu]l|n)(?:s[iu]n(?:l[ae]r)?|[ae]c[ae]k(?=${SIGN_END}|${CLAUSE}\s+(?:olsun|kalsin)(?!\p{L})${SIGN_END})|m[ae]s[iu]\s+${REQ_NEED})`;
 const ASK_GEC = String.raw`gec(?:${REQ_FORM}|(?=${TO_END}))`; // "haber olarak geç"; "son dakika geç kaldı" (sıfat) değil
 const ASK_A = String.raw`(?:${ASK_V}(?:${REQ_FORM})?|${ASK_GEC}|olsun)(?!\p{L})`;
+const ASK_A_SG = String.raw`(?:${ASK_V}(?:${REQ_SG})?|${ASK_GEC}|olsun)(?!\p{L})`; // zarf araya girince yalnız tekil/sahip biçimi
 const KIND_WANT = String.raw`istiyoru[mz]|isterim|isteriz`; // tür ifadesinden sonra "istiyorum" da istek ("mizah videosu istiyorum")
 const ASK_P = String.raw`(?:${ASK_V}(?:${REQ_FORM}|${PASS_FORM})?|${ASK_GEC}|olsun|${KIND_WANT})(?!\p{L})`;
+const ASK_P_SG = String.raw`(?:${ASK_V}(?:${REQ_SG}|${PASS_FORM})?|${ASK_GEC}|olsun|${KIND_WANT})(?!\p{L})`;
 // alıntı/amaç sözü (common.py _say aynı metin; L harf sınıfı): istekten sonra diye, der/derken, deyince, denilen, dedi…, demiş…, diyor…
 // (diyorum değil: sahibin ısrarı), diyen, diyerek, çağrısı/talebi/uyarısı gelirse istek başkasının sözü ya da amaçtır ("Herkes haber yap
 // diyor", "haber yap demiştim ama vazgeçtim", "Komik video olsun diye", "aynısını yapalım derken")
@@ -1682,13 +1712,25 @@ const REFUSAL_END = String.raw`(?:d(?:egi|ii|ei)l|yok|gerek\s+yok|gerekmez|gerek
 const REFUSAL_GAP = String.raw`diye|olarak|gibi|seklinde|tarzinda|video|videosu|videosunu|bir|bi|sey|bisey|birsey|falan|filan|hic|ile|kism\p{L}*|ibare\p{L}*|etiket\p{L}*|yazi\p{L}*|basli\p{L}*|band\p{L}*|ifade\p{L}*|kelime\p{L}*`;
 const REFUSAL_NEWS = String.raw`\s+(?:(?:${REFUSAL_GAP}|haber|haberi|haberini)\s+){0,3}${REFUSAL_END}`;
 const REFUSAL_KIND = String.raw`\s+(?:(?:${REFUSAL_GAP})\s+){0,3}${REFUSAL_END}`;
-const ASK_GAP = String.raw`(?:bir|bi|kisa|uzun|video\p{L}*|ozet\p{L}*|bunu|sunu|bana|lutfen|hemen|olarak|sey|bisey|birsey|sekilde|bicimde)`;
+// ifade ile fiil arasında sayılan kelime ("haberini kısaca hazırla", "haber gibi tarafsız anlat", "haber olarak sade bir dille anlat",
+// "haberini ayrıntılı bir şekilde hazırla", "haber olarak tarafsız ve net anlat"; inceleme, 20 Ekim; "bir şekilde" tek ara kelime; "sen" yalnız
+// NEWS_SEN'de); en çok üç, biri süreyse dört ("haber olarak 40 saniyelik kısa bir video hazırla"). Zarf (kısaca, net, tarafsız…) araya girerse
+// fiil yalnız tekil/sahip istek biçiminde (common.py _GAP_O/_GAP; 9. tur: yapıştırılan "Medya, haberleri tarafsız yapın!" haber isteği değil)
+const ASK_GAP_O = String.raw`(?:bir|bi|kisa|uzun|video\p{L}*|ozet\p{L}*|bunu|sunu|bana|lutfen|hemen|olarak|sey|bisey|birsey|sekilde|bicimde)`; // HEAD'in listesi
+const ASK_GAP = String.raw`(?:(?:bir|bi)\s+(?:sekilde|bicimde)|bir|bi|kisa|uzun|video\p{L}*|ozet\p{L}*|bunu|sunu|bana|lutfen|hemen|olarak|sey|bisey|birsey|`
+  + String.raw`sekilde|bicimde|kisaca|hizlica|detayli|ayrintili|sade|net|tarafsiz|guzelce|biraz|dille|ve)`;
+const GAP_TOK = String.raw`(?:${ASK_GAP}|${FILLTOK})\s+`;
+const GAP_TOK_O = String.raw`(?:${ASK_GAP_O}|${FILLTOK})\s+`;
+const GAP_DUR = String.raw`[0-9]+\s*(?:saniye|sn|dakika|dk)`;
+// süre ilk dört sözcükte mi; ikinci kol yalnız süre yokken (common.py _GAP: sonuç aynı, uzun girdide boşa geri izleme yok)
+const GAP = String.raw`(?:(?=(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK}){0,4}|(?!(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK}){0,3})`;
+const GAP_O = String.raw`(?:(?=(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK_O}){0,4}|(?!(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK_O}){0,3})`;
 // ifadeden sonra istek fiili: araya en çok üç ara kelime ya da süre ("haber olarak 30 saniyelik bir video yap"); fiilden sonra ret ("haber
 // gibi yap değil") ve alıntı sayılmaz
-const TO_VERB = String.raw`\s+(?:(?:${ASK_GAP}|${FILLTOK})\s+){0,3}${ASK_A}`;
+const TO_VERB = String.raw`\s+(?!\s)(?:${GAP_O}${ASK_A}|${GAP}${ASK_A_SG})`; // (?!\s): boşluk dizisi geri izlenirken her adım ucuz
 const TO_ASK = String.raw`${TO_VERB}(?!${REFUSAL_NEWS})${SAY}`;
 // reddedilen istek etiket ve ifade denetiminden önce atılır ("haber değil mizah" → mizah)
-const REFUSED_P = String.raw`(?<!\p{L})(?:(?:son\s*dakika|haber(?:i|ini)?)(?!\p{L})${REFUSAL_NEWS}|#?(?:mizah|mizahi|komik|trend|viral)(?:\s+(?:(?:bir|bi)\s+)?(?:video|icerik|paylasim)\p{L}*)?(?!\p{L})${REFUSAL_KIND})`;
+const REFUSED_P = String.raw`(?<!\p{L})(?:(?:son\s*dakika|haber(?:i|ini)?)(?!\p{L})${REFUSAL_NEWS}|#?(?:mizah|mizahi|komik|esprili|komedi|trend|viral)(?:\s+(?:(?:bir|bi)\s+)?(?:video|icerik|paylasim)\p{L}*)?(?!\p{L})${REFUSAL_KIND})`;
 const REFUSED_RE = new RegExp(REFUSED_P, "gu");
 const SD_FOLLOW = String.raw`(?:olarak|diye|seklinde|etiket\p{L}*|band\p{L}*|basli\p{L}*|haber\p{L}*|video\p{L}*)`;
 // "duymayan kalmasın, haber olsun", "herkes duysun/bilsin/görsün haber olsun" deyimi (duyuru çağrısı) "haber olsun" isteği değil
@@ -1696,24 +1738,48 @@ const HO_IDIOM = ["kalmasin", "duysun", "duyulsun", "bilsin", "gorsun", "ogrensi
 // açık haber isteği (fragman kararı, video türü, benzer video; common.py NEWS_RE aynı kalıp). GÜÇLÜ biçim: "haber(i/ini/leri) yap|hazırla|
 // üret|çek|yaz" istek biçiminde (edilgen istek de: "haberi yapılsın"; araya en çok üç ara kelime ya da süre: "haberini 30 saniyelik hazırla",
 // "bunun haberini kısa yap"); "haber olsun" yalnız talimatın başında, bu/bu video/bunu/videoyu'dan sonra ya da talimatın son sözü olarak
-// (yönelme hâlinden ve kalmasın/duysun/bilsin/görsün'den sonra deyim: "herkese haber olsun", "duymayan kalmasın haber olsun"); "haber
+// (son söz biçimi HO_END'de, gülme emojisi yoksa; yönelme hâlinden ve kalmasın/duysun/bilsin/görsün'den sonra deyim: "herkese haber olsun", "duymayan kalmasın haber olsun"); "haber
 // olarak" + ifade sonu ya da istek fiili (araya en çok üç kelime ya da süre; hemen ardından virgülle yeni cümle başlıyorsa değil: "Güzel bir
 // haber olarak, kedimiz…"; virgülden sonra dolgu/süre, istek ya da ret olabilir); "haber gibi|şeklinde|tarzında|formatında|diliyle" + istek
 // fiili ("haber gibi yayınla"; "haber gibi sunulan" değil); "habere çevir", "haberleştir", "haber haline getir"; "son dakika" (son dk) +
 // olarak/diye/etiket…/haber…/video… + (son ya da istek fiili), + istek fiili. Ardından ret ya da alıntı/amaç sözü gelirse sayılmaz
+// "haber(i/ini) + ara kelime + yaz/çek": ad da olabilen bu iki kökte ara kelime varsa fiil istek ekli ya da yalın kök + ifade sonu ("Acı haberi
+// bir yaz günü aldık", "Kötü haberi bir çek ile verdiler" ad); yap/hazırla/üret yalın kökü her yerde ("bunun haberini kısa yap ve paylaş";
+// inceleme, 20 Ekim); talimatın başında "(bundan) haber istiyorum"
+const NEWS_V = String.raw`(?:yap|hazirla|uret|cek|yaz)`;
+// ara kelimeli yaz/çek ardından devam da istek (common.py _YC_CONT; 9. tur: "bunun haberini kısa yaz ve paylaş", "haberini kısa çek ve gönder",
+// "bunun haberini bi yaz bakalım", "haberini kısa yaz hadi"; "Acı haberi bir yaz günü aldık" yine ad)
+const YC_CONT = String.raw`(?=\s+(?:(?:ve|sonra|da|de|ama)\s+(?:\p{L}+\s+){0,2}${ASK_A}|(?:bakalim|hadi|haydi|simdi)${TO_END}))`;
+const NEWS_GV = String.raw`(?:(?:yap|hazirla|uret)(?:${REQ_FORM}|${PASS_FORM})?|(?:cek|yaz)(?:${REQ_FORM}|${PASS_FORM}|(?=${TO_END})|${YC_CONT}))`; // ara kelimeden sonra
+const NEWS_GV_SG = String.raw`(?:(?:yap|hazirla|uret)(?:${REQ_SG}|${PASS_FORM})?|(?:cek|yaz)(?:${REQ_SG}|${PASS_FORM}|(?=${TO_END})|${YC_CONT}))`; // zarflı ara kelimeden sonra
+const GAP1 = String.raw`(?:(?=(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK}){1,4}|(?!(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK}){1,3})`;
+const GAP1_O = String.raw`(?:(?=(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK_O}){1,4}|(?!(?:\S+\s+){0,3}${GAP_DUR})(?:${GAP_TOK_O}){1,3})`;
 const NEWS_RE = new RegExp(String.raw`(?<!\p{L})(?:son\s*(?:dakika|dk)(?!\p{L}|['’])(?!${REFUSAL_NEWS})(?=\s+${SD_FOLLOW}(?:${TO_END}|${TO_ASK})|${TO_ASK})|`
-  + String.raw`haber(?:i|ini|inin|ler|leri|lerini)?\s+(?:videosu(?:nu)?\s+)?(?:(?:${ASK_GAP}|${FILLTOK})\s+){0,3}(?:yap|hazirla|uret|cek|yaz)(?:${REQ_FORM}|${PASS_FORM})?(?!\p{L})${SAY}|`
-  + String.raw`(?:^[^\p{L}\p{Nd}]*|(?:(?:bu|su)(?:\s+video)?|bunu|sunu|videoyu)(?:\s+d[ae])?\s+)haber\s+olsun(?!\p{L})${SAY}|(?<![ae]\s)${HO_IDIOM}haber\s+olsun(?=${SIGN_END})|`
+  + String.raw`haber(?:i|ini|inin|ler|leri|lerini)?\s+(?:videosu(?:nu)?\s+)?(?:${NEWS_V}(?:${REQ_FORM}|${PASS_FORM})?|${GAP1_O}${NEWS_GV}|${GAP1}${NEWS_GV_SG})`
+  + String.raw`(?!\p{L})${SAY}|`
+  + String.raw`(?:^[^\p{L}\p{Nd}]*|(?:(?:bu|su)(?:\s+video)?|bunu|sunu|videoyu)(?:\s+d[ae])?\s+(?=haber\s+olsun${SIGN_END}))haber\s+olsun(?!\p{L})${SAY}|`
+  + String.raw`^[^\p{L}\p{Nd}]*(?:(?:bundan|bunun|bunu|sundan|sunun|bir|bi)\s+){0,2}haber(?:i|ini)?\s+(?:videosu\s+)?istiyorum(?!\p{L})${SAY}|`
   + String.raw`haber\s+olarak(?=(?:\s+${FILLTOK}){1,4}${KIND_T}|[^\S\n]*(?:$|\n|(?![,;])${KIND_SIGN}|[,;](?=${SIGN_END}|${TO_ASK}|\s*${REFUSED_P}))|${TO_ASK})|`
   + String.raw`haber\s+(?:gibi|seklinde|tarzinda|formatinda|diliyle)(?=${TO_ASK})|`
   + String.raw`(?:habere\s+(?:cevir|donustur)|haberlestir|haber\s+haline\s+getir)(?:${REQ_FORM})?(?!\p{L})${SAY})(?!${REFUSAL_NEWS})`, "u");
+// talimatın son sözü "haber olsun" yalnız metinde gülme emojisi yoksa (common.py _HO_END; "Kedim ilk kez kar gördü, haber olsun 😹" şaka)
+const HO_END = new RegExp(String.raw`(?<!\p{L})(?<![ae]\s)${HO_IDIOM}haber\s+olsun(?=${SIGN_END})`, "u");
+// bu/şu/bunu/videoyu + "haber olsun" ardından altyazı sürüyorsa yalnız gülme işareti yoksa (common.py _HO_THIS; 9. tur: "Bu haber olsun 😂 Köpek
+// postacıyı kovaladı" şaka; son söz olan "bu video haber olsun 😂" NEWS_RE'de)
+const HO_THIS = new RegExp(String.raw`(?<!\p{L})(?:(?:bu|su)(?:\s+video)?|bunu|sunu|videoyu)(?:\s+d[ae])?\s+haber\s+olsun(?!\p{L})${SAY}(?!${REFUSAL_NEWS})`, "u");
+// "haberini sen hazırla" (ara kelime "sen") de yalnız metinde gülme işareti yoksa (common.py _NEWS_SEN; "Haberini sen yap, tıklanmayı biz
+// alalım 😂" şaka; inceleme, 20 Ekim)
+const NEWS_SEN = new RegExp(String.raw`(?<!\p{L})haber(?:i|ini|inin|ler|leri|lerini)?\s+(?:videosu(?:nu)?\s+)?(?:${GAP_TOK}){0,2}sen\s+(?:${GAP_TOK}){0,2}`
+  + String.raw`${NEWS_GV}(?!\p{L})${SAY}(?!${REFUSAL_NEWS})`, "u");
 // ZAYIF biçim (yalnız açık mizah/viral ifadesi yoksa haber): etiket "son dakika" + ifade sonu ("son dakika:", "#sondakika"); talimatın başında
 // "son dakika" + kesme işaretli özel ad ya da rakam ("Son dakika Kadıköy'de yangın"; "Son dakika golüne sevinen", "Son dakika yetişen damat"
 // değil); talimatın başında (bunu/videoyu/bu fragmanı +) fiilsiz "haber gibi" + ifade sonu ya da rakam ("haber gibi 40 saniye"; "Tıpkı bir
 // haber gibi.", "sahte haber gibi, mizah olarak paylaş" değil; işaret ve satır sonu yalnız ardından işaret/dolgu/süre ya da kısa istek cümlesi
 // gelirse: "Haber gibi 😂 Minik muhabir sınıfta hava durumunu sundu" değil); metinde gülme emojisi varsa iki "son dakika" biçimi sayılmaz
 // (şaka altyazısı: "Son dakika 2 dakika kala otobüse yetişen öğrenci 😂", "SON DAKİKA: Annem tatlıyı yine saklamış 😂"; inceleme, 19 Ekim)
-const LAUGH = /[😂🤣😹😆😅😁😄😝🤪]/u;
+// gülme işareti (common.py _LAUGH aynı kalıp): gülen/utanan/dil çıkaran emojiler ve yazıyla gülme (haha, ahah, jsjs, sjsj, kdkd, ksks, xd, :d;
+// inceleme, 20 Ekim: "Son dakika: Kedim yine kanepeyi parçaladı 🙈", "… ahahaha", "… ülke şokta 💀" haber oluyordu)
+const LAUGH = new RegExp(String.raw`[😂🤣😹😆😅😁😄😝🤪🙈🤭😜😛😀😃🙃💀]|(?<!\p{L})(?:a?(?:ha){2,}h?|ah(?:ah)+|(?:js){2,}j?|(?:sj){2,}s?|(?:kd){2,}k?|(?:ks){2,}k?|xd+|:d+)(?!\p{L})`, "u");
 const SD_LABEL = new RegExp(String.raw`(?<!\p{L})son\s*dakika(?!\p{L}|['’])(?!${REFUSAL_NEWS})(?=${KIND_T})`, "u");
 const NEWS_START = new RegExp(String.raw`^[^\p{L}\p{Nd}]*son\s*dakika\s+(?=\p{L}+['’]|[0-9])`, "u");
 const NEWS_LIKE = new RegExp(String.raw`^[^\p{L}\p{Nd}]*(?:(?:(?:bu|su)\s+)?(?:bunu|sunu|videoyu|fragmani)\s+)?haber\s+(?:gibi|seklinde|tarzinda|formatinda|diliyle)`
@@ -1724,36 +1790,106 @@ const NEWS_LIKE = new RegExp(String.raw`^[^\p{L}\p{Nd}]*(?:(?:(?:bu|su)\s+)?(?:b
 // olsun diye"); video adının ilgi/bulunma/araç hâli olayı anlatır ("viral videonun sahibi", "videodaki"); ilgi hâlinden sonra ("kavganın
 // viral videosu") yalnız fiille
 const KIND_NOUN = String.raw`(?:video|icerik|paylasim)(?!\p{L}*?(?:[iu]n|[dt][ae](?:ki)?|l[ae])(?!\p{L}))\p{L}*`;
-const KIND_VERB = String.raw`\s+(?:(?:ama|ve|ancak)\s+)?(?:(?:${ASK_GAP}|${FILLTOK})\s+){0,3}${ASK_P}(?!${REFUSAL_KIND})${SAY}`;
+const KIND_WORD_RX = String.raw`\p{L}+(?:['’]\p{L}+)*(?!\p{L}|['’]\p{L})`; // kelime (kesme işaretli ek aynı kelime: "Kadıköy'de")
+const KIND_VERB = String.raw`\s+(?!\s)(?:(?:ama|ve|ancak)\s+)?(?:${GAP_O}${ASK_P}|${GAP}${ASK_P_SG})(?!${REFUSAL_KIND})${SAY}`;
+// ciddi olay sözlü metinde ifade sonu (KIND_END_S, common.py _KIND_END_S aynı kural): metin sonu (araya dolgu/süre) ya da işaret/satır sonundan
+// sonra metnin kalanında en çok 4 kelime (link, süre ve dolgu sayılmaz) ve aralarında cümle sonu -DI geçmiş zaman yok ("komik video, kısa kes";
+// "Viral video: Selde araçlar sürüklendi" değil). Daha uzun kalan metin phraseKinds'te (KIND_SIGNHEAD_RE): sahibin istek/kurgu fiili ya da
+// -DI'sız şimdiki zamanla anlatım varsa tür sayılır (inceleme, 20 Ekim: "komik video, 30 saniye, başındaki titrek kısmı kes", "komik video:
+// adam merdivenden kayıyor…" tür; "Komik video, acı son: Balkondan düşen genç hayatını kaybetti" değil)
+const FILL_W = String.raw`(?:saniye\p{L}*|sn|dakika\p{L}*|dk|lutfen|bunu|sunu|hemen|olarak)(?!\p{L})`; // kelime sayısına girmeyen dolgu
+const FEW_SEP = String.raw`(?:(?!\p{L})[\s\S]|(?:https?:|www\.)\S*(?!\S)|(?<!\p{L})${FILL_W}|(?<=[0-9]['’])\p{L}+(?!\p{L}))*`; // sayının eki kelime değil ("14'te"; 11. tur)
+// cümle sonu -DI geçmiş zaman (haber dili: düştü, kaybetti, kurtarıldı; -DI ile biten yaygın adlar değil)
+const PAST_W = String.raw`(?!(?:kedi|kendi|simdi|hindi|hadi|haydi|ordu|alti|ustu|arti|ortu|yedi|parodi|komedi|trajedi|melodi|parti|kutu|adi|tadi|kaydi|yurdu|`
+  + String.raw`saati|sirketi|devleti|milleti|goruntu|marti|pati|bati|kati|cati|seti)(?!\p{L}))\p{L}{2,}[dt][iu](?:[mnkz]|l[ae]r|n[iu]z)?(?!\p{L})(?=[^\S\n]*(?:$|\n|${KIND_SIGN}))`;
+// (beşinci kelime aranır, bulununca hemen biter: uzun girdide her ifadede geri izleme yok)
+const FEW_W = String.raw`${FEW_SEP}(?!${FILL_W}|https?:|www\.)(?<![0-9]['’])`; // kelimeye kadar (link bölünmez, dolgu kelime değil)
+const KIND_END_S = String.raw`(?:\s+${FILLTOK}){0,4}[^\S\n]*(?:$|(?=\n|${KIND_SIGN})(?!(?:${FEW_W}${KIND_WORD_RX}){5})(?!(?:${FEW_W}${KIND_WORD_RX}){0,3}${FEW_W}${PAST_W}))`;
+// ÖNCE HEAD (common.py _KIND_FOLLOW; 15. tur, inceleme, 21 Ekim: 9.-14. turun "işaretten sonra en çok 4 kelime ya da -DI/şimdiki zamanla en
+// çok 8 kelime" kuralı HEAD'in "komik video, teşekkürler abi, iyi akşamlar, kolay gelsin", "Komik video: düğünde gelini görünce bayılan damat
+// 😂" türünü düşürüyordu): ciddi olay sözü (SERIOUS, OLU) yoksa ya da gülme işareti varsa HEAD'in kuralı — tür ifadesinden sonra işaret,
+// satır sonu ya da metin sonu (araya dolgu/süre) yeter, kalan metin ne olursa olsun —; ciddi olay sözü varken 8. turun kuralı (KIND_END_S):
+// "Komik video, acı son: Balkondan düşen genç hayatını kaybetti" tür almaz
 const KIND_FOLLOW = String.raw`${TO_END}|${KIND_VERB}`;
-const KIND_WORD = String.raw`(mizah|mizahi|komik|viral|trend|cok\s+izlenen)`;
+const KIND_FOLLOW_S = String.raw`${KIND_END_S}|${KIND_VERB}`;
+// ciddi olay sözü (kindFold'lu; "öldü" harfsiz yazımda "oldu"dan ayrılmaz: OLU tr-TR küçük harfli asıl metinde; common.py _SERIOUS/_OLU)
+const SERIOUS = new RegExp(String.raw`(?<!\p{L})(?:hayatini\s+kaybet|yasamini\s+yitir|can\s+verdi|vefat|sehit|oldurul|olu(?:ler\p{L}*)?(?!\p{L})|yaralan|yarali|`
+  + String.raw`gozalti|tutuklan|kaza(?!n)|deprem|yangin|sel(?:de|den|e|i|in|ler)?(?!\p{L})|saldir|cinayet|intihar|patlama|enkaz|`
+  + String.raw`kurtarilamadi|istifa|bogul|katliam|bicakla|silahli|kursun|teror|bombal|taciz|istismar|darp|kaybol|kacirildi|felaket|`
+  + String.raw`carpt|carpis|gercek(?!\p{L}))`, "u");
+const OLU = /(?<![a-zçğıöşüâîû])öl(?:dü|dür|ü|müş|en)/;
+const olu = (x) => OLU.test(String(x || "").toLocaleLowerCase("tr-TR"));
+// esprili/komedi de mizah ("esprili bi video yap", "bunu komedi videosu yap"; yalın etiket değil)
+const KIND_WORD = String.raw`(mizah|mizahi|komik|esprili|komedi|viral|trend|cok\s+izlenen)`;
+const PHRASE_KIND = Object.assign(Object.create(null), KIND_WORDS, { esprili: "mizah", komedi: "mizah" });
 const KIND_REST = String.raw`\s+(?:(?:bir|bi)\s+)?(?:${KIND_NOUN}|sey|bisey|birsey|olarak|amacli|kategori\p{L}*|sekilde|bicimde|dille|tarz(?:i|da|inda))(?!\p{L})`
   + String.raw`(?!${REFUSAL_KIND})`;
 const KIND_DOV = String.raw`\s+(?:${ASK_V}(?:${REQ_FORM}|${PASS_FORM})?|${ASK_GEC}|(?<!viral\s)olsun|${KIND_WANT})(?!\p{L})(?!${REFUSAL_KIND})${SAY}`;
-// "mizaha çevir" ("habere çevir" gibi; inceleme, 19 Ekim): 4. grup
-const KIND_PHRASE_RE = new RegExp(String.raw`(?<!\p{L})(?:#(mizah|mizahi|komik|trend|viral|haber)(?!\p{L})(?!${REFUSAL_KIND})|`
-  + String.raw`(?<![iu]n\s)${KIND_WORD}(?:${KIND_REST}(?=${KIND_FOLLOW})|${KIND_DOV})|${KIND_WORD}${KIND_REST}(?=${KIND_VERB})|`
+// "mizaha çevir" ("habere çevir" gibi; inceleme, 19 Ekim): 4. grup. Fiilsiz ifade üstünlük sıfatından sonra betimleme ("Haftanın en çok izlenen
+// videosu: …", "en komik video 😂"; inceleme, 20 Ekim)
+const kindPhraseRe = (follow) => new RegExp(String.raw`(?<!\p{L})(?:(?<![iu]n\s)(?<!(?<!\p{L})en\s)${KIND_WORD}(?:${KIND_REST}(?=${follow})|${KIND_DOV})|${KIND_WORD}${KIND_REST}(?=${KIND_VERB})|`
   + String.raw`(mizah)a\s+(?:cevir|donustur)(?:${REQ_FORM})?(?!\p{L})(?!${REFUSAL_KIND})${SAY})`, "gu");
+const KIND_PHRASE_RE = kindPhraseRe(KIND_FOLLOW), KIND_PHRASE_S = kindPhraseRe(KIND_FOLLOW_S);
+// #etiket yalnız kısa metinde, metnin tek etiketiyse ya da gülme işaretiyle mizah/viral etiketiyse tür (common.py _KIND_HASH; 9. tur: uzun
+// altyazının sonundaki etiket dizisi tür değil); #mizah ve #haber birlikte + gülme işareti → mizah
+const KIND_HASH = new RegExp(String.raw`(?<!\p{L})#(mizah|mizahi|komik|trend|viral|haber)(?!\p{L})(?!${REFUSAL_KIND})`, "gu");
+const HASHTAG = /(?<!\p{L})#\p{L}/gu;
+// işaret ya da satır sonuyla biten tür ifadesi: kalan metne phraseKinds bakar (metin başına bir kez: son istek fiili, son şimdiki zaman, son -DI
+// geçmiş zaman yeri). Sahibin istek/kurgu fiili tekil/sahip biçiminde (REQ_SG; yayın fiilleri ve "yorum yaz" sayılmaz) ya da "kalsın"
+const KIND_SIGNHEAD_RE = new RegExp(String.raw`(?<!\p{L})(?<![iu]n\s)(?<!(?<!\p{L})en\s)${KIND_WORD}${KIND_REST}(?:\s+${FILLTOK}){0,4}[^\S\n]*(?=\n|${KIND_SIGN})`, "gu");
+const OWN_V = String.raw`(?:anlat|yap|hazirla|uret|sun(?!un(?![a-z]))|yaz|kurgula|ver|goster|cek|at|isle|seslendir|oku|cevir|donustur|olustur|canlandir|`
+  + String.raw`tasarla|ciz|koy(?!un(?![a-z]))|ekle|kullan|tut|ozetle|duzenle|kes|kisalt|al|yavaslat|hizlandir|sil|kirp|cikar)`;
+const KIND_ASK_RE = new RegExp(String.raw`(?<!\p{L})(?<!yorum\s)(?:${OWN_V}(?:${REQ_SG})?(?!\p{L})(?!${REFUSAL_KIND})${SAY}|kalsin(?!\p{L}))`, "gu");
+const KIND_PROG_RE = new RegExp(String.raw`(?<!\p{L})\p{L}+[iu]yor(?:[iu]m|[iu]z|sun(?:uz)?|l[ae]r)?(?!\p{L})`, "gu");
+const KIND_PAST_RE = new RegExp(String.raw`(?<!\p{L})${PAST_W}`, "gu");
+// kalan metinde saat de sahibin isteğidir (14. tur; common.py _KIND_SCHED aynı metin; inceleme, 21 Ekim: WhatsApp videosunun açıklamasında
+// "mizah videosu, 2 saat sonra yayınlarsan iyi olur", "komik video! 1 saat sonra paylaş sağ ol", "komik video, 21:30 sularında post et sağ ol"
+// HEAD'de türdü, işaretten sonra en çok 4 kelime kuralına takılıyordu): saat (18:30, 9'da, akşam 9, 2 saat sonra) varsa ve ardından -DI
+// geçmiş zaman yoksa tür
+const KIND_SCHED_RE = new RegExp(String.raw`(?<![0-9.,:])[0-9]{1,2}(?::[0-9]{2}(?![0-9])|(?:[.:][0-9]{2})?['’](?:d[ae]|t[ae])(?!\p{L}))|(?<!\p{L})(?:(?:saat|sabah|ogle(?:n|den\s+sonra)?|aksam|gece|ikindi)\s+(?:saat\s+)?[0-9]{1,2}(?![0-9])|(?:[0-9]{1,3}|bir|yarim)\s*(?:dakika|dk|saat)\s+sonra(?!\p{L}))`, "gu");
 // sonda işaretten (ya da satır sonundan) sonra yalın etiket ("Adam düştü 😂 mizah", "son dakika diil bu, viral"); tür olarak yalnız kısa
 // metinde (etiketin dışında en çok TAG_WORDS kelime; inceleme, 19 Ekim: "Selde mahsur kalan aile helikopterle kurtarıldı - Viral" viral oluyordu)
 const KIND_TAIL = new RegExp(String.raw`(?:${KIND_SIGN}|\n)[^\S\n]*#?(mizah|mizahi|komik|trend|viral|haber)(?:[^\S\n]*${KIND_SIGN})*\s*$`, "u");
 const TAG_WORDS = 4;
 const TAG_URL = /https?:\/\/\S*|www\.\S*/gu; // kelime sayısında link sayılmaz
-const KIND_WORD_RX = String.raw`\p{L}+(?:['’]\p{L}+)*(?!\p{L}|['’]\p{L})`; // kelime (kesme işaretli ek aynı kelime: "Kadıköy'de")
 // başta ayraçla etiket ("mizah, kısa kes"); ardından yalın başka etiket gelirse seçim açık ("haber/mizah sen karar ver"), etiket değil;
 // ikinci etiket ifadenin başıysa ("mizah, haber gibi anlat") baştaki etiket geçer. Başlık biçimli iki nokta yalnız kısa metinde (ardından en
 // çok 4 kelime: "#trend: sesi kalsın"; "Trend: Gençler arasında yayılan tehlikeli akım iki can aldı" değil; inceleme, 19 Ekim)
 const KIND_LEAD = new RegExp(String.raw`^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*(?:[,;\-–/]|:(?=(?:(?:(?!\p{L})[\s\S])*${KIND_WORD_RX}){0,4}(?:(?!\p{L})[\s\S])*$))`
   + String.raw`(?!\s*#?(?:mizah|mizahi|komik|trend|viral|haber)(?!\p{L})(?!\s+(?:gibi|seklinde|tarzinda|formatinda|diliyle|olarak|amacli|olsun|(?:video|icerik|paylasim|${ASK_V})\p{L}*)(?!\p{L})))`, "u");
 // sondaki etiket tür olarak yalnız kısa metinde; zayıf haber biçimini (anyLen: newsOf) her uzunlukta bastırır ("son dakika: …, mizah")
-const phraseKinds = (s, anyLen = false) => {
-  const ks = new Set([...s.matchAll(KIND_PHRASE_RE)].map((m) => KIND_WORDS[m[1] || m[2] || m[3] || m[4]] || "trend"));
+const phraseKinds = (s, anyLen = false, ser = false) => {
+  const laugh = LAUGH.test(s), grave = (ser || SERIOUS.test(s)) && !laugh, rx = grave ? KIND_PHRASE_S : KIND_PHRASE_RE;
+  const ks = new Set([...s.matchAll(rx)].map((m) => PHRASE_KIND[m[1] || m[2] || m[3]] || "trend"));
+  const short = anyLen || (s.replace(TAG_URL, " ").match(new RegExp(KIND_WORD_RX, "gu")) || []).length <= TAG_WORDS + 1;
+  const hk = new Set([...s.matchAll(KIND_HASH)].map((m) => KIND_WORDS[m[1]]));
+  // ciddi olay sözü yoksa (ya da gülme varsa) #haber'siz mizah/viral hashtag'i HEAD gibi her uzunlukta tür (15. tur; common.py aynı kural:
+  // "#mizah #komik Kedim yine masadan kaçtı", "Bu dans herkesi salladı #viral #trend"); #haber'li ya da ciddi uzun metin 9. turun kuralıyla
+  if (hk.size && (short || (s.match(HASHTAG) || []).length === 1 || (laugh && [...hk].some((k) => k !== "haber")) || (!grave && !hk.has("haber")))) {
+    for (const k of hk) if (!(k === "haber" && hk.has("mizah") && laugh)) ks.add(k);
+  }
+  const heads = [...s.matchAll(KIND_SIGNHEAD_RE)].filter((m) => !ks.has(PHRASE_KIND[m[1]] || "trend")); // türü zaten bulunan atlanır
+  if (heads.length) { // işaretle biten tür ifadesi: kalanında sahibin isteği ya da -DI'sız şimdiki zamanla anlatım
+    const last = (re) => { let p = -1; for (const m of s.matchAll(re)) p = m.index; return p; };
+    const ask = last(KIND_ASK_RE), prog = last(KIND_PROG_RE), past = last(KIND_PAST_RE);
+    let sched = -1; for (const m of s.matchAll(KIND_SCHED_RE)) sched = m.index + m[0].length; // saatin sonu (baş, saatin rakamını dolgu diye alabilir)
+    for (const m of heads) { const e = m.index + m[0].length; if (ask >= e || ((prog >= e || sched >= e) && past < e)) ks.add(PHRASE_KIND[m[1]] || "trend"); }
+  }
   const tail = s.match(KIND_TAIL);
-  if (tail && (anyLen || (s.replace(TAG_URL, " ").match(new RegExp(KIND_WORD_RX, "gu")) || []).length <= TAG_WORDS + 1)) ks.add(KIND_WORDS[tail[1]]);
+  if (tail && short) ks.add(KIND_WORDS[tail[1]]);
   return ks;
 };
-const newsOf = (t) => NEWS_RE.test(t) || ((((SD_LABEL.test(t) || NEWS_START.test(t)) && !LAUGH.test(t)) || NEWS_LIKE.test(t)) && !["mizah", "trend"].some((k) => phraseKinds(t.replace(REFUSED_RE, " "), true).has(k)));
-const newsRequest = (text) => newsOf(kindFold(text));
+// başta "Son dakika haberi:" / "SON DAKİKA HABERİ!" etiketi (ardından işaret ya da satır sonu) "son dakika:" gibi zayıf biçimdir (11. tur; common.py
+// _SD_HABER aynı metin; inceleme, 20 Ekim: "Son dakika haberi: Kardeşim son dilim pizzayı yedi 😂" haber oluyordu): gülme işareti ya da açık
+// #mizah/#komik/tür ifadesi karar verir; sahibin "son dakika haberi yap" isteği güçlü biçim kalır. Önünde emoji ve hashtag olabilir (13. tur;
+// inceleme, 20 Ekim: "#mizah Son dakika haberi: …" güçlü biçim sayılıp haber oluyordu; en çok 8 hashtag: uzun dizide tarama kısa kalsın)
+const SD_HABER = new RegExp(String.raw`^(?:[^\p{L}\p{Nd}]*#(?:\p{L}|[0-9])+){0,8}[^\p{L}\p{Nd}]*son\s*(?:dakika|dk)\s+haber(?:i|leri)?(?=[^\S\n]*(?:\n|${KIND_SIGN}))`, "u");
+const newsOf = (t, ser = false) => {
+  const lbl = SD_HABER.test(t);
+  return NEWS_RE.test(lbl ? t.replace(SD_HABER, " ") : t) || ((HO_END.test(t) || HO_THIS.test(t) || NEWS_SEN.test(t)) && !LAUGH.test(t))
+    || ((((SD_LABEL.test(t) || NEWS_START.test(t) || lbl) && !LAUGH.test(t)) || NEWS_LIKE.test(t)) && !["mizah", "trend"].some((k) => phraseKinds(t.replace(REFUSED_RE, " "), true, ser).has(k)));
+};
+const newsRequest = (text) => newsOf(kindFold(text), olu(text));
 // yalnız etiket + dolgu ("mizah 40 saniye"; haber dışındaki etiketin yanında "yap"/"olsun" da: "mizah yap"; "viral olsun" değil;
 // commands.js tagKind aynı kural)
 const tagWords = (t) => {
@@ -1761,14 +1897,14 @@ const tagWords = (t) => {
   return words.every((w) => KIND_WORDS[w] || KIND_FILL.test(w) || (soft && KIND_DO.test(w))) ? words.filter((w) => KIND_WORDS[w]) : [];
 };
 const contentKindOf = (instruction) => {
-  const t = kindFold(instruction), s = t.replace(REFUSED_RE, " "); // s: reddedilen istekler atılmış
+  const t = kindFold(instruction), s = t.replace(REFUSED_RE, " "), ser = olu(instruction); // s: reddedilen istekler atılmış
   const pick = (ks) => (ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : ks.has("trend") ? "trend" : "");
   const tags = tagWords(s);
-  if (tags.length) return pick(new Set(tags.map((w) => KIND_WORDS[w])));
-  const lead = t.match(KIND_LEAD);
-  if (lead) return KIND_WORDS[lead[1]];
-  if (newsOf(t)) return "haber";
-  return pick(phraseKinds(s));
+  if (tags.length) { const ks = new Set(tags.map((w) => KIND_WORDS[w])); if (ks.has("mizah") && LAUGH.test(t)) ks.delete("haber"); return pick(ks); } // "😂 #komik #haber" (9. tur)
+  const lead = t.match(KIND_LEAD); // "Haber: Kedi itfaiyeyi alarma geçirdi 😂" baştaki etiket değil (9. tur)
+  if (lead && !(lead[1] === "haber" && lead[0].includes(":") && LAUGH.test(t))) return KIND_WORDS[lead[1]];
+  if (newsOf(t, ser)) return "haber";
+  return pick(phraseKinds(s, false, ser));
 };
 // fragman isteği (common.py TRAILER_ASK / trailer_ask aynı kural): fragman/trailer/teaser (+ analiz…/özet…/video…/olarak) yalnız ardından ifade
 // sonu, dolgu/süre ("fragman", "fragman:", "fragman 40 saniye"), istek fiili ("fragman yap", "bu fragmanı özetle", "fragmanı analiz et") ya da
@@ -1780,11 +1916,40 @@ const TR_VERB = String.raw`(?:\s+(?:${ASK_GAP}|${FILLTOK})){0,3}\s+(?:${ASK_V}(?
 // işaret ve satır sonu yalnız ardından metnin sonuna kadar işaret, dolgu ya da süre gelirse ifade sonu (SIGN_END; "Gerçek hayattan fragman:
 // Kartal tilkiyi havada yakaladı" fragman değil, "fragman: <link>" fragman); virgül, noktalı virgül, iki nokta, tire ya da satır sonundan
 // sonra en çok dört kelimelik istek cümlesi de olur (CLAUSE: "fragman, kısa olsun"; inceleme, 19 Ekim)
-const TR_ASKV = String.raw`\s+(?:${ASK_V}(?:${REQ_FORM})?|${ASK_GEC}|olsun|(?:incele|yorumla)(?:${REQ_FORM})?|analiz\s+e[td](?:${REQ_FORM})?)(?!\p{L})(?!${REFUSAL_KIND})${SAY}`;
-const TRAILER_ASK = new RegExp(String.raw`(?<!\p{L})${TR_WORD}(?!\p{L})(?:\s+(?:analiz\p{L}*|ozet\p{L}*|video\p{L}*|olarak))?`
-  + String.raw`(?=${SIGN_END}|${TR_VERB}|${CLAUSE}${TR_ASKV}|[^\S\n]*[,;]?\s+(?:haber\p{L}*|son\s*dakika)${REFUSAL_NEWS})`, "u");
-const trailerAsk = (instruction) => TRAILER_ASK.test(kindFold(instruction));
+// işaretten sonra yalnız sahibin istek biçimi (tekil emir, -sana, -ır mısın, olsun, kalsın, analiz et; REQ_SG) ve cümlede izleyiciye çağrı sözü
+// yok (common.py _TR_VIEW/_CLAUSE_O/_TR_ASKV; inceleme, 20 Ekim: "Gerçek hayattan fragman 😱 hemen paylaşın", "Hayatın fragmanı 💔 beğen
+// paylaş", "Bu gol fragman ⚽ izle paylaş" fragman değil); "bu fragman çok iyi, analiz et" (değerlendirme sözü + istek) istek
+// (9. tur: bütün kelime; "fragman, yorumla", "fragman, takipçilere kısa anlat", "izlenme rekorunu da anlat" sahibin isteği)
+// (10. tur: "yorumlara/yorumlarda/yorumunuzu", "beğendiyseniz" de; common.py _TR_VIEW aynı)
+const TR_VIEW = String.raw`(?:izle(?:yin(?:iz)?)?|begen(?:in(?:iz)?|diyseniz)?|kaydet|kaydedin(?:iz)?|takip|abone|yorum(?:lar)?(?:[ae]|d[ae]|[iu]|[iu]n[iu]z[iu]?)?|`
+  + String.raw`paylasin(?:iz)?|herkes)(?!\p{L})`;
+const CLAUSE_O = String.raw`[^\S\n]*(?:${KIND_SIGN}(?:[^\S\n]*${KIND_SIGN})*(?![^\S\n]*${KIND_SIGN})|(?=\n))(?:\s+(?!${TR_VIEW})(?:\p{L}+|${FILLTOK})){0,4}`;
+const TR_ASKV = String.raw`\s+(?!${TR_VIEW})(?:${ASK_V}(?:${REQ_SG})?|${ASK_GEC}|olsun|kalsin|(?:incele|yorumla)(?:${REQ_SG})?|analiz\s+e[td](?:${REQ_SG})?)(?!\p{L})`
+  + String.raw`(?!${REFUSAL_KIND})${SAY}`;
+const TR_EVAL = String.raw`(?:\s+(?:cok|baya|bayagi|gayet|cidden|asiri))?\s+(?:iyi|guzel|harika|super|efsane|mukemmel|muthis|sahane|basarili|etkileyici)`
+  + String.raw`(?:\s+olmus)?(?![a-z])`;
+// talimatın başındaki fragman sözü + işaretten sonra sahibin çoğul isteği de (common.py _TR_ASKV_PL; 9. tur: "fragman, analiz edin")
+const TR_ASKV_PL = String.raw`\s+(?!${TR_VIEW})(?:${ASK_V}|incele|yorumla|analiz\s+e[td])(?:${REQ_PL})(?!\p{L})(?!${REFUSAL_KIND})${SAY}`;
+const TRAILER_ASK = new RegExp(String.raw`^[^\p{L}\p{Nd}]*${TR_WORD}(?!\p{L})(?:\s+(?:analiz\p{L}*|ozet\p{L}*|video\p{L}*|olarak))?(?=${CLAUSE_O}${TR_ASKV_PL})|`
+  + String.raw`(?<!\p{L})${TR_WORD}(?!\p{L})(?:\s+(?:analiz\p{L}*|ozet\p{L}*|video\p{L}*|olarak))?`
+  + String.raw`(?=${SIGN_END}|${TR_VERB}|(?:${TR_EVAL})?${CLAUSE_O}${TR_ASKV}|[^\S\n]*[,;]?\s+(?:haber\p{L}*|son\s*dakika)${REFUSAL_NEWS})`, "u");
+// metnin sonundaki #etiket dizisi, önünde 4'ten çok kelime varsa atılır (common.py _hash_tail; 9. tur: "Ünlü oyuncu sette kaza geçirdi 😱
+// #magazin #dizi #fragman" fragman isteği değil)
+const hashTail = (t) => {
+  const toks = [...t.matchAll(/\S+/g)];
+  let k = toks.length;
+  while (k && toks[k - 1][0].startsWith("#")) k--;
+  if (k > 0 && k < toks.length && (t.slice(0, toks[k].index).replace(TAG_URL, " ").match(new RegExp(KIND_WORD_RX, "gu")) || []).length > 4) return t.slice(0, toks[k].index);
+  return t;
+};
+// fragman sözü yoksa kalıp ve sondaki etiket ayıklaması hiç çalışmaz (yalnız hız; common.py _TR_HINT aynı metin)
+const TR_HINT = /fragman|trailer|teaser/;
+const trailerAsk = (instruction) => { const t = kindFold(instruction); return TR_HINT.test(t) && TRAILER_ASK.test(hashTail(t)); };
 const kindOf = (v) => (["haber", "trend", "mizah"].includes(v?.kind) ? v.kind : contentKindOf(v?.instruction));
+// açma dışı istek fiilli tür ifadesi (commands.js linkte açma istisnası E1; açma fiilleri "x" yapılmış metinde): "mizah yap", "mizah olarak
+// paylaş", "komik video yap", "mizah olsun"; fiilsiz betimleme ("şunu aç, çok komik bir video 😂") ve "mizah göster" sayılmaz
+const KIND_ASK_PHRASE = new RegExp(kindPhraseRe(KIND_VERB).source, "u");
+const kindAsk = (text) => KIND_ASK_PHRASE.test(kindFold(text).replace(REFUSED_RE, " "));
 // uzun video özeti (kullanıcı isteği, 19 Ekim): settings.longSummary (scripts/common.py summary_cfg ile aynı kural)
 const longSummaryCfg = () => {
   const raw = settings().longSummary;
@@ -1810,123 +1975,218 @@ const longSummaryCfg = () => {
 // nesneyi adlandıran baş (RECREATE_STRONG) kazanır: "bunun gibi", "bu tarzda", "benzer şekilde" haber isteğine yenilir. settings.waVideo.recreate
 // kapalıysa hiç sayılmaz (recreateOn)
 const RC_STEM = String.raw`(?:(?:yap|uret|ciz|anlat)(?:t[iu]r|d[iu]r)?|(?:hazirla|tasarla|olustur|canlandir)t?)`;
-const RC_VERB = String.raw`${RC_STEM}(?:${REQ_FORM}|${PASS_OPT})?(?![a-z])`;
 const RC_NUM = String.raw`(?:[0-9]+(?:[.,][0-9]+)?|(?:bir|iki|uc|dort|bes|alti|yedi|sekiz|dokuz|on|yirmi|otuz|kirk|elli|altmis|yetmis|seksen|doksan|yuz)`
   + String.raw`(?:\s+(?:bir|iki|uc|dort|bes|alti|yedi|sekiz|dokuz|on))?)`;
+// "siz de" ara kelime (13. tur: HEAD'in kabulü; sahibin çoğul isteği "Bunun benzerini siz de yapın" benzer video); yalın "daha" HEAD gibi ara
+// kelime değil (14. tur; inceleme, 21 Ekim: alıntılanan izleyici sorusu ""Bunun gibi bir video daha yapar mısınız?" sorusuna cevap" benzer
+// video oluyordu; "bir tane daha" kalır)
 const RC_FILL = String.raw`(?:bir|bi|yeni|kisa|uzun|turkce|ingilizce|${RC_NUM}\s*(?:saniye|sn|dakika|dk)(?:lik|\s*['’]\s*l[iu]k)?|(?:biz|sen|siz)(?:\s+d[ae])?|`
   + String.raw`bana|bize|(?:benim|bizim)\s+icin|ayni|sifirdan|yeniden|tekrar|tarzda|sekilde|olarak|(?:${RC_NUM}\s+)?tane(?:\s+daha)?|sey|bisey|birsey|`
   + String.raw`lutfen|hemen|`
   + String.raw`yarin|bugun|simdi|kendi\s+(?:cumle|soz)[a-z]*)(?![a-z])`;
-const RC_THING = String.raw`(?:video(?:su|lar|lari)?|icerik|animasyon|hikaye(?:yi)?|kissa(?:yi)?|cizim|cizgi\s+filmi?)(?![a-z])`;
+const RC_THING = String.raw`(?:video(?:su|lar|lari)?|icerik|animasyon(?:la|lu)?|hikaye(?:yi)?|kissa(?:yi)?|cizim|cizgi\s+film(?:i|le|\s+gibi)?)(?![a-z])`;
 const RC_GAP = String.raw`(?:\s+(?:${RC_FILL}|${RC_THING})){0,4}`;
 const RC_GAP_T = String.raw`(?:\s+${RC_FILL}){0,3}\s+${RC_THING}(?:\s+${RC_FILL}){0,2}`;
 const RC_WANT = String.raw`\s+(?:olsun|istiyoru[mz]|isterim|isteriz)(?![a-z])`;
 const RC_END = String.raw`(?:${RC_WANT}|[^a-z0-9:]*$|\s*[,.;:!?…]+\s*(?:${RC_FILL}|${RC_THING})`
   + String.raw`(?:\s+(?:${RC_FILL}|${RC_THING})){0,3}[^a-z0-9:]*$)`; // iki nokta açıklama başlatır, son değil ("Sıfırdan animasyon: …")
-const RC_DO = String.raw`(?:${RC_GAP}\s+${RC_VERB}|${RC_GAP_T}${RC_END})`;
-const RC_DO_T = String.raw`${RC_GAP_T}(?:\s+${RC_VERB}|${RC_END})`;
-const RC_DO_W = String.raw`${RC_GAP_T}(?:\s+${RC_VERB}|${RC_WANT})`; // yalın "benzer" + şey adı: fiil ya da olsun/istiyorum
 const RC_GEN = String.raw`(?:(?<![iu]n\s)|(?<=(?<![a-z])bunun\s)|(?<=(?<![a-z])sunun\s))`; // ilgi hâli yalnız bunun/şunun (kelime başından)
 const RC_DAT = String.raw`(?<![ae]\sd[ae]\s)(?<!(?<![a-z])(?:buna|suna|bana|sana|bize|size)\s)(?<!(?<![a-z])ona\s)`; // "buna da aynısını yap" deyimi değil
 const RC_LEFT = String.raw`(?:^[^a-z0-9]*|(?:bunu|sunu|onu|bunlari|videoyu|videolari|hikayeyi|kissayi|icerigi|animasyonu|hepsini|tamamen|`
   + String.raw`lutfen|ve|ama|sonra|yeniden)(?:\s+d[ae])?\s+)`; // şey adsız "sıfırdan"ın solu
-// "videodaki/videonun" BU video: bu/şu'dan sonra, talimatın başında, işaretten ya da satır sonundan sonra ("Çocuklar için masal. Videodaki gibi
-// yap", "30 saniye, videonun aynısını yap"), dolgu sözünden sonra ("abi/tamam/sen de videodaki gibi yap"; inceleme, 19 Ekim)
-const RC_THIS = String.raw`(?:(?:bu|su)\s+|(?:^[^a-z0-9]*|(?<=[^a-z0-9\s]|\n)[^\S\n]*|`
-  + String.raw`(?:(?:bunu|sunu|lutfen|aynen|tipki|ayni|tam|hemen|abi|tamam)(?:\s+d[ae])?|(?:sen|siz)\s+d[ae])\s+)(?:o\s+)?)`;
-// işaretten sonra şey adsız "sıfırdan" yalnız çizim/anlatım fiiliyle ("kıssası, sıfırdan anlat"; "kurgu kötü olmuş, sıfırdan yap" değil)
-const RC_DRAW = String.raw`(?:(?:uret|ciz|anlat)(?:t[iu]r|d[iu]r)?|canlandir|tasarla)(?:${REQ_FORM}|${PASS_OPT})?(?![a-z])`;
-const RC_STRONG = String.raw`${RC_LEFT}sifirdan(?![a-z])${RC_DO}|(?<=[^a-z0-9\s])\s*sifirdan(?![a-z])${RC_GAP}\s+${RC_DRAW}|sifirdan(?![a-z])${RC_DO_T}|`
-  + String.raw`${RC_GEN}(?:${RC_DAT}(?:benzer(?:ini|i|lerini)|aynisini)|(?:buna|suna)\s+benzer)(?![a-z])${RC_DO}|`
-  + String.raw`${RC_THIS}(?:videonun|videodakinin)\s+(?:benzer(?:ini|i|lerini)|aynisini)(?![a-z])${RC_DO}|`
-  + String.raw`(?:(?:bunun|sunun)\s+gibisini|boylesini|esinlenerek|ilham\s+alarak)(?![a-z])${RC_DO}|`
-  + String.raw`${RC_GEN}(?:benzer|(?:buna|suna)\s+benzeyen)(?![a-z])${RC_DO_W}`;
-const RC_WEAK = String.raw`(?:${RC_THIS}videodaki|bunun|sunun)\s+gibi(?![a-z])${RC_DO}|`
-  + String.raw`(?:bu|su|ayni|bunun|sunun|${RC_THIS}(?:videonun|videodaki))\s+(?:tarz(?:i|da|inda|iyla)?|format(?:i|ta|inda)|stil(?:i|de|inde))`
-  + String.raw`(?![a-z])${RC_DO}|`
-  + String.raw`benzer\s+(?:(?:bir|bi)\s+)?sekilde(?![a-z])${RC_DO}`;
+// "videodaki/videonun" BU video: bu/şu'dan sonra, talimatın başında, dolgu sözünden sonra ("abi/tamam/sen de videodaki gibi yap"; inceleme,
+// 19 Ekim); işaretten ya da satır sonundan sonra ve tıpkı/aynen/hemen (da/de)/siz de'den sonra (RC_THIS_H) — tekil ve çoğul istekte HEAD'in
+// yerleri (13. tur: 12. turun "evde/sizde videodaki gibi yap" tekil eki kalktı) ("Çocuklar için masal. Videodaki gibi yap", "tıpkı videodaki gibi yap")
+const RC_THIS = String.raw`(?:(?:bu|su)\s+|(?:^[^a-z0-9]*|(?<=[^a-z0-9\s][^\S\n])|`
+  + String.raw`(?:(?:bunu|sunu|lutfen|ayni|tam|abi|tamam)(?:\s+d[ae])?|sen\s+d[ae])\s+)(?:o\s+)?)`;
+const RC_THIS_H = String.raw`(?:(?<=[^a-z0-9\s]|\n)[^\S\n]*|(?:(?:tipki|aynen|hemen)(?:\s+d[ae])?|siz\s+d[ae])\s+)(?:o\s+)?`;
+const RC_TARZ = String.raw`\s+(?:tarz(?:i|da|inda|iyla)?|format(?:i|ta|inda)|stil(?:i|de|inde))(?![a-z])`;
+// çoğul istek ardından yalnız üretim bilgisi (süre, kısa/uzun, dil) gelirse tekil yolda da sahibin isteği ("tıpkı videodaki gibi yapın, 40 saniye")
+const RC_PROD = String.raw`(?:${RC_NUM}\s*(?:saniye|sn|dakika|dk)(?:lik|\s*['’]\s*l[iu]k)?|kisa|uzun|turkce|ingilizce)(?![a-z])`;
+const RC_PRODEND = String.raw`(?=[^a-z0-9:]*(?:${RC_FILL}[^a-z0-9:]*){0,2}${RC_PROD}[^a-z0-9:]*(?:${RC_FILL}[^a-z0-9:]*){0,2}$)`;
+// benzer video başları (common.py _rc_heads aynı metin): sg → yalnız tekil/sahip istek biçimi (RC_REQ_SG1: yap, yapsana, yapar mısın, yapalım…;
+// edilgen "yapılsın" da; çoğul istek yalnız ardından üretim bilgisiyle, RC_PRODEND); değilse çoğul/kibar istek de (yapın, hazırlayın, yapar
+// mısınız; HEAD'in kabul ettiği her yerde)
+// metnin başındaki selamlama, nezaket ve hitap sözü (16. tur; common.py _RC_COURT aynı metin)
+const RC_COURT = String.raw`(?:lutfen|selam(?:lar)?|merhaba(?:lar)?|gunaydin|iyi\s+(?:aksamlar|gunler|geceler|calismalar)|kolay\s+gelsin|tesekkur(?:ler|\s+ederim)?|tsk(?:ler)?|sag\s*ol(?:un)?|saol(?:un)?|eyvallah|abi|abla|kanka|kanki|hocam|reis|usta|kardes(?:im)?|canim|dostum|emixhas|jarvis|tamam)(?![a-z])`;
+const rcHeads = (sg) => {
+  const v = sg ? String.raw`${RC_STEM}(?:(?:${RC_REQ_SG1}|${PASS_OPT})?(?![a-z])|(?:${REQ_PL})(?![a-z])${RC_PRODEND})` : String.raw`${RC_STEM}(?:${RC_REQ}|${PASS_OPT})?(?![a-z])`;
+  const doo = String.raw`(?:${RC_GAP}\s+${v}|${RC_GAP_T}${RC_END})`, doT = String.raw`${RC_GAP_T}(?:\s+${v}|${RC_END})`, doW = String.raw`${RC_GAP_T}(?:\s+${v}|${RC_WANT})`;
+  const th = String.raw`(?:${RC_THIS}|${RC_THIS_H})`;
+  // işaretten sonra şey adsız "sıfırdan" yalnız çizim/anlatım fiiliyle ("kıssası, sıfırdan anlat"; "kurgu kötü olmuş, sıfırdan yap" değil)
+  let strong = String.raw`${RC_LEFT}sifirdan(?![a-z])${doo}|sifirdan(?![a-z])${doT}|`
+    + String.raw`(?<=[^a-z0-9\s])\s*sifirdan(?![a-z])${RC_GAP}\s+(?:(?:uret|ciz|anlat)(?:t[iu]r|d[iu]r)?|canlandir|tasarla)(?:${sg ? RC_REQ_SG1 : RC_REQ}|${PASS_OPT})?(?![a-z])|`
+    + String.raw`${RC_GEN}(?:${RC_DAT}(?:benzer(?:ini|i|lerini)|aynisini)|(?:buna|suna)\s+benzer)(?![a-z])${doo}|`
+    + String.raw`${th}(?:videonun|videodakinin)\s+(?:benzer(?:ini|i|lerini)|aynisini)(?![a-z])${doo}|`
+    + String.raw`(?:(?:bunun|sunun)\s+gibisin(?:i|den)|boylesini|esinlenerek|ilham\s+alarak)(?![a-z])${doo}|`
+    + String.raw`${RC_GEN}(?:benzer|(?:buna|suna)\s+benzeyen)(?![a-z])${doW}`;
+  // "çizgi filme/animasyona çevir" yalnız tekil ("bunu animasyona çevir"; izleyiciye "Hayatınızı çizgi filme çevirin" değil), yalnız talimatın
+  // başında ya da bu videoyu gösteren nesneden sonra (bunu, şunu, onu, bunları, videoyu, videoları, hikayeyi, kıssayı, içeriği; araya en çok
+  // iki dolgu: "bu hikayeyi 45 saniyelik çizgi filme çevir") ve izleyici çağrısından (sen de/siz de) sonra değil (14.-15. tur; common.py aynı
+  // metin; inceleme, 21 Ekim: uygulama/filtre reklamı "Fotoğrafını çizgi filme çevir", "Sen de çizgi filme çevir, filtre linki profilde",
+  // "Hemen çizgi filme çevir, uygulama linki bio'da", "Yeni filtre: Çizgi filme çevir…" HEAD'de benzer video değildi); 16. tur: metnin başındaki
+  // selamlama/nezaket/hitap sözünden sonra da (RC_COURT, ardından en çok iki dolgu; sen/siz değil) 14. turun kararı: "lütfen çizgi filme çevir",
+  // "selam, çizgi filme çevir", "Tamam, çizgi filme çevir", "kolay gelsin, animasyona çevir" (15. turda benzer video değildi)
+  if (sg) strong += String.raw`|(?:^[^a-z0-9]*(?:${RC_COURT}[^a-z0-9]*)+(?:(?!(?:sen|siz)(?![a-z]))${RC_FILL}\s+){0,2}|^[^a-z0-9]*|(?=(?:bunu|sunu|onu|bunlari|videoyu|videolari|hikayeyi|kissayi|icerigi)(?![a-z]))(?<!(?<![a-z])(?:sen|siz)\sd[ae]\s)(?<!(?<![a-z])(?:sende|sizde)\s)(?<!(?<![a-z])(?:sen|siz)\sd[ae]\s(?:bu|su)\s)`
+    + String.raw`(?:bunu|sunu|onu|bunlari|videoyu|videolari|hikayeyi|kissayi|icerigi)(?:\s+d[ae])?\s+(?:(?!(?:sen|siz)(?![a-z]))${RC_FILL}\s+){0,2})`
+    + String.raw`(?:cizgi\s+film|animasyon)[ae]\s+(?:cevir|donustur)(?:${RC_REQ_SG}|${PASS_OPT})?(?![a-z])`;
+  const weak = String.raw`(?:${th}videodaki|bunun|sunun)\s+gibi(?![a-z])${doo}|(?:bu|su|ayni|bunun|sunun|${th}(?:videonun|videodaki))${RC_TARZ}${doo}|`
+    + String.raw`benzer\s+(?:(?:bir|bi)\s+)?sekilde(?![a-z])${doo}`;
+  return [strong, weak];
+};
+const [RC_S1, RC_W1] = rcHeads(true), [RC_S2, RC_W2] = rcHeads(false);
 const RC_NOT = String.raw`(?!${sayWords("[a-z]")})(?!\s+(?:d(?:egi|ii|ei)l|olmasin|istemiyoru[mz]|istemem|istemeyiz|istemez|gerek\s+yok|gerekmez|gerekmiyor|`
   + String.raw`yok)(?![a-z]))`;
-const RECREATE_ASK = new RegExp(String.raw`(?<![a-z])(?:${RC_STRONG}|${RC_WEAK})${RC_NOT}`);
-const RECREATE_STRONG = new RegExp(String.raw`(?<![a-z])(?:${RC_STRONG})${RC_NOT}`);
-// orijinal sesi ya da görüntüyü koruma isteği sıfırdan çizimle çelişir ("sesi kalsın", "orijinal sesle", "görüntüleri kullan"; "sesi kullanma" değil);
-// ardından (araya hiç/asla/kesinlikle) ret gelirse koruma değil: değil/diil/deil, yerine, yok, gitsin, kapat/kaldır (ın/ılsın), kullan/iste/ol +
-// olumsuz ek (kullanma, kullanmadan, kullanılmasın, istemiyorum, olmasın; inceleme, 19 Ekim: "orijinal görüntü kullanılmasın, bunun benzerini
-// sıfırdan çiz", "orijinal ses yerine seslendirme olsun" ses koruma sanılıyordu)
+const RECREATE_ASK = new RegExp(String.raw`(?<![a-z])(?:${RC_S1}|${RC_W1})${RC_NOT}`); // tekil/sahip biçimi her yerde
+const RECREATE_STRONG = new RegExp(String.raw`(?<![a-z])(?:${RC_S1})${RC_NOT}`);
+const RECREATE_PL = new RegExp(String.raw`(?<![a-z])(?:${RC_S2}|${RC_W2})${RC_NOT}`); // çoğul/kibar da
+const RECREATE_PL_STRONG = new RegExp(String.raw`(?<![a-z])(?:${RC_S2})${RC_NOT}`);
+// ÇOĞUL/KİBAR İSTEK (13. tur; inceleme, 20 Ekim: 11.-12. turun izleyici sözü istisnası — siz de, etiketleyin, -abilirsiniz, çekiliş… —
+// sahibin "bunun benzerini yapın, başlığı değiştirebilirsiniz", "… kaynağı etiketleyin" isteğini düşürüyordu): HEAD'in kabul ettiği her
+// yerde, istisnasız benzer video (çıktı her zaman onay ister; yapıştırılan izleyici altyazısı benzer videoya gidebilir, sahip onaylamaz)
+// orijinal sesi, müziği, şarkıyı, efektleri ya da görüntüyü koruma isteği sıfırdan çizimle çelişir (common.py RC_KEEP aynı metin; "şarkısı
+// kalsın", "efektler kalsın", "orijinal şarkıyla"): "sesi kalsın", "orijinal sesle",
+// "görüntüleri kullan"; araya da/de ve nitelik (aynen, aynı, olduğu gibi, orijinal, hiç), wa_video.WANT_SOUND biçimleri ve olumsuz bozma fiili
+// (inceleme, 20 Ekim: "sesi olduğu gibi kalsın", "sesine dokunma", "sesi gitmesin", "ses kesilmesin", "müziği kalsın", "orijinal müzikle",
+// "görüntüleri değiştirme" sesi atıp çiziyordu); anlatıcı sesi koruma değil ("kadın sesiyle anlat", "sesi olsun"); ardından (araya hiç/asla/
+// kesinlikle) ret gelirse koruma değil: değil/diil/deil ("değil mi" soru ekidir, korur), yerine, yok ("yok olmasın" korur), gitsin, kapat/
+// kaldır (ın/ılsın), kullan/iste/ol + olumsuz ek (inceleme, 19 Ekim: "orijinal görüntü kullanılmasın, bunun benzerini sıfırdan çiz")
 const RC_KEEP_NEG = VERB_NEG.replaceAll(String.raw`\p{L}`, "[a-z]"); // u bayraksız kalıpta [a-z] (common.py _RC_KEEP_NEG aynı metin)
-const RC_KEEP = new RegExp(String.raw`(?<![a-z])(?:ses(?:i|ini)?\s+(?:kalsin|koru|kullan(?:in|sana)?|acik|kapatma|kisma)|`
-  + String.raw`(?:orijinal|gercek|asil|dogal|kendi)\s+ses(?:i|iyle|le|ini|li)?|`
-  + String.raw`goruntu(?:ler)?(?:i|ini|yu|nu|leri|lerini)?\s+(?:kalsin|koru|kullan(?:in|sana)?)|(?:orijinal|kendi)\s+goruntu[a-z]*)(?![a-z])`
-  + String.raw`(?!\s+(?:(?:hic|asla|kesinlikle)\s+)?(?:d(?:egi|ii|ei)l|yerine|yok|gitsin|(?:kullan|iste|ol)(?:il|in|n)?${RC_KEEP_NEG}|`
-  + String.raw`(?:kapat|kaldir)(?:in(?:iz)?|sana|ilsin|sin)?(?![a-z])))`);
-const recreateAsk = (instruction) => { const t = kindFold(instruction); return !RC_KEEP.test(t) && (RECREATE_STRONG.test(t) || (RECREATE_ASK.test(t) && !newsOf(t))); };
+const RC_USE = String.raw`kullan(?:in|sana|ilsin)?`;
+const RC_QUAL = String.raw`(?:\s+(?:d[ae]|aynen|ayni|oldugu\s+gibi|orijinal|tamamen|hic))?`;
+const RC_SPARE = String.raw`(?:dokun|sil|kes|kis|kapat|degistir|kaldir|boz|git)(?:il|in|n)?m[ae](?:yin(?:iz)?|sin|d[ae]n|s[ae]n[ae])?`; // bozma fiili, olumsuz
+const RC_KEEP = new RegExp(String.raw`(?<![a-z])(?!(?:muzik|efekt(?:ler)?|ses\s+efekt(?:i|ler|leri)?)\s+(?:kullan(?:in|sana|ilsin)?|ekle(?:yin|sene)?|acik|olsun)(?![a-z]))(?:(?:ses(?:i|ini|ine|ler|leri|lerini|lerine)?(?:\s+efekt[a-z]*)?|muzi(?:k|gi|gini|ge|gine|kler|kleri|klerini)|sarki(?:si(?:ni|na|yla)?|ya|yi|lar(?:i|ini|a)?)?|(?<!ses\s)efekt(?:ler)?(?:i|ini|e|ine)?)${RC_QUAL}`
+  + String.raw`\s+(?:kalsin|koru|${RC_USE}|acik|ac(?:in|sana|ilsin)?|duy(?:ul)?s[iu]n|duyalim|verilsin|${RC_SPARE})|`
+  + String.raw`(?:orijinal|gercek|asil|dogal|kendi|videonun)\s+(?:ses(?:i|iyle|le|ini|li|leri|lerini)?|muzi(?:k|kle|kli|gi|gini|giyle)|sarki(?:si|sini|siyla|yla|la|li)?|efekt[a-z]*)|`
+  + String.raw`sesli\s+(?:${RC_USE}|ver(?:in|ilsin)?|olsun|bolum[a-z]*)|`
+  + String.raw`(?:konusma|roportaj)[a-z]*${RC_QUAL}\s+(?:duyulsun|${RC_USE}|ver(?:in|ilsin)?|kalsin|${RC_SPARE})|`
+  + String.raw`goruntu(?:ler)?(?:i|ini|yu|nu|ye|leri|lerini|lere)?${RC_QUAL}\s+(?:kalsin|koru|kullan(?:in|sana)?|${RC_SPARE})|`
+  + String.raw`(?:orijinal|kendi)\s+goruntu[a-z]*)(?![a-z])`
+  + String.raw`(?!\s+(?:(?:hic|asla|kesinlikle)\s+)?(?:d(?:egi|ii|ei)l(?!\s*m[iu](?![a-z]))|yerine|yok(?!\s+olmasin)|gitsin|`
+  + String.raw`(?:kullan|iste|ol)(?:il|in|n)?${RC_KEEP_NEG}|(?:kapat|kaldir)(?:in(?:iz)?|sana|ilsin|sin)?(?![a-z])))`);
+// benzer video başlarının her biri bu sözlerden birini içerir: yoksa kalıplar hiç taranmaz (yalnız hız; common.py _RC_HINT aynı metin)
+const RC_HINT = /sifirdan|benze|aynisi|gibi|boylesi|esinlen|ilham|tarz|format|stil|cizgi\s+film|animasyon/;
+const recreateAsk = (instruction) => {
+  const t = kindFold(instruction);
+  if (!RC_HINT.test(t) || RC_KEEP.test(t) || !(RECREATE_ASK.test(t) || RECREATE_PL.test(t))) return false;
+  return RECREATE_STRONG.test(t) || RECREATE_PL_STRONG.test(t) || !newsOf(t, olu(instruction));
+};
+// tanıyıcı kalıpları açılışta derlenir (11. tur, ölçüm, 20 Ekim): V8 1000 karakterden kısa iki baytlık metinde (emoji, ’) kalıbı önce bayt
+// koduna derliyor, büyük Unicode kalıplarında bu saniyeler sürüyor (ilk emojili WhatsApp mesajı ~2-3 sn bekliyordu); uzun metinle bir kez
+// makine koduna derlenir (açılışta ~1 sn), sonraki her çağrı derlenmiş kodu kullanır
+for (const r of [REFUSED_RE, NEWS_RE, HO_END, HO_THIS, NEWS_SEN, LAUGH, SD_LABEL, NEWS_START, NEWS_LIKE, SD_HABER, SERIOUS, KIND_HASH, KIND_SIGNHEAD_RE,
+  KIND_ASK_RE, KIND_PROG_RE, KIND_PAST_RE, KIND_SCHED_RE, KIND_TAIL, KIND_LEAD, KIND_PHRASE_RE, KIND_PHRASE_S, KIND_ASK_PHRASE, TRAILER_ASK, RECREATE_ASK,
+  RECREATE_STRONG, RECREATE_PL, RECREATE_PL_STRONG, RC_KEEP]) for (const w of ["⟪ a ".repeat(300), "a, ".repeat(400)]) { r.lastIndex = 0; r.test(w); r.lastIndex = 0; }
 const recreateOn = () => { const v = waVideoCfg().recreate; return !(v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase())); };
+// linkte açma istisnası (commands.js openAsk E1) bu tanıyıcılarla üretim isteğine bakar
+useDetectors({ newsRequest, recreateAsk, trailerAsk, kindAsk });
 // fragman süresi (wa_video.py SURE_RE/trailer_secs ile aynı kural, 20-60): talimattaki "N saniye/sn" ya da "N dakika/dk" (× 60); yoksa
 // trailer.duration. Belirtme/çıkma ekli sayı süre değildir ("baştaki 15 saniyeyi kullanma", "ilk 5 sn'yi kes", "15 sn'den sonra");
 // "40 saniyelik", "40 sn'lik", "40 saniyede", "1 dakikalık" süredir. Yanıt ve log söz verilen süreyi doğru yazsın
 const SURE_RE = /(?:(\d{2,3})\s*(?:saniye(?:lik|de|ye)?|sn)|(\d{1,2})\s*(?:dakika(?:l[ıi]k|da|ya)?|dk))(?![\p{L}\p{N}_]|['’](?:y[ıi]|d[ae]n|t[ae]n))/u;
 const trailerSecs = (instruction) => { const m = String(instruction || "").toLocaleLowerCase("tr-TR").match(SURE_RE); return Math.min(60, Math.max(20, m ? (m[1] ? Number(m[1]) : Number(m[2]) * 60) : Math.trunc(Number(trailerCfg().duration)) || 40)); };
-let waVid = null; // {files, instruction, caption, at, sentAt, timer, asked, fwdAsked, fwdGo}
+let waVid = null; // {files, instruction, caption, fwd, at, sentAt, timer, asked, fwdAsked, fwdGo}
+// sahibin "Nasıl bir haber yapayım?" yanıtını bekleyen eski işler (sonradan ayrı iş açan video gelince beklemede kalır): yanıt önce bunlara,
+// en eskisinden (inceleme, 20 Ekim: sahibin soru sorulan videosu, ardından iletilen video gelince talimatsız başlıyordu; söz verilen
+// waitMin dakika bitmeden sahibin yanıtı iletilen videoya gidiyordu)
+let waAsks = [];
 // iletilen video (whatsapp.js forwarded; inceleme, 19 Ekim): açıklaması paylaşanın sözüdür, sahibin talimatı değil ("aynısını yapın",
 // "#viral", "SON DAKİKA: …" benzer video/tür/haber isteği sanılıyordu). Açıklama `caption` olarak taşınır (wa_video istemde bilgi:
 // iletilen_aciklama); tür, haber ve benzer video kararları yalnız sahibin yazdığı talimattan. Sahip FWD_WAIT_MS içinde talimat yazabilir
 // (waVideoText), yazmazsa iş talimatsız başlar: türe açıklamaya ve görüntüye bakıp Claude karar verir (DECIDE_TALIMAT). Bekleyen iletilen
 // videoya yalnız aynı albümün videoları katılır: WhatsApp'taki gönderim anı (sentAt; indirme süresinden bağımsız) son videodan en çok
-// ALBUM_MS sonra. Daha geç gelen video ayrı iştir: bekleyen iş talimatsız başlar, yeni video kendi bekleme penceresini açar (inceleme,
-// 19 Ekim: 30 sn arayla iletilen iki ayrı haber tek habere birleşiyor, beşinci ayrı video "en çok 4 video" diye reddediliyordu)
+// ALBUM_MS sonra. Daha geç gelen video ayrı iştir: açıklamalı iletilen bekleyen iş talimatsız başlar, yeni video kendi bekleme penceresini
+// açar (inceleme, 19 Ekim: 30 sn arayla iletilen iki ayrı haber tek habere birleşiyor, beşinci ayrı video "en çok 4 video" diye
+// reddediliyordu). Kural iletilen video olan her talimatsız işte (açıklamasız iletilen video, sahibin yanıt bekleyen videosuna gelen iletilen
+// video da): iletilen video sahibin soru sorulan işine katılmaz, açıklamasız iki iletilen video 30 sn arayla iki iştir; soru sorulan
+// (açıklamasız) iş başlamaz, yanıtını waitMin boyunca bekler (waAsks) ve sahibin ilk yanıtı ona gider; sahibin kendi videoları eskisi gibi
+// birleşir (inceleme, 20 Ekim). Talimat albüm penceresinde yazılırsa iş pencere dolunca başlar (albümün geç inen videosu da katılır);
+// bildirimden sonra albüm penceresinde inen sahibin açıklamalı videosu işi talimatıyla ALBUM_MS sonra başlatır
 const FWD_WAIT_MS = 60000, ALBUM_MS = 8000;
+// WhatsApp ilk yanıtındaki yayın saati eki (10. tur; link: handleCommand social_video/anlik, video: runVideoNews0): alınan saat " ⏰ … yayınlanacak.";
+// alınan saati sıkı kural almazdı (doubt: yapıştırılan altyazıdaki olay saati olabilir) → tek satır doubtNote ("… olayın saatiyse video gelince
+// *planlı yayını şimdi yayınla* ya da *planlı yayını iptal et* yazın"); açık yazılmış saat alınmadıysa tek satır timeNote (sahibin WhatsApp
+// videosunda link yok: videoyu "14:30'da paylaş" açıklamasıyla gönderin; 12. tur)
+const timeTail = (c, video = false) => c.publishAt ? (c.timeDoubt ? `\n${doubtNote(whenLabel(new Date(c.publishAt)))}` : ` ⏰ ${atLabel(whenLabel(new Date(c.publishAt)))} yayınlanacak.`)
+  : c.ignoredTime ? `\n${timeNote(c.ignoredTime, video)}` : "";
+// bekleyen iş: yanıtı beklenen (süresi dolmamış) ya da talimatı gelmiş ama henüz başlamamış (albüm penceresi) iş; talimatlı iş hiç düşmez (9. tur,
+// inceleme, 20 Ekim: soru sorulan videoya yanıt albüm penceresinde gelince, ardından inen iletilen video o işi listeden düşürüyor, iş hiç
+// başlamıyordu)
+const waLive = (v) => !!v && !v.running && (!!v.instruction || Date.now() - v.at <= Number(waVideoCfg().waitMin) * 60000);
+const waAlbum = (v) => { clearTimeout(v.timer); v.timer = setTimeout(() => { if (v === waVid || waAsks.includes(v) || (v.instruction && !v.running)) waVideoGo(v).catch((e) => push(`🎬 video haberi hatası: ${e.message}`)); }, ALBUM_MS); };
+const waFwd = (v) => { clearTimeout(v.timer); v.timer = setTimeout(() => { if (waVid !== v) return; v.fwdGo = true; waVideoGo(v).catch((e) => push(`🎬 video haberi hatası: ${e.message}`)); }, FWD_WAIT_MS); };
 async function waVideoIn({ file, caption, forwarded = false, sentAt = 0 }) {
   const c = waVideoCfg();
   if (!c.enabled) return "WhatsApp'tan gelen videodan haber yapma kapalı (Ayarlar → 📡 Otomatik içerikler).";
   try { const dir = path.dirname(file); for (const f of readdirSync(dir)) { const p = path.join(dir, f); if (Date.now() - statSync(p).mtimeMs > 3 * 86400000) rmSync(p, { force: true }); } } catch { /* temizlik */ }
   const sent = Number(sentAt) > 0 ? Number(sentAt) : Date.now();
   const stale = (v) => Date.now() - v.at > Number(c.waitMin) * 60000;
-  if (waVid && !waVid.running && !stale(waVid) && waVid.caption && !waVid.instruction && Math.abs(sent - waVid.sentAt) > ALBUM_MS) {
-    const prev = waVid; clearTimeout(prev.timer); prev.fwdGo = true;
-    push(`🎬 önceki iletilen video${prev.files.length > 1 ? `lar (${prev.files.length})` : ""} talimatsız başlıyor: yeni video ayrı iş (albüm yalnız ${ALBUM_MS / 1000} sn içinde birleşir)`);
-    waVideoGo(prev).catch((e) => push(`🎬 video haberi hatası: ${e.message}`)); // waVid'i hemen boşaltır
+  waAsks = waAsks.filter(waLive);
+  // sahibin kendi videosu yanıtını bekleyen kendi işine katılır (bekleyen iş iletilen videonunsa; sahibin videoları eskisi gibi birleşir)
+  const own = !forwarded && !(waVid && !waVid.running && !stale(waVid) && !waVid.fwd) ? waAsks.find((x) => !x.fwd) : null;
+  if (!own && waVid && !waVid.running && !stale(waVid) && (waVid.fwd || forwarded) && (waVid.instruction ? Math.abs(sent - waVid.sentAt) > ALBUM_MS
+    : Math.abs(sent - waVid.sentAt) > ALBUM_MS || (forwarded && !waVid.fwd && waVid.asked))) {
+    const prev = waVid;
+    if (!prev.instruction && !prev.caption) { // soru sorulan (ya da sorulacak) iş beklemede kalır, yanıt önce ona gider
+      waAsks.push(prev); waVid = null;
+      push(`🎬 yeni ${forwarded ? "iletilen " : ""}video ayrı iş: önceki video${prev.files.length > 1 ? `lar (${prev.files.length})` : ""} yanıtınızı bekliyor (ilk yazdığınız ona gider)`);
+    } else { // açıklamalı iletilen iş talimatsız, talimatı albüm penceresinde yazılmış iş talimatıyla hemen başlar
+      clearTimeout(prev.timer); if (!prev.instruction) prev.fwdGo = true;
+      if (!prev.instruction) push(`🎬 önceki iletilen video${prev.files.length > 1 ? `lar (${prev.files.length})` : ""} talimatsız başlıyor: yeni video ayrı iş (albüm yalnız ${ALBUM_MS / 1000} sn içinde birleşir)`);
+      waVideoGo(prev).catch((e) => push(`🎬 video haberi hatası: ${e.message}`)); // waVid'i hemen boşaltır
+    }
   }
-  if (!waVid || waVid.running || stale(waVid)) waVid = { files: [], instruction: "", caption: "", at: Date.now(), sentAt: sent };
-  if (waVid.files.length >= 4) return "En çok 4 video birleştirilebilir; bu video alınmadı.";
-  waVid.files.push(file); waVid.at = Date.now(); waVid.sentAt = sent;
-  if (caption && forwarded) waVid.caption = `${waVid.caption}\n${caption}`.trim(); // yayın saati de iletilen açıklamadan okunmaz
-  else if (caption) { const wn = parseWhen(caption); if (wn.at) waVid.publishAt = wn.at.toISOString(); waVid.instruction = `${waVid.instruction} ${caption}`.trim(); }
-  push(`🎬 WhatsApp videosu alındı (${waVid.files.length}. video)${caption ? (forwarded ? ` · iletilen açıklama (talimat sayılmaz): ${caption.slice(0, 100)}` : ` · talimat: ${caption.slice(0, 100)}`) : ""}`);
-  if (waVid.fwdAsked) return null; // albümün geç inen videosu: bildirim gitti, sahibin talimatı bekleniyor (süre yenilenmez)
-  clearTimeout(waVid.timer);
-  waVid.timer = setTimeout(() => waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`)), ALBUM_MS); // albümün diğer videoları
+  if (!own && (!waVid || waVid.running || stale(waVid))) waVid = { files: [], instruction: "", caption: "", at: Date.now(), sentAt: sent };
+  const v = own || waVid;
+  if (v.files.length >= 4) return "En çok 4 video birleştirilebilir; bu video alınmadı.";
+  v.files.push(file); v.at = Date.now(); v.sentAt = sent; if (forwarded) v.fwd = true;
+  if (caption && forwarded) v.caption = `${v.caption}\n${caption}`.trim(); // yayın saati de iletilen açıklamadan okunmaz
+  else if (caption) { const wn = parseWhen(caption); if (wn.at) { v.publishAt = wn.at.toISOString(); v.timeDoubt = !!wn.doubt; } else if (wn.ignored) v.timeNote ||= wn.ignored; v.instruction = `${v.instruction} ${caption}`.trim(); }
+  push(`🎬 WhatsApp videosu alındı (${v.files.length}. video)${caption ? (forwarded ? ` · iletilen açıklama (talimat sayılmaz): ${caption.slice(0, 100)}` : ` · talimat: ${caption.slice(0, 100)}`) : ""}`);
+  if (v.fwdAsked && !v.instruction) return null; // albümün geç inen videosu: bildirim gitti, sahibin talimatı bekleniyor (süre yenilenmez)
+  waAlbum(v); // albümün diğer videoları
   return null;
 }
 function waVideoText(text) {
-  const v = waVid;
+  waAsks = waAsks.filter(waLive);
+  // yanıt önce soru sorulan (talimatsız) eski işe; talimatı gelmiş ama başlamamış iş varken yeni videonun albüm penceresine yazılan söz o
+  // işin ekidir, yeni videonun talimatı değil — yeni video sorulunca/bildirilince talimat ona gider (9. tur)
+  const v = waAsks.find((x) => !x.instruction) || (waVid && (waVid.asked || waVid.fwdAsked || !waAsks.some((x) => x.instruction && !x.running)) ? waVid : null);
   if (!v || !v.files.length || v.instruction || v.running) return null;
   if (Date.now() - v.at > Number(waVideoCfg().waitMin) * 60000) { waVid = null; return null; }
   // kontrol komutları videonun talimatı değil ("güncelle", "sistemi durdur", "sistemi başlat", "durum")
   if (["self_update", "update_check", "stopall", "rest_end", "status"].includes(parseCommand(text).action) || queueCommand(text)) return null; // "kuyruk", "trend 1 3" de
   if (v.caption && findLink(text)) return null; // iletilen videoyu beklerken gelen link kendi işidir (yeni bekleme penceresi eskiden yoktu)
-  if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) { clearTimeout(v.timer); waVid = null; push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim."; }
-  v.instruction = text.trim(); clearTimeout(v.timer);
-  { const wn = parseWhen(text); if (wn.at) v.publishAt = wn.at.toISOString(); }
-  waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`));
+  if (/^(iptal|vazgeç|boş ver|gerek yok)(\s|$|[.!,])/.test(text.toLocaleLowerCase("tr-TR").trim())) {
+    clearTimeout(v.timer); if (v === waVid) waVid = null; waAsks = waAsks.filter((x) => x !== v);
+    push("🎬 video haberi iptal edildi"); return "Tamam, video ile haber yapmaktan vazgeçtim.";
+  }
+  v.instruction = text.trim();
+  { const wn = parseWhen(text); if (wn.at) { v.publishAt = wn.at.toISOString(); v.timeDoubt = !!wn.doubt; } else if (wn.ignored) v.timeNote ||= wn.ignored; }
+  // bekleyen iletilen videoya sahibin talimatı için yeniden tam süre (yanıt önceki videoya gitti)
+  if (v !== waVid && waVid?.fwdAsked && !waVid.instruction && !waVid.running) waFwd(waVid);
+  if (!v.asked && !v.fwdAsked) return true; // albüm penceresi sürüyor: iş pencere dolunca talimatıyla başlar (geç inen video da katılır)
+  clearTimeout(v.timer);
+  waVideoGo(v).catch((e) => push(`🎬 video haberi hatası: ${e.message}`));
   return true; // yanıtı waVideoGo gönderir
 }
 async function waVideoGo(v = waVid) {
   if (!v || !v.files.length || v.running) return;
+  const prior = waAsks.some((x) => x !== v && !x.instruction) ? " Önceki videonuz da yanıtınızı bekliyor: ilk yazdığınız ona gider, bu video için ondan sonra yazın." : "";
   if (!v.instruction && v.caption && !v.fwdGo) { // iletilen video: bir kez kısaca bildir, sahibin talimatını FWD_WAIT_MS bekle
     if (!v.fwdAsked) {
       v.fwdAsked = true;
-      try { await wa.send(`🎬 İletilen ${v.files.length > 1 ? `${v.files.length} video` : "video"} alındı; açıklaması talimat sayılmadı. ${Math.round(FWD_WAIT_MS / 60000)} dakika içinde talimat yazabilirsiniz (ör. "haber yap", "mizah", "benzerini yap"), yoksa ben karar veririm. Vazgeçmek için *iptal*.`); } catch { /* WhatsApp yok */ }
+      try { await wa.send(`🎬 İletilen ${v.files.length > 1 ? `${v.files.length} video` : "video"} alındı; açıklaması talimat sayılmadı. ${Math.round(FWD_WAIT_MS / 60000)} dakika içinde talimat yazabilirsiniz (ör. "haber yap", "mizah", "benzerini yap"), yoksa ben karar veririm. Vazgeçmek için *iptal*.${prior}`); } catch { /* WhatsApp yok */ }
     }
     if (waVid !== v || v.running || v.instruction) return; // bildirim gönderilirken talimat geldi (waVideoText işi başlattı)
-    clearTimeout(v.timer);
-    v.timer = setTimeout(() => { if (waVid !== v) return; v.fwdGo = true; waVideoGo().catch((e) => push(`🎬 video haberi hatası: ${e.message}`)); }, FWD_WAIT_MS);
+    waFwd(v);
     return;
   }
-  if (!v.instruction && !v.caption) {
-    if (!v.asked) { v.asked = true; try { await wa.send(`🎬 ${v.files.length > 1 ? `${v.files.length} video` : "Video"} alındı. Nasıl bir haber yapayım? Kısaca yazın — ne olduğunu, nerede olduğunu, istediğiniz süreyi ve kesilmesini istediğiniz yerleri.\nÖrnek: "Kadıköy'de akşam saatlerinde iş yerinde yangın çıktı, 30 saniye, başındaki titrek kısmı kes"\n(${waVideoCfg().waitMin} dk içinde yazın; vazgeçmek için *iptal*)`); } catch { /* WhatsApp yok */ } }
+  if (!v.instruction && !v.caption && !v.fwdGo) { // fwdGo: yeni (iletilen) video ayrı iş açtı, bu iş talimatsız (varsayılan haber) başlar
+    if (!v.asked) { v.asked = true; try { await wa.send(`🎬 ${v.files.length > 1 ? `${v.files.length} video` : "Video"} alındı. Nasıl bir haber yapayım? Kısaca yazın — ne olduğunu, nerede olduğunu, istediğiniz süreyi ve kesilmesini istediğiniz yerleri.\nÖrnek: "Kadıköy'de akşam saatlerinde iş yerinde yangın çıktı, 30 saniye, başındaki titrek kısmı kes"\n(${waVideoCfg().waitMin} dk içinde yazın; vazgeçmek için *iptal*)${prior}`); } catch { /* WhatsApp yok */ } }
     return;
   }
-  v.running = true; if (waVid === v) waVid = null;
+  v.running = true; if (waVid === v) waVid = null; waAsks = waAsks.filter((x) => x !== v);
   return runVideoNews(v);
 }
 // video kuyruğunun otomatik trend işi ve iptal edilen iş WhatsApp'a yazmaz (başlama/kurgu/hata mesajı yok; bitince normal video mesajı gelir)
@@ -1939,12 +2199,14 @@ async function runVideoNews0(v) {
   // benzer video (sıfırdan): link yolu socialVideoNews'te karar verir (v.recreate); WhatsApp videosunda talimattan
   if (v.recreate === undefined) v.recreate = !v.social && !v.trailer && !v.summary && recreateOn() && recreateAsk(v.instruction);
   const rc = !!v.recreate;
+  // sahibin kendi videosu / yanıtı: yayın saati satırı (timeTail; linkte handleCommand yanıtı söyler)
+  const tl = v.social ? "" : timeTail({ publishAt: v.publishAt, timeDoubt: v.timeDoubt, ignoredTime: v.timeNote }, true);
   push(`🎬 ${rc ? "benzer video (sıfırdan)" : v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${v.files.length} video${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
-  if (!waBrief()) await sendW(rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
+  if (!waBrief()) await sendW((rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
     : v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
-    : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`);
-  else if (!v.social) await sendW(rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.");
+    : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`) + tl);
+  else if (!v.social) await sendW((rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
   writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "" } : {}),
@@ -1969,12 +2231,12 @@ async function runVideoNews0(v) {
     push(`🎨 sıfırdan üretildi: ${p.scenes} sahne çizildi${p.fallbackScenes ? ` (${p.fallbackScenes} sahne sade yedek çizimle)` : ""}${p.konu ? ` · konu: ${String(p.konu).slice(0, 120)}` : ""}`);
     if (p.fallbackScenes) await sendW(`⚠️ ${p.fallbackScenes} sahnenin çizimi kullanılamadı; yerine sade bir sahne kondu (video yine hazırlanıyor).`);
     const ref = String(p.refText || "").trim();
-    if (!waBrief()) await sendW(`🎨 *Sıfırdan üretildi*: ${p.scenes} sahne çizildi — ${p.titles?.A || p.hook}${p.konu ? `\n🔎 Konu: ${String(p.konu).slice(0, 160)}` : ""}${p.mesaj ? `\n💡 Mesaj: ${String(p.mesaj).slice(0, 160)}` : ""}\n📝 Videodan çıkarılan: ${ref ? `"${ref.slice(0, 200)}${ref.length > 200 ? "…" : ""}"` : "konuşma ya da yazı bulunamadı; hikâye görüntüden çıkarıldı"}${p.speech === false ? " (konuşma tanıma Mac'te kurulu değil: bash scripts/install_align.sh)" : ""}\n\n${p.cuts ? `Neler korundu, neler değişti: ${p.cuts}\n\n` : ""}Sahneler:\n${(p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.sahne || "çizim"}${s.fallback ? " (sade yedek çizim)" : ""}`).join("\n")}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+    if (!waBrief()) await sendW(`🎨 *Sıfırdan üretildi*: ${p.scenes} sahne çizildi — ${p.titles?.A || p.hook}${p.konu ? `\n🔎 Konu: ${String(p.konu).slice(0, 160)}` : ""}${p.mesaj ? `\n💡 Mesaj: ${String(p.mesaj).slice(0, 160)}` : ""}\n📝 Videodan çıkarılan: ${ref ? `"${ref.slice(0, 200)}${ref.length > 200 ? "…" : ""}"` : "konuşma ya da yazı bulunamadı; hikâye görüntüden çıkarıldı"}${p.speech === false ? " (konuşma tanıma Mac'te kurulu değil: bash scripts/install_align.sh)" : ""}\n\n${p.cuts ? `Neler korundu, neler değişti: ${p.cuts}\n\n` : ""}Sahneler:\n${(p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.sahne || "çizim"}${s.fallback ? " (sade yedek çizim)" : ""}`).join("\n")}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   }
   // özette sorun olabilecek iki durum kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir)
   if (p.summary && p.unsuitable) await sendW(`⚠️ Video habere pek uygun görünmüyor (${String(p.unsuitable).slice(0, 140)}); yine de en iyi anlarıyla hazırladım.`);
   if (p.summary && p.lowres) await sendW(`⚠️ ${p.lowres} an YouTube'dan HD inmedi; o anlar düşük çözünürlüklü kopyadan kesildi (görüntü bulanık olabilir).`);
-  if (!rc && !waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : p.contentKind === "mizah" ? "Kurgu hazır (mizah: sonda belirtilecek)" : p.contentKind === "trend" ? "Kurgu hazır (viral video)" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${p.frameCropped?.length ? `\n🖼 Çerçeve kırpıldı (logo ve başlık bandı videoda görünmeyecek)${v.files.length > 1 ? `: ${p.frameCropped.join(", ")}. video` : ""}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${whenLabel(new Date(v.publishAt))}'de bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  if (!rc && !waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : p.contentKind === "mizah" ? "Kurgu hazır (mizah: sonda belirtilecek)" : p.contentKind === "trend" ? "Kurgu hazır (viral video)" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${p.frameCropped?.length ? `\n🖼 Çerçeve kırpıldı (logo ve başlık bandı videoda görünmeyecek)${v.files.length > 1 ? `: ${p.frameCropped.join(", ")}. video` : ""}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   // kısa mesaj modunda da tek satır: kırpma yanlış olabilir (gerçek videolarda denenmedi), sahip görsün ve gerekirse kapatsın
   if (!rc && waBrief() && p.frameCropped?.length) await sendW(`🖼 Çerçeve kırpıldı${v.files.length > 1 ? ` (${p.frameCropped.join(", ")}. video)` : ""}: logo ve başlık bandı videoda görünmeyecek. Yanlışsa panelden "🖼 çerçeveyi kırp" kapatılabilir.`);
   // fragman: etiket plandan (FRAGMAN / YENİ FRAGMAN / HAYRAN FRAGMANI / TANITIM FİLMİ), giriş ve kapanış etikete göre wa_video.py'den
@@ -2834,7 +3096,7 @@ function updateBusy() {
   if (anlikQueue.length) return `${anlikQueue.length} video sırada`;
   if (anlikInflight.size || valueBatch.length || dequeueBusy) return "son dakika haberi hazırlanıyor";
   if (socialBusy || videoNewsN || vq.pending()) return "video haberi hazırlanıyor";
-  if (waVid?.files?.length && Date.now() - waVid.at < Number(waVideoCfg().waitMin) * 60000) return "gönderdiğiniz video talimat bekliyor";
+  if ([waVid, ...waAsks].some((v) => v?.files?.length && !v.running && Date.now() - v.at < Number(waVideoCfg().waitMin) * 60000)) return "gönderdiğiniz video talimat bekliyor";
   if (digestPending) return "video WhatsApp'a gönderiliyor";
   if (infoBusy || peakBusy) return "otomatik içerik hazırlanıyor";
   if (pubN || schedBusy || storiesBusy || igAutoBusy || replyBusy) return "yayın işlemi sürüyor";
@@ -3179,9 +3441,11 @@ async function handleCommand(text, opts = {}) {
     case "anlik": {
       const r = await prepareAnlik(cmd.topic, cmd.duration, cmd.publishAt ? { publishAt: cmd.publishAt } : {});
       const what = r.title ? `"${r.title.slice(0, 90)}" (${r.source}${r.count > 1 ? `, ${r.count} haberde geçiyor` : ""})` : String(cmd.topic).slice(0, 60);
-      const when = cmd.publishAt ? whenLabel(new Date(cmd.publishAt)) : "";
-      reply = !r.ok ? r.error : `${r.social ? "Video linki alındı" : r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : when ? "Video şimdi hazırlanıyor;" : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}${when ? ` ⏰ ${when}'de yayınlanacak (iptal için: planlı yayını iptal et).` : ""}`;
-      if (r.ok && waBrief() && ["whatsapp", "brain"].includes(opts.source)) reply = `🎬 Başladı: ${r.title ? r.title.slice(0, 80) : "son dakika videosu"}${r.queued ? ` (${r.position}. sırada)` : ""}. Bitince video gelecek.${when ? ` ⏰ ${when}'de yayınlanacak.` : ""}`;
+      const when = cmd.publishAt ? whenLabel(new Date(cmd.publishAt)) : "", dbt = !!(when && cmd.timeDoubt);
+      reply = !r.ok ? r.error : `${r.social ? "Video linki alındı" : r.viaLink ? "Haberi okudum" : r.found ? "Haberi buldum" : "Sitelerde bulamadım, yazdığınız bilgiyle üretiyorum"}: ${what}. ${r.queued ? `Son dakika videosu ${r.position}. sıraya alındı; süren üretim bitince başlayacak.` : when ? `Video şimdi hazırlanıyor${dbt ? "." : ";"}` : "Son dakika videosu üretiliyor; fotoğraf ve videolar haber sayfalarından alınacak, bitince yayınlayıp haber vereceğim."}${when && !dbt ? ` ⏰ ${atLabel(when)} yayınlanacak (iptal için: planlı yayını iptal et).` : ""}`;
+      if (r.ok && waBrief() && ["whatsapp", "brain"].includes(opts.source)) reply = `🎬 Başladı: ${r.title ? r.title.slice(0, 80) : "son dakika videosu"}${r.queued ? ` (${r.position}. sırada)` : ""}. Bitince video gelecek.${when && !dbt ? ` ⏰ ${atLabel(when)} yayınlanacak.` : ""}`;
+      // şüpheli yayın saati ya da alınmayan açık yazılmış saat: tek kısa satır (10. tur; timeTail)
+      if (r.ok && (dbt || !cmd.publishAt)) reply += timeTail(cmd);
       if (!r.ok) action = "none"; break;
     }
     case "generate": { const r = startPipeline(cmd.duration); reply = r.ok ? `${r.duration} saniyelik gündem videosu üretiliyor. Bitince haber vereceğim.` : r.error; if (!r.ok) action = "none"; break; }
@@ -3240,7 +3504,8 @@ async function handleCommand(text, opts = {}) {
       const vqr = vq.add({ url: cmd.url, instruction: cmd.instruction, publishAt: cmd.publishAt, kind: cmd.kind || "", source: opts.source === "whatsapp" ? "whatsapp" : "panel" });
       if (!vqr.ok) { reply = vqr.error; break; }
       if (vqr.queued) {
-        reply = `⏳ Sıraya alındı (#${vqr.no}; önünde ${vqr.ahead} video var): ${vqr.ahead > 1 ? "önündeki videolar" : "önündeki video"} bitince bu link başlayacak (uzun videoda her biri 10-20 dk sürebilir). Sıra: *kuyruk* · iptal: *#${vqr.no} iptal*` + vqTimeTail(cmd, vqr.no);
+        reply = `⏳ Sıraya alındı (#${vqr.no}; önünde ${vqr.ahead} video var): ${vqr.ahead > 1 ? "önündeki videolar" : "önündeki video"} bitince bu link başlayacak (uzun videoda her biri 10-20 dk sürebilir). Sıra: *kuyruk* · iptal: *#${vqr.no} iptal*`
+          + (cmd.publishAt ? vqTimeTail(cmd, vqr.no) : timeTail(cmd));
         break;
       }
       // talimatta fragman geçiyorsa (açık haber isteği ve tür etiketi yoksa; socialVideoNews ile aynı öncelik ve aynı tür: "#haber
@@ -3254,7 +3519,7 @@ async function handleCommand(text, opts = {}) {
         : "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini sıfırdan çizeceğim (orijinal görüntü kullanılmaz). Her adımda haber vereceğim.")
         : fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
         : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[kindOf(cmd)] || "video"} hazırlanıyor. Bitince video gelecek.`
-        : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + vqTimeTail(cmd, vqr.no);
+        : "🔗 Paylaşımı indiriyorum; inceleyip kurgusunu çıkaracağım. Her adımda haber vereceğim.") + (cmd.publishAt ? vqTimeTail(cmd, vqr.no) : timeTail(cmd));
       reply += vq.idLine(vqr); // kuyruk numarası: iptalin tutamağı (4. tur)
       break;
     }

@@ -290,7 +290,19 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `sentAt`; büyük videonun indirmesi 8 sn'yi geçse de) son videodan en çok `ALBUM_MS` (8 sn) sonra; daha geç gelen video (iletilen ya da
   sahibin kendi videosu) ayrı iştir: bekleyen iş talimatsız başlar (log "🎬 önceki iletilen video talimatsız başlıyor…"), yeni video kendi
   bildirimini ve bekleme süresini alır; "en çok 4 video" reddi yalnız albümün kendi 5. videosuna düşer (inceleme, 19 Ekim: 30 sn arayla
-  iletilen iki ayrı haber sessizce tek habere birleşiyor, beşinci ayrı video reddediliyordu). `wa_video.py`: her video için ffprobe, sahne geçişleri (`select gt(scene,0.3)`), konuşma dökümü
+  iletilen iki ayrı haber sessizce tek habere birleşiyor, beşinci ayrı video reddediliyordu). Kural iletilen video olan HER talimatsız işte
+  (`waVid.fwd`; inceleme, 20 Ekim): açıklamasız iletilen video da (30 sn arayla iki açıklamasız iletilen video iki iş), sahibin "Nasıl bir haber
+  yapayım?" yanıtını bekleyen videosuna iletilen video hiç katılmaz (gönderim anı yakın olsa da); sahibin kendi açıklamasız videoları eskisi
+  gibi birleşir (yanıt bekleyen işine de). Soru sorulan (açıklamasız) iş ayrı iş açan video gelince BAŞLAMAZ, yanıtını `waitMin` boyunca
+  bekler (`waAsks`; log "🎬 yeni iletilen video ayrı iş: önceki video yanıtınızı bekliyor (ilk yazdığınız ona gider)"), sahibin ilk yanıtı
+  ona gider; iletilen video kendi bildirimini alır ("Önceki videonuz da yanıtınızı bekliyor…" eki) ve yanıt eski işe gidince 1 dakikalık
+  beklemesi yeniden başlar (8. tur, inceleme, 20 Ekim: soru sorulan video talimatsız başlıyor, sahibin yanıtı iletilen videoya gidiyordu).
+  Albüm penceresinde yazılan talimat albümü bölmez: iş pencere dolunca talimatıyla başlar, geç inen albüm videosu da katılır. Bildirim
+  gittikten sonra albüm penceresinde inen sahibin açıklamalı videosu işi talimatıyla 8 sn sonra başlatır (eskiden 1 dakikalık bekleme
+  dolmadan başlamıyordu). Talimatı albüm penceresinde gelmiş ama henüz başlamamış iş bekleyen listeden düşmez ve albüm zamanlayıcısı
+  dolunca başlar; o sırada gelen yeni videonun penceresine yazılan söz bekleyen talimatlı işe değil, yeni video sorulunca/bildirilince ona
+  gider (9. tur, inceleme, 20 Ekim: soru sorulan videoya yanıt albüm penceresinde gelince ardından inen iletilen video o işi düşürüyor, iş hiç
+  başlamıyordu; `waLive`, `waAlbum`, `waVideoText`). `wa_video.py`: her video için ffprobe, sahne geçişleri (`select gt(scene,0.3)`), konuşma dökümü
   (mlx-whisper kelime zamanları → cümle satırları), kare çizelgesi (8-16 kare, 4 sütun tek jpg) → TEK Claude çağrısı (Read aracı yalnız
   iş klasöründeki çizelgeler için `--tools Read --allowedTools Read`; olmazsa resimsiz bir kez daha): talimat önceliklidir; titrek/
   karanlık/alakasız yerler kesilir; yalnız talimatta yazan ve görüntüde/konuşmada açıkça olan bilgi (uydurma yok); kanca + 1-3 haber,
@@ -361,19 +373,111 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Talimatta harf/rakam yoksa — linkin çevresindeki parantez, tırnak, * — talimat boş, varsayılan haber talimatı geçer). YouTube
   kanal (/@kanal, /channel/, /c/, /user/, kanal sekmeleri), oynatma listesi (/playlist) ve diğer YouTube sayfaları (ana sayfa, arama) haber
   sayfası gibi okunmaz, Türkçe yanıt: "Bu bir YouTube kanal linki; haberin video linkini gönderin (videoda Paylaş → Kopyala …)". "son dakika:
-  <video linki>" / "anlık haber: <video linki>" de `social_video` (talimat "son dakika …": fragman analizine dönmez; mizah/viral etiketli
-  linkte — "son dakika: <link>/trend" — "son dakika" eklenmez, inceleme, 19 Ekim); `server.js prepareAnlik`
-  beyin `breaking_news`'i ya da panel kartıyla gelen video linkini (şemasız da) video kuyruğuna verir (meşgulken reddedilmez, sırasını bekler: dönüşte `queued`, `position`, iş numarası `no`; videodan
+  <video linki>" / "anlık haber: <video linki>" de `social_video`; talimat etiket biçiminde "son dakika: …" (yalnız linkse "son dakika"), tür
+  alanı yok: tür `contentKindOf`un zayıf haber biçiminden — haber (fragman analizine dönmez; inceleme, 20 Ekim: "son dakika: <fragman başlıklı
+  link> vizyon tarihini de ekle", "… kısa kes" fragman analizine gidiyordu) —, yalnız metinde gülme işareti (`_LAUGH`) ya da reddedilenler
+  atılmış metinde açık mizah/viral ifadesi varsa talimattan ("Son dakika: gol yiyen kaleci 😂 mizah videosu <link>" mizah, "Son dakika: Kedim
+  yine kanepeyi parçaladı 🙈" tür yok; "son dakika: <link> mizah değil, ciddi haber", "Son dakika: Komedi dizisinin setinde yangın çıktı"
+  haber; 8. tur: eski `kind: "haber"` + `SD_JOKE` dar gülme listesini ve ret sözünü yanlış okuyordu); mizah/viral etiketli linkte — "son
+  dakika: <link>/trend" — "son dakika" eklenmez, tür etikettir; `server.js prepareAnlik` aynı biçimi kullanır ve beyin `breaking_news`'i ya
+  da panel kartıyla gelen video linkini (şemasız da) video kuyruğuna verir (meşgulken reddedilmez, sırasını bekler: dönüşte `queued`, `position`, iş numarası `no`; videodan
   haber kapalıysa hata döner; yayın saati ve videodaki konum `parseCommand` ile ayrılır: "youtu.be/… 18:30'da paylaş" → `publishAt`; dönüş
   `{ok, social, title, source}` — `viaLink`/süre yok, panel ANLIK kartı "Haberi okudum … (N sn)" değil "YouTube linki alındı. Video indiriliyor…"
-  yazar). Video linkinde açma: "aç/göster" tam kelimesi (eskisi gibi) ya da linkin dışında YALNIZ açma isteği varsa (`OPEN_ONLY`: "oynat",
-  "şunu açar mısın", "çalar mısınız lütfen", "açsana") o linki tarayıcıda açar (eskiden linkin harfleri YouTube'da aranıyordu); "haber yap,
-  kendi sesiyle oynat", "sesiyle çal", "videonun sesini açın", "12:30'dan oynat" haber talimatıdır (`wa_video.WANT_SOUND`). Videodaki konum
+  yazar). Linkte açma (`commands.js openAsk`; 11.-13. tur, inceleme, 20 Ekim: her karar HEAD'in kendi kodunun kararıdır, yalnız adı konmuş
+  istisnalarla ayrılır). HABER SAYFASI LİNKİ (video/sosyal medya linki olmayan her link — anlık yol, kanal/liste linki de; 13. tur): açar = HEAD
+  açar YA DA metin yalnız açma isteği YA DA (15.-16. tur, `reqOpen`) linkin dışındaki metinde kökü aç/göster/oynat/çal olan ve istek eki taşıyan
+  herhangi bir söz geçer, başka ne yazılırsa yazılsın — emir/kibar (açsana, açın, açıver), şart (açsan, açarsan, açabilirsen, göstersen, oynatsan,
+  çalsan), soru (açar mısın, açmaz/açamaz mısın, açıverir misin; konuşma dilinde açar msn/ms, açarmsın), öneri "açalım", "açıp bakar mısın", "açmanı
+  rica ediyorum", "açman lazım", uzatılmış "açsanaa" —; istek olmayan biçim değil (açtı, açmış, açan, açılan, açık, açlık, açılış, açıklama, gösteri,
+  oyun, çalış-, çalındı, açma, ardından mısın gelmeyen "açar"), sıfat "aç" yalnız HEMEN ardından kal-/bırak-/susuz gelirse değil (kalabalık, kalp,
+  kaldır değil), İSTİSNA YOK. Neden: haber linkinden üretilen anlık video bütün hesaplara ONAYSIZ yayınlanır, yanlış açma
+  yalnız Mac'te tarayıcıyı açar; 12. turun istisnaları sahibin "aç dediler, açsana", "aç diye sana gönderdim", "aç, haber yapalım mı?" isteğini
+  üretip yayınlıyordu. Bilerek kabul: "<haber linki> Aç kalan köpeklere mama dağıtıldı", "<haber linki> bu haberi göster, haber yap" HEAD gibi
+  açılır (sahip "haber yap" ile yeniden gönderir). VİDEO LİNKİ (üretim "onay" ister): açar = (HEAD açar VE (bir yan cümlesi kendi başına yalnız
+  açma isteği YA DA istisna yok)) YA DA metin yalnız açma isteği; yan cümle noktalama, satır sonu ya da ve/sonra/ama/ancak/fakat/veya/yoksa ile
+  ayrılır ("aç dediler, açsana", "aç diye sana gönderdim, açar mısın" açılır; E2'nin "aç ve/veya susuz"u bölünmez; 13. tur). HEAD açar:
+  HEAD'in (c0937ab) kuralı birebir — linkin dışındaki metinde yalın "aç"/"göster", video linkinde HEAD'in kibar biçimi ("şunu oynatır mısın").
+  İstisna (yalnız video linkinde) yalnız üç: E1 açık üretim isteği — soru ya da erteleme yan cümlesinde değil (13. tur: soru eki/"?", uygunsa,
+  istersen, olursa, belki, istiyorum, isterim, lazım, gerek, düşünüyorum, öneri -AlIm; dolgu "bakalım" değil; kibar istek "yapar mısın" soru
+  sayılmaz: "haber yapalım mı aç bakalım", "haber yapmak istiyorum önce aç", "uygunsa haber yap, aç" açılır) —, YALNIZ hiçbir aç/göster
+  kendi yan cümlesinde tam açma isteği değilse (`pureOpen`, 12. tur: solunda yan cümle başına — noktalama, ve/sonra/ama, olumsuz aktarma "demedim", emir biçiminde üretim fiili "yap" — kadar yalnız dolgu ya da "son
+  dakika" etiketi varsa HEAD gibi açar: "aç, haber yapalım mı?", "son dakika, aç bakalım", "haber yap demedim, aç", "haber yap aç"; E1 yalnız
+  açma fiilinin tümleci dolgu dışıysa: "bu filmi haber gibi göster, 40 saniye"); tanıyıcılar (haber isteği `newsRequest`, benzer video
+  `recreateAsk`, açma fiilleri ayıklanınca da kalan fragman isteği `trailerAsk`, tür yalnız link etiketi, `tagKind` ya da açma dışı istek
+  fiilli tür ifadesi `kindAsk`; server.js açılışta `useDetectors` ile verir) olumsuz aktarılan istek ve "son
+  dakika" etiketi atılmış metne bakar. E2 sıfat "aç" (ardından kal- — "kalsın", "kalanını", "kaldığım/kaldığın yerden", "kaldığı yerden" değil —,
+  bırak-'ın edilgen/ortaç/geçmiş/süren/ad biçimi — bırakılan, bırakan, bıraktı, bırakmış, bırakmak; emir "aç bırak", "aç bırakma" değil —, susuz,
+  gözlü, ve/veya susuz; önünde günlerce/haftalarca/aylarca: "<link> Günlerce aç ve susuz kalan kedi kurtarıldı, haber yap"), E3 üçüncü kişi
+  aktarma (hemen ardından deyince, dedi/dediler/dediği, demiş/demişler/demişti, diyen, derken, diyerek, diye — ardından birinci kişi geçmiş
+  zaman gelmiyorsa: "göster deyince"; sahibin "aç dedim", "aç demiştim", "aç diye yazdım" ısrarı değil; 13. tur: birinci kişi "dediğim", "demiş
+  miydim" ve "diye"nin yan cümlesinde birinci kişi fiil — "aç diye mesaj attım", "aç diye yazıyoruz", "göster diye ricada bulundum" — da değil;
+  aynı sonla biten sık adlar — yorum, durum, kurum, birim, yardım, adım, hocam… — fiil sayılmaz: "Fragmanı göster diye yorum yazanlar…" aktarma;
+  14. tur: "diyerek" ve "derken" de birinci kişi fiilden önce değil — "aç diyerek gönderdim", "aç derken bunu kastettim" —, aktarmadan sonra yine
+  açma fiili gelirse sahibin şikâyetidir: "aç deyince açılsın", "göster dediğinde açılmıyor"; kalan E3: "aç dedi patron").
+  Yalnız açma isteği (her link türünde):
+  metin yalnız aç/göster/oynat/çal'ın istek biçimleri (açsana, açın, açıver, açar mısın, gösterir misin, oynatabilir misin…) ve dolgu (şunu,
+  bunu, linki, videoyu, lütfen, hemen, abi, kanka, hadi, bakalım, bana, safaride…; 14. tur: selamlama, teşekkür, hitap — selam, merhaba,
+  teşekkürler, sağ ol, acaba, kardeşim, acil, Emixhas — ve sahibin birinci tekil amaç sözü — "açar mısın, okuyacağım", "aç bakayım"; haber
+  linkinde "selam, açar mısın?", "açsana kardeşim" anlık video olup onaysız yayınlanıyordu). Başka istisna yok: "<link> mizah aç" ve altyazıdaki
+  "Sesini aç…", "Gözünü aç!", "Aç kurt sürüsü…", "Göster bakalım ne yaptın dedi" HEAD gibi açar (yanlış açma yalnız tarayıcı açar). Ses sözü ve
+  videodaki konum ("kendi sesiyle oynat", "12:30'dan oynat") yalın aç/göster yoksa haber talimatıdır. Videodaki konum
   — YALNIZ YouTube linkinde; `social_video.py` yalnız orada bölüm seçer — ("12:30'dan itibaren", "12:30'daki", "1:02:10", "12:30-16:00 arası",
   "12:30'dan 16:00'ya kadar") `parseWhen`e gitmez, talimatta kalır (eskiden 12:30'a yayın planlanıyordu); eksiz "18:30", "18:30'da paylaş",
   "saat 18:30'dan itibaren paylaş", "18:30'dan sonra/itibaren paylaş|yayınla|gönder|yükle|yayına al|atar mısın" yine yayın saati; Instagram/
-  TikTok/X'te "18:30'dan itibaren paylaş" de yayın saati (HEAD gibi). WhatsApp hızlı yolu (`smartWhatsApp`, Claude'a gitmez) https:// / www.
-  ile şemasız video linkini de (`findLink`) görür: "youtu.be/… 18:30'da paylaş" Claude'dan geçip `breaking_news` ile yayın saatini kaybetmez.
+  TikTok/X'te "18:30'dan itibaren paylaş" de yayın saati (HEAD gibi). YAYIN SAATİ (`when.js parseWhen` → {at, rest, label, doubt}; video
+  linki, haber sayfası linki, sahibin WhatsApp videosunun açıklaması ve "Nasıl bir haber yapayım?" yanıtı aynı; 10. tur, ÖNCE SAHİP: 9. turun "yalnız
+  istek biçimindeki yayın fiiliyle" kuralı sahibin saatlerini düşürüyordu): saat HEAD'in (c0937ab) aldığı her yerde, aynı gün ve aynı etiketle
+  alınır (önce ilk göreli süre "2 saat sonra", yoksa ilk saat; eksiz noktalı sayı ancak metinde yayın fiili varsa; "yarın/bugün" metnin herhangi bir
+  yerinde; dönemsiz yalın saat en yakın 08:00/20:00; geçmiş saat yarına). Düzeltmeler: kelimeler Türkçe harfle bütün, talimattan yalnız istek
+  biçimindeki (ya da ikinci kişi geniş zamanlı "paylaşırsın"; 13. tur: "paylaşım yap") yayın fiili HEAD'in kestiği kadar kesilir ("paylaşmanı
+  istiyorum"dan "istiyorum" kalır; "haber olarak 21:15'te paylaşım yap" → "haber olarak yap", haber; 14. tur: HEAD'in kestiği fiil HER biçimde —
+  "komik bir video 16:45'te paylaşırız" → "komik bir video" mizah, "fragman 18:30'da yayınlanır" fragman; 11.-13. turda kalan fiil HEAD'in
+  tür/fragman kararını düşürüyordu —, göreli saatte bütün kelime, "at…" yalnız istek biçimiyse; saatin ardındaki "sularında/civarı" da kesilir); 65.536 karakterde en çok ~25 milisaniye. HEAD'den bir şey götürmeyen eklemeler: gün adı ("Cuma
+  18:30'da"; ad da olan pazar, cuma, salı… yalnız yalın ya da günü/akşamı/sabahı/gecesi/öğleden sonra ile: "Kadıköy pazarı" gün değil; gün adının
+  ardından dönem/saat/sayı/yayın fiili/dolgu dışı söz gelirse ad tamlaması: "18:30'da Cuma maçının haberini paylaş", "pazar yeri", "Cuma namazı"; 12.
+  tur), "haftaya (salı)", "öbür gün", "25 Ekim'de", "Cuma akşamı 8'de"; saate bitişik gün sözü HEAD'in gününden YALNIZ saat şüphesizken önce gelir
+  ("Cuma 18:30'da paylaş" → Cuma); şüpheli saatte HEAD saat aldıysa HEAD'in bütün sonucu (saati, günü, talimatı; 16. tur: karışım yok), gün sözü
+  talimatta kalır (12. tur; inceleme, 20 Ekim: "Cumartesi 20:00'de Harbiye'de konser,
+  yarın paylaş" cumartesiye, "<haber linki> 18:30'da Cuma maçının haberini paylaş" cumaya onaysız planlanıyordu; sahibin "Cuma 19:45'te
+  paylaşalım" isteği de şüpheli olduğu için bugün 19:45 + şüphe satırı: günü istek biçimiyle yazın); HEAD'in bulamadığı saat yalnız 9. turun kesin kuralı onu bitişik ya da
+  araya yalnız dolgu giren yayın fiiliyle alıyorsa ya da metin yalnız saat + dolguysa ("yarın 10'da paylaş", "yarın 10'da bunu paylaş", "Cuma
+  9'da"; "Yarın 10'da Kızılay'da buluşalım, paylaş!" altyazısı HEAD gibi saat sayılmaz; günü yalnız saatin kendi bitişik gün sözü, yoksa günsüz —
+  bugün, geçmişse yarın; 16. tur: HEAD'in gün kuralı karışmaz, şüpheli geçmiş an ertesi güne); HEAD'in ilk saati kuşkuluyken kesin kural aynı
+  sıkılıkta başka saati ŞÜPHESİZ alıyorsa o saat (16. tur: iki saatli metin şüpheli olduğundan "Tören 10:00'da başladı, öğlen 12'de paylaş" HEAD'in
+  10:00'ı + şüphe satırı; HEAD'in saatinin bitişiğinde ya da aynı yan
+  cümlede en çok iki rakamsız söz sonra herhangi biçimde yayın fiili varsa — "18:30'da hemen değil paylaş, yarın 9'da da paylaş" — ya da öbür
+  saati yalnız "olsun" bağlıyorsa değil).
+  ŞÜPHE: 9. turun kesin kuralı (aynı yan cümlede istek biçiminde yayın fiili ya da metin saatten başka yalnız etiket/dolgu/süre/kurgu sözü) saati
+  almazdıysa — soru/anlatım ("paylaşsak mı", "paylaşıyoruz"), olay saati ("Saat 14:30'da meydana gelen kazada…", "Dizinin finali 20:00'de
+  yayınlanacak", "itfaiye 20 dakika sonra geldi"), ya da bağ zayıfsa (11. tur, yalnız şüphe): "olsun" saate bitişik değil, fiil -AlIm/-sIn
+  ("paylaşalım", "herkes paylaşsın"), saatin yan cümlesinde dolgu dışı söz (sahibin üretim/kurgu sözü, selamlama — günaydın, sağolun, iyi akşamlar,
+  kolay gelsin —, hesap adları ve saatten önceki fiil sayılmaz; yayın fiilinin nesnesi sayılır: "yangın haberini 18:30'da paylaş", "Tahminini Cuma
+  20:00'de paylaş, maç başlıyor", "Fotoğrafını saat 20:00'de paylaş, çekilişe katıl" şüpheli, gün HEAD'in — 13. tur: 12. turun nesne muafiyeti
+  altyazıyı şüphesiz alıp cumaya planlıyordu —), "kadar" "bekle"den önce değil ("18:00'e kadar paylaş, hayat kurtar"), metinde
+  izleyiciye söz (herkes, hepiniz, sizler; 13. tur: takipte kalın, takip edin, abone olun, kaçırmayın, bildirimleri açın, en güzeli/iyisi
+  kazanır, videonu(zu)), 14. tur: METNİN GERİ KALANINDA (bağlayan fiilin dışında herhangi bir yerde) dolgu dışı söz — "Cuma 20:00'de paylaş,
+  çekilişe katıl", "Cumartesi 14:00 olsun, Taksim'de toplanalım", "Kadıköy'de yangın çıktı, Cuma 20:00'de paylaş"; selamlama, teşekkür, gülme,
+  hitap (Emixhas) sayılmaz; geçiş kuralında HEAD'in saatinin yan cümlesi olayın anlatımıdır, sayılmaz —, bağlayan fiilden başka istek biçiminde
+  yayın fiili ("Cuma 20:00'de story at Lütfen paylaşın 🙏", "… paylaşın! Hemen paylaş!"; bağlayan fiile yalnız virgül ya da ve/veya ile bağlı olan
+  aynı istektir: "Cuma 18:30'da yükle ve paylaş"; `PUB2`), "hikayende/story'nde" (izleyicinin hikâyesi), saate bitişik olmayan gün sözü
+  ("📍 🗓 Cumartesi ⏰ 21:00'da"; bitişik gün sözüne bitişik olan sayılmaz: "25 Ekim Pazar 11:00'de") ya da etkinlik kartı işareti (📍 🗓 ⏰;
+  inceleme, 21 Ekim: 13. tur yalnız saatin yan cümlesine bakıyor, bu duyuruları şüphesiz alıp cumaya planlıyordu; şüpheli saatte HEAD'in gün
+  kuralının "yarın/bugün"ü HEAD gibi talimattan çıkar), 15. tur (gün ve saat HEAD'in): saatin yan cümlesinde olumsuz yayın fiili (paylaşma,
+  yayınlama, yükleme, atma; -mAyIn, -mAsIn, -mAyAlIm: "Cuma 20:00'de paylaşma, bugün paylaş"), metinde iki ya da daha çok saat ("18:30'da değil
+  19:00'da paylaş"; ek ve "saat" sözü olmayan noktalı sayı saat değil), her biçimdeki gün sözü ("Cuma lütfen 21:15'te paylaş", "21:15'te paylaş,
+  Cuma teşekkürler", "Cuma'ya 18:30'a planla"; 16. turdan beri saate bitişik olmayan yarın/bugün/öbür gün/haftaya da: "18:30'da paylaş, yarın değil")
+  ve "N gün sonra", 16. tur: metnin HERHANGİ bir yerinde olumsuz görünen yayın sözü (yayın kökü + olumsuz -mA/-mI her biçimde: paylaşmaaa, paylaşmam,
+  paylaşmayız, paylaşmayacağız, yayınlamazsın, atmayalım mı, paylaşılmasın; istek adı "paylaşmanı istiyorum", "paylaşmayı unutma" değil; yanında
+  sakın/istemiyorum/gerek yok ya da ardında değil/olmaz) ya da birden çok yayın sözü ("Cuma 18:30'da yükle ve paylaş") — saat yine alınır ve WhatsApp ilk yanıtına tek satır eklenir (`when.js doubtNote`, `server.js
+  timeTail`; link: `parseCommand` `timeDoubt` → `handleCommand` social_video/anlik; WhatsApp videosu: `waVideoIn/waVideoText` `v.timeDoubt` → başlama
+  mesajı): "⏰ bugün 14:30'da yayınlanacak. Bu saat haberdeki olayın saatiyse video gelince *planlı yayını şimdi yayınla* ya da *planlı yayını
+  iptal et* yazın." (komutlar video üretilip `data/scheduled_publish.json`a yazılınca çalışır; iptal tüm planlı yayınları kaldırır). HEAD'in de
+  almadığı açık yazılmış saatte, yalnız saat bağlamında ("saat" sözü, bulunma eki, sularında/civarı/itibarıyla ya da yanında yayın fiili; ölçülü
+  ondalık sayı — "4.25 büyüklüğünde", "47.20 TL" — asla) tek satır "⏰ Metindeki 21:15 yayın saati sayılmadı; saatli yayın için linki "21:15'te
+  paylaş" yazarak gönderin." (`timeNote`, `ignoredTime`; sahibin WhatsApp videosunda "videoyu "14:30'da paylaş" açıklamasıyla gönderin", 12. tur;
+  satırdaki örnek yazılınca saat şüphesiz alınır). Yanıttaki "… yayınlanacak" satırları saate uyan
+  ekle (`when.js atLabel`: 18:30'da, 21:15'te, 20:00'de). WhatsApp hızlı yolu (`smartWhatsApp`, Claude'a gitmez) https:// / www. ile şemasız video linkini de
+  (`findLink`) görür: "youtu.be/… 18:30'da paylaş" Claude'dan geçip `breaking_news` ile yayın saatini kaybetmez.
   `social_video.py` (yalnız YouTube; diğer platformlarda yt-dlp argümanları ve çıktı aynı): önce video inmeden bilgi + altyazı
   (`--skip-download --ignore-errors --ignore-no-formats-error --write-info-json --write-subs --write-auto-subs --sub-langs "tr.*,en.*"
   --sub-format vtt/best`; altyazı inemezse bilgiyle devam). Altyazı seçimi elle tr → elle en → otomatik özgün dil (-orig) → otomatik tr → en;
@@ -435,10 +539,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   biçimi `common.trailer_ask` = `server.js trailerAsk`, `social_video.wants_summary` de: fragman/trailer/teaser (+ analiz…/özet…/video…/
   olarak) ardından ifade sonu, dolgu/süre ("fragman", "fragman:", "fragman 40 saniye"), istek fiili ("fragman yap", "bu fragmanı özetle",
   "fragmanı analiz et", "fragman analizi yap 30 saniye") ya da haber reddi ("fragmanı haber yapma") gelirse; işaret ve satır sonu yalnız
-  ardından metnin sonuna kadar işaret/dolgu/süre (`_SIGN_END`: "fragman: <link>" — link talimattan atılır —, "fragman 🎬") ya da virgül/
-  noktalı virgül/iki nokta/tire/satır sonundan sonra en çok dört kelime + istek fiili (`_CLAUSE`: "fragman, kısa olsun", "fragman - orijinal
-  sesini kullan") gelirse ifade sonudur (inceleme, 19 Ekim: "Gerçek hayattan fragman: Kartal tilkiyi havada yakaladı", "Fragman: Dizi
-  yayından kaldırılsın çağrısı" fragman analizine gidiyordu); inceleme, 19 Ekim: linkin
+  ardından metnin sonuna kadar işaret/dolgu/süre (`_SIGN_END`: "fragman: <link>" — link talimattan atılır —, "fragman 🎬") ya da işaretten
+  (virgül, iki nokta, tire; 20 Ekim'den beri nokta, ünlem, emoji de) ya da satır sonundan sonra en çok dört kelime ya da süre + istek fiili ya da
+  "kalsın" (`_CLAUSE`: "fragman, kısa olsun", "fragman - orijinal sesini kullan", "fragman. 40 saniye olsun", "Fragman! Orijinal sesini
+  kullan", "fragman 🎬 kısa olsun", "fragman analizi. sesi kalsın"; işaretten sonra yalnız sahibin tekil istek biçimi — `_REQ_SG` — ve
+  cümlede izleyiciye çağrı sözü yok — `_TR_VIEW`: izle, beğen, kaydet, takip, abone, yorum, paylaşın, herkes; 8. tur: yapıştırılan
+  "Gerçek hayattan fragman 😱 hemen paylaşın", "Hayatın fragmanı 💔 beğen paylaş" fragman analizine gidiyordu —; değerlendirme sözü + istek
+  de: "bu fragman çok iyi, analiz et") gelirse ifade sonudur (inceleme, 19 Ekim: "Gerçek hayattan fragman:
+  Kartal tilkiyi havada yakaladı", "Fragman: Dizi yayından kaldırılsın çağrısı" fragman analizine gidiyordu); inceleme, 19 Ekim: linkin
   yanına yapıştırılan "Ünlü oyuncu fragman çekimleri sırasında yaralandı", "Fragmanı izleyen hayranlar çıldırdı", "Fragmana tepki: …"
   haber videosunu fragman analizine gönderiyordu; "fragman parodisi", "Yeni fragman yayınlandı" de artık istek değil):
   `social_video.TRAILER` (fragman + Türkçe ekleri — "fragmantasyon" değil —, trailer, teaser; re.I Türkçe I/ı eşler) YouTube başlığında
@@ -574,7 +682,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`tag`; yt-dlp "watch?v=ID/mizah"yı indiremez), `tagKind` onu ya da linkin yanına YALNIZ yazılmış etiketi ("mizah", "#trend", "_viral_")
   ya da başta ayraçla yazılmış etiketi ("mizah, kısa kes", "#trend: sesi kalsın") komutun ayrı `kind` alanına koyar (komik → mizah, viral →
   trend) ve talimattan atar; etiketin yanında yalnız yayın fiili, süre ya da dolgu kelimesi varsa da etiket sayılır ("mizah 18:30'da paylaş",
-  "trend 40 saniye" → talimatta "40 saniye" kalır, "bunu mizah olarak paylaş"; `KIND_FILL`) ve `when.js` mutlak saatin hemen ardındaki
+  "trend 40 saniye" → talimatta "40 saniye" kalır, "bunu mizah olarak paylaş"; teşekkür ve selamlama da — "mizah olarak 20.15'te yükleyin
+  teşekkürler", "selam mizah"; 12. tur —, hitap da — "abi mizah"; 14. tur —; `KIND_FILL`) ve `when.js` mutlak saatin hemen ardındaki
   yayın fiilini de atar ("18:30'da paylaş" talimatta "paylaş" bırakmaz; inceleme, 19 Ekim: etiket serbest cümle sanılıp tür Claude'a kalıyordu); `kind` panelde `socialVideoNews({kind})` → social_video.py `--kind` (mizahta haber araması yok, viral/mizahta
   kendiliğinden özet yok) → wa_video işinde `job.kind` (sıra kuyruğu ve panel ANLIK kartı da taşır; mizah/viral etiketli linke "son dakika"
   eklenmez — ANLIK kartında talimattaki açık ifade de etikettir: `kindOf({kind, instruction})`, "<link> mizah videosu" son dakika olmaz;
@@ -596,7 +705,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   tetik pahalı). İstek biçimi fiil kökünden hemen sonra (Python `_REQ` = JS `REQ_FORM`, dört tanıyıcıda aynı): yap, yapın, yapsana,
   yapalım, yapsın, yapar mısın, yapabilir misin, yapıver, yapmalısın(ız), yapacaksın/yapcan/yapacak mısın, yapacaz/yapcaz/yapıcaz
   ("haber yapcaz bunu"), yapmak/yapmasını istiyorum, yapmak/yapman(ız) lazım/gerek ("haber yapman lazım bunun"; "gerek yok" ret), yapsan iyi olur, -ıp + istek fiili ("çizip paylaş"); edilgen istek (yapılsın, yapılacak, yapılması
-  lazım) yalnız "haber + fiil"de ve tür ifadesinde; başka her biçim (yapma, yapan, yaparken, yaptığı, çekimi, yaptı, "yapmak yerine",
+  lazım) yalnız "haber + fiil"de ve tür ifadesinde, "yapılacak" yalnız talimatın sonunda, ardından yalnız işaret/dolgu/süre (`_PASS`,
+  `_SIGN_END`; inceleme, 20 Ekim: sıfat-fiil "haber yapılacak kadar önemli değil", "Mizah yapılacak bir durum değil", "Komik video çekilecek
+  yer mi", duyuru "Viral video çekilecek, herkes meydana", "Kazanın haberi yazılacak, ama…" istek sanılıyordu; "mizah videosu yapılacak.",
+  "bundan mizah videosu yapılacak, 40 saniye" istek);
+  başka her biçim (yapma, yapan, yaparken, yaptığı, çekimi, yaptı, "yapmak yerine",
   "yapmayı bırak", "yapmak zorunda değil"; üçüncü kişi/biz gereklilik ve soru görüştür: "Medya haber yapmalı", "TRT bunun benzerini
   yapmalı", "üretmeliyiz", "haber yapmalı mı?", "haberi yapılacak mı?", "haber yapılmalı" — inceleme, 19 Ekim) istek değil. İstek fiili
   kökleri `_ASK_V`/`ASK_V` (anlat, yap, hazırla, üret, yaz, paylaş, göster, çek, at, özetle, düzenle…; "geç" — `_GEC` — yalnız istek ekiyle
@@ -606,31 +719,56 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   boşluk, virgül, nokta, tırnak) diye, der/derken/dersen, deyince/deyip/deyerek, denilen, dedi…, demiş…, demiyor…, diyor…, diyen, diyecek,
   diyerek ya da çağrısı/talebi/uyarısı gelirse istek başkasının sözü ya da amaçtır, sayılmaz (`_say(L)` = `sayWords(L)`, üç tanıyıcıda;
   "diyorum/diyoruz" sahibin ısrarıdır: "haber yap diyorum" haber). Haber isteği GÜÇLÜ biçim (her zaman): "haber(i/ini/leri) yap|hazırla|
-  üret|çek|yaz"; "haber olsun" yalnız talimatın başında, bu/bu video/şu/bunu/şunu/videoyu (+ da/de) sonra ya da talimatın son sözü olarak
-  (ardından yalnız işaret/dolgu/süre: "…ama vazgeçtim, normal haber olsun"; yönelme hâlinden ve kalmasın/duysun/duyulsun/bilsin/görsün/
+  üret|çek|yaz" (araya kelime girerse ad da olabilen yaz/çek istek ekli ya da yalın kök + ifade sonu — inceleme, 20 Ekim: "Acı haberi bir
+  yaz günü aldık", "Bu haberi 2 yaz önce paylaşmıştık", "Kötü haberi bir çek ile verdiler" ad —, yap/hazırla/üret yalın kökü her yerde:
+  "bunun haberini kısa yap ve paylaş", "haberini kısa yap sesi kalsın" (8. tur); ara kelime "sen" yalnız metinde gülme işareti yoksa,
+  `_NEWS_SEN`: "haberini ayrıntılı bir şekilde sen yap" haber, "Haberini sen yap, tıklanmayı biz alalım 😂" şaka); talimatın başında "(bundan) haber
+  (videosu) istiyorum" ("haber istiyorum bundan, 40 saniye"; cümle içindeki "Tarafsız haber istiyoruz" değil); "haber olsun" yalnız talimatın
+  başında, bu/bu video/şu/bunu/şunu/videoyu (+ da/de) sonra ya da talimatın son sözü olarak
+  (ardından yalnız işaret/dolgu/süre: "…ama vazgeçtim, normal haber olsun"; son söz biçimi yalnız metinde gülme emojisi yoksa, `_HO_END`:
+  "Kedim ilk kez kar gördü, haber olsun 😹" şaka, inceleme, 20 Ekim; yönelme hâlinden ve kalmasın/duysun/duyulsun/bilsin/görsün/
   öğrensin'den sonra deyimdir: "herkese haber olsun", "Kedim yine dolabın üstünde, duymayan kalmasın haber olsun 😂 mizah videosu" mizah;
   inceleme, 19 Ekim); "haber olarak" + ifade sonu ya da istek fiili (hemen ardından virgülle yeni cümle başlarsa değil: "Güzel bir haber
   olarak, kedimiz Pamuk 5 yavru doğurdu"; virgülden sonra yalnız dolgu/süre, istek ya da ret: "haber olarak, son dakika yazma");
   "haber gibi/şeklinde/formatında/diliyle" + istek fiili ("haber gibi yayınla"; "haber gibi sunulan" değil); araya en çok üç ara kelime ya da
-  süre ("haber olarak 30 saniyelik bir video yap", "son dakika olarak kısa bir özet hazırla", "haber gibi bir şey hazırla", "haberini 30
+  süre — biri süreyse dört; ara kelime zarf da: kısaca, hızlıca, detaylı, ayrıntılı, sade, net, tarafsız, güzelce, biraz, dille, ve, "bir
+  şekilde" tek kelime ("haber olarak tarafsız ve net anlat"; `_GAP`;
+  inceleme, 20 Ekim: "haberini kısaca hazırla", "haber olarak 40 saniyelik kısa bir video hazırla", "haber gibi tarafsız anlat", "filmin
+  haberini sen hazırla" kaçıyor, fragman başlıklı link fragman analizine gidiyordu) — ("haber olarak 30 saniyelik bir video yap", "son dakika
+  olarak kısa bir özet hazırla", "haber gibi bir şey hazırla", "haberini 30
   saniyelik hazırla", "bunun haberini kısa yap", "haberini kısa bir şekilde hazırla", "haber videosu 30 saniyelik hazırla"; inceleme,
   19 Ekim: süre araya girince istek kaçıyor, trailer başlıklı link fragman analizine, "bunun gibi … ama haber olarak 30 saniyelik
   hazırla" benzer videoya gidiyordu); "habere çevir", "haberleştir", "haber haline getir"; "son dakika" (ya da "son dk") + olarak/diye/
   etiket…/haber…/video… + son ya da istek, ya da + istek fiili. ZAYIF biçim (yalnız açık mizah/viral ifadesi — sondaki yalın etiket de —
   yoksa haber; inceleme, 19 Ekim: "Son dakika: gol yiyen kaleci 😂 mizah videosu", "😂 #komik #viral #sondakika" haber, "yalan haber
-  gibi 😂 mizah yap", "gerçek bir haber gibi 😂" benzetmesi haber oluyordu; metinde gülme emojisi — `_LAUGH` 😂🤣😹😆😅😁😄😝🤪 — varsa iki "son
-  dakika" biçimi sayılmaz: "Son dakika 2 dakika kala otobüse yetişen öğrenci 😂", "SON DAKİKA: Annem tatlıyı yine saklamış 😂"; inceleme,
-  19 Ekim): etiket "son dakika" + ifade sonu (`_SD_LABEL`: "son dakika:",
-  "🔴 SON DAKİKA |", "#sondakika"); talimatın başında "son dakika" + kesme işaretli özel ad ya da rakam (`_NEWS_START`: "Son dakika
+  gibi 😂 mizah yap", "gerçek bir haber gibi 😂" benzetmesi haber oluyordu; metinde gülme işareti varsa iki "son dakika" biçimi sayılmaz:
+  "Son dakika 2 dakika kala otobüse yetişen öğrenci 😂", "SON DAKİKA: Annem tatlıyı yine saklamış 😂"; inceleme, 19 Ekim). Gülme işareti TEK
+  küme (`_LAUGH` = server.js `LAUGH`; "son dakika" biçimleri, son söz "haber olsun" ve "haberini sen yap" aynı kümeye bakar): 😂🤣😹😆😅😁😄😝🤪
+  🙈🤭😜😛😀😃🙃💀 ve yazıyla gülme — ha(ha)+, ah(ah)+, jsjs+, sjsj+, kdkd+, xd, :d — tam kelime (8. tur, inceleme, 20 Ekim: "Son dakika: Kedim
+  yine kanepeyi parçaladı 🙈", "… ahahaha", "… ülke şokta 💀", "Babam ilk kez bulaşık yıkadı, haber olsun 🙈" haber oluyordu): etiket "son dakika" + ifade sonu (`_SD_LABEL`: "son dakika:",
+  "🔴 SON DAKİKA |", "#sondakika") ve baştaki (önünde emoji ya da hashtag da olabilir, 13. tur: "#mizah Son dakika haberi: …") "Son dakika haberi:" / "Son dakika haberi!" (`_SD_HABER` = `SD_HABER`, 11. tur: gülme işareti ya
+  da açık #mizah/#komik karar verir — "Son dakika haberi: Kedi vazoyu kırdı 🙈" haber değil, "Son dakika haberi! … 😂 #mizah" mizah; sahibin "son
+  dakika haberi yap" isteği haber); talimatın başında "son dakika" + kesme işaretli özel ad ya da rakam (`_NEWS_START`: "Son dakika
   Kadıköy'de yangın", "Son dakika 4,2 büyüklüğünde deprem"; inceleme, 19 Ekim: ortaç ve bileşik ad — "Son dakika yetişen damat", "Son
   dakika gol yiyen kaleci", "Son dakika tatil fırsatları", "son dakika diil bu" — haber oluyordu; kaçırılan "Son dakika Erdoğan açıkladı"
   ucuz: Claude gerçek olayı zaten haber seçer); talimatın başında (bunu/şunu/videoyu/bu fragmanı +) fiilsiz "haber gibi" + ifade sonu ya da
   rakam (`_NEWS_LIKE`: "haber gibi 40 saniye", "haber gibi\nözetle", "haber gibi 😂"; işaret ve satır sonu fragman isteğindeki gibi
-  `_SIGN_END`/`_CLAUSE` ile: "Haber gibi 😂 Minik muhabir sınıfta hava durumunu sundu" değil; cümle içindeki benzetme — "Tıpkı bir haber
-  gibi.", "sahte haber gibi, mizah olarak paylaş", "zaten haber gibi, sadece kısalt" — değil). Tür ifadesi (mizah/komik/viral/trend/çok izlenen + (bir)
-  video/içerik/şey/olarak/amaçlı/kategori/şekilde/tarzında) yalnız ardından ifade sonu (son, noktalama, emoji), dolgu/süre, istek fiili
-  ya da "ama/ve" + istek gelirse (istiyorum/isterim da: "komik bir video istiyorum"); tür kelimesi + istek fiili, "olsun" ya da "istiyorum"
-  kendi başına yeter ("mizah yap sesi kalsın", "komik yap 40 saniye sesi açık", "mizahi anlat", "haber istemiyorum mizah istiyorum" mizah;
+  `_SIGN_END`/`_CLAUSE` ile: "Haber gibi 😂 Minik muhabir sınıfta hava durumunu sundu" değil, "haber gibi! özetle",
+  "haber gibi. kısa tut" istek; cümle içindeki benzetme — "Tıpkı bir haber gibi.", "sahte haber gibi, mizah olarak
+  paylaş", "zaten haber gibi, sadece kısalt" — değil). Tür ifadesi (mizah/komik/viral/trend/çok izlenen + (bir)
+  video/içerik/şey/olarak/amaçlı/kategori/şekilde/tarzında; esprili ve komedi de mizah: "esprili bi video yap", "bunu komedi videosu yap") yalnız
+  ardından ifade sonu (15. tur, ÖNCE HEAD: ciddi olay sözü — `_SERIOUS`, `_OLU` — yoksa ya da gülme varsa HEAD'in kuralı, `_KIND_FOLLOW`: işaret,
+  satır sonu ya da metin sonu yeter, kalan metin ne olursa olsun — "komik video, teşekkürler abi, iyi akşamlar, kolay gelsin", "Komik video:
+  düğünde gelini görünce bayılan damat 😂" mizah —; ciddi olay sözü varken: metin sonu; işaret ya da satır sonundan sonra metnin kalanında en çok 4 kelime — link, süre ve dolgu sayılmaz — ve
+  aralarında cümle sonu -DI geçmiş zaman yok, `_KIND_END`; daha uzun kalan metinde sahibin tekil istek/kurgu fiili — kes, kısalt, at, al,
+  yavaşlat, sil, göster, anlat…; `_KIND_SIGNHEAD`/`_KIND_ASK` — ya da -DI'sız şimdiki zamanlı anlatım ya da saat varsa — 14. tur, `_KIND_SCHED` =
+  `KIND_SCHED_RE`: 18:30, 9'da, akşam 9, 2 saat sonra; WhatsApp videosunun açıklamasında "mizah videosu, 2 saat sonra yayınlarsan iyi olur",
+  "komik video, 21:30 sularında post et sağ ol" HEAD'de türdü —; inceleme, 20 Ekim: "Komik video,
+  acı son: Balkondan düşen genç hayatını kaybetti", "Viral video: Selde mahsur kalan aile helikopterle kurtarıldı", "Viral video: Selde
+  araçlar sürüklendi" ciddi altyazısı mizah/viral oluyordu; "komik video, kısa kes", "mizah videosu 😂", "komik video, 30 saniye, başındaki
+  titrek kısmı kes", "komik video: adam merdivenden kayıyor, sonunda kova kafasına düşüyor" tür), dolgu/süre, istek fiili ya da "ama/ve" + istek gelirse (istiyorum/isterim da: "komik bir video istiyorum"); fiilsiz ifade üstünlük
+  sıfatından sonra betimlemedir ("Haftanın en çok izlenen videosu: …", "Günün en komik videosu 😂"); tür kelimesi + istek fiili, "olsun" ya da
+  "istiyorum" kendi başına yeter ("mizah yap sesi kalsın", "komik yap 40 saniye sesi açık", "mizahi anlat", "haber istemiyorum mizah istiyorum" mizah;
   "viral olsun" değil); "mizaha çevir" ("habere çevir" gibi) mizah; video adının ilgi/bulunma/araç hâli ("viral videonun sahibi") ve ilgi hâlinden sonraki
   iyelik ("kavganın viral videosu"; "bunun komik videosunu yap" istek fiiliyle sayılır) betimlemedir. Ardından ret (değil — konuşma dilinde
   diil/deil —, yok, gerek yok, gerekmez, yerine, kaldır, alakası/ilgisi yok, -mAnA gerek yok, olumsuz fiil `VERB_NEG` — yazmıycaz,
@@ -721,7 +859,268 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   iş; 4 videoluk albüm + 20 sn sonra ayrı video → reddedilmez, ayrı iş; pencerede sahibin talimatı ve iptal); wa_video regresyonunda
   (sahte Claude) önceki 73 iş log, iş klasörü, istem ve Claude argümanlarında birebir aynı, bu turun 19 yönlendirme işinin 17'si bilerek
   farklı (benzer video ya da istemde istenen tür). Kalan bilinen durumlar: "görüntüleri kullanmadan sıfırdan çiz bunu" kaçırılır (şey
-  adsız "sıfırdan"ın solu beyaz listede değil); "Köpeğin tavşanla saklambacı 😂 aynısını yapalım mı?" soru biçimi hâlâ benzer video sayılır.
+  adsız "sıfırdan"ın solu beyaz listede değil); "Köpeğin tavşanla saklambacı 😂 aynısını yapalım mı?" soru biçimi 20 Ekim'de düzeldi.
+  Kalan bulgu düzeltmeleri (inceleme, 20 Ekim: "son dakika: <link> …" türü, ses koruma biçimleri, sıfat-fiil -ılacak, izleyiciye gereklilik
+  ve çoğul emir, tür ifadesi + işaret + uzun cümle, gülmeli "haber olsun", ara kelime zarfları, "haber… yaz/çek" adı, işaretten sonra kısa
+  istek, iletilen video bekleme, video linkinde "aç/göster", yapıştırılan altyazıdaki saat, beyaz liste eklemeleri; "bundan bi haber çıkar"
+  eklenmedi: "Bundan haber çıkar mı?" tahmini tetiklerdi) sandbox'ta denendi: etiketli dosya 1.223 satır (117 yeni; üç satır bilerek değişti:
+  "viral video, haber gibi sunulan sahte görüntüler" tür yok, "komedi videosu yap bundan" mizah, "siz de videodaki gibi yapın" benzer video
+  değil) ve 64 satırlık fragman isteği dosyası Python ve JS'te beklenenle aynı, 13 kalıp çifti (yeni `_HO_END` dahil) metin olarak birebir;
+  61 parseCommand denemesi doğru; 26.929 ve 68.806 metinlik derlemde, 4.423 linkli metinde ve 30.000 bulanık metinde Python/JS farkı 0
+  (68.806 metinde HEAD'e göre 556 karar farkı, çoğu üretilmiş birleşimlerde tür ifadesi + işaret + uzun metin ve işaretten sonra kısa
+  fragman isteği); 11.159 komutluk derlemde 18 fark (hepsi istenen: "son dakika: <link>" türü, "<link> haber gibi göster" ve "<link> mizah aç"
+  tarayıcıda açılmıyor, üç etiket satırı), linkli metinlerde yayın saati farkı yok; panel kopyasında önceki 153 durumdan
+  yalnız "viral video, haber gibi sunulan…" farklı, 25 yeni durumun 23'ü bilerek farklı; iletilen video akışı 35 durum
+  (29'u HEAD ile aynı, 6'sı bilerek farklı: açıklamasız iki iletilen video → iki iş, yanıt bekleyen videoya iletilen
+  video katılmaz, bildirimden sonra albümde inen sahibin talimatlı videosu 8 sn'de başlar; aynı albümün geç inen videosu
+  yine aynı iş); sahip mesajı derleminde beklenenden farklı 17 → 16, haber altyazısı derleminde tetik 85 → 82; uzun girdilerde önceki 65
+  biçim en çok ~0,5 sn Python / ~0,6 sn JS (süreç dahil), bu turun 29 biçimi 200.000-575.000 karakterde çoğunlukla 0,6 sn altı, en yavaş
+  işaret yoğun tür ifadesi tekrarı (330.000 karakter) ~0,9 / ~1,1 sn (HEAD ~0,6 / ~0,6) ve 700.000 karakterlik süreli ara kelime tekrarı
+  ~1,5 / ~2,4 sn; wa_video regresyonunda (sahte Claude) önceki 92 iş log, iş klasörü, istem ve Claude argümanlarında aynı (fragman işinin
+  isteminde yalnız "bugun" tarihi), bu turun 15 yönlendirme işinin hepsi bilerek farklı (ses koruma ve izleyiciye emirde benzer video yerine
+  montaj; "bu tarz bir video daha yap", "çizgi filme çevir" benzer video; istemdeki istenen tür).
+  8. tur düzeltmeleri (inceleme, 20 Ekim: önceki turun HEAD'e göre gerilemeleri — linkte açma, ara kelimeli "bunun haberini kısa yap ve
+  paylaş", anlatıcı sesli "kadın sesiyle anlat", sahibin koşullu yayın fiili, iletilen video gelince soru sorulan video, tür başlığı + kurgu
+  cümlesi, izleyiciye fragman çağrısı, dar gülme listesi —; yayın saati güvenliği; bütün başlarda izleyiciye emir; ses/müzik/şarkı koruma
+  biçimleri; -ılacak duyurusu; "Haberini sen yap … 😂"; uzun girdide yavaşlama) sandbox'ta denendi: etiketli dosya 1.313 satır (90 yeni;
+  "Ev hanımları…, siz de aynısını yapın 👇" bilerek benzer video değil) ve 70 satırlık fragman isteği dosyası Python ve JS'te beklenenle
+  aynı, 19 kalıp çifti metin olarak birebir; 158 parseCommand, 139 yayın saati, 28 WhatsApp videosu akışı ve 7 panel senaryosu beklenenle
+  aynı; inceleme derleminin 257 öğesinde beklenenden sapan HEAD 141 → 8 (sekizi HEAD'de de yanlış: tekil emirli izleyici altyazısı, "Viral
+  video • <4 kelime>" kısa etiket, "paylaşılacak şekilde ayarla"); 6.404 satırlık sahip mesajı/altyazı derleminde HEAD'de doğru olup yeni
+  ağaçta yanlış olan 4 metnin hepsi bilerek değişen etiket; 68.806, 68.729 ve 69.443 metinlik derlemlerde, 31.303 + 39.838 + 30.000
+  bulanık metinde, 4.423 linkli ve 11.159 komut metninde Python/JS farkı 0; 12.028 komutta HEAD'e göre yayın saati farkı yok, 6 eylem farkı
+  istenen ("<link> haber gibi göster", "<link> mizah aç" açılmaz); üretilmiş 1.330 sahip yayın isteğinde (önek × saat × fiil) yalnız
+  geniş zaman "paylaşırsın" ve ettirgen "yayınlatır mısın" planlanmaz (HEAD her saati planlardı; "18:30'a planla", "paylaşmayı unutma",
+  "instagrama at", "paylaşacaksın" bu turda eklendi); haber altyazısı derleminde tetik 85 → 74; panel kopyasında 193 durumdan önceki tura
+  göre 12'si bilerek farklı ("son dakika: …" etiket biçimi, ara kelimeli haber isteği, anlatıcı sesli benzer video, tür başlığı + kurgu
+  cümlesi, "paylaşırsan iyi olur" yayın saati, "animasyona dönüştürün" reklamı); iletilen video akışının 35 durumundan 6'sı bilerek farklı
+  (soru sorulan video bekler, albüm penceresindeki talimat albümü bölmez). Ara kelime kalıbının (`_GAP`, `_GAP1`) ikinci kolu yalnız süre
+  yokken denenir (sonuç aynı: 100.725 metinde fark 0; süreli ara kelime tekrarında JS NEWS_RE ~1,2 → ~0,8 sn). Uzun girdilerde
+  (230.000-1.020.000 karakter; WhatsApp mesajı en çok 65.536) tanıyıcı başına süreç içinde en çok ~0,8 sn, dört tanıyıcı + JS süreci
+  birlikte çoğunlukla ~0,7-1,2 sn; en yavaşlar 700.000 karakterlik süreli ara kelime tekrarı ~1,6 / ~2,0 sn (tur öncesi ~1,9 / ~3,0, HEAD
+  ~1,4 / ~1,7) ve 432.000 karakterlik işaretli tür ifadesi tekrarı ~1,1 / ~1,5 sn (HEAD ~0,8 / ~0,6; işaretten sonraki beş kelime ve -DI
+  bakışı), Python/JS sonucu hepsinde aynı. wa_video regresyonunda (sahte Claude) önceki 107 iş ve bu turun iki denetim işi log, iş klasörü,
+  istem ve Claude argümanlarında aynı; bu turun 14 yönlendirme işinin hepsi bilerek farklı (izleyiciye emir, ses/müzik koruma ve
+  "animasyona dönüştürün" reklamında benzer video yerine montaj; "kadın sesiyle anlat" benzer video; istemdeki istenen tür: "bunun haberini
+  kısa yap ve paylaş", "haber olarak tarafsız ve net anlat" haber, "komik video, 30 saniye, … kes" mizah, gülmeli "Son dakika:", "haber
+  olsun 🙈", "Haberini sen yap … 😂", "Viral video: Selde araçlar sürüklendi", "Viral video çekilecek" tür yok). Kalan bilinen durumlar:
+  geniş zaman "18:30'da paylaşırsın", ettirgen "yayınlatır mısın", fiilsiz "Paylaşım saati 18:30" ve "18:30'a kadar bekle sonra paylaş"
+  yayın saati sayılmaz (saat yazılmamış gibi işlenir, saat talimatta kalır: saati istek fiiliyle yazın).
+  9. tur düzeltmeleri (inceleme, 20 Ekim). İLKE — ÖNCE SAHİP: sahibin yazdığı istek (açma, yayın saati, haber/tür/benzer video isteği) en az HEAD
+  kadar tanınır; yapıştırılan altyazıya karşı sağlamlık yalnız sahibin isteğinden bir şey götürmüyorsa eklenir (8. turun dar kuralları sahibin "aç
+  bakalım ne olmuş", "18:30'da bu haberi paylaş" isteğini kaçırıp videoyu onaysız yayınlıyordu). Linkte açma ve yayın saati yukarıda ("Sosyal
+  medya linkinden haber"; yayın saati sayılmayınca WhatsApp'a "⏰ Metindeki 15:00 yayın saati sayılmadı; …" satırı; gün adları, "haftaya", "öbür
+  gün", "25 Ekim'de"). Tanıyıcılar (`common.py` = `server.js`, kalıp metni birebir): ara kelimeli "haberini yaz/çek" yalnız ardından
+  "ve/sonra/da/ama + istek fiili" ya da bakalım/hadi/şimdi gelirse ("bunun haberini kısa yaz ve paylaş", "haberini kısa çek ve gönder";
+  `_YC_CONT`); ara zarflar (kısaca, hızlıca, detaylı…) yalnız tekil istekte, HEAD'in ara kelimeleri çoğulda da; kibar çoğul sahip biçimi -Ar
+  mIsInIz/-Abilir misiniz ("Merhaba, bunun benzerini yapar mısınız", "fragman yapar mısınız"; selamlama/lütfen öneki `_RC_FIRST`, 11. turda kalktı;
+  benzer videoda 12. turdan beri çoğul yoldan, izleyici sözü yoksa); edilgen
+  "-ılacak" ardından "kısa olsun/sesi kalsın" ("bundan mizah videosu yapılacak, kısa olsun"); tür ifadesi + işaret + uzun cümlede ret yalnız ciddi
+  söz varsa (`_SERIOUS`: öl-, hayatını kaybetti, felaket, çarptı/çarpışma, gerçek…; ölüm kökü katlanmamış Türkçe küçük harfle `_OLU`) ve gülme
+  işareti yoksa: "komik video: kedi masadan düştü 😂", "mizah videosu: köpek sahibini görünce kendini yere attı" mizah, "komik video: çatıdan düşen
+  genç öldü" tür yok; 5-8 kelimelik kalan metinde -DI/-Iyor anlatımı varsa betimleme; benzer videoda çıplak "müzik/efekt/ses efekti +
+  kullan/ekle/açık/olsun" koruma değil (yeni videoya müzik isteği; "müziği kalsın", "efektleri aynen kalsın" koruma),
+  "animasyonla/animasyonlu/çizgi film gibi/çizgi filmle" ara söz ("Aynısını animasyonla yap"); izleyiciye çağrı sözü (`_TR_VIEW`) bütün kelime
+  ("izlenen" çağrı değil); fragman isteğinde sondaki hashtag dizisi (önünde 4'ten çok kelime varsa) sayılmaz (`_hash_tail`); gülme kümesine
+  "ksksk"; hashtag türü yalnız kısa metinde, tek hashtag'de ya da gülmeli metnin haber dışı hashtag'inde, mizah + haber hashtag'i + gülme → mizah
+  ("Kedimiz kumandayı saklamış 😂 #komik #haber #keşfet"; 15. tur: ciddi olay sözü yoksa #haber'siz mizah/viral hashtag'i HEAD gibi her uzunlukta:
+  "#mizah #komik Kedim yine masadan kaçtı", "Bu dans herkesi salladı #viral #trend"); baştaki "Haber:" + gülme ve "Bu haber olsun 😂 …" zayıf (haber değil). `waAsks` yarışı
+  WhatsApp videosu bölümünde. Sandbox'ta denendi: etiketli dosya 1.358 satır (45 yeni) ve 84 satırlık fragman isteği dosyası Python ve JS'te
+  beklenenle aynı, 25 kalıp çifti metin olarak birebir; 215 yayın saati (HEAD 141 yanlış), 198 parseCommand, 37 WhatsApp videosu akışı (önceki tur
+  4, HEAD 23 yanlış) denemesi doğru; 264 satırlık 9. tur derleminde HEAD 64 sapma → 4 (dördü HEAD'de de yanlış: "fragman. beğenilen sahneleri kes"
+  gibi işaretten sonra izleyici sözü geçen fragman istekleri), HEAD'de doğru olup yeni ağaçta yanlış 0; üretilmiş açma (144), yayın saati (3.680
+  mesaj), haber isteği (37.440) ve tür (2.640) derlemlerinde HEAD'e göre gerileme 0; 214 öğelik altyazı/sahip derleminde beklenenden sapan HEAD
+  106, önceki tur 58 → 9 (biri bilerek değişti: "Oynat abi oynat 😂" açılır); 4.423, 68.729, 68.806, 31.303, 11.159, 69.443 metinlik derlemlerde ve
+  89.728 bulanık metinde Python/JS farkı 0; 65.536 karakterlik 32 kötü biçimde parseWhen en çok ~35 milisaniye, 33 biçimde tanıyıcı başına en çok
+  ~0,14 saniye Python / ~0,38 saniye JS, dört tanıyıcı birlikte en çok ~0,4 / ~0,7 saniye. wa_video regresyonunda (sahte Claude; gerçek `claude`
+  PATH'te değil, yerine konan tuzak hiç tetiklenmedi) önceki 123 iş ve bu turun 5 denetim işi (yayın saatli ve gün adlı talimat, "fragman,
+  yorumla", "komik video: çatıdan düşen genç öldü") log, iş klasörü, istem ve Claude argümanlarında aynı; bu turun 13 işinin hepsi bilerek farklı
+  (benzer video: "40 saniye, bunun benzerini yapın", "Aynısını animasyonla yap", "Merhaba, bunun benzerini yapar mısınız", "… ses efektleri
+  kullan"; istemdeki istenen tür: "haberini kısa çek ve gönder", "bunun haberini kısa yaz ve paylaş" haber, "komik video: kedi masadan düştü 😂",
+  "mizah videosu: köpek …", "bundan mizah videosu yapılacak, kısa olsun" ve gülmeli hashtag'li altyazı mizah, "Medya, haberleri tarafsız yapın!",
+  "Haber: … 😂", "Bu haber olsun 😂 …" tür yok); panel kopyasında önceki 193 durumun 192'si aynı (biri bilerek: "sabah 5'te öttü" metnine saat bilgi
+  satırı), bu turun 10 durumu bilerek farklı; önceki iletilen video senaryoları (7. ve 8. tur) aynı, yalnız WhatsApp yanıtına eklenen yayın/saat
+  satırları farklı. Bilinen, bilerek bırakılan durumlar (sahibin isteği öncelikli): "Canlı yayın 21:00 — paylaş, herkes görsün", "Fotoğrafını saat
+  20:00'de paylaş, çekilişe katıl", "2 saat sonra paylaşın, herkes uyanmış olsun", "Saat 20:00 olsun, herkes sokakta!" altyazısı yayın saati
+  sayılır (sahibin istek biçimiyle aynı); 5 kelimeden uzun, birden çok hashtag'li gülmesiz altyazı hashtag'den tür almaz; geniş zaman "18:30'da
+  paylaşırsın", ettirgen "yayınlatır mısın", fiilsiz "Paylaşım saati 18:30" yayın saati değildir (yanıtta söylenir); "18:30'a kadar bekle sonra
+  paylaş" artık 18:30'da yayınlanır.
+  10. tur (inceleme, 20 Ekim; ÖNCE SAHİP + ŞÜPHE İŞARETİ): yayın saati ve linkte açma HEAD'in aldığını alır, açtığını açar; kuşkulu saatte
+  WhatsApp ilk yanıtına "⏰ … yayınlanacak. Bu saat haberdeki olayın saatiyse …" satırı ("Sosyal medya linkinden haber"de Linkte açma ve YAYIN
+  SAATİ; 9. turun "geniş zaman/fiilsiz saat sayılmaz" kuralları kalktı). Tanıyıcılar (`common.py` = `server.js`, kalıp metni birebir): işaretle
+  biten kurgu/üretim/selamlama yan cümlesinden sonra çoğul benzer video isteği yine benzer video (10. turda `_RC_CLAUSE`/`_RC_GREET`; 11. turda
+  çoğul isteğin HEAD kabulüne dönmesiyle kalktı: "40 saniye, bunun
+  benzerini yapın", "kısa kes, sonra bunun benzerini hazırlayın", "selam, aynısını yapar mısınız", "selam abi ilk 5 saniyeyi kes, bunun benzerini
+  yapın", saati kesilmiş "merhaba, , bunun benzerini yapın"; HEAD tanıyordu); `_KIND_END`'de "yedi" de -DI; "Fragman. Yorumlara yazın…"
+  izleyici çağrısı (`_TR_VIEW`: yorumlara/yorumlarda/beğendiyseniz). Sandbox'ta denendi: etiketli dosya 1.382 satır ve 97 satırlık fragman
+  isteği dosyası Python ve JS'te beklenenle aynı; 198 parseCommand (30 yayın saati satırı HEAD'in saati + şüphe olarak güncellendi), 263 yayın
+  saati, 37 WhatsApp videosu akışı denemesi doğru; HEAD'e göre 717.994 üretilmiş sahip mesajında (yayın saati, açma, haber/tür/benzer video
+  yönlendirmesi) HEAD'de doğru olup yeni ağaçta yanlış 0 (düzelen 48.702; yayın isteği derleminin 63.280 mesajının 5.006'sında şüphe satırı:
+  "paylaşsak mı", "paylaşıyoruz" gibi soru/anlatım); 264 satırlık 9. tur derleminde, 3.680 ara sözlü yayın isteğinde, 350 gün sözlü istekte,
+  144 açma isteğinde, 37.440 haber isteğinde, 2.640 tür metninde ve 8. turun 257 + 430 + 1.454 + 61 öğesinde HEAD'e göre gerileme 0 (8. turun
+  61 komutunda 8 talimat farkı bilerek: "son dakika:" etiket biçimi, istek olmayan fiil "yayınlanacak" talimatta kalır); altyazı derlemlerinde
+  (293 + 214 öğe) 9. tura göre yeni sorun yalnız şüphe satırlı yayın saati (244 + 296 bağlantı × metin) ve tasarım gereği açılan "Aç bakalım
+  kutuyu…", "Çal davulcu çal…" (açma sorunu 56 → 36 ve 8 → 8); 68.729, 43.766, 26.929, 25.000, 6.915, 5.332, 4.423 ve 164.307 metinlik
+  derlemlerde ve 39.836 + 60.000 bulanık metinde Python/JS farkı 0; 65.536 karakterlik 65 kötü biçimde parseWhen en çok ~39 milisaniye ("⟪"
+  dizisi ~10), 34 biçimde parseCommand en çok ~105 milisaniye, JS tanıyıcı en çok ~0,35 saniye, Python ~0,14 saniye; panel kopyasında
+  önceki 203 durumun 202'si aynı (biri bilerek: "sabah 5'te öttü" şüphe satırı), bu turun 10 durumu ve haber linki yanıtı (kısa/uzun) beklenen
+  satırlarla; wa_video regresyonunda (sahte Claude; gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi) 9. turun 141 işi log, iş klasörü, istem ve Claude argümanlarında aynı, bu turun 6 işinin 3'ü bilerek farklı (benzer video: "kısa kes, sonra bunun
+  benzerini hazırlayın", "selam abi ilk 5 saniyeyi kes, bunun benzerini yapın", "merhaba , bunun benzerini yapın"). Bilinen: soru/anlatım biçimli
+  sahip isteği ("18:30'da paylaşsak mı") şüphe satırı alır; tasarım gereği açılan altyazılar ("Aç bakalım kutuyu…", "Çal davulcu çal…").
+  11. tur (inceleme, 20 Ekim; HEAD + ADI KONMUŞ İSTİSNA): her karar HEAD'in (c0937ab) kendi kodunun kararıdır, yalnız adı konmuş istisnalarla
+  ayrılır — linkte açma ("Sosyal medya linkinden haber"de Linkte açma: E1-E3 + yalnız açma isteği), benzer videoda çoğul/kibar istek ("Benzer
+  video"da: HEAD'in kabulü, izleyici sözü hariç), yayın saati (YAYIN SAATİ ve ŞÜPHE: gün sözü yalnız şüphesiz saatte, ad da olan gün adı, başka
+  saate geçmeme, HEAD'in fiil kesimi, alınmayan saat satırı yalnız saat bağlamında, ekli "… yayınlanacak"), baştaki "Son dakika haberi:" zayıf
+  etiket; `_FEW_SEP`/`FEW_SEP` sayıya bitişik eki ("14'te") kelime saymaz ("mizah videosu, yarın 14'te paylaşalım mı teşekkürler" mizah). Hız:
+  tanıyıcı kalıpları server.js açılışında bir kez derlenir (V8 kısa iki baytlık metinde büyük \p{L} kalıbını önce yavaş yorumlayıcıyla
+  çalıştırıyordu: ilk kısa mesajda NEWS_RE ~1,4 sn; ısınma açılışta ~1,2 sn, HEAD'in blok yüklemesi ~0,07 sn), aynı işaret dizisi 3'e indirilir
+  (`kindFold`/`_kind_text`), fragman ve benzer video tanıyıcısı önce ucuz anahtar söz arar. Sandbox'ta: etiketli dosyalar, g10 derlemleri ve
+  717.994 sahip mesajında HEAD doğru → yeni yanlış 0 (6 benzer video satırı HEAD'in kararına yeniden etiketlendi); bağımsız doğrulama yeni
+  derlemlerde 12. turda düzeltilen aileleri buldu.
+  12. tur (inceleme, 20 Ekim; aynı yapı, istisnalar daraltıldı): doğrulamanın HEAD doğru → 11. tur yanlış bulduğu aileler düzeltildi — haber
+  linkinde sahibin açma isteği üretilip onaysız yayınlanıyordu ("son dakika, aç bakalım", "haber yap demedim, aç", "aç dedim", "aç demiştim",
+  "aç bırak açık kalsın", "aç, haber yapalım mı?", "aç, uygunsa haber yap"): E1 yalnız hiçbir aç/göster yan cümlesinde tam açma isteği değilken
+  (`pureOpen`), E2/E3 yalnız ortaç/üçüncü kişi biçimleri; şüpheli saat gün sözüyle başka güne taşınıyordu ("Cumartesi 20:00'de Harbiye'de
+  konser, yarın paylaş", "<haber linki> 18:30'da Cuma maçının haberini paylaş"): gün sözü yalnız şüphesiz saatte (kesin kuralın aldığı saatte
+  de; şüpheli saatte HEAD'in gün kuralı `headDayAt`, gün sözü talimatta), gün adından sonra ad gelirse tamlama; konu adındaki ödül/hediye/kazan/
+  etiketle ve aynen/tıpkı/sizler sahibin çoğul benzer video isteğini düşürüyordu: izleyici sözü yalnız çağrı biçiminde; tekil yol kibar çoğul
+  soruyu ("Evde videodaki gibi yapar mısınız #challenge") almaz (`REQ_SG1`); saati kesilen "mizah olarak … teşekkürler" türünü kaybediyordu:
+  `KIND_FILL`'de teşekkür/selamlama. Daraltma (yalnız şüphe): istek fiilinin -(s)InI/-yI nesnesi şüphe sayılmaz ("yangın haberini 18:30'da
+  paylaş"); WhatsApp videosunda alınmayan saat satırı "videoyu … açıklamasıyla gönderin". Sandbox'ta denendi: etiketli dosya 1.407 satır (21
+  benzer video + 4 tür dolgusu satırı eklendi; 3 satır HEAD'in kararına: "Tıpkı videodaki gibi yapın, cildiniz pırıl pırıl olsun ✨", "Aynen
+  videodaki gibi yapın, sonuç inanılmaz", "Tıpkı bunun gibi yapın, bahçeniz çiçek açsın 🌸" 0 → 1; 9. turun 1.358 satırlık kopyasında aynı 3
+  satır), 97 fragman satırı, 30 kalıp çifti, 227 parseCommand (29 yeni), 281 yayın saati (18 yeni), 44 WhatsApp videosu akışı doğru; HEAD'e
+  göre g11 derlemlerinde (açma 20.000 + 4.998, yönlendirme 30.000, gün adlı 3.944, yayın isteği 40.000, iki saat 8.437), g10 derlemlerinde,
+  717.994 sahip mesajında, 6.404 satırlık eski etiket derleminde (5, 11. turdaki bilinçli farklar) ve altyazı derlemlerinin sahip
+  bölümlerinde HEAD doğru → yeni yanlış 0; tek istisna g11 tür derleminin "<tür ifadesi>, 3 kişi yaralandı" ailesi (12.430'da 109): etiketli
+  "Viral video: Kazada iki kişi yaralandı", "komik video: çatıdan düşen genç öldü" tür yok (8. turun ciddi olay kuralı) — iki derlem çelişir,
+  etiket korundu. Şüpheli olay saati HEAD'in gününde (olay derleminde 115 → 0), 7.771 + 3.497 olay saatinin hepsi şüphe satırlı. 11. turun
+  doğru bulup HEAD'in de yanlış bulduğu 686 yayın isteği (40.000'de) HEAD'in gününe döndü: -AlIm ("Cuma 19:45'te paylaşalım") ve ortaçlı nesne
+  ("Cuma namazı sonrası yaşanan olayı Pazar 18:30'da paylaş") şüpheli olduğundan gün sözü sayılmaz (şüphe satırı tarihi gösterir). Altyazıda
+  açma HEAD ∪ yalnız açma isteği; benzer video izleyici çağrılı 1.056 altyazıda 432 → 320, 3.931 üretilmiş altyazıda 1.440 → 1.469 (aynen/
+  tıpkı HEAD'in kararı); "Fotoğrafını saat 20:00'de paylaş, çekilişe katıl" 10. turdaki gibi şüphesiz (sahibin istek biçimi). Python/JS farkı 0
+  (g11 + g10 + sahip derlemleri, 40.000 + 21.892 + 78.189 bulanık, 164.306 sahip talimatı). 65.536 karakterde parseWhen en çok ~20 ms,
+  parseCommand ~68 ms ("x aç " dizisi), dört JS tanıyıcı ~130 ms (işaret dizilerinde HEAD'in en çok 1,12 katı), açılış + ısınma ~1,2-1,6 sn.
+  Panel kopyasında 222 senaryonun 214'ü 11. turla aynı, 8'i bilerek farklı (bu turun senaryoları); WhatsApp videosu akışı aynı; wa_video
+  regresyonunda (sahte Claude; gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi) 179 işin 169'u 11. turla log, iş klasörü,
+  istem ve Claude argümanlarında aynı, 10'u bilerek farklı (benzer video, HEAD'in kararı: "aynen bunun gibi yapın", "Oscar ödül töreni, …",
+  "Kazan dairesi …", "…, hediye kutusu açılışı", "Aynen videodaki gibi yapın, sonuç inanılmaz", "çocuk etiketle oynuyor, …", "Tıpkı videodaki
+  gibi yapın, …"; benzer video değil: "Evde videodaki gibi yapar mısınız #challenge"; istemde türün varsayılan talimatı: "mizah olarak
+  teşekkürler", "selam mizah").
+  13. tur (inceleme, 20 Ekim; karar: haber linkinde istisna yok): haber sayfası linkinde açma HEAD açar YA DA yalnız açma isteği (12. turun
+  istisnaları sahibin "aç dediler, açsana", "aç diye sana gönderdim", "aç, haber yapalım mı?" isteğini üretip onaysız yayınlıyordu; bilerek
+  kabul: "Aç kalan köpeklere mama dağıtıldı" altyazısı HEAD gibi açılır); video linkinde E1-E3 kalır, yan cümlesi kendi başına açma isteğiyse
+  açılır, E1 soru/ertelemede, E3 birinci kişide yok. Benzer video: çoğul/kibar istek HEAD'in kabulü, izleyici sözü istisnası kalktı (sahibin
+  "bunun benzerini yapın, başlığı değiştirebilirsiniz", "… kaynağı etiketleyin" isteği düşüyordu; benzer video "onay" ister); tekil "evde/sizde
+  … videodaki gibi yap" HEAD gibi benzer video değil. Yayın saati: 12. turun nesne muafiyeti kalktı, izleyici çağrısı listesi genişledi (ikisi
+  de yalnız şüphe; gün HEAD'in), "paylaşım yap" HEAD gibi kesilir. "#mizah Son dakika haberi: …" zayıf etiket. Sandbox'ta: etiketli dosyalar
+  (1.407 satır ve 9.-11. turların 1.358 + 1.382 + 1.382 satırlık kopyaları; benzer video satırlarından 24 + 11 + 21 + 17'si HEAD'in kararına:
+  "Ev hanımları dikkat! Videodaki gibi yapın", "Bunun benzerini yapın, bizi etiketleyin", "Sizde aynısını yapın 😍"…) ve 97 fragman satırı
+  Python ve JS'te yanlış 0, 28 kalıp çifti birebir; 263 parseCommand (12. turun 8 haber linki satırı HEAD'in kararına, 36 yeni), 295 yayın
+  saati (5 nesneli satır şüpheli, 14 yeni), 44 WhatsApp videosu akışı doğru; HEAD'e göre g11b doğrulama derlemlerinde (açma 20.000 + 6.000 — 12.
+  tur 10.164 + 1.988 yanlış —, üretim 20.000 — 12. tur 828 —, yayın isteği 30.000, tür 20.000), g11 ve g10 derlemlerinde ve 717.994 sahip
+  mesajında HEAD doğru → yeni yanlış 0 (yalnız 12. turdaki g11 tür çelişkisi, 12.430'da 109); 7.771 + 3.497 olay saatinin hepsi şüphe satırlı,
+  şüpheli saatin günü HEAD'inkiyle aynı (iki saatli derlemde başka saate geçen 403, 12. turdaki gibi); 12. turun doğru bulduğu 435 nesneli yayın
+  isteği (40.000'de) HEAD'in günü + şüphe satırı (bilerek). Altyazı derlemlerinde HEAD dışı açma yalnız 40 yalnız açma isteği ("Oynat bakalım
+  🎶"), şüphesiz altyazı saati 0. Python/JS farkı 0 (103.293 metin). 65.536 karakterde parseWhen en çok ~22 ms, parseCommand ~92 ms ("x aç "),
+  işaret dizilerinde JS tanıyıcıları HEAD'in en çok 0,91 katı, Python 1,29 katı. Panel kopyasında 222 senaryo 12. turla aynı, 9 yeni senaryonun
+  8'i bilerek farklı; WhatsApp videosu akışı aynı; wa_video regresyonunda (sahte Claude; gerçek `claude`
+  PATH'te değil, yerine konan tuzak hiç tetiklenmedi) 185 işin 173'ü 12. turla log, iş klasörü, istem ve Claude argümanlarında aynı, 12'si
+  bilerek farklı (benzer video, HEAD'in kararı: "Bunun benzerini yapın, bizi etiketleyin", "Selam, benzerini yapın, kazanın 🎁", "… başlığı
+  değiştirebilirsiniz", "Bunun benzerini siz de yapın", "Ev hanımları dikkat! Videodaki gibi yapın"…; benzer video değil: "Evde videodaki gibi
+  yap, 5 dakikada hazır 👌"; istemde istenen tür mizah: "#mizah Son dakika haberi: …").
+  14. tur (inceleme, 21 Ekim; aynı yapı, şüphe metnin tamamına bakar): doğrulamanın bulguları düzeltildi — izleyiciye tekil/çekiliş çağrısı
+  ("Cuma 20:00'de paylaş, çekilişe katıl"), toplanma duyurusu ("Cumartesi 14:00 olsun, Taksim'de toplanalım") ve etkinlik kartı ("📍 🗓 Cumartesi
+  ⏰ 21:00'da") şüphesiz cumartesiye/cumaya planlanıyordu: ŞÜPHE metnin geri kalanına, ikinci yayın isteğine, "hikayende"ye, bitişik olmayan gün
+  sözüne ve kart işaretine bakar (yalnız şüphe, gün HEAD'in); HEAD'in bulamadığı saatte bitişik gün sözü yoksa HEAD'in gün kuralı; tür/fragman
+  HEAD'in fiil kesimiyle, saat ve hitap tür ifadesini bozmaz (g13 k13/l13'te HEAD doğru → 13. tur yanlış 1.611 + 2.109); haber linkinde selamlama,
+  teşekkür, hitap ya da birinci tekil amaç sözlü yalnız açma isteği açılır (doğrulamanın 4.620 kibar isteğinde HEAD 0, 13. tur 396, yeni 4.620);
+  E3 "diyerek/derken" birinci kişide değil; benzer video "çizgi filme/animasyona çevir" yalnız bu videoyu gösteren nesneyle, "daha" ara kelime değil.
+  Sandbox'ta: etiketli dosyalar (1.407 + 1.358 + 1.382 + 1.382 satır; "bu tarz bir video daha yap" dördünde HEAD'in kararına) ve 97 fragman satırı
+  Python ve JS'te yanlış 0, 29 kalıp çifti birebir; 291 parseCommand (10 talimat beklentisi HEAD'in fiil kesimine) ve 320 yayın saati (30 satır
+  HEAD'in kalanına ve metnin tamamındaki şüpheye) doğru; doğrulama derlemleri dahil 36 derlemde (g13: s13 40.000, k13 20.000, l13 6.300, q13 20.000,
+  r13 30.000, c13 30.000, v13 10.000; g10, g11, g11b, sahip derlemleri 717.994 mesaj) HEAD doğru → yeni yanlış 0, iki çelişki dışında: kind11
+  109 (12. turdan) ve s13'te doğrulayıcının kendi tartışmalı 6 etiketi ("haberi 21.15'te paylaşmanı istiyorum" → "haberi istiyorum" haber
+  isteği, 13. turda da); 13. turda doğru olup yenide yanlış yalnız sched11'in 789'u (gün adlı sahip isteğinin başka yan cümlesinde ad/konu: "salı
+  günkü toplantının haberini cuma, gece 23:00'te paylaşır mısın" → bugün + şüphe satırı, HEAD'in günü; bilerek). Olay saatlerinin hepsi şüphe
+  satırlı ve HEAD'in gününde (c13 28.616, v13 10.000 — 17'si HEAD'in fiyat sayıp almadığı "19.30'da yükle" —, event11 7.771, g10 3.497);
+  altyazı kümelerinde HEAD dışı açma yalnız yalnız-açma isteği (40), şüphesiz altyazı saatinin HEAD'den başka güne geçtiği v13fresh g1'de 101 →
+  12; doğrulayıcıların bütün yeniden üretim satırları düzeldi. Python/JS farkı 0 (1.413.178 derlem metni + talimat, 120.000 bulanık, 49.435
+  etiket ve altyazı). 65.536 karakterde parseWhen en çok ~24 ms, parseCommand ~87 ms ("x aç "), işaret dizilerinde JS tanıyıcıları HEAD'in
+  en çok 0,91 katı, Python 1,28 katı (söz dizileri 13. turla aynı). Panel kopyasında 231 senaryonun 229'u 13. turla aynı (2'si bilerek: HEAD'in
+  "paylaşsak" kesimi, uzun altyazıda şüphe satırı), bu turun 10 senaryosunun 6'sı bilerek farklı; WhatsApp videosu akışında 44 senaryonun 41'i aynı,
+  3'üne şüphe satırı geldi (sahibin yanıtında konu yan cümlesi: "Kadıköy'de yangın, 30 saniye, 18:30'da yayınlansın"); wa_video regresyonunda
+  (sahte Claude; gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi) 194 işin 186'sı 13. turla log, iş klasörü, istem ve Claude
+  argümanlarında aynı, 8'i bilerek farklı (istemde istenen tür: "abi mizah", "kanka viral", "mizah videosu, 2 saat sonra yayınlarsan iyi olur",
+  "komik video, 21:30 sularında post et sağ ol"; benzer video değil, HEAD'in kararı: "bu tarz bir video daha yap" iki iş, "Fotoğrafını çizgi filme
+  çevir", "Kendini animasyona dönüştür").
+  Bilinen: "Video Cuma 21:00'de", "Haber: Cuma 18:00'de", "🔴 Cuma 20:00'de paylaş! 😂" gibi etiket/emoji + gün + saat + yayın fiili altyazısı
+  sahibin "<link> haber, Cuma 18:00'de"sinden ayırt edilemez, şüphesiz cumaya planlanır (v13fresh g1'in 6.000 altyazısında 12). Konu, değerlendirme
+  ya da ikinci yayın fiili içeren sahip mesajı ("çok beğendim, bunun benzerini hazırlayın, 18:30'da paylaşın") şüphe satırı alır, saat ve gün
+  değişmez (g10_route'ta 287 → 7.035/30.000). Video linkinde üçüncü kişi aktarması ("aç dedi patron") HEAD açarken üretilir (onay ister; HEAD'in
+  açtığı 48.510 açma isteğinin 810'u).
+  15. tur (inceleme, 21 Ekim; son dar tur, maliyete göre: haber linkinden üretilen video ve planlı saat onaysız yayınlanır, yanlış açma ucuzdur,
+  kuşkulu her saat şüphe satırı alır): saatin yan cümlesinde olumsuz yayın fiili, metinde iki saat, saate bitişik olmayan her biçimdeki gün sözü
+  ve "N gün sonra" şüphe (gün ve saat HEAD'in; ŞÜPHE'de); haber sayfası linkinde aç/göster/oynat/çal'ın her istek biçimi açar (`reqOpen`; Linkte
+  açma'da); ciddi olay sözü yoksa tür ifadesi ve #haber'siz mizah/viral hashtag'i HEAD'in kuralıyla; "çizgi filme/animasyona çevir" yalnız bu
+  videoyu gösteren nesneyle ya da metnin başında. Sandbox'ta: etiketli dosyalar (1.407 + 1.358 + 1.382 + 1.382 satır; dördünde "viral video,
+  haber gibi sunulan sahte görüntüler" HEAD'in kararına, trend) ve 97 fragman satırı Python ve JS'te yanlış 0, 29 kalıp çifti birebir; 321
+  parseCommand (30 yeni; "<haber linki> açar mısın, haber yap" açar) ve 363 yayın saati (43 yeni; 7 satır şüpheli oldu, ikisinin günü HEAD'in:
+  "Bugün 15:00'te olan kazayı haber yap, yarın sabah 9'da paylaş" → bugün 09:00, "Cuma günü 13:00'te cenaze var, …, Perşembe 20:00'de paylaş" →
+  bugün 20:00) doğru; 45 derlemde (g10, g11, g11b, g13, g13b doğrulama derlemleri, sahip derlemleri) HEAD doğru → yeni yanlış 0, iki belgeli
+  çelişki dışında (kind11 109, s13 6), 14. turda doğru olup yenide yanlış 0; olay saatlerinin hepsi şüphe satırlı ve HEAD'in anında (c13 28.616,
+  g13b_e 27.924, v13 10.000, event11 7.771, g10 3.497); g13b_n'nin 8.000 mesajının hepsi şüpheli (14. tur 5.206), g13b_d'de sahibin günü
+  verilmeyen şüphesiz saat 0; HEAD dışı açmaların hepsi istek biçimi (derlemlerde 18.583 yeni + 9.622 14. turdan, altyazı kümelerinde 68).
+  Python/JS farkı 0 (1.805.665 derlem metni ve talimat, 160.000 bulanık, 49.435 etiket ve altyazı). 65.536 karakterde parseWhen en çok ~22 ms,
+  parseCommand ~88 ms ("x aç "), işaret dizilerinde JS tanıyıcıları HEAD'in en çok 0,96 katı, Python 1,31 katı (söz dizisi "sen de çizgi filme
+  çevir" artık baştan eşleşmediği için HEAD gibi metnin tamamını tarar: JS 1,73, Python 1,42 kat). Panel kopyasında 251 senaryonun 244'ü 14. turla
+  aynı, 7'si bilerek farklı; WhatsApp videosu akışı 44/44 aynı; HEAD + 15. tur yamaları (kuyruk kodu olmadan) panel ve akış kopyalarında çalışma
+  ağacıyla aynı (kuyruk taslağının satırları dışında); wa_video regresyonunda (sahte Claude; gerçek `claude` PATH'te değil, yerine konan tuzak
+  hiç tetiklenmedi) 206 işin 198'i 14. turla log, iş klasörü, istem ve Claude argümanlarında aynı, 8'i bilerek farklı (istemde istenen tür HEAD'in:
+  "komik video, teşekkürler abi, iyi akşamlar, kolay gelsin", "mizah videosu, sağ ol kardeşim, eline sağlık, iyi akşamlar", "viral video, sağ ol
+  kardeşim eline sağlık", "#viral #trend Bu dans herkesi salladı", "Kedim yine masadan kaçtı #mizah #komik"; benzer video değil, montaj: "Sen de
+  çizgi filme çevir, filtre linki profilde", "Sen de bunu çizgi filme çevir", "Hemen çizgi filme çevir, uygulama linki bio'da").
+  Bilinen: metnin başındaki uygulama/filtre reklamı ("Çizgi filme çevir bakalım…", "Animasyona dönüştür efekti çok tutuldu") benzer video sayılır
+  (sahibin isteğinden ayırt edilemez; benzer video "onay" ister). Haber linkinde istek biçimli altyazı ("bildirimleri açın", "Davul çal, zurna
+  çal", "Oyunu oynat, kazan!") ve ASCII "ac" ("AC Milan") tarayıcıda açılır; yalın "aç" HEAD gibi her yerde açar ("Aç kalan köpekler…"; sıfat
+  istisnası yalnız HEAD'in açmadığı yazımda: "“Aç kalan", "#Aç kalan"). İki saatli sahip isteği HEAD'in gün kuralıyla (metindeki ilk yarın/bugün)
+  şüpheli: "Bugün 15:00'te … yarın sabah 9'da paylaş" bugün 09:00 (saat geçmişse hemen yayınlanır), "Yarın 10:00'da miting …, bugün 19:00'da
+  paylaş" yarın 19:00, "18:30'da değil 19:00'da paylaş" 19:00 + şüphe satırı; saate bitişik
+  olmayan gün sözlü istek ("Pazartesi değil Salı 18:30'da paylaş") bugün + şüphe satırı; "yarın/bugün" HEAD'in gün kuralı olduğundan bitişik
+  olmasa da şüphe getirmez ("yarın değil bugün 19:00'da paylaş" bugün, şüphesiz). Ciddi sözün mecazi kullanımı ("ben kayboldum #komik") tür
+  almaz. 14. turun bilinenleri sürer (etiket/emoji + gün + saat altyazısı, "aç dedi patron").
+  16. tur (inceleme, 21 Ekim; dar tur, aynı maliyet: planlı saat onaysız yayınlanır, kuşkulu her saat şüphe satırı alır ve HEAD'in gününden
+  başka güne taşınmaz; şüphe saati almayı değiştirmez): ŞÜPHE metnin HERHANGİ bir yerindeki olumsuz görünen yayın sözüne (yayın kökü + olumsuz
+  -mA/-mI her biçimde — paylaşmaaa, paylaşmam, paylaşmayız, yayınlamazsın, atmayalım mı, paylaşılmasın —, yanında sakın/istemiyorum/gerek yok,
+  ardında değil/olmaz; istek adı "paylaşmanı istiyorum", "paylaşmayı unutma" değil; `pubNeg`), birden çok yayın sözüne ("Cuma 18:30'da yükle ve
+  paylaş") ve saate bitişik olmayan yarın/bugün/öbür gün/haftaya'ya da bakar ("18:30'da paylaş, yarın değil", "haber yap, yarın bunu 18:30'da
+  paylaş"). Şüpheli saatte HEAD saat aldıysa sonuç HEAD'in BÜTÜN sonucudur (saati, günü, talimatı; 15. turun başka saate geçişi ve gün karışımı
+  kalktı: "Tören 10:00'da başladı, öğlen 12'de paylaş" 10:00, "Bugün 15:00'te kaza oldu, yarın 9'da paylaş" bugün 15:00, ikisi de şüphe
+  satırıyla); HEAD saat almadıysa sıkı kuralın saati yalnız kendi bitişik gün sözüyle (HEAD'in "metinde yarın" kuralı başka saate karışmaz),
+  şüpheli geçmiş an ertesi güne ("Yarın paylaş, bugün 9'da paylaşma" saat 10'da yarın 09:00). Haber sayfası linkinde açma (`reqOpen`):
+  aç/göster/oynat/çal kökünün her istek eki — şart, soru (konuşma dilinde "açar msn", "açarmsın"), -Ip + istek fiili ("açıp bakar mısın"),
+  -mAnI/-mAn + istiyorum/rica/lazım/gerek, -AlIm, -Iver… —; istek olmayan biçim açmaz; sıfat "aç" yalnız HEMEN ardından kal-/bırak-/susuz
+  gelirse açmaz ("ac bakalim kalabalik mi", "kalp krizi" açar). Benzer video: metnin başındaki selamlama/nezaket/hitap (lütfen, selam, merhaba,
+  tamam, kolay gelsin, abi, kanka…; `RC_COURT` = `_RC_COURT`) "çizgi filme/animasyona çevir"i metnin başında sayar ("lütfen çizgi filme çevir",
+  "selam, animasyona dönüştür"; "sen de" değil). Sandbox'ta: etiketli dosyalar (1.407 + 1.358 + 1.382 + 1.382 satır) ve 97 fragman satırı
+  Python ve JS'te yanlış 0 (etiket değişmedi), 29 kalıp çifti birebir; 377 parseCommand (56 yeni) ve 401 yayın saati (38 yeni; 24 satır bu turun
+  kuralına yeniden etiketlendi: iki saatte HEAD'in bütün sonucu, bitişik olmayan yarın/bugün, iki yayın sözü) doğru; 51 derlemin 1.571.469
+  mesajında HEAD doğru → yeni yanlış 0 (yalnız belgeli kind11 109 ve s13 6 çelişkisi); 15. turda doğru olup yenide yanlış 3.882, hepsinde
+  HEAD de yanlış ve hepsi şüphe satırlı (iki saatli istekte HEAD'in ilk saati: two11 3.408, g10_two 342; HEAD'in saat almadığı mesajda bitişik
+  olmayan "yarın": 132); olay saatlerinin hepsi şüphe satırlı ve HEAD'in anında (69.039); sahibin 39.213 mesajlık derleminde 15. turun 1.656
+  şüphesiz çoklu yayın sözü, 1.248 şüphesiz olumsuz yayın sözü, 1.554 HEAD'in anı olmayan şüpheli saati ve karışımdan 20 şüpheli geçmiş anı
+  → 0; HEAD dışı açmaların hepsi istek biçimi (derlemlerde 366 yeni + 28.358 15. turdan, altyazı kümelerinde 68), yeni benzer video
+  yönlendirmesi 204 (nezaket + çizgi film). Python/JS farkı 0 (1.808.132 derlem metni, 38.145 altyazı ve sahip metni, 200.000 bulanık,
+  49.435 etiket ve altyazı). 65.536 karakterde parseWhen en çok ~23 ms, parseCommand ~111 ms ("x aç "; "açmanı " 78 ms), işaret dizilerinde JS tanıyıcıları HEAD'in en çok 0,94 katı, Python 1,06 katı (söz dizilerinde en yavaş: JS "sen de çizgi filme çevir" 1,53 kat / 46 ms, "bunun benzerini yapın," 69 ms; Python "bunun benzerini yapın," 2,04 kat / 149 ms). Panel kopyasında 251 senaryo 15. turla aynı, bu turun 8 senaryosunun 6'sı bilerek farklı; WhatsApp
+  videosu akışında 44 senaryonun 43'ü aynı, birine şüphe satırı geldi (bitişik olmayan "yarın"); HEAD + 16. tur yamaları (kuyruk kodu
+  olmadan) panel ve akış kopyalarında 15. tur yamalarıyla yalnız bu farklarda ayrılır; wa_video regresyonunda (sahte Claude; gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi) 200 işin 196'sı 15. turla log, iş klasörü, istem ve Claude argümanlarında aynı (z3_hof işinin ilk koşudaki tek satırlık farkı paralel koşunun çıktı kaybıydı: tek başına yeniden koşulunca aynı), 4'ü bilerek farklı (benzer video, nezaket + çizgi film: "lütfen çizgi filme çevir", "selam, animasyona dönüştür", "Tamam, çizgi filme çevir", "merhaba çizgi filme çevir").
+  Bilinen: iki saatli sahip isteği ("deprem 09:42'de meydana geldi, bunu 18:30'da paylaş") HEAD'in ilk saatini alır, şüphe satırı gelir
+  (sahip "planlı yayını iptal et" ya da saati tek yazar); HEAD'in kendi geçmiş anı ("Bugün saat 8'de deprem oldu, yarın 9'da paylaş" bugün
+  08:00) HEAD gibi hemen yayınlanır (satırla); HEAD'in saat almadığı mesajda saate bitişik olmayan "yarın" günü taşımaz ("Yarın kısa kes
+  16.45'te yükle" bugün 16:45 + satır; HEAD hemen yayınlardı); ad olan "yükleme", "gönderme", "planlama" da olumsuz görünür (gereksiz şüphe
+  satırı); -Ip + istek fiili üretim fiilini de sayar ("<haber linki> açıp haber yap" açılır, üretilmez); "merhaba çizgi filme çevir", "selam
+  kanka çizgi filme çevirir misin" benzer video (onay ister). 15. turun bilinenlerinden iki saat ve bitişik olmayan gün sözü bu turla değişti,
+  diğerleri sürer.
 - Çerçeve ve ekrandaki yazılar (kullanıcı isteği, 19 Ekim: "Instagram'dan video gönderdiğimde bazı haber ve paylaşım yapanların etrafında
   çerçevesi oluyor ve bazen linkte açıklama olmuyor; videodaki kelimeleri analiz ederek haber üretebilir miyiz"; `scripts/frame_crop.py`,
   `wa_video.build`, `settings.waVideo` {cropFrame true, screenText true}, panel 📡 grubunda iki anahtar). Fragman ve uzun video özeti dışındaki
@@ -791,20 +1190,35 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   ÖNCE KESİNLİK (inceleme, 19 Ekim: ara kelimesi serbest, fiili uzakta olabilen "güçlü/zayıf" kalıplar "Esnaf sıfırdan başladı 30 saniyelik
   video yap", "Emekli usta tekneleri sıfırdan yapıp satıyor, haber yap", "Yapay zeka sıfırdan video üretebiliyor", "Togg'un benzerini üretip…"
   haber görüntüsünü atıp çizilmiş hikâye yapıyordu): yalnız BAŞ + yalnız beyaz liste ara kelimeleri (en çok 4: bir/bi, yeni, kısa, uzun,
-  türkçe, N saniye(lik)/dakika(lık), biz/sen de, bana, aynı, sıfırdan, yeniden, olarak, (bir/iki/2…) tane (daha): "bunun gibi 2 tane yap",
-  şey, lütfen, yarın, bugün,
-  şimdi, kendi cümlelerinle, video, içerik, animasyon, hikâye, kıssa, çizim, çizgi film) + İSTEK BİÇİMİNDE fiil (yap/üret/çiz/anlat/hazırla/
+  türkçe, N saniye(lik)/dakika(lık), biz/sen de, bana, aynı, sıfırdan, yeniden, olarak, (bir/iki/2…) tane (daha): "bunun gibi 2 tane yap";
+  yalın "daha" 14. turdan beri HEAD gibi ara kelime değil — alıntılanan ""Bunun gibi bir video daha yapar mısınız?" sorusuna cevap" benzer
+  video oluyordu, "bu tarz bir video daha yap" de HEAD'in kararı —, şey, lütfen, yarın, bugün, şimdi, kendi cümlelerinle,
+  video, içerik, animasyon, hikâye, kıssa, çizim, çizgi film) + İSTEK BİÇİMİNDE fiil (yap/üret/çiz/anlat/hazırla/
   tasarla/oluştur/canlandır, yaptır/çizdir; yukarıdaki istek biçimi listesi + "yapılsın"; -ıp ve -mak yalnız ardından istek fiili ya da
-  istiyorum gelirse) ya da şey adı + olsun/istiyorum/talimat sonu ("bunun gibi bir video, 40 saniye"; "Sıfırdan animasyon: gençlerin
-  projesi" değil). Baş: benzer(ini/i/lerini), buna/şuna benzer, aynısını, sıfırdan, bunun/şunun gibisini, böylesini, esinlenerek, ilham
-  alarak, benzer/buna benzeyen + şey adı + fiil ya da olsun/istiyorum ("benzer bi video yap"; fiilsiz "Benzer bir hikâye 😢" altyazısı
+  istiyorum gelirse; gereklilik yalnız -mak/-man + lazım — `_RC_REQ`; inceleme, 20 Ekim: izleyiciye "Videodaki gibi yapmanız lazım",
+  "belediyelerin de benzerini yapması lazım" —, "yapalım mı?" soru: "Köpeğin tavşanla saklambacı 😂 aynısını yapalım mı?") ya da şey adı +
+  olsun/istiyorum/talimat sonu ("bunun gibi bir video, 40 saniye"; "Sıfırdan animasyon: gençlerin
+  projesi" değil). Baş: benzer(ini/i/lerini), buna/şuna benzer, aynısını, sıfırdan, bunun/şunun gibisini/gibisinden, böylesini, esinlenerek, ilham
+  alarak, çizgi filme/animasyona çevir/dönüştür ("bu hikayeyi çizgi filme çevir 45 sn"; 20 Ekim), benzer/buna benzeyen + şey adı + fiil ya da
+  olsun/istiyorum ("benzer bi video yap"; fiilsiz "Benzer bir hikâye 😢" altyazısı
   değil), videodaki gibi, bunun/şunun gibi, bu/şu/aynı/bunun/şunun/videonun/videodaki tarz(ında)/formatta/stilde, videonun/videodakinin
   benzerini/aynısını, benzer (bir) şekilde. BU video (inceleme, 19 Ekim: "dünkü videodaki gibi yap, sesi kalsın", "dünkü videonun aynısını
   yap, haber olarak", "Dünkü haberi beğendim, onun gibi yap" sahibin görüntüsünü ve sesini atıp çizilmiş hikâye yapıyordu): "videodaki/
   videonun/videodakinin" yalnız bu/şu'dan sonra, talimatın başında ("o videodaki gibi yap" da), işaretten ya da satır sonundan sonra
   ("Çocuklar için masal. Videodaki gibi yap", "30 saniye, videonun aynısını yap", "30 saniye\nvideodaki gibi yap") ya da bunu/şunu/lütfen/
   aynen/tıpkı/aynı/tam/hemen/abi/tamam/sen de/siz de'den sonra (`_RC_THIS`; inceleme, 19 Ekim: önceki tur cümle içindeki baş tanınmıyordu);
-  başka videoyu gösteren söz ("dünkü/önceki/son/diğer/eski videodaki gibi", "geçen haftaki videonun
+  ÇOĞUL/KİBAR İSTEK (11.-13. tur; `_rc_heads(False)` = `rcHeads(false)`, `RECREATE_PL`; inceleme, 20 Ekim: 8-10. turun "yalnız ilk cümlede"
+  kuralı sahibin "kısa kesin, bunun benzerini yapın" isteğini düşürüyordu): "yapın", "yapar mısınız", "hazırlayabilir misiniz", "siz de yapın"
+  HEAD'in kabul ettiği her yerde, İSTİSNASIZ sayılır (13. tur: 11.-12. turun izleyici sözü istisnası — siz de/sizde, "Ev hanımları dikkat!",
+  etiketleyin, yorumlara yazın, kazanın, ödül/hediye, çekiliş, #challenge, "yapsın", "-abilirsiniz" — kalktı; sahibin "bunun benzerini yapın,
+  başlığı değiştirebilirsiniz", "… kaynağı etiketleyin", "Bunun benzerini siz de yapın" isteğini düşürüyordu; benzer video her zaman "onay"
+  ister, yapıştırılan izleyici altyazısı benzer videoya gidebilir, sahip onaylamaz); "videodaki gibi"nin yeri tekil ve çoğulda HEAD'inki
+  (`_RC_THIS` + `_RC_THIS_H`: aynen/tıpkı/hemen (da/de), siz de; 12. turun "evde/sizde videodaki gibi yap" tekil eki kalktı); tekil/sahip
+  biçimi (`_REQ_SG1` = `REQ_SG1`: yap, yapsana, yapar mısın, yapalım…; "yapalım mı?" soru; kibar çoğul "yapar mısınız" 12. turda çoğul yolda) her yerde; "çizgi filme/animasyona çevir" yalnız
+  tekil (kibar "çevirir misiniz" de) ve 14. turdan beri yalnız bu videoyu gösteren nesneyle (bunu, videoyu, hikayeyi, araya en çok iki dolgu: "bu
+  hikayeyi 45 saniyelik çizgi filme çevir") ya da metnin başında (inceleme, 21 Ekim: uygulama reklamı "Fotoğrafını çizgi filme
+  çevir", "Kendini animasyona dönüştür" HEAD'de benzer video değildi; 15. tur: işaretten sonra ve izleyici çağrısından — sen de, siz de, sende,
+  sizde — sonra değil: "Sen de çizgi filme çevir, filtre linki profilde", "Hemen çizgi filme çevir, uygulama linki bio'da"); başka videoyu gösteren söz ("dünkü/önceki/son/diğer/eski videodaki gibi", "geçen haftaki videonun
   aynısını") ve geri gönderim ("onun gibi", "onun tarzında", "ona benzer", "o tarzda") baş değil. Baş sayılmaz: ilgi hâlinden sonra
   ("Togg'un benzerini", "Ahmet'in videosunun aynısını"; yalnız kelime başından bunun/şunun hariç — "videosunun", "salonun" sonu bunun/
   şunun sayılmaz), yönelme hâlinden sonra "aynısını/benzerini yap" deyimi (`_RC_DAT`: "buna da aynısını yap", "bu videoya da aynısını
@@ -813,8 +1227,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   sıfırdan anlat" benzer video, "kurgu kötü olmuş, sıfırdan yap" yeniden kurgu isteği, değil). Ardından değil (diil)/
   olmasın/istemiyorum/istemem/istemeyiz/gerek yok/gerekmez/yok ya da alıntı/amaç sözü (diye, dedi, demiş, derken, diyen, deyince,
   diyerek, diyor…: "Aynısını yapalım derken iki genç yaralandı", "Herkes bunun benzerini yap diyor ama sen haber yap") gelirse sayılmaz.
-  Ses/görüntü koruma isteği varsa benzer video değil (`RC_KEEP`: "sesi kalsın", "sesini kullan", "orijinal sesle/sesli", "kendi sesiyle",
-  "görüntüleri kullan"; sıfırdan çizimde referansın sesi ve görüntüsü kullanılmaz; "sesi kullanma", "kendi sesinle" anlatıcı değil; ardından
+  Ses/müzik/görüntü koruma isteği varsa benzer video değil (`RC_KEEP`: "sesi kalsın", "sesini kullan", "orijinal sesle/sesli", "kendi
+  sesiyle", "görüntüleri kullan"; araya da/de ve `wa_video.WANT_SOUND` biçimleri: "sesi de kalsın", "sesleri kalsın", "konuşması duyulsun",
+  "röportajı kullan", "sesli olsun", "sesini aç", "videonun sesi", "sesi kapatmayın" — inceleme, 20 Ekim: benzer video bu istekte sesi
+  atıyordu —; 8. tur: nitelik — olduğu gibi, aynen, aynı, orijinal, tamamen, hiç —, ses efekti, efektler, müzik ve şarkı ("şarkısı
+  kalsın", "orijinal şarkıyla"), olumsuz bozma fiili — dokunma, silme,
+  kesme/kesilmesin, kısmadan, kapatmadan, değiştirme, bozma, gitmesin —: "sesi olduğu gibi kalsın", "ses aynen kalsın", "sesine dokunma",
+  "müziği kalsın", "orijinal müzikle", "görüntüler aynı kalsın", "görüntüleri değiştirme"; "sesiyle" yalnız videonun/orijinal/kendi/gerçek
+  sözünden sonra: anlatıcı sesi "kadın sesiyle anlat", "robot sesiyle", "sesi olsun", "arka planda ses olsun" koruma değil, benzer video;
+  "değil mi" soru ekidir, ret değil: "bunun benzerini yap, sesi kalsın değil mi" korur; "yok olmasın" korur; sıfırdan çizimde referansın sesi ve
+  görüntüsü kullanılmaz; "sesi kullanma", "kendi sesinle" anlatıcı değil; ardından
   — araya hiç/asla/kesinlikle — ret gelen koruma sözü koruma değil: değil/diil/deil, yerine, yok, gitsin, kapat/kaldır(ın/ılsın), kullan/
   iste/ol + `VERB_NEG` — "orijinal görüntü kullanılmasın, bunun benzerini sıfırdan çiz", "orijinal ses değil, bunun benzerini sıfırdan
   anlat", "bunun benzerini sıfırdan çiz, orijinal ses yerine seslendirme olsun" benzer video; inceleme, 19 Ekim).
@@ -822,9 +1244,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   esinlenerek, benzer + şey adı: "benzerini yap ama haber gibi anlat" benzer video); "bunun gibi", "bu tarzda", "benzer şekilde" haber
   isteğine yenilir ("bunun gibi bir video yap ama haber olarak (30 saniyelik) hazırla" haber). Python `RECREATE_RE`/`RECREATE_STRONG`/
   `RC_KEEP` ve JS `RECREATE_ASK`/`RECREATE_STRONG`/`RC_KEEP` aynı kalıp metni (`.pattern` = `.source`); `kind_fold` ayrık yazılmış İ'yi
-  ("I" + U+0307) JS gibi "i" yapar (tür ve haber isteği eşliği de). Kalan bilinen tetik: linkin yanına yapıştırılan izleyiciye emirli
-  altyazı ("Ev hanımları…, siz de aynısını yapın 👇", "Videodaki gibi yapın, kombi faturanız düşsün") ve fiilsiz slogan ("Sıfırdan bir
-  animasyon 🎨") sahibin isteğinden metinle ayırt edilemez; WhatsApp'ta iletilen videoda açıklama talimat sayılmadığı için oluşmaz.
+  ("I" + U+0307) JS gibi "i" yapar (tür ve haber isteği eşliği de). Kalan bilinen tetik: linkin yanına yapıştırılan, ilk cümlesinde çoğul
+  emir olan ("Videodaki gibi yapın, kombi faturanız düşsün") ya da tekil emirli ("Sen de videodaki gibi yap, hayatını kurtarabilir 🙏")
+  izleyici altyazısı ve fiilsiz slogan ("Sıfırdan bir animasyon 🎨") sahibin isteğinden metinle ayırt edilemez; WhatsApp'ta iletilen videoda açıklama talimat sayılmadığı için oluşmaz.
   Yönlendirme: `socialVideoNews` indirdikten sonra özet ve fragman kararından ÖNCE (`recreateOn() && recreateAsk`; fragman ya da uzun video
   olsa da benzeri çizilir; haber sitelerinde aranmaz — `social_video.py` ilgili haber aramasını atlar, `wants_summary` false) →
   `runVideoNews({recreate: true, related: []})`; WhatsApp videosunda `runVideoNews0` talimattan karar verir; iş JSON'unda `recreate: true`;
@@ -1005,9 +1427,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Planlı yayın (kullanıcı isteği, 14 Ekim: "WhatsApp'tan haber linki gönderdiğimde saatini de yazayım, bunu şu saatte paylaş;
   saat yazmazsam direkt paylaşsın"): `app/when.js parseWhen` Türkçe saat ifadelerini çözer ("18:30'da", "18.30 da", "saat 8'de" —
   dönemsizse bugünün en yakın gelecekteki 08:00/20:00'ı —, "akşam 9", "sabah 9", "öğlen 12", "öğleden sonra 4", "gece 1", "yarın 10:00",
-  "20 dakika sonra", "2 saat sonra", "yarım saat sonra"; geçmişte kalan saat yarına; "dolar 12.50" gibi noktalı sayı yalnız ek ya da yayın
+  "yarın 10'da", gün adı ("Cuma 18:30'da": sıradaki cuma, bugünse ve saat gelmediyse bugün), "haftaya salı 10'da" (gelecek haftanın o günü;
+  yalın "haftaya" 7 gün sonra), "öbür gün 9'da", "25 Ekim'de 18:30'da" (9. tur), "20 dakika sonra", "2 saat sonra", "yarım saat sonra";
+  saate bitişik gün sözü önce, yoksa metindeki "yarın/bugün"; gün belirtilmeyen geçmiş saat yarına; "dolar 12.50" gibi noktalı sayı yalnız ek ya da yayın
   fiiliyle saat sayılır). `commands.js` linkli mesajda (haber linki → `anlik`, sosyal medya → `social_video`) `publishAt` (ISO) ekler;
-  WhatsApp videosunun açıklaması/talimatı da çözülür (`waVideoIn/waVideoText`). `startAnlik({publishAt})` → env `PUBLISH_AT` → meta
+  WhatsApp videosunun açıklaması/talimatı da çözülür (`waVideoIn/waVideoText`). Saat HEAD'in aldığı her yerde alınır; yayın isteğiyle
+  yazılmamışsa (olay saati olabilir) WhatsApp yanıtında "⏰ … yayınlanacak. Bu saat haberdeki olayın saatiyse …" satırı gelir (10. tur;
+  "Sosyal medya linkinden haber"de YAYIN SAATİ). `startAnlik({publishAt})` → env `PUBLISH_AT` → meta
   `publishAt`. Video HEMEN üretilir; `post_pipeline` saat ≥1 dk ilerideyse yayınlamaz, `targets`'ı hiç çalıştırmaz, bağlı TÜM hesapları
   (kullanıcının açık talimatı: YouTube değer kuralı ve görüntü onayı aranmaz) `data/scheduled_publish.json`a yazar ("⏰ planlı yayın: …"),
   son JSON satırında `scheduled`. Panel dakikada bir: saati gelen → `execAction publish` + WhatsApp "⏰ Planlı yayın yapıldı" (15 dk'dan

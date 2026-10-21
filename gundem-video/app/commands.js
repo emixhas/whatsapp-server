@@ -73,8 +73,12 @@ const KIND_TAG = Object.assign(Object.create(null), { mizah: "mizah", mizahi: "m
 // yapmıyor, yapmıcaz/yapmıycaz/yapmıcan (konuşma dili; inceleme, 19 Ekim); "yapmak", "yapmasını" istek
 export const VERB_NEG = String.raw`m(?:[ae](?:yin(?:iz)?|sin|s[ae]n[ae]|d[ae]n|z|m(?:[ae]li)?|y[ae]n|y[iu]z|y[ae]c[ae][kgmnz]\p{L}*|y[ae]lim)?(?!\p{L})|[iu](?:yor|y?c[ae][kgmnz])\p{L}*)`;
 // etiketin yanında sayılan dolgu: süre birimi, lütfen/olarak/bunu/şunu, yayın fiili — olumsuzu değil ("mizah olarak paylaşma" etiket
-// değil; inceleme, 19 Ekim). server.js contentKindOf ve scripts/common.py _KIND_FILL aynı kural
-export const KIND_FILL = new RegExp(String.raw`^(?:saniye|saniyelik|sn|dakika|dakikalik|dk|lutfen|olarak|bunu|sunu|at|atar|misin|(?:paylas|yayinla|yayimla|gonder|yukle)(?!${VERB_NEG})\p{L}*)$`, "u");
+// değil; inceleme, 19 Ekim) —, teşekkür ve selamlama (12. tur; inceleme, 20 Ekim: saati kesilen "mizah olarak 20.15'te yükleyin teşekkürler"
+// türünü kaybediyordu), hitap (14. tur: HEAD'in kestiği "abi mizah 18:30'da paylaşılacak" fiilinden sonra "abi mizah" etiket). server.js
+// contentKindOf ve scripts/common.py _KIND_FILL aynı kural
+export const KIND_FILL = new RegExp(String.raw`^(?:saniye|saniyelik|sn|dakika|dakikalik|dk|lutfen|olarak|bunu|sunu|at|atar|misin|`
+  + String.raw`tesekkur(?:ler)?|tsk(?:ler)?|sagol(?:un)?|saol(?:un)?|eyvallah|selam(?:lar)?|merhaba|gunaydin|abi|abla|kanka|hocam|reis|usta|emixhas|`
+  + String.raw`(?:paylas|yayinla|yayimla|gonder|yukle)(?!${VERB_NEG})\p{L}*)$`, "u");
 // haber dışındaki etiketin (mizah/komik/viral/trend) yanında "yap"/"olsun" da dolgu: "mizah yap", "komik yapar mısın", "trend olsun", "haber
 // yapma mizah yap" (inceleme, 19 Ekim; "haber yap" zaten haber isteği, etiket sayılmaz; "viral olsun" kayıp çocuk/yardım çağrısıdır: "Paylaşın
 // viral olsun 🙏" etiket değil). scripts/common.py _KIND_DO, server.js aynı kural
@@ -89,13 +93,16 @@ const LEAD_WORD = String.raw`\p{L}+(?:['’]\p{L}+)*(?!\p{L}|['’]\p{L})`;
 const LEAD_RE = new RegExp(String.raw`^\s*#?(mizah|mizahi|komik|trend|viral|haber)\s*(?:[,;\-–/]|:(?=(?:(?:(?!\p{L})[\s\S])*${LEAD_WORD}){0,4}(?:(?!\p{L})[\s\S])*$))`
   + String.raw`(?!\s*#?(?:mizah|mizahi|komik|trend|viral|haber)(?!\p{L})`
   + String.raw`(?!\s+(?:gibi|seklinde|tarzinda|formatinda|diliyle|olarak|amacli|olsun|(?:video|icerik|paylasim|${LEAD_ASK_V})\p{L}*)(?!\p{L})))\s*`, "u");
+// gülme işareti (server.js LAUGH, common.py _LAUGH aynı kalıp; kfold'lu metinde)
+const LAUGH = new RegExp(String.raw`[😂🤣😹😆😅😁😄😝🤪🙈🤭😜😛😀😃🙃💀]|(?<!\p{L})(?:a?(?:ha){2,}h?|ah(?:ah)+|(?:js){2,}j?|(?:sj){2,}s?|(?:kd){2,}k?|(?:ks){2,}k?|xd+|:d+)(?!\p{L})`, "u");
 export function tagKind(tag, rest) {
   if (KIND_TAG[kfold(tag)]) return { kind: KIND_TAG[kfold(tag)], rest };
   // başta ayraçla yazılmış etiket: "mizah, kısa kes", "#trend: sesi kalsın" (kfold uzunluğu korur: kesim asıl metinde); ardından başka
   // yalın etiket gelirse seçim açık bırakılmıştır ("haber, mizah, viral fark etmez sen seç", "haber/mizah sen karar ver"), etiket değil;
   // ikinci etiket ifadenin başıysa ("mizah, haber gibi anlat", "mizah, komik video yapma") baştaki etiket geçer (common.py _KIND_LEAD aynı)
-  const lead = kfold(rest).match(LEAD_RE);
-  if (lead) return { kind: KIND_TAG[lead[1]], rest: String(rest).slice(lead[0].length) };
+  // "Haber: Kedi itfaiyeyi alarma geçirdi 😂" (gülmeli kısa başlık) baştaki etiket değil (9. tur; server.js contentKindOf aynı kural)
+  const lead = kfold(rest).match(LEAD_RE), laugh = LAUGH.test(kfold(rest));
+  if (lead && !(lead[1] === "haber" && lead[0].includes(":") && laugh)) return { kind: KIND_TAG[lead[1]], rest: String(rest).slice(lead[0].length) };
   // yalnız etiket: "mizah", "#trend", "_viral_" (haber > mizah > trend); yanında yalnız yayın fiili, süre ya da dolgu kelimesi de
   // olabilir: "mizah 18:30'da paylaş", "trend 40 saniye", "bunu mizah olarak paylaş" (inceleme, 19 Ekim); haber dışındaki etiketin
   // yanında "yap"/"olsun" da ("mizah yap", KIND_DO). Etiket atılır, süre kalır.
@@ -107,6 +114,7 @@ export function tagKind(tag, rest) {
     for (const m of f.matchAll(/[#_*]*(\p{L}+)[_*]*/gu)) if (KIND_TAG[m[1]] || (soft && KIND_DO.test(m[1]))) { out += String(rest).slice(at, m.index) + " "; at = m.index + m[0].length; }
     out = (out + String(rest).slice(at)).replace(/\s+/g, " ").trim();
     const left = kfold(out).match(/[\p{L}\d]+/gu) || [];
+    if (ks.has("mizah") && laugh) ks.delete("haber"); // "😂 #komik #haber" mizah (9. tur)
     return { kind: ks.has("haber") ? "haber" : ks.has("mizah") ? "mizah" : "trend", rest: left.every(fill) ? "" : out };
   }
   return { kind: "", rest };
@@ -130,15 +138,253 @@ export function videoLink(url) {
 // orada bölüm seçer); Instagram/TikTok/X'te "18:30'dan itibaren paylaş" eskisi gibi yayın saati (inceleme, 18 Ekim).
 const TS = String.raw`\d{1,2}(?:[:.]\d{2}){1,2}`;
 const POS_RE = new RegExp(String.raw`(?<![\d.:])(?<!saat\s)(?:${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n)\s+${TS}\s*['’]?\s*y?[ae]\s+kadar|${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n)?\s*(?:[-–—]|ile)\s*${TS}|${TS}\s*['’]?\s*(?:d[ae]n|t[ae]n|d[ae]ki|t[ae]ki)(?![\p{L}])(?!\s+(?:sonra|itibaren)\s+(?:paylaş|yayın|yayım|gönder|yükle|at(?:ar|ır|ın|sın|sana|abilir)?(?![\p{L}])))|\d{1,2}:\d{2}:\d{2})(?!\d)`, "giu");
+// Yayın saati (when.js parseWhen: HEAD'in aldığı saat; yayın isteğiyle yazılmamışsa doubt — yanıtta "olayın saatiyse…" satırı); konum ⟪…⟫ ile gizlenir
 const whenKeepingPositions = (text, keep = true) => {
   const saved = [];
-  const w = parseWhen(keep ? text.replace(POS_RE, (m) => { saved.push(m); return `⟪POS${String.fromCharCode(65 + saved.length - 1)}⟫`; }) : text);
+  const masked = keep ? text.replace(POS_RE, (m) => { saved.push(m); return `⟪POS${String.fromCharCode(65 + saved.length - 1)}⟫`; }) : text;
+  const w = parseWhen(masked);
   // linke bitişik ek ("youtu.be/…'yi haber yap") talimata girmez
   return { ...w, rest: w.rest.replace(/⟪POS([A-Z])⟫/g, (_, c) => saved[c.charCodeAt(0) - 65] ?? "").replace(/^\s*['’]\p{L}{0,6}(?=\s|$)/u, "") };
 };
-// Video linkinde yalnız açma isteği ("youtu.be/… oynat", "şunu açar mısın youtu.be/…"): linkin dışında başka söz kalmamalı. Ses talimatı
-// ("haber yap, kendi sesiyle oynat", "sesiyle çal", "videonun sesini açın") haber isteğidir (inceleme, 18 Ekim: tarayıcıda açılıyordu)
+// LİNKTE AÇMA (11.-13. tur; inceleme, 20 Ekim: 8-10. turların yeni kural takımları her turda sahibin HEAD'de açılan isteklerinden bir aileyi —
+// "aç, annem de görsün", "şunu aç, tam ekran yap", "Kim haklı, zaman gösterir" altyazısı… — ters çeviriyordu; haber linki üretilirse ONAYSIZ
+// yayınlanır, yanlış açma yalnız tarayıcıyı açar). YAPI: karar HEAD'in (c0937ab) kendi kuralıdır (headOpen, birebir); yeni kod HEAD'den yalnız
+// adı konmuş istisnalarla ayrılır.
+// - HABER SAYFASI LİNKİ (video/sosyal medya linki olmayan her link: anlık yol; 13. tur, inceleme, 20 Ekim: istisnalar sahibin "aç dediler,
+//   açsana", "aç diye sana gönderdim", "aç, haber yapalım mı?" isteğini üretip onaysız yayınlıyordu): açılır = HEAD açar || ONLY2, İSTİSNA YOK.
+//   Bilerek kabul: "<haber linki> Aç kalan köpeklere mama dağıtıldı", "<haber linki> bu haberi göster, haber yap" HEAD gibi açılır (sahip
+//   "haber yap" diye yeniden gönderir; yanlış üretim onaysız yayındır).
+// - VİDEO LİNKİ (üretim onay ister): açılır = (HEAD açar && (bir yan cümlesi kendi başına tam açma isteği || istisna yok)) || ONLY2.
+// - ONLY2 (ekleme): HER link türünde (HEAD yalnız video linkinde; "şunu açar mısın <haber linki>" üretilip yayınlanıyordu) linkin dışında yalnız
+//   açma isteği: aç/göster/oynat/çal'ın emir, kibar ve soru biçimleri (aç, açar mısın, açsana, açıver, açın, açabilir misin, gösterir misin,
+//   oynatır mısın, çal…), tekrarlı da, ve yalnız dolgu (şunu, bunu, şu, bu, linki, videoyu, sayfayı, lütfen, hemen, abi, kanka, reis, hadi, bi,
+//   bir, bakalım, şimdi, da/de, bana, Safari'de, tarayıcıda, telefonda, YouTube'da; emoji, noktalama); Türkçe harfsiz yazım da ("sunu acar misin");
+//   14. tur: selamlama, teşekkür, hitap (selam, merhaba, teşekkürler, sağ ol, acaba, kardeşim, acil, Emixhas…) ve sahibin birinci tekil amaç sözü
+//   ("açar mısın, okuyacağım", "aç bakayım") da dolgu (haber linkinde açılmayan istek anlık video olup onaysız yayınlanıyordu).
+// - YAN CÜMLE AÇMA İSTEĞİ (13. tur, video linkinde): linkin dışındaki metnin bir yan cümlesi (noktalama, satır sonu ya da ve/sonra/ama/ancak/
+//   fakat/veya/yoksa ile ayrılan) kendi başına ONLY2 ise istisnalar sayılmaz ("aç dediler, açsana", "aç diye sana gönderdim, açar mısın"); E2'nin
+//   "aç ve/veya susuz" sıfatı bağlaçla bölünmez.
+// - İSTİSNA (HEAD açar, üretilir; YALNIZ video linkinde), yalnız bunlar:
+//   E1 üretim isteği, server.js tanıyıcılarıyla (useDetectors) linkin dışındaki metinde, YALNIZ hiçbir aç/göster kendi yan cümlesinde tam bir açma
+//      isteği değilse (12. tur; inceleme, 20 Ekim: "<haber linki> aç, haber yapalım mı?", "son dakika, aç bakalım", "haber yap demedim, aç"
+//      üretilip onaysız yayınlanıyordu): açma sözünün solunda yan cümle başına (noktalama, ve/sonra/ama, olumsuz aktarma "demedim", emir
+//      biçiminde üretim fiili: "haber yap aç") kadar yalnız dolgu varsa ("aç", "şunu aç", "bana göster", "önce aç", "son dakika aç") HEAD gibi
+//      açılır; E1 yalnız açma fiilinin tümleci dolgu dışı sözken ("<link> bu filmi haber gibi göster, 40 saniye"). Tanıyıcılar olumsuz aktarma ("haber yap demedim") ve "son dakika" etiketi
+//      atılmış metne bakar: haber isteği (newsRequest), benzer video (recreateAsk), fragman isteği yalnız açma fiilleri etkisizken ve kendi istek
+//      fiiliyle ("fragman analizi yap"; "fragmanı göster", "aç, yeni fragman" betimleme), açık tür yalnız linke bitişik etiket, tagKind etiketi
+//      (haber sayfası linkinde "haber" etiketi değil) ya da açma dışı istek fiilli tür ifadesi (server.js kindAsk: "mizah yap", "mizah olarak
+//      paylaş", "komik video yap"; "şunu aç, çok komik bir video 😂" betimleme; "<link> mizah aç" HEAD gibi açılır);
+//   E2 sıfat "aç": hemen ardından (yalnız boşluk) kal- ("aç kalsın", "aç kalanını", "aç kaldığım/kaldığın yerden", "aç kaldığı yerden" değil:
+//      açma isteğinin ardındaki söz), bırak-'ın edilgen, ortaç, geçmiş, süren ve ad biçimleri (bırakılan, bırakan, bıraktı, bırakmış, bırakıyor,
+//      bırakacak, bırakmak; emir "aç bırak", "aç bırakma" değil), susuz, gözlü, "ve susuz", "veya susuz" ya da önünde günlerce/haftalarca/aylarca
+//      ("Aç kalan köpeklere belediye mama dağıttı", "Günlerce aç ve susuz kalan kedi");
+//   E3 aktarma (üçüncü kişi): açma fiilinin hemen ardından (boşluk, tırnak, virgül) deyince, dedi/dediler/dediği, demiş/demişler/demişti, diyen,
+//      derken, diyerek, diye ("Polis kimliğini göster deyince …"); sahibin kendi ısrarı değil (12. tur: "aç dedim", "aç dedik ya", "aç demiştim",
+//      "aç diye yazdım/gönderdim" — "diye"den sonra birinci kişi geçmiş zaman; 13. tur: birinci kişi "dediğim", "demiş miydim" ve "diye"nin yan
+//      cümlesinde birinci kişi fiil: "aç diye mesaj attım", "aç diye yazıyoruz", "göster diye ricada bulundum", "aç diye bekliyorum"; 14. tur:
+//      "diyerek" ve "derken" de — "aç diyerek gönderdim", "aç derken bunu kastettim" —, aktarmadan sonra yine açma fiili sahibin şikâyetidir:
+//      "aç deyince açılsın", "göster dediğinde açılmıyor").
+//   E1 SORU VE ERTELEMEDE YOK (13. tur): soru (soru eki mı/mi…, "?") ya da erteleme/dilek sözü (uygunsa, istersen, olursa, belki, istiyorum,
+//      isterim, lazım, gerek, düşünüyorum, -AlIm) geçen yan cümle tanıyıcılara gitmez: "haber yapalım mı aç bakalım", "haber yapmak istiyorum
+//      önce aç", "haber yapmak lazım önce aç", "aç, uygunsa haber yap" açılır.
+//   E2/E3 sözcük başınadır (yan cümle içinde, ham metinde): metinde istisnasız başka bir aç/göster varsa HEAD gibi açılır.
+// HEAD (c0937ab), birebir: video linkinde linkin dışında yalnız açma isteği ("youtu.be/… oynat", "şunu açar mısın youtu.be/…")
 const OPEN_ONLY = /^(?:(?:şunu|bunu|şu|bu|videoyu|linki|lütfen|hemen)\s+)*(?:aç|çal|oynat|göster)(?:ar|ır|ın|sana|abilir)?(?:\s+(?:mısın|mısınız|misin|misiniz|lütfen))*$/;
+const headOpen = (raw, t, lk, vl) => /(^|\s)(aç|göster)(\s|$)/.test(t) || !!(vl && OPEN_ONLY.test(norm(String(raw).replace(lk.raw, " "))));
+// HEAD'in gördüğü aç/göster sözcükleri (norm noktalama ve kesmeyi boşluk yapar): tr-TR küçük harfli ham metinde
+const HEAD_TOK = /(?<=^|[\s.,!?'])(?:aç|göster)(?=[\s.,!?']|$)/gu;
+const OPEN_ADJ_A = new RegExp(String.raw`^\s+(?:kal(?!s[ıi]n|an[ıi](?:n[ıia]|nd[ae]n?)?(?!\p{L})|dı[ğg][ıi](?:m|n|m[ıi]z|n[ıi]z)(?!\p{L})|dı[ğg][ıi]\s+yerden)\p{L}*|`
+  + String.raw`bırak(?:ıl|an|t[ıi]|mış|ıyor|acak|ma[ks])\p{L}*|susuz(?!\p{L})|gözlü(?!\p{L})|ve\s+susuz(?!\p{L})|veya\s+susuz(?!\p{L}))`, "u"); // E2
+const OPEN_ADJ_B = /(?<!\p{L})(?:günlerce|haftalarca|aylarca)\s+$/u;
+// birinci kişi fiil (sahibin ısrarı, 13. tur): -DIm/-DIk, -mIştIm, -Iyorum/-Iyoruz, -AcAğIm/-AcAz/-cAm, -IrIm/-ArIz, -mIydIm; aynı sonla biten
+// sık adlar fiil değil ("Fragmanı göster diye yorum yazanlar…" aktarmadır)
+const FIRST_P = String.raw`(?!(?:yorum|durum|kurum|forum|serum|erzurum|birim|sürüm|yardım|adım|hocam)(?!\p{L}))\p{L}+(?:[dt][ıiuü][mk]|m[ıiuü]şt[ıiuü][mk]|yoru[mz]|[ae]?c[ae][ğk]?[ıi]?[mz]|[aeıiuü]?r[ıiuü][mz]|m[ıiuü]y[dt][ıiuü][mk])(?!\p{L})`;
+// "diyerek" ve "derken" de yalnız ardından birinci kişi fiil gelmiyorsa (14. tur; inceleme, 21 Ekim: "aç diyerek gönderdim", "aç derken bunu
+// kastettim" sahibin ısrarıdır)
+const OPEN_SAY = new RegExp(String.raw`^[\s"'“”‘’«»,]*(?:(?:diye|diyerek|derken)(?![^.,;:!?\n]{0,40}?(?<!\p{L})${FIRST_P})|deyince|dedi(?:ler|[ğg](?![ıi]m)\p{L}*|kler\p{L}*)?|`
+  + String.raw`demiş(?:ler\p{L}*|tir|ti)?(?!\s+m[ıi]y[dt][ıi][mk](?!\p{L}))|diyen)(?!\p{L})`, "u"); // E3
+// aktarmadan sonra yine açma fiili sahibin şikâyetidir, E3 değil (14. tur: "aç deyince açılsın", "göster dediğinde açılmıyor")
+const SAY_SAME = new RegExp(String.raw`^[\s"'“”‘’«»,]*(?:deyince|dedi\p{L}*|demiş\p{L}*|diyen|diye|diyerek|derken)[^.,;:!?\n]{0,30}?(?<!\p{L})(?:aç|göster|oynat|çal)\p{L}`, "u");
+// E2/E3: HEAD'in gördüğü her aç/göster sıfat ya da aktarma mı (yalnız tam kelime koluyla açılan metinde; OPEN_ONLY kolunda istisna yok)
+const adjOrSay = (raw, lk, vl) => {
+  if (vl && OPEN_ONLY.test(norm(String(raw).replace(lk.raw, " ")))) return false;
+  const low = String(raw).toLocaleLowerCase("tr-TR");
+  let n = 0;
+  for (const m of low.matchAll(HEAD_TOK)) {
+    const after = low.slice(m.index + m[0].length, m.index + m[0].length + 40), before = low.slice(Math.max(0, m.index - 24), m.index);
+    if (!((m[0] === "aç" && (OPEN_ADJ_A.test(after) || OPEN_ADJ_B.test(before))) || (OPEN_SAY.test(after) && !SAY_SAME.test(after)))) return false;
+    n++;
+  }
+  return n > 0;
+};
+// ONLY2: linkin dışında yalnız açma isteği (kfold'lu sözler; kesme işareti birleşir: "Safari'de" → safaride)
+const ONLY_V = /^(?:ac|goster|oynat|cal)(?:s[ae]n[ae]|s[ae]n[iı]z[ae]|[iu]n(?:[iu]z)?|[iu]ver(?:s[ae]n[ae]|[iu]n)?|(?:[ai]r|[ae]bilir)(?:m[iu]s[iu]n(?:[iu]z)?)?)?$/u;
+const ONLY_Q = /^(?:[ai]r|[ae]bilir)(?:m[iu]s[iu]n(?:[iu]z)?)?$/u; // soru biçimi: ardından (bitişik ya da ayrı) mısın gelmeli
+const ONLY_P = /^m[iu]s[iu]n(?:[iu]z)?$/u;
+// selamlama, teşekkür ve hitap da dolgu (14. tur; inceleme, 21 Ekim: haber linkinde "selam, açar mısın?", "açar mısın teşekkürler", "açsana
+// kardeşim" yalnız açma isteği sayılmıyor, anlık video olup onaysız yayınlanıyordu)
+const ONLY_F = new Set(["sunu", "bunu", "su", "bu", "linki", "videoyu", "sayfayi", "lutfen", "hemen", "abi", "kanka", "reis", "hadi", "bi", "bir", "bakalim",
+  "simdi", "da", "de", "bana", "safaride", "tarayicida", "telefonda", "youtubeda", "selam", "selamlar", "merhaba", "gunaydin", "hocam", "iyi",
+  "aksamlar", "gunler", "tesekkurler", "tesekkur", "ederim", "tsk", "sagol", "saol", "sagolun", "saolun", "sag", "ol", "olun", "eyvallah", "acaba",
+  "kardesim", "kardes", "canim", "usta", "kanki", "dostum", "rica", "etsem", "zahmet", "ya", "emixhas", "jarvis", "acil"]);
+// sahibin amaç sözü (birinci tekil gelecek/istek/şimdiki zaman: "açar mısın, okuyacağım", "aç bakayım", "göster izleyeyim"; 14. tur): dolgu
+// f: kfold'lu metin (uzun metinde yan cümle başına yeniden katlanmasın; toLocaleLowerCase çağrısı pahalı)
+const ONLY_ME = /^\p{L}{2,}(?:y?[ae]c[ae]g[iu]m|y?[ae]y[iu]m|[iu]?yorum)$/u;
+const only2F = (f) => {
+  const w = f.replace(/['’]/g, "").match(/[\p{L}\p{N}]+/gu) || [];
+  let verb = false;
+  for (let i = 0; i < w.length; i++) {
+    const v = ONLY_V.exec(w[i]);
+    if (v) {
+      verb = true;
+      const sfx = w[i].replace(/^(?:ac|goster|oynat|cal)/u, "");
+      if (ONLY_Q.test(sfx) && !/m[iu]s[iu]n(?:[iu]z)?$/u.test(sfx) && !ONLY_P.test(w[i + 1] || "")) return false; // "açar" (geniş zaman) tek başına değil
+      continue;
+    }
+    if (ONLY_P.test(w[i]) && i > 0 && (ONLY_V.test(w[i - 1]) || ONLY_P.test(w[i - 1]))) continue;
+    if (!ONLY_F.has(w[i]) && !ONLY_ME.test(w[i])) return false;
+  }
+  return verb;
+};
+const only2 = (rest) => only2F(kfold(rest));
+// E1 daraltma (12. tur): yan cümlesinde tam açma isteği. Solunda yalnız bu dolgu (kfold'lu, kesmesiz) ve "son dakika"/"son dk" etiketi
+// varsa aç/göster tam açma isteğidir; noktalama, bağlaç (ve, sonra, ama, ancak, fakat, veya, yoksa), olumsuz aktarma ve emir biçiminde üretim
+// fiili ("haber yap aç": Türkçede fiil yan cümleyi bitirir) yan cümle başıdır
+const PURE_F = new Set([...ONLY_F, "once", "sadece", "yalniz", "yalnizca", "haydi", "ya", "artik", "acil", "flas", "sondakika", "selam", "merhaba",
+  "gunaydin", "hocam", "haberi", "siteyi"]);
+const OPEN_BND = new Set(["ve", "sonra", "ama", "ancak", "fakat", "veya", "yoksa"]);
+const OPEN_BND_V = /^(?:yap|hazirla|uret|cek|yaz|paylas|gonder|yukle|yayinla|yayimla|kes|kisalt|ekle|ozetle|anlat|ciz|kurgula|cevir)(?:y?[iu]n(?:[iu]z)?|sana)?$/u;
+// olumsuz aktarma (kfold'lu, tek söz): demedim, demedik, dememiştim, demiyorum, demem, demez, demeyin, deme ("haber yap demedim, aç")
+const NEG_SAY_W = /^de(?:me(?:di|mis)\p{L}*|miyor\p{L}*|mem(?:iz)?|mez\p{L}*|meyin(?:iz)?|meyece\p{L}*|me)$/u;
+const WCH = /[\p{L}\p{N}'’]/u;
+// solundaki söz (kfold'lu metinde i'den geriye, lim'e kadar): [başı, sonu] ya da null (pencere başı) / "işaret" (yan cümle başı); geriye
+// karakter karakter (uzun metinde her aç/göster için yalnız bir-iki söz okunur)
+const prevTok = (f, i, lim) => {
+  while (i > lim && /\s/.test(f[i - 1])) i--;
+  if (i <= lim) return null;
+  if (!WCH.test(f[i - 1])) return "işaret";
+  let j = i; while (j > lim && WCH.test(f[j - 1])) j--;
+  return [j, i];
+};
+const pureOpen = (rest) => {
+  const low = String(rest).toLocaleLowerCase("tr-TR"), f = kfold(rest); // kfold uzunluğu korur: yerler aynı
+  for (const m of low.matchAll(HEAD_TOK)) {
+    const lim = Math.max(0, m.index - 64);
+    let i = m.index, ok = true;
+    for (;;) {
+      const t = prevTok(f, i, lim);
+      if (t === "işaret") break; // yan cümle başı
+      // pencere bitti: metnin başıysa ya da pencereden önce işaret varsa tam istek (kesik sözle değil)
+      if (t === null) { ok = lim === 0 || (!WCH.test(f[lim - 1]) && !/\s/.test(f[lim - 1])); break; }
+      if (t[0] === lim && lim > 0) { ok = false; break; }
+      const w = f.slice(t[0], t[1]).replace(/['’]/g, "");
+      if (OPEN_BND.has(w) || NEG_SAY_W.test(w) || OPEN_BND_V.test(w)) break; // yan cümle başı
+      if (PURE_F.has(w)) { i = t[0]; continue; }
+      if (w === "dakika" || w === "dk") { const u = prevTok(f, t[0], lim); if (Array.isArray(u) && f.slice(u[0], u[1]) === "son") { i = u[0]; continue; } }
+      ok = false; break;
+    }
+    if (ok) return true;
+  }
+  return false;
+};
+// tanıyıcıya gitmeyen: olumsuz aktarılan istek (yan cümle başından olumsuz aktarmaya kadar: "haber yap demedim") ve "son dakika" etiketi
+const NEG_QUOTE = /(?<=^|[.,;:!?\n])[^.,;:!?\n]*?(?<!\p{L})de(?:me(?:di|miş)\p{L}*|miyor\p{L}*|mem(?:iz)?|mez\p{L}*|meyin(?:iz)?|meyece\p{L}*|me)(?!\p{L})/gu;
+const SD_WORDS = /(?<!\p{L})(?:son\s*(?:dakika|dk)|sondakika)(?!\p{L})/gu;
+const prodText = (x) => String(x || "").toLocaleLowerCase("tr-TR").replace(NEG_QUOTE, " ").replace(SD_WORDS, " ");
+// server.js tanıyıcıları (haber isteği, benzer video, fragman isteği, fiilli tür ifadesi): server.js açılışta verir; verilmemişse E1 yok
+let DET = null;
+export const useDetectors = (d) => { DET = d; };
+// açma fiilleri etkisiz ("x"): fragman ve tür isteği yalnız açma dışı istek fiiliyle sayılsın ("fragmanı göster" açılır)
+const OPEN_TOK_F = /(?<![\p{L}\p{N}])(?:ac|goster|oynat|cal)(?:s[ae]n[ae]|[iu]n(?:[iu]z)?|[iu]ver\p{L}*|[ai]r|[ae]bilir)?(?![\p{L}\p{N}])/gu;
+// E1 soru/erteleme yan cümlesi (13. tur; kfold'lu metinde): soru eki (kibar istek "yapar mısın" değil) ya da "?", erteleme/dilek sözü, -AlIm
+// önerisi (dolgu "bakalım/görelim" değil); yan cümle noktalamayla biter (işareti dahil)
+const QD_CLAUSE = /[^.,;:!?…\n]*[.,;:!?…\n]*/gu;
+const QD_RE = new RegExp(String.raw`\?|(?<![\p{L}\p{N}])(?:m[iu](?:y[iu][mz]|d[iu]r|y[dt][iu]\p{L}*|ym[iu]s\p{L}*)?|uygunsa|mumkunse|musaitsen\p{L}*|`
+  + String.raw`isterse[nk]\p{L}*|olursa|belki|ist(?:iyor|iyo|er(?:im|iz|din|dim))\p{L}*|lazim|gerek\p{L}*|dusunuyor\p{L}*|`
+  + String.raw`(?!(?:bakalim|gorelim)(?![\p{L}\p{N}]))\p{L}+y?[ae]l[iu]m(?:m[iu])?)(?![\p{L}\p{N}])`, "u");
+// metin bir kez katlanır (kfold uzunluğu korur: yan cümlenin özgün metni aynı yerden alınır)
+const noQD = (s0) => {
+  const s = String(s0 || ""), f = kfold(s);
+  if (f.length !== s.length) return s.replace(QD_CLAUSE, (c) => (QD_RE.test(kfold(c)) ? " " : c));
+  return f.replace(QD_CLAUSE, (c, i) => (QD_RE.test(c) ? " " : s.slice(i, i + c.length)));
+};
+const prodAsk = (rest0, tag, insRest0) => {
+  if (!DET || pureOpen(rest0)) return false;
+  const rest = prodText(noQD(rest0)), tk = KIND_TAG[kfold(tag)] || tagKind("", prodText(noQD(insRest0))).kind;
+  if (tk) return true;
+  if (DET.newsRequest(rest) || DET.recreateAsk(rest)) return true;
+  const neutral = kfold(rest).replace(OPEN_TOK_F, "x");
+  return !!(DET.trailerAsk(`${neutral} x`) || DET.kindAsk(neutral));
+};
+// yan cümlesi kendi başına tam açma isteği (13. tur, video linkinde istisnaları geçersiz kılar): noktalama, satır sonu ya da bağlaçla ayrılır
+const OPEN_CLAUSE = /[.,;:!?…\n]+|(?<![\p{L}\p{N}])(?:ve|sonra|ama|ancak|fakat|veya|yoksa)(?![\p{L}\p{N}])/iu;
+const OPEN_HINT = /(?<![\p{L}\p{N}])(?:ac|goster|oynat|cal)/u;
+// E2'nin "aç ve/veya susuz" sıfatı bağlaçla bölünmez ("Aç ve susuz kalan kuşlara su koyun" yan cümle açma isteği değil)
+const ADJ_VE = /(?<![\p{L}\p{N}])ac(?=\s+(?:ve|veya)\s+susuz(?![\p{L}\p{N}]))/gu;
+const clauseOpen = (rest) => kfold(rest).replace(ADJ_VE, "x").split(OPEN_CLAUSE).some((c) => c && OPEN_HINT.test(c) && only2F(c));
+// HABER SAYFASI LİNKİNDE İSTEK BİÇİMİ (15.-16. tur; inceleme, 21 Ekim: "açar mısın, haber yapalım mı?", "haber yapma, açsana" ve 16. turda
+// ONLY_V dışındaki "açsan şunu", "açarsan sevinirim", "açabilirsen", "açmaz mısın", "açamaz mısın", "açıverir misin", "açar msn", "açarmsın",
+// "göstersen", "oynatsan", "çalsan", "açmanı rica ediyorum", "açman lazım", "açıp bakar mısın", "linki açıp okur musun", "açalım şunu",
+// "oynatıp izler misin" üretilip onaysız yayınlanıyordu): linkin dışındaki metinde kökü aç/göster/oynat/çal olan ve istek eki taşıyan HERHANGİ bir
+// söz geçiyorsa başka söz ne olursa olsun açılır. İstek eki (kfold'lu, kökten hemen sonra; uzatılmış harf birleşince de: "açsanaa", "açarmısınn"):
+// emir ve kibar biçim (yalın kök, -sAnA, -sAnIzA, -In(Iz), -mAlIsIn), şart -sAn(Iz)/-sn/-ArsAn(Iz)/-IrsAn(Iz)/-AbilirsAn(Iz), öneri -AlIm, -Iver
+// (açıver, açıversen, açıverin…), soru -Ar/-Ir/-mAz/-AmAz/-Abilir/-AcAk/-Iverir + mI(sIn) bitişik ya da ayrı (konuşma dilinde ms, msn, msın,
+// mısn), -Ip + aynı yan cümlede en çok üç söz içinde istek biçiminde fiil ("açıp bakar mısın", "açıp bak"), -mAk/-mAn/-mAnI/-mAnIz(I)/-mAsInI +
+// istiyorum/isterim/rica/lazım/gerek/şart. İstek olmayan biçim sayılmaz (ek listede yok): geçmiş -DI, -mIş, ortaç -An/-Ilan, açık, açlık, açılış,
+// açıklama, gösteri, oyun, çalış-, edilgen çalın- ("çalındı", "çalınan"), olumsuz "açma", yalın geniş zaman "açar". Yalnız sıfat "aç" sayılmaz:
+// HEMEN ardındaki söz kal- (kalan, kalmış, kaldı, kaldığı, kalır, kalacak, kalıyor, kalarak, kalma, yalın kal; "kalsın", "kalanını", "kaldığım/
+// kaldığın yerden", "kaldığı yerden" değil), bırak-'ın edilgen/ortaç/geçmiş/süren/ad biçimi, susuz ya da "ve/veya susuz" (16. tur: 15. turun
+// yan cümlede herhangi bir kal…/bırak… sözü kalabalık, kalp, kaldır, kale, kalite'yi de sayıyordu — "ac bakalim kalabalik mi" üretiliyordu);
+// HEAD'in yalın "aç"ı yine açar. Yanlış açma yalnız tarayıcıyı açar, üretim onaysız yayındır
+const ADJ_TAIL = new RegExp(String.raw`^[^\S\n]+(?:(?:ve|veya)[^\S\n]+susuz|susuz|birak(?:il|an|ti|mis|iyor|acak|ma[ks])\p{L}*|`
+  + String.raw`kal(?!s[iu]n|an[iu](?:n[iu]a?|nd[ae]n?)?(?![\p{L}\p{N}])|d[iu]g[iu](?:m|n|m[iu]z|n[iu]z)(?![\p{L}\p{N}])|d[iu]g[iu]\s+yerden)`
+  + String.raw`(?:an|m[iu]s|d[iu](?!r)|[iu]r|[ae]c[ae]k|[iu]yor|[ae]rak|m[ae]|(?![\p{L}\p{N}]))\p{L}*)(?![\p{L}\p{N}])`, "u");
+// istek eki (kökten sonraki kısmın tamamı); soru eki ayrı yazılınca (REQ_Q + REQ_QP), -Ip (REQ_IP + REQ_VERB), ad + isteme (REQ_NOUN + REQ_WANT)
+const REQ_QB = String.raw`(?:[aeiu]r|m[ae]z|[ae]m[ae]z|[ae]bilir|[ae]c[ae]k|[iu]ver(?:[iu]r|[ae]bilir))`;
+const REQ_QE = String.raw`(?:m[iu](?:s(?:[iu]n(?:[iu]z)?|n)?)?|ms(?:[iu]n(?:[iu]z)?|n)?)`;
+const REQ_A = new RegExp(String.raw`^(?:|s[ae]n[ae]|s[ae]n[iu]z[ae]|[iu]n(?:[iu]z)?|s[ae]?n|s[ae]n[iu]z|[aeiu]rs[ae]n(?:[iu]z)?|[ae]bilirs[ae]n(?:[iu]z)?|`
+  + String.raw`[ae]l[iu]m|m[ae]l[iu]s[iu]n(?:[iu]z)?|[iu]ver(?:s[ae]n[ae]?|s[ae]n[iu]z[ae]?|[iu]n(?:[iu]z)?|[ae]l[iu]m)?|${REQ_QB}${REQ_QE})$`, "u");
+const REQ_Q = new RegExp(String.raw`^${REQ_QB}$`, "u"), REQ_QP = new RegExp(String.raw`^${REQ_QE}$`, "u");
+const REQ_IP = /^[iu]p$/u, REQ_NOUN = /^m[ae](?:k|n|n[iu]|n[iu]z|n[iu]z[iu]|s[iu]n[iu])$/u;
+const REQ_WANT = /^(?:istiyor\p{L}*|isterim|isteriz|rica|lazim|gerek\p{L}*|sart)$/u;
+// -Ip'ten sonraki istek fiili: istek ekiyle biten söz ya da yalın/çoğul emir (bak, oku, izle, dinle, incele, gör, yap, anlat…)
+const REQ_VERB = new RegExp(String.raw`(?:s[ae]n[ae]|s[ae]n[iu]z[ae]|[ae]bilir|[aeiu]rs[ae]n(?:[iu]z)?|[ae]l[iu]m|[iu]ver\p{L}*|${REQ_QB}${REQ_QE})$|`
+  + String.raw`^(?:bak|bakin|oku|okuyun|izle|izleyin|dinle|dinleyin|incele|inceleyin|gor|gorun|yap|yapin|hazirla|hazirlayin|anlat|soyle|yaz|`
+  + String.raw`kontrol|goz|kaydet|indir|paylas|gonder|ac|cal|oynat|goster)$`, "u");
+// aday kelime: kökü aç/göster/oynat/çal olabilecek tek kelimeler bunlar (uzatılmış harfle de); uzun metinde bütün kelimeler diziye alınmaz
+const OPEN_CAND = /(?<![\p{L}\p{N}])(?:a+c+|g+o+s+t+e+r+|o+y+n+a+t+|c+a+l+)[\p{L}\p{N}]*/gu;
+const OPEN_STEM = /^(?:ac|goster|oynat|cal)/u;
+const reqOpen = (rest) => {
+  const f = kfold(rest);
+  if (!OPEN_HINT.test(f)) return false;
+  const C = new RegExp(OPEN_CAND), N = /[\p{L}\p{N}]+/gu; let m;
+  const next = (i) => { N.lastIndex = i; return N.exec(f)?.[0] || ""; };
+  while ((m = C.exec(f))) {
+    const end = m.index + m[0].length, w1 = m[0].replace(/(\p{L})\1+/gu, "$1");
+    for (const w of w1 === m[0] ? [m[0]] : [m[0], w1]) {
+      const st = OPEN_STEM.exec(w); if (!st) continue;
+      const sfx = w.slice(st[0].length);
+      if (REQ_A.test(sfx)) { if (!(sfx === "" && st[0] === "ac" && ADJ_TAIL.test(f.slice(end, end + 80)))) return true; break; }
+      if (REQ_Q.test(sfx)) { if (REQ_QP.test(next(end))) return true; break; } // "açar" (geniş zaman) tek başına değil
+      if (REQ_NOUN.test(sfx)) { if (REQ_WANT.test(next(end))) return true; break; }
+      if (REQ_IP.test(sfx)) {
+        const cl = f.slice(end, end + 60).split(/[.,;:!?…\n]/u)[0];
+        if ((cl.match(/[\p{L}\p{N}]+/gu) || []).slice(0, 3).some((t) => REQ_VERB.test(t) || REQ_QP.test(t))) return true;
+        break;
+      }
+    }
+  }
+  return false;
+};
+// açılır: haber sayfası linkinde (video linki değil: anlık yol) HEAD açar || ONLY2 || istek biçimi, istisna yok (13. ve 15. tur); video
+// linkinde (HEAD açar && (yan cümlesi tam açma isteği || istisna yok)) || ONLY2
+const openAsk = (raw, t, lk, vl, rest, insRest) => {
+  if (only2(rest)) return true;
+  if (vl?.kind !== "video" && reqOpen(rest)) return true;
+  if (!headOpen(raw, t, lk, vl)) return false;
+  if (vl?.kind !== "video") return true;
+  return clauseOpen(rest) || (!adjOrSay(raw, lk, vl) && !prodAsk(rest, lk.tag, insRest));
+};
 // talimatta harf/rakam yoksa (linkin çevresindeki parantez, tırnak, WhatsApp *kalın* işareti) talimat boştur: varsayılan haber talimatı geçer
 const insOf = (s) => { const x = String(s || "").replace(/\s+/g, " ").trim(); return /[\p{L}\p{N}]/u.test(x) ? x : ""; };
 
@@ -205,25 +451,31 @@ export function parseCommand(raw) {
   if (an && vl && an[1].includes(lk.raw)) {
     if (vl.kind !== "video") return { action: "none", reply: vl.reply };
     const w = whenKeepingPositions(an[1].replace(lk.raw, " "), vl.platform === "YouTube");
-    const tk = tagKind(lk.tag, w.rest);
-    const ins = ["trend", "mizah"].includes(tk.kind) ? tk.rest : `son dakika ${tk.rest}`;
-    return { action: "social_video", url: vl.url, instruction: ins.replace(/\s+/g, " ").trim(), ...(tk.kind ? { kind: tk.kind } : {}), publishAt: w.at ? w.at.toISOString() : undefined, reply: "" };
+    const tk = tagKind(lk.tag, w.rest), fun = ["trend", "mizah"].includes(tk.kind);
+    // talimat "son dakika: …" (etiket biçimi): tür haber, yalnız şaka altyazısında değil (server.js contentKindOf'un zayıf haber biçimi:
+    // gülme işareti ya da reddedilenler atılmış metinde açık mizah/viral ifadesi varsa tür talimattan; inceleme, 20 Ekim: "son dakika:
+    // <fragman başlıklı link> vizyon tarihini de ekle", "… kısa kes" fragman analizine gidiyordu; "Son dakika: gol yiyen kaleci 😂 mizah
+    // videosu" mizah, "son dakika: <link> mizah değil, ciddi haber", "Son dakika: Komedi dizisinin setinde yangın çıktı" haber)
+    const r = insOf(tk.rest), ins = fun ? r : r ? `son dakika: ${r}` : "son dakika";
+    return { action: "social_video", url: vl.url, instruction: ins.replace(/\s+/g, " ").trim(), ...(tk.kind ? { kind: tk.kind } : {}), publishAt: w.at ? w.at.toISOString() : undefined, ...(w.at && w.doubt ? { timeDoubt: true } : {}), ...(w.ignored ? { ignoredTime: w.ignored } : {}), reply: "" };
   }
   if (an) return { action: "anlik", topic: an[1].trim(), duration: 30, reply: "" };
   // Haber linki → sayfa okunur, ondan son dakika videosu ("aç" denirse tarayıcıda açılır)
   if (lk) {
-    // video linkinde yalnız açma isteği varsa çal/oynat ve kibar biçimleri de açar ("şunu açar mısın", OPEN_ONLY); "12:30'dan oynat",
-    // "kendi sesiyle oynat" haber talimatıdır
-    if (/(^|\s)(aç|göster)(\s|$)/.test(t) || (vl && OPEN_ONLY.test(norm(String(raw).replace(lk.raw, " ")))))
-      return { action: "open_url", target: lk.url, reply: "" };
     // yayın saati (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim; saat yazmazsam direkt paylaşsın"); YouTube video
     // linkinde videodaki konum ("12:30'dan itibaren") yayın saati sanılmaz, talimatta kalır
-    const when = vl?.kind === "video" ? whenKeepingPositions(String(raw).replace(lk.raw, " "), vl.platform === "YouTube") : parseWhen(String(raw).replace(lk.raw, " "));
+    const rest0 = String(raw).replace(lk.raw, " ");
+    const when = vl?.kind === "video" ? whenKeepingPositions(rest0, vl.platform === "YouTube") : parseWhen(rest0);
+    // açma (openAsk: HEAD'in kararı + adı konmuş istisnalar + ONLY2; "aç", "aç bakalım", "şunu açar mısın <haber linki>")
+    if (openAsk(raw, t, lk, vl, rest0, when.rest)) return { action: "open_url", target: lk.url, reply: "" };
     const publishAt = when.at ? when.at.toISOString() : undefined;
+    // yanıtta tek satır (server.js handleCommand): alınan saat şüpheliyse (olay saati olabilir; when.js doubtNote) ya da açık yazılmış saat
+    // alınmadıysa (when.js timeNote)
+    const ign = { ...(when.at && when.doubt ? { timeDoubt: true } : {}), ...(when.ignored ? { ignoredTime: when.ignored } : {}) };
     // sosyal medya paylaşımı: videosu indirilip kurgulanır (linkin dışında yazılan, nasıl bir haber istendiğidir)
-    if (vl?.kind === "video") { const tk = tagKind(lk.tag, when.rest); return { action: "social_video", url: vl.url, instruction: insOf(tk.rest), ...(tk.kind ? { kind: tk.kind } : {}), publishAt, reply: "" }; }
+    if (vl?.kind === "video") { const tk = tagKind(lk.tag, when.rest); return { action: "social_video", url: vl.url, instruction: insOf(tk.rest), ...(tk.kind ? { kind: tk.kind } : {}), publishAt, ...ign, reply: "" }; }
     if (vl?.reply) return { action: "none", reply: vl.reply };  // YouTube kanal / oynatma listesi / diğer sayfa
-    return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, reply: "" };
+    return { action: "anlik", topic: String(raw).trim(), duration: extractSeconds(t) || 30, publishAt, ...ign, reply: "" };
   }
   // İki noktasız: "son dakika Eşref Tek geri dönüyor", "son dakika X ile haber üret", "X hakkında son dakika videosu yap".
   // Soru cümleleri ("son dakika haberleri neler", "son dakika var mı") tetiklemez; konu haber sitelerinde aranır.

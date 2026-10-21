@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import { HELP_TEXT } from "./help.js";
 import { findLink } from "./commands.js";
 import { strictCommand, numberGuard, hasNumber, cmdNorm } from "./videoqueue.js";
-import { whenLabel } from "./when.js";
+import { whenLabel, atLabel } from "./when.js";
 
 export async function makeWhatsApp({ handleVideo = null, videoInstruction = null, videoWaiting = () => false, autoAll = () => false, automode = async () => ({ ok: false, error: "yok" }), statusText = async () => "durum yok", ROOT, settings, push, announce, handleCommand, publishVideo, videoInfo, links, queue = null }) {
   const AUTH_DIR = path.join(ROOT, "secrets", "wa-auth");
@@ -699,7 +699,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       const bad = pub.filter((l) => !l.startsWith("✅")).map((l) => l.slice(0, 90));
       const pending = needAsk ? qLine + approveLine(platforms, aid) : "";
       const msg = [`✅ *Video hazır*${qn ? ` (#${vno})` : ""}: ${first} (${v.duration ?? "?"} sn)${qn ? autoHint(v) : ""}`, okPl.length && !schedAt ? `📤 Yayında: ${okPl.join(", ")}` : "",
-        ...(schedAt ? [] : bad), schedAt ? `⏰ ${whenLabel(schedAt)}'de yayınlanacak` : ""].filter(Boolean).join("\n") + pending;
+        ...(schedAt ? [] : bad), schedAt ? `⏰ ${atLabel(whenLabel(schedAt))} yayınlanacak` : ""].filter(Boolean).join("\n") + pending;
       let fileSent = false;
       if (w.sendVideoFile !== false) { try { fileSent = await sendVideo(jid, v.path, msg, onSent); } catch (e) { push(`💬 video dosyası gönderilemedi: ${e.message}`); } }
       if (fileSent === false) await sendOrUnpend(jid, msg, needAsk && name, onSent);
