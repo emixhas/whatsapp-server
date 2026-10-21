@@ -2184,7 +2184,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   anında `publish.py --status` ile okunur (sonradan bağlanan da dahil). Başarısız platform 90 sn sonra bir kez
   daha denenir. Yayın yoksa nedeni "📤 otomatik yayın yapılmadı: …" ile yazılır. Panelde "Otomatik üretim"
   anahtarı `autoMode`u da açar/kapatır; WhatsApp bildirimi aynı kuralla onay istemez (`autoAll`).
-- Başlık/açıklama `scripts/common.py: build_caption` üretir (ilk haber başlığı + kanal adı + #Shorts).
+- Başlık/açıklama `scripts/common.py: build_caption` üretir (ilk haber başlığı + kanal adı + #Shorts). Açıklamada her haberin altında "Kaynak: <ad> · <haber sayfasının linki>" (kullanıcı isteği, 21 Ekim: "haberleri paylaşırken doğrudan haberin linkini ekleyelim açıklamaya kaynak olarak"; segmentin `articleUrl`ı: 5 saatlik videoda `attach_images`ın eşlediği haber sayfası, anlıkta kaynağın ve diğer sitelerin sayfaları, günün/haftanın özetinde de; linksiz haberde yalnız ad). Kartlarda yazılan adres "Haber kaynağı"/"Haber kaynakları" satırlarında tekrar edilmez; sosyal medya videosunda kart linki yok, en alttaki tek "Kaynak" satırı aynen. Hassas kelime yıldızlaması adreslere dokunmaz (`_mask_keep_urls`: …/silahli-saldiri linki bozulmasın).
   Hashtag `scripts/hashtags.py`: senaryonun konuya özel `hashtags` (3-5, prompt yazar, `assemble_script.topic_hashtags`
   temizler) + haber değeri grubu (#zam, #emekli, #tatil…) + kategori (#ekonomi, #asayiş…) + `settings.hashtags`, en
   çok 12 (YouTube 15 üstünü yok sayar); açıklamanın sonuna, YouTube `tags` alanına (`caption_tags`) ve TikTok başlığına.

@@ -822,6 +822,19 @@ def calm_tags(base) -> str:
     return " ".join(t for t in (base if isinstance(base, str) else " ".join(base or [])).split() if t.lower().replace("ı", "i") != "#sondakika")
 
 
+_URL_RE = re.compile(r"https?://\S+")
+
+
+def _mask_keep_urls(text: str) -> str:
+    """Hassas kelimeleri yıldızlar ama adreslere dokunmaz (…/silahli-saldiri linki bozulmasın)."""
+    import censor
+    out, last = [], 0
+    for m in _URL_RE.finditer(text):
+        out.append(censor.mask(text[last:m.start()]) + m.group(0))
+        last = m.end()
+    return "".join(out) + censor.mask(text[last:])
+
+
 def build_caption(video_name: str, max_len: int = 2000):
     """Yayın başlığı ve açıklaması senaryo meta'sından üretilir: gün, kaçıncı 5 saat, saat aralığı ve
     her haberin başlığı + seslendirme metni + kaynağı (açıklamada tam haber ayrıntısı)."""
@@ -870,19 +883,27 @@ def build_caption(video_name: str, max_len: int = 2000):
     else:
         title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
         lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
+    shown_urls = set()
     for i, h in enumerate(haber, 1):
         head = h["title"] if anlik else f"{i}. {h['title']}" if meta.get("format") in ("gunluk", "haftalik") else f"{'🔴 SON DAKİKA · ' if h.get('breaking') else ''}{i}. {h['title']}"
         lines.append(head)
         if h.get("narration"):
             lines.append(h["narration"].strip())
-        if h.get("source"):
-            lines.append(f"Kaynak: {h['source']}")
+        # haberin kendi sayfasının linki kaynak olarak (kullanıcı isteği, 21 Ekim: "haberleri paylaşırken doğrudan haberin linkini
+        # ekleyelim açıklamaya kaynak olarak"); articleUrl: attach_images'ın eşlediği haber sayfası ya da anlıkta kaynağın sayfası
+        url = h.get("articleUrl") if str(h.get("articleUrl") or "").startswith("http") else ""
+        if h.get("source") or url:
+            lines.append("Kaynak: " + " · ".join(x for x in (h.get("source"), url) if x))
+            if url:
+                shown_urls.add(url)
         lines.append("")
     # sosyal medya linkinden video: kaynak videoda ve haber metinlerinde yok, açıklamanın EN ALTINDA tek satır (kullanıcı kararı, 14 Ekim)
     social_src = meta.get("sourceName") if meta.get("infoKind") == "video" and meta.get("sourceUrl") and meta.get("sourceName") else None
-    if meta.get("sources"):  # çoklu son dakika: her haberin kaynağı
-        lines += ["Haber kaynakları:"] + [f"• {x.get('name') or 'kaynak'} · {x.get('url')}" for x in meta["sources"] if x.get("url")] + [""]
-    elif meta.get("sourceUrl") and not social_src:
+    if meta.get("sources"):  # çoklu son dakika: her haberin kaynağı (kartlarda yazılmayan adresler)
+        rest = [f"• {x.get('name') or 'kaynak'} · {x.get('url')}" for x in meta["sources"] if x.get("url") and x["url"] not in shown_urls]
+        if rest:
+            lines += ["Haber kaynakları:"] + rest + [""]
+    elif meta.get("sourceUrl") and not social_src and meta["sourceUrl"] not in shown_urls:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
     # uzun video özeti, viral ve mizah videosu, benzer video (sıfırdan) son dakika haberi değil: #sondakika yok
@@ -899,9 +920,9 @@ def build_caption(video_name: str, max_len: int = 2000):
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle, her pazar haftanın özetiyle buradayız. Abone ol." if meta.get("format") == "haftalik"
               else "Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone ol." if meta.get("format") == "gunluk"
               else "Her beş saatte bir son dakika haberleriyle buradayız. Takip et, abone ol.", ""]
-    try:  # hassas kelimeler açıklamada ve başlıkta yıldızlı (int*har, s*lah), hassas hashtag atılır (censor.py)
+    try:  # hassas kelimeler açıklamada ve başlıkta yıldızlı (int*har, s*lah), hassas hashtag atılır (censor.py); adresler yıldızlanmaz
         import censor
-        title, lines, tags = censor.mask(title), [censor.mask(x) for x in lines], censor.clean_tags(tags)
+        title, lines, tags = censor.mask(title), [_mask_keep_urls(x) for x in lines], censor.clean_tags(tags)
     except Exception:
         pass
     # benzer video: referans kaynak değil, ilham (görüntüsü kullanılmadı; kullanıcı isteği, 19 Ekim: "o videodaki gibi sıfırdan")
