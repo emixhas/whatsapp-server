@@ -46,6 +46,11 @@ TT_LIMIT_TR = {
 }
 
 
+# Instagram geçici engeli ("User is performing too many actions", istek sınırı): günlük sınır gibi 3 saat duraklatılır, video sıraya
+# (kullanıcı şikâyeti, 22 Ekim: sondakika.com'dan art arda üretilen videolar Instagram HTTP 400 "too many actions" veriyordu)
+IG_LIMIT_TR = {"instagram_rate_limit": "Instagram çok sık paylaşım yapıldığı için geçici engel koydu (\"too many actions\")"}
+
+
 class LimitReached(RuntimeError):
     """Platformun günlük yükleme/kota sınırı doldu; kısa sürede tekrar denemek boşuna."""
 
@@ -99,7 +104,7 @@ def queue_line(plat: str) -> str:
     if not qi["count"] and not qi["holdUntil"]:
         return f"📤 {plat} sırası: boş"
     names = ", ".join(Path(v).stem for v in qi["videos"][-4:]) + (" …" if qi["count"] > 4 else "")
-    why = (TT_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "tiktok" else qi["reason"]
+    why = (TT_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "tiktok" else (IG_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "instagram" else qi["reason"]
     hold = f" · gönderim {local_hhmm(_parse(qi['holdUntil']))}'e kadar duraklatıldı ({str(why).split(" (")[0][:80]})" if qi["holdUntil"] else " · duraklatma yok, sıradaki gönderimde yüklenecek"
     return f"📤 {plat} sırası: {qi['count']} video bekliyor" + (f" ({names})" if qi["count"] else "") + hold
 
@@ -1659,8 +1664,10 @@ def upload(path: Path, plat: str) -> dict:
     until = hold_until(plat)
     if until:
         enqueue(path.name, plat)
+        reason = ((load_json(HOLD_FILE, {}) or {}).get(plat) or {}).get("reason", "")
+        why = IG_LIMIT_TR.get(reason) if plat == "instagram" else None
         return {"ok": False, "limit": True, "queued": True,
-                "error": f"{PLAT_NAME[plat]} günlük yükleme sınırı dolu; video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
+                "error": f"{why or PLAT_NAME[plat] + ' günlük yükleme sınırı dolu'}; video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
     try:
         res = {"youtube": yt_upload, "instagram": ig_upload, "tiktok": tt_upload}[plat](path)
     except LimitReached as e:
@@ -1678,6 +1685,11 @@ def upload(path: Path, plat: str) -> dict:
             enqueue(path.name, plat)
             return {"ok": False, "limit": True, "queued": True,
                     "error": f"{TT_LIMIT_TR[tt_reason]}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
+        if plat == "instagram" and IG_THROTTLE_RE.search(msg):  # "User is performing too many actions" / istek sınırı: duraklat, sıraya al
+            until = set_hold(plat, "instagram_rate_limit")
+            enqueue(path.name, plat)
+            return {"ok": False, "limit": True, "queued": True,
+                    "error": f"{IG_LIMIT_TR['instagram_rate_limit']}. Instagram gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
         err = msg + (ig_hint(msg) if plat == "instagram" else "")
         last = load_json(LAST_ERR, {}) or {}
         last[plat] = {"at": now_iso(), "video": path.name, "error": err[:500]}

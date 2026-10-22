@@ -1167,11 +1167,15 @@ app.post("/api/breaking/produce", async (req, res) => {
 // tarama başına ve sıra sınırına takılmaz, sayaca girmez (günlük kayıtta valuable), yaş sınırı valuableMaxAgeHours; taramada önce
 // değerliler, sırada sıradan otomatik işlerin önüne (startAnlik priority). --check'te sıradan görünen haber sınıra takılacaksa önce
 // sayfası okunur (gövdeyle değerli çıkabilir). Tekrar, aynı olay ve elle durdurma kuralları değişmedi. Kapalıysa eski davranış.
+// Yalnız değerli haberler (kullanıcı isteği, 22 Ekim: "sondakika.com'daki değerli haberleri seçelim, saçma sapan her haberi basıyoruz ve
+// Instagram 'too many actions' hatası veriyor"; settings.sondakika.onlyValuable, varsayılan açık): sıradan görünen haber sınıra takılmasa da
+// otomatik üretilmez; önce sayfası okunur (gövdenin ilk cümlesiyle değerli çıkabilir), gövdeyle de sıradansa "sıradan haber; yalnız ⭐ değerli
+// haberler üretiliyor" diye atlanır. Elle (kartta 🎬 Video üret) yine üretilir. Kapalıysa eski kural: her yeni haber (günlük sınırla).
 // Ortak tarama (Mynet + son dakika siteleri) ile sırayla çalışır: biri sürerken diğeri bekler, aynı olay iki kez üretilmesin.
 // Yayın anlikAutoPublish ile bağlı tüm hesaplara onaysız.
 const SONDAKIKA_DONE = path.join(DATA, "sondakika_daily.json");     // {gün: [{url, title, at, manual, valuable}]}
 const SONDAKIKA_STATUS = path.join(DATA, "sondakika_status.json");  // {url: {state, why, at, valuable, valueReason}} — panelde haberin üretildi/sırada/atlandı durumu
-const sondakikaCfg = () => ({ enabled: true, intervalMin: 5, maxPerCheck: 3, maxPerDay: 40, maxQueue: 6, duration: 30, maxAgeHours: 3, valuableUnlimited: true, valuableMaxAgeHours: 12, ...(settings().sondakika || {}) });
+const sondakikaCfg = () => ({ enabled: true, intervalMin: 5, maxPerCheck: 3, maxPerDay: 40, maxQueue: 6, duration: 30, maxAgeHours: 3, valuableUnlimited: true, valuableMaxAgeHours: 12, onlyValuable: true, ...(settings().sondakika || {}) });
 const sondakikaEvery = () => Math.min(60, Math.max(2, Number(sondakikaCfg().intervalMin) || 5));
 const sondakikaDone = () => readJson(SONDAKIKA_DONE, {});
 function sondakikaMark(url, state, why = "", extra = {}) {
@@ -1227,10 +1231,14 @@ async function sondakikaProduce(url, { manual = false, force = false, item = nul
     // değerli haber sınırsız (valuableUnlimited): sayaca girmez; --check'te sıradan görünen haber sınıra takılacaksa sayfası okunur,
     // gövdeyle de sıradansa aynı satırla atlanır. Kapalıysa eski kural: sınır her habere, sayfa okunmadan.
     const pubH = item?.published ? (Date.now() - Date.parse(item.published)) / 3600000 : 0;
-    const vip = c.valuableUnlimited !== false, look = vip && peek && !(pubH > Number(c.valuableMaxAgeHours));
+    const vip = c.valuableUnlimited !== false, only = c.onlyValuable !== false, fresh = !(pubH > Number(c.valuableMaxAgeHours));
     const autoCount = list.filter((x) => !x.manual && !(vip && x.valuable)).length;
     held = limit || (autoCount >= Number(c.maxPerDay) ? { why: `günlük sınır (${c.maxPerDay}) doldu` }
       : anlikQueue.length >= Number(c.maxQueue) ? { why: `anlık sırada ${anlikQueue.length} iş bekliyor (en çok ${c.maxQueue}), haber bayatlamasın diye` } : null);
+    // yalnız değerli haberler (onlyValuable): sıradan görünen haber sınıra takılmasa da üretilmez; sayfası okunur, gövdeyle de sıradansa atlanır
+    if (only && !item?.valuable && !held) held = { why: "sıradan haber; yalnız ⭐ değerli haberler üretiliyor (kartta 🎬 Video üret ile elle üretilebilir)", note: "sıradan: yalnız değerli haberler üretiliyor", only: true };
+    // sayfaya bakılır mı: sınıra takılan haberde yalnız değerli sınırsızken (gövdeyle değerli çıkabilir), yalnız-değerli kuralına takılan haberde her zaman
+    const look = peek && fresh && (vip || !!held?.only);
     if (held && !(look || (vip && item?.valuable))) return skip(held.why, undefined, held.note);
     // elle "⏸ Tüm sistemi durdur" (ısınma) sürerken sıradan haber sistemi uyandırmaz; değerli haber uyandırır (toplayıcıyla aynı kural).
     // Üretim sonrası kendiliğinden dinlenmede her yeni haber uyandırır (kullanıcı "anında" dedi).
@@ -1268,7 +1276,7 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held
   const src = await allSources(a.title, url, source); // haberin tüm kaynakları: bilgi + video + farklı fotoğraflar
   if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay bu sırada başka kaynaktan üretime alındı", a.title, undefined, val);
   // değerli otomatik haber sırada sıradan otomatik işlerin önüne geçer; bir sınır atlatacakken üretildiyse loga yazılır
-  const prio = vip && valuable, over = held && !held.stop ? held.why : prio && ageH > Number(c.maxAgeHours) ? `haber ${Math.round(ageH)} saat önce yayınlanmış` : "";
+  const prio = vip && valuable, over = held && !held.stop ? (held.only ? "başlıkta sıradan görünüyordu, metninden değerli çıktı" : held.why) : prio && ageH > Number(c.maxAgeHours) ? `haber ${Math.round(ageH)} saat önce yayınlanmış` : "";
   if (prio && over) push(`🔴 sondakika.com: ⭐ değerli haber (${val.valueReason}) → sınırsız, öne alındı: "${a.title.slice(0, 70)}" — ${over}`);
   const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: tok.item.sourceCount, auto: !manual, title: a.title, sondakika: url, ...(prio ? { priority: true } : {}) });
   anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
