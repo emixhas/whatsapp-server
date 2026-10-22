@@ -127,7 +127,39 @@ const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if 
   if (/^\{"autopublish"/.test(line)) { setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000); setTimeout(() => sendDigest("yayın bitti"), 4000); }
   if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
   if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500);
+  // Instagram geçici engeli ("too many actions"): bekleme başlayınca ve sıradaki videolar yüklenince WhatsApp'a (kullanıcı isteği, 22 Ekim)
+  if (/^📤 instagram: sınır doldu|^📤 instagram sırası: .*duraklatıldı/.test(line)) setTimeout(() => { try { igHoldNotify(); } catch { /* yok */ } }, 1500);
+  if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan\)$|^📤 instagram: hata .*\(sıradan, atlandı\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
   if (/^✖ üretim hata/.test(line) && digestPending) digestPending = null; }; // hata uyarısı ayrı gider; yarım özet kalmasın
+// Instagram geçici engeli (publish.py IG_THROTTLE_RE → publish_hold.json reason instagram_rate_limit): her yeni bekleme bir kez bildirilir
+// (data/ig_hold_notified.json {until}); sıradaki videolar yüklenince (--flush: post_pipeline her yayından sonra, panel bekleme bitince ve
+// saatte bir) tek mesaj: yüklenenler linkleriyle, atlananlar nedeniyle
+const IG_HOLD_NOTED = path.join(DATA, "ig_hold_notified.json");
+function igHoldInfo() { const h = (readJson(path.join(DATA, "publish_hold.json"), {}) || {}).instagram || {}; const until = Date.parse(h.until || ""); return until > Date.now() ? { until, reason: h.reason || "" } : null; }
+async function igHoldNotify() {
+  const h = igHoldInfo(); if (!h) return;
+  const noted = readJson(IG_HOLD_NOTED, {}) || {};
+  if (noted.until === h.until) return; // bu bekleme bildirildi
+  writeJson(IG_HOLD_NOTED, { until: h.until, at: Date.now() });
+  const q = (readJson(path.join(DATA, "publish_queue.json"), []) || []).filter((x) => x.platform === "instagram");
+  const hhmm = new Date(h.until).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+  const why = h.reason === "instagram_rate_limit" ? "Instagram çok sık paylaşım yapıldığı için geçici engel koydu (\"too many actions\")" : "Instagram günlük yükleme sınırı doldu";
+  const text = `⏳ *Instagram beklemede*: ${why}. Gönderim ${hhmm}'e kadar duraklatıldı; ${q.length ? `${q.length} video sırada` : "video sıraya alındı"}, süre dolunca kendiliğinden yüklenecek. Yüklenince haber vereceğim.`;
+  try { await wa.send(text); push(`💬 Instagram beklemesi WhatsApp'a bildirildi (${hhmm}'e kadar, ${q.length} video sırada)`); } catch { push("💬 Instagram beklemesi WhatsApp'a bildirilemedi (bağlı değil)"); }
+}
+let igFlushLines = [], igFlushTimer = null;
+function igFlushNote(line) {
+  igFlushLines.push(line);
+  clearTimeout(igFlushTimer);
+  igFlushTimer = setTimeout(async () => {
+    const ls = igFlushLines.splice(0); if (!ls.length) return;
+    const ok = ls.filter((l) => /^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 instagram: (tamam|zaten yayında) ?/, "").replace(/ \(sıradan\)$/, "").trim());
+    const bad = ls.filter((l) => !/^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 (instagram: hata )?/, "").replace(/ → instagram$/, "").replace(/ \(sıradan, atlandı\)$/, "").trim());
+    const head = ok.length ? `✅ *Instagram engeli kalktı*, sıradaki ${ok.length > 1 ? ok.length + " video" : "video"} yüklendi:` : "⚠️ *Instagram sırası*: sıradaki video yüklenemedi:";
+    const text = [head, ...ok, ...(bad.length ? [(ok.length ? "Yüklenemeyen:" : ""), ...bad].filter(Boolean) : [])].join("\n");
+    try { await wa.send(text); push(`💬 Instagram sıra sonucu WhatsApp'a bildirildi (${ok.length} yüklendi${bad.length ? `, ${bad.length} yüklenemedi` : ""})`); } catch { push("💬 Instagram sıra sonucu WhatsApp'a bildirilemedi (bağlı değil)"); }
+  }, 3000);
+}
 // Aşama bildirimleri: üretim, ses, render, yükleme/silme, yayın satırları WhatsApp'a kısa mesaj olarak gider (settings.whatsapp.notifyStages)
 const STAGE = /^(⚡ |🤖 |⏰ zamanlayıcı|✔ zamanlayıcı|kapaklar hazır|== .*üretim başladı|-- \d\/4|-- (görseller|kapaklar|yayın ve analiz)|== bitti|\[[^\]]+\] \d+ segment|senaryo hazır|\d+ haber Claude'a gidiyor|✔ üretim|✖ üretim|📤 |🌐 |  ! |!! |  kategori |  🧩|  🛠)/;
 let stageQueue = [], stageTimer = null;
@@ -1210,7 +1242,7 @@ function sondakikaUnqueue(q, why = "sistem durduruldu, sıradaki iş iptal edild
 const anlikBusyWith = (t, self = null) => valueBatch.some((x) => sameEvent(x.title, t)) || anlikQueue.some((q) => anlikTitles(q).some((x) => sameEvent(x, t)))
   || [...anlikInflight].some((x) => x !== self && x.firm && sameEvent(x.title, t))
   || (!!anlikNow && state.running && anlikNow.at === state.startedAt && anlikNow.titles.some((x) => sameEvent(x, t)));
-let sondakikaBusy = false, sondakikaLast = 0;
+let sondakikaBusy = false, sondakikaLast = 0, sondakikaFail = null; // {since, n, last}: art arda başarısız taramalar (log boğulmasın, 30 dk sonra sağlık uyarısı)
 // Tek haber: sayfa okunur (başlık + açıklama + gövde, yayın zamanı, sayfada video var mı), anlık video başlar, aynı olay işaretlenir.
 // Elle (panel "🎬 Video üret") günlük sınıra ve sıra sınırına takılmaz, sayaca girmez; aynı haber günde bir (force ile yine).
 // limit: sondakikaCheck'in tarama başına sınırı ({why, note}); held: değerli habere uygulanmayan sınır ya da elle durdurma;
@@ -1290,6 +1322,16 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held
   else fail(`video başlatılamadı (${r.error || "bilinmeyen hata"})`);
   return { ...r, title: a.title, valuable };
 }
+// Okunamayan site (22 Ekim: bütün adresler zaman aşımı): ilk hata ve elle kontrol tam satırla, sonrakiler kısa satırla (5 dk'da bir uzun
+// adres listesi logu boğmasın); 30 dakikadır okunamıyorsa sağlık uyarısı (6 saatte bir). Yeniden okununca tek satır.
+function sondakikaFailed(error, manual) {
+  const now = Date.now();
+  sondakikaFail = sondakikaFail ? { ...sondakikaFail, n: sondakikaFail.n + 1, last: error } : { since: now, n: 1, last: error };
+  const mins = Math.round((now - sondakikaFail.since) / 60000);
+  if (manual || sondakikaFail.n === 1) push(`🔴 sondakika.com kontrolü başarısız: ${error}`);
+  else push(`🔴 sondakika.com hâlâ okunamıyor (${sondakikaFail.n}. deneme, ${mins} dakikadır): ${String(error).replace(/; denenen adresler:.*$/, "").slice(0, 120)}`);
+  if (mins >= 30) healthAlert("sondakika-down", `sondakika.com ${mins} dakikadır okunamıyor (${sondakikaFail.n} deneme). Son hata: ${String(error).slice(0, 300)}\nSite yavaş ya da erişim engelli olabilir; tarama her ${sondakikaEvery()} dakikada sürüyor, site yanıt verince kendiliğinden devam eder.`, { everyH: 6 }).catch(() => {});
+}
 async function sondakikaCheck({ manual = false } = {}) {
   if (sondakikaBusy) return { ok: false, busy: true, error: "sondakika.com taraması zaten sürüyor." };
   sondakikaBusy = true; sondakikaLast = Date.now();
@@ -1299,7 +1341,8 @@ async function sondakikaCheck({ manual = false } = {}) {
     for (let i = 0; watchScanning && i < 60; i++) await new Promise((ok) => setTimeout(ok, 2000));
     const c = sondakikaCfg();
     const r = await pyJson(["scripts/sondakika_watch.py", "--check"], 150000);
-    if (!r?.ok) { push(`🔴 sondakika.com kontrolü başarısız: ${r?.error || "yanıt yok"}`); return r || { ok: false, error: "yanıt yok" }; }
+    if (!r?.ok) { sondakikaFailed(r?.error || "yanıt yok", manual); return r || { ok: false, error: "yanıt yok" }; }
+    if (sondakikaFail) { push(`🔴 sondakika.com yeniden okunuyor (${sondakikaFail.n} başarısız denemeden, ${Math.round((Date.now() - sondakikaFail.since) / 60000)} dakikadan sonra)`); sondakikaFail = null; }
     const via = r.method === "rss" ? "RSS" : "ana sayfa";
     if (r.first) {
       push(`🔴 sondakika.com takibi ${r.sourceChanged ? `yeni kaynakla (${via}) yeniden ` : ""}başladı: ${r.items.length} haber kaydedildi (${via}); bundan sonra düşen her yeni haber için anında son dakika videosu üretilecek`);
@@ -3617,6 +3660,7 @@ const STAGE_VOICE = [
   [/^📤 youtube: sınır doldu/, "YouTube günlük yükleme sınırı doldu. Video sıraya alındı, sınır açılınca otomatik yüklenecek."],
   [/^📤 youtube: hata/, "YouTube'a yüklenemedi."],
   [/^⭐ değerli haber/, "Değerli haber, YouTube'a da yükleniyor."],
+  [/^📤 instagram: sınır doldu/, "Instagram geçici engel koydu. Video sıraya alındı, bekleme bitince otomatik yüklenecek."],
   [/^📤 instagram: hata/, "Instagram'a yüklenemedi."],
   [/^📤 tiktok: sınır doldu/, "TikTok gelen kutusunda paylaşılmamış taslak birikti. Telefondan taslakları paylaşın ya da silin."],
   [/^📤 tiktok: hata/, "TikTok'a yüklenemedi."],
@@ -3785,14 +3829,18 @@ setInterval(async () => {
   }
   // günlük yükleme sınırı yüzünden sıraya alınan videolar: saatte bir, üretim yokken dene
   if (Date.now() - lastQueueLog > 2 * 3600000) { lastQueueLog = Date.now(); logQueues().catch(() => {}); } // TikTok/YouTube sırası 2 saatte bir loga
-  if (rest) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
-  if (anyConnected && !state.running && Date.now() - lastFlush > 60 * 60000 && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
+  // bekleme (publish_hold.json) son flush'tan sonra bittiyse saati ve dinlenmeyi beklemeden dene: sıradaki video engel kalkar kalkmaz
+  // yüklensin (yükleme hafif, model açmaz)
+  const holdEnded = Object.values(readJson(path.join(DATA, "publish_hold.json"), {}) || {}).some((h) => { const u = Date.parse(h?.until || ""); return u && u <= Date.now() && u > lastFlush; });
+  if (rest && !holdEnded) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
+  if (anyConnected && !state.running && (Date.now() - lastFlush > 60 * 60000 || holdEnded) && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
     lastFlush = Date.now();
     flushQ = true; // sıradaki videolar yükleniyor: güncelleme yeniden başlatmayı bekler
     const r = await py("publish.py", ["--flush"]).finally(() => { flushQ = false; });
     for (const l of String(r.stdout || "").trim().split("\n").slice(0, -1)) if (l.startsWith("📤")) push(l);
     if (r.json?.uploaded?.length) await py("analyze.py");
   }
+  if (rest) return; // günlük rapor (Claude) sistem uyanınca
   const now = new Date(); const day = now.toISOString().slice(0, 10);
   if (now.getHours() === Number(s.dailyReportHour) && lastReportDay !== day && !state.running) { lastReportDay = day; const r = await think("günlük rapor", "report"); announce(r.reply, { report: r.report, reportFile: r.reportFile }); push(`· günlük rapor hazır: ${r.reportFile}`); }
 }, 60000);

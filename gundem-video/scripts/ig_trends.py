@@ -65,6 +65,7 @@ DEFAULTS = {"enabled": True, "intervalMin": 60,
 MAX_ACCOUNTS = 20
 MAX_HASHTAGS = 10        # tarama başına
 HASHTAG_CAP = 30         # Instagram: 7 günde en çok 30 farklı hashtag
+DENIED_S = 7 * 86400     # hashtag araması izni yok (Meta onayı gerekli): bu kadar süre bir daha denenmez, kısa not yazılır
 WEEK = 7 * 86400
 PAUSE_S = 6 * 3600       # engel gelince girişsiz/çerezli yol bu kadar dinlenir
 RATE_PAUSE_S = 3600      # resmi API istek sınırında
@@ -149,6 +150,10 @@ def _hm(ts) -> str:
     return time.strftime("%H:%M", time.localtime(ts))
 
 
+def _dm(ts) -> str:
+    return time.strftime("%d.%m %H:%M", time.localtime(ts))
+
+
 def norm_account(x) -> str:
     s = str(x or "").strip()
     m = re.search(r"instagram\.com/([^/?#\s]+)", s, re.I)
@@ -187,7 +192,7 @@ def cfg() -> dict:
 def load_state() -> dict:
     s = load_json(STATE, {})
     s = s if isinstance(s, dict) else {}
-    for k in ("pause", "pauseWhy", "hashtagIds", "hashtagUses", "trendSeen"):
+    for k in ("pause", "pauseWhy", "hashtagIds", "hashtagUses", "trendSeen", "hashtagDenied"):
         if not isinstance(s.get(k), dict):
             s[k] = {}
     return s
@@ -596,6 +601,8 @@ def scan() -> dict:
             for acc in pending:
                 if acc not in results:
                     bad(acc, "taranmadı (duraklatıldı)")
+                elif results[acc].get("method") == "resmi" and not results[acc].get("ok"):  # resmi API bulamadı, girişsiz yol da kapalı
+                    results[acc]["error"] += "; girişsiz okuma engelli olduğu için herkese açık profilden de bakılamadı" + ("" if c["useCookies"] else " (çerezli okuma açılırsa okunur)")
         i, streak, last_err = 0, 0, ""
         while mode and i < len(pending):
             acc = pending[i]
@@ -656,6 +663,9 @@ def scan() -> dict:
             # neden: bağlantı yok (why) ya da bağlı hesapta resmi API şu an kullanılamıyor (istek sınırı, token, izin; uyarı yukarıda)
             notes.append(f"Hashtag'ler ({', '.join('#' + t for t in tags)}) taranmadı: "
                          + ("yalnız Facebook Girişi ile bağlı hesapta resmi API ile aranabilir." if why else "resmi API şu an kullanılamıyor (yukarıdaki uyarıya bakın)."))
+        elif float(state["hashtagDenied"].get("until") or 0) > now:
+            notes.append(f"Hashtag'ler taranmıyor: Meta uygulamasında \"Instagram Public Content Access\" onayı yok (App Review'dan istenir); "
+                         f"{_dm(state['hashtagDenied']['until'])} yeniden denenecek. Hesaplar taranıyor.")
         else:
             for t in tags:
                 if time.time() - t0 > BUDGET:
@@ -670,7 +680,9 @@ def scan() -> dict:
                 except GraphError as e:
                     k = g_kind(e)
                     if k == "perm":
-                        errors.append(f"Hashtag araması izni yok (Meta uygulamasında Instagram Public Content Access gerekli): {e}")
+                        state["hashtagDenied"] = {"until": now + DENIED_S, "at": now, "why": str(e)[:200]}
+                        notes.append("Hashtag araması izni yok: Meta uygulamasında \"Instagram Public Content Access\" özelliği App Review ile onaylanmalı; "
+                                     f"onaya kadar hashtag'ler 7 gün aranmayacak (hesaplar taranıyor). Meta'nın yanıtı: {str(e).split('. ')[0][:120]}")
                         break
                     if k == "rate":
                         pause(state, "official", now, f"istek sınırı: {e}", RATE_PAUSE_S)

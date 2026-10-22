@@ -74,12 +74,12 @@ def _decode(raw: bytes, cs: str = "") -> str:
         return raw.decode("utf-8", "replace")
 
 
-def _curl(url: str, err: Exception) -> str:
-    """Bot engelinde curl ile bir kez daha (mynet_watch.get gibi); ham baytlar _decode ile çözülür ki yanıt başlığındaki ve
-    XML bildirimindeki karakter kümesi (windows-1254 akış) bu yolda da okunsun. curl de düşerse ilk hata yükselir."""
+def _curl(url: str, err: Exception, timeout: int = 25) -> str:
+    """Bot engelinde (ve zaman aşımında, kısa süreyle) curl ile bir kez daha (mynet_watch.get gibi); ham baytlar _decode ile çözülür ki
+    yanıt başlığındaki ve XML bildirimindeki karakter kümesi (windows-1254 akış) bu yolda da okunsun. curl de düşerse ilk hata yükselir."""
     try:
-        out = subprocess.run(["curl", "-sSL", "--compressed", "-m", "25", "-A", UA, "-H", "Accept-Language: tr-TR,tr;q=0.9",
-                              "-w", "\n%{content_type}\n%{http_code}", url], capture_output=True, timeout=30)
+        out = subprocess.run(["curl", "-sSL", "--compressed", "-m", str(timeout), "-A", UA, "-H", "Accept-Language: tr-TR,tr;q=0.9",
+                              "-w", "\n%{content_type}\n%{http_code}", url], capture_output=True, timeout=timeout + 5)
     except Exception:
         raise err
     parts = out.stdout.rsplit(b"\n", 2)
@@ -90,8 +90,8 @@ def _curl(url: str, err: Exception) -> str:
 
 
 def fetch(url: str) -> str:
-    """Sayfa ya da akış metni. Bot engelinde (403/429/503, TLS) curl ile bir kez daha denenir;
-    404 ve zaman aşımında tekrar denenmez (5 dk'lık taramada boşuna beklenmesin)."""
+    """Sayfa ya da akış metni. Bot engelinde (403/429/503, TLS) curl ile bir kez daha denenir; zaman aşımında da curl ile kısa (12 sn)
+    bir deneme (Python istemcisi yanıtsız bırakılıyorsa); 404'te tekrar denenmez. Tarama bütçesi (BUDGET) toplamı sınırlar."""
     req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "tr-TR,tr;q=0.9",
                                                "Accept": "application/rss+xml,application/atom+xml,application/xml,text/xml,text/html;q=0.9,*/*;q=0.8"})
     try:
@@ -101,11 +101,11 @@ def fetch(url: str) -> str:
         if e.code not in (403, 429, 503):
             raise
         return _curl(url, e)
-    except (TimeoutError, socket.timeout):
-        raise
+    except (TimeoutError, socket.timeout) as e:
+        return _curl(url, e, timeout=12)  # site Python istemcisini yanıtsız bırakıyor olabilir (22 Ekim: bütün adresler zaman aşımı): curl ile kısa bir deneme
     except urllib.error.URLError as e:
         if isinstance(e.reason, (TimeoutError, socket.timeout)):
-            raise
+            return _curl(url, e, timeout=12)
         return _curl(url, e)
 
 
