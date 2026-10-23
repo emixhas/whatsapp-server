@@ -329,8 +329,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Dikey video (kullanıcı isteği: "dikey ise yeni dikey format, video tam gözüksün, üstünde etrafında bizim süslemeler, kanca olaylarımız"):
   tüm kaynaklar dikeyse (yükseklik > genişlik × 1,15) haber bölümleri de 1080x1920 kesilir ve `fullFrame` → `src/scenes/FullFrame.tsx`:
   video tüm kare (oranı uymayan bulanık zeminle), üst/alt karartma, giriş ışık süpürmesi, kategori renginde kenar çerçevesi + köşe süsleri,
-  üstte kategori + sıra ya da SON DAKİKA şeridi (sesli bölümde dalga çubuklu "ORİJİNAL SES" rozeti), altyazı (top 1090), numaralı başlık +
-  "VİDEO/GÖRÜNTÜ: kaynak" (top 1260), ilerleme çubuğu. Kanca her zaman `Hook.tsx` (flaş, sarsıntı, punch-in). WhatsApp "Kurgu hazır"
+  üstte kategori + sıra ya da SON DAKİKA şeridi (sesli bölümde dalga çubuklu "ORİJİNAL SES" rozeti), altyazı, numaralı başlık +
+  "VİDEO/GÖRÜNTÜ: kaynak", ilerleme çubuğu. YERLEŞİM (kullanıcı isteği, 23 Ekim, gönderdiği kareye göre: "ana başlık daha aşağı inmeli, video
+  daha büyük alanda oynamalı, altyazı daha küçülmeli, altyazılarımızla uyumlu olmalı"): görüntü üstten %72'ye kadar temiz (karartma 1300'den
+  sonra), altyazı 1330'da 56 px (eskiden 1090'da 76 px; en çok 2 satır, yukarı büyür), numaralı başlık 1500'de (sayı 100 px, başlık 68 px, en
+  çok 2 satır; eskiden 1260'ta 140/72 px), kaynak satırı 28 px, ilerleme çubuğu 1800'de; 1600-1780 Shorts arayüzü payı olarak boş kalır.
+  Benzer videonun çizim alanı buna göre y 200-1300 (prompts/benzer.md; eski planlar 220-1080'de çizildiğinden yine görünür). Sandbox'ta
+  sentetik sahne videosuyla Remotion still (66. ve 170. kare) gözle doğrulandı. Kanca her zaman `Hook.tsx` (flaş, sarsıntı, punch-in). WhatsApp "Kurgu hazır"
   mesajı dikey düzeni ve sesli saniyeyi yazar. Sandbox'ta sahte planla dikey + sesli montaj, pipeline (sessiz ses) ve render denendi:
   sesli bölümde orijinal ses −19 dB, diğerlerinde yok; altyazı konuşmayla eş zamanlı.
 - Sosyal medya linkinden haber (kullanıcı isteği: "Instagram'da viral olmuş haberin linkini göndersem videoyu çekip bizim stilimizde
@@ -1262,7 +1267,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   label (HİKÂYE, KISSADAN HİSSE, BİLGİ…), category, palet (3-5 renk), titles, hashtags, firstComment, cuts (neyin korunup neyin değiştiği),
   ekran_yazilari. SVG kuralları: tek satır, tek tırnak, viewBox 0 0 1080 1920, kökün her `<g>`'si sırayla beliren bir adım (4-10), tam sayfa
   zemin yok (kâğıt hazır; geniş alan fill-opacity 0.5-0.85), çizim kâğıda çarpma karışımıyla basılır (açık renk kâğıdı aydınlatamaz: ışık/
-  parıltı önce çizilen koyu zeminin üstüne), renkler paletten, ana çizim y 220-1080 (üstte kategori etiketi, altyazı y 1090, başlık y 1260;
+  parıltı önce çizilen koyu zeminin üstüne), renkler paletten, ana çizim y 200-1300 (23 Ekim yerleşimi; üstte kategori etiketi, altyazı y 1330, başlık y 1500;
   kancada y 520-820 büyük başlık → ana figür altında ya da yanlarında), kenarlardan 60 px içeride, yazı en çok 1-2 küçük etiket, sahne ≤ 8 KB.
   Plan: kanca yoksa ilk sahnenin ilk cümlesi; en çok 6 sahne; `fit_words` (istenen süre ya da 90 sn × 2,4 kelime; önce son sahne dışındaki en
   uzun sahnenin son cümlesi; son sahne başka sahne cümle kaybedebildiği sürece kısalmaz, sonra yalnız ortasından — ilk ve son iki cümlesi hiç:

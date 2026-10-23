@@ -61,10 +61,10 @@ işin çizimin kendisi.
   stroke-width 5-10, stroke-linecap='round' stroke-linejoin='round'. Figürler sade: yuvarlak kafa, basit gövde, nokta gözler; hayvanlar
   birkaç şekilden. Kalabalık gerekiyorsa aynı figürü transform='translate(…)' ile tekrarla ya da <defs> içinde id verip
   <use href='#ad'/> ile çoğalt.
-- Ana çizim karenin y 220-1080 aralığında olsun: üstte (y 110-200) kategori etiketi, altta y 1090'dan itibaren altyazı, y 1260'tan
-  itibaren ekran başlığı ve koyu geçiş var; orayı sade zemin (yer, çimen, masa, boş kâğıt) bırak. Kancada y 520-820 arasında büyük
-  başlık durur: kancanın ana figürü başlığın altında (y 820-1080) ya da iki yanında olsun. Kenarlardan 60 px içeride kal (kamera
-  yavaşça yaklaşır, kenarlar biraz kırpılır).
+- Ana çizim karenin y 200-1300 aralığında olsun ve bu alanı DOLDURSUN (küçük çizim ortada kaybolur): üstte (y 100-200) kategori etiketi,
+  y 1300'den sonra koyu geçiş, y 1330'dan itibaren altyazı, y 1500'den itibaren ekran başlığı var; y 1300 altını sade zemin (yer, çimen,
+  masa, boş kâğıt) bırak. Kancada y 520-820 arasında büyük başlık durur: kancanın ana figürü başlığın altında (y 820-1300) ya da iki
+  yanında olsun. Kenarlardan 60 px içeride kal (kamera yavaşça yaklaşır, kenarlar biraz kırpılır).
 - Yazı yok; gerekirse en çok 1-2 küçük etiket (<text>, 1-3 kelime, font-size en az 44). Başlık ve altyazı videoda ayrıca görünür.
 - YASAK: <image>, <script>, <foreignObject>, <style>, <a>, animasyon öğeleri (<animate>, <set>), on… öznitelikleri, dış adres (http,
   data:), CSS @import, class ile stil (stili öznitelikle yaz: fill='…' stroke='…'). İç referans serbest: fill='url(#ad)', href='#ad'.

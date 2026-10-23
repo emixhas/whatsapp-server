@@ -10,6 +10,10 @@ import { theme } from "../theme";
  * ya da SON DAKİKA şeridi, kenarlarda kategori renginde çerçeve ve köşe süsleri, altta altyazı + numaralı başlık + kaynak + ilerleme.
  * `sound`: orijinal sesli bölüm (kullanıcı isteği: "video kaç saniye ise sussun, video izlensin, sonra konuşmaya devam edilsin") —
  * videonun kendi sesi çalar, seslendirme yoktur, üstte "ORİJİNAL SES" rozeti, altyazı videodaki konuşmadan.
+ * Yerleşim (kullanıcı isteği, 23 Ekim: "ana başlık daha aşağı inmeli, video daha büyük alanda oynamalı, altyazı daha küçülmeli,
+ * altyazılarımızla uyumlu olmalı"): görüntü karenin üstten %72'sine kadar temiz kalır (karartma 1300'den sonra başlar), altyazı 1330-1480
+ * arasında daha küçük (56 px, en çok 2 satır, yukarı büyür), numaralı başlık 1500'de (sayı 100 px, başlık 68 px), kaynak satırı onun
+ * altında, ilerleme çubuğu 1800'de. Benzer videonun çizim alanı (prompts/benzer.md) bu yerleşime göre y 200-1300.
  */
 type Props = {
   categoryLabel?: string; index: number; total: number; title: string; source?: string; category?: string; breaking?: boolean;
@@ -47,7 +51,7 @@ export const FullFrame = ({ categoryLabel, index, total, title, source, category
         )
       ) : null}
       {/* okunurluk: üst ve alt karartma, video ortada temiz kalır */}
-      <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(5,8,16,.82) 0%, rgba(5,8,16,0) 22%, rgba(5,8,16,0) 52%, rgba(5,8,16,.9) 84%)" }} />
+      <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(5,8,16,.78) 0%, rgba(5,8,16,0) 15%, rgba(5,8,16,0) 64%, rgba(5,8,16,.86) 76%, rgba(5,8,16,.94) 100%)" }} />
       {breaking ? <AbsoluteFill style={{ background: theme.red, opacity: flash }} /> : null}
       {/* giriş ışık süpürmesi */}
       <AbsoluteFill style={{ background: `linear-gradient(105deg, transparent ${sweep - 18}%, rgba(255,255,255,.18) ${sweep}%, transparent ${sweep + 18}%)` }} />
@@ -81,24 +85,25 @@ export const FullFrame = ({ categoryLabel, index, total, title, source, category
         {sound ? null : <div style={{ fontSize: 40, fontWeight: 800, ...stroke }}>{index + 1} / {total}</div>}
       </div>
 
-      {/* yanan altyazı: seslendirme ya da videodaki konuşma; tek satır 1090'da, iki satır başlığa (1260) binmesin diye yukarı (videoya) doğru büyür */}
-      <Captions words={words} top={1090} limit={1260 - 14} size={76} maxHeight={1260 - 14 - 1010} />
+      {/* yanan altyazı: seslendirme ya da videodaki konuşma; görüntünün altındaki koyu şeritte, daha küçük (56 px); tek satır 1330'da, iki
+          satır başlığa (1500) binmesin diye yukarı doğru büyür (limit) */}
+      <Captions words={words} top={1330} limit={1500 - 16} size={56} maxHeight={1500 - 16 - 1300} />
 
-      {/* başlık bloğu: altta, Shorts arayüzünün üstünde */}
-      <div style={{ position: "absolute", top: 1260, left: 70, right: 70, transform: `translateX(${interpolate(slide, [0, 1], [120, 0])}px)`, opacity: slide }}>
+      {/* başlık bloğu: aşağıda (1500), Shorts arayüzünün üstünde; sayı ve başlık daha ölçülü, en çok 2 satır */}
+      <div style={{ position: "absolute", top: 1500, left: 70, right: 70, transform: `translateX(${interpolate(slide, [0, 1], [120, 0])}px)`, opacity: slide }}>
         {sound ? (
-          title ? <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 940, base: 64, min: 40, maxLines: 2, upper: false }), fontWeight: 900, lineHeight: 1.08, ...stroke }}>{title}</div> : null
+          title ? <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 940, base: 60, min: 38, maxLines: 2, upper: false }), fontWeight: 900, lineHeight: 1.08, ...stroke }}>{title}</div> : null
         ) : (
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 26 }}>
-            <div style={{ fontSize: 140, fontWeight: 900, color: st.accent, lineHeight: 0.85, ...stroke }}>{num}</div>
-            <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 940 - 26 - textWidth(num, 140), base: breaking ? 80 : 72, min: 44, maxLines: 3, upper: false }),
-              fontWeight: 900, lineHeight: 1.06, paddingBottom: 6, overflowWrap: "normal", wordBreak: "keep-all", ...stroke }}>{title}</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 22 }}>
+            <div style={{ fontSize: 100, fontWeight: 900, color: st.accent, lineHeight: 0.85, ...stroke }}>{num}</div>
+            <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 940 - 22 - textWidth(num, 100), base: breaking ? 72 : 68, min: 40, maxLines: 2, upper: false }),
+              fontWeight: 900, lineHeight: 1.06, paddingBottom: 4, overflowWrap: "normal", wordBreak: "keep-all", ...stroke }}>{title}</div>
           </div>
         )}
-        {source ? <div style={{ marginTop: 16, fontSize: 30, fontWeight: 700, color: "rgba(255,255,255,.85)", ...stroke, WebkitTextStroke: "2px #000" }}>{sound ? "GÖRÜNTÜ" : "VİDEO"}: {source}</div> : null}
+        {source ? <div style={{ marginTop: 12, fontSize: 28, fontWeight: 700, color: "rgba(255,255,255,.85)", ...stroke, WebkitTextStroke: "2px #000" }}>{sound ? "GÖRÜNTÜ" : "VİDEO"}: {source}</div> : null}
       </div>
 
-      <div style={{ position: "absolute", bottom: 130, left: 70, right: 70, height: 10, background: "rgba(255,255,255,.18)", borderRadius: 5 }}>
+      <div style={{ position: "absolute", bottom: 110, left: 70, right: 70, height: 10, background: "rgba(255,255,255,.18)", borderRadius: 5 }}>
         <div style={{ width: `${progress * 100}%`, height: "100%", background: accent, borderRadius: 5 }} />
       </div>
     </AbsoluteFill>
