@@ -8,7 +8,10 @@ milli takım ve milli sporcu başarısı.
 Karar iki kaynaktan: anahtar kelime grupları (aşağıda, settings.youtubePolicy.extraKeywords ile genişletilir)
 ve senaryoyu yazan modelin verdiği "importance" (1-5): 4-5 her zaman değerli, 1-2 anahtar kelimeyi geçersiz kılar.
 
-  python3 scripts/news_value.py "Asgari ücrete yüzde 30 zam"     # {"valuable": true, "score": 3, ...}
+  python3 scripts/news_value.py "Asgari ücrete yüzde 30 zam"     # {"valuable": true, "score": 3, "strong": true, ...}
+
+Çok değerli (strong): değerlilerin içinde ülkenin tamamını ilgilendiren ya da büyük olay olanlar (aşağıda NATIONAL/STRONG);
+sondakika.com yalnız bunları üretir (settings.sondakika.strictValuable). YouTube kuralı ve diğer kaynaklar "valuable" ile sürer.
 """
 import json
 import re
@@ -24,7 +27,8 @@ GROUPS = [
     ("can kaybı", 3, [r"öldü", r"ölü\b", r"ölüm", r"hayatını kaybet", r"yaşamını yitir", r"can kaybı", r"cansız",
                       r"şehit", r"vefat", r"cinayet", r"öldürül", r"cenaze"]),
     ("kaza/afet", 3, [r"kaza(?:sı|da|ya|nın|lar\w*)?\b", r"deprem", r"sel(?:de|deki|den|e|i)?\b", r"yangın", r"patlama",
-                      r"çöktü", r"çökme", r"heyelan", r"çığ\b", r"fırtına", r"hortum", r"yaralı", r"enkaz"]),
+                      r"çöktü", r"çökme", r"heyelan", r"çığ\b", r"fırtına", r"hortum", r"yaralı", r"enkaz", r"göçük", r"mahsur kal", r"maden\w*[^.!?]{0,30}(?:kaza|patlama|mahsur|göçük)",
+                      r"pistten çık", r"acil iniş", r"raydan çık", r"(?:gemi|tekne|feribot)\w*[^.!?]{0,20}(?:battı|alabora|karaya otur)"]),
     ("emekli/memur maaşı", 3, [r"emekli", r"memur", r"maaş", r"kök maaş", r"refah payı", r"toplu sözleşme",
                                r"enflasyon fark", r"bayram ikramiye", r"ikramiye", r"promosyon", r"bağ-?kur", r"sgk",
                                r"dul ve yetim", r"asgari ücret", r"asgari geçim"]),
@@ -44,7 +48,7 @@ GROUPS = [
                           r"istismar", r"kaçırıldı", r"kaçırılan", r"kurşunla", r"silahla vur", r"pompalı", r"av tüfeğiyle",
                           r"tutuklandı.{0,40}(?:öldür|cinayet)", r"gözaltı.{0,40}(?:öldür|cinayet)", r"cinayet"]),
     # kullanıcı kararı: halkı ilgilendiren hiçbir haber kaçmasın — aşağıdaki gruplar da tek başına değerli
-    ("kayıp ve arama", 3, [r"kayıp (?:çocuk|kız|kadın|genç|öğrenci|adam|dağcı|balıkçı|pilot|kişi)", r"kayıp olarak aran",
+    ("kayıp ve arama", 3, [r"kayıp (?:\d+ )?(?:çocuk|kız|kadın|genç|öğrenci|adam|dağcı|balıkçı|pilot|kişi|işçi|madenci)", r"kayıp olarak aran",
                            r"kayıptan haber", r"kayıplara karıştı", r"izine rastlan", r"arama kurtarma", r"arama çalışma",
                            r"cesedi bulun", r"cansız bedeni"]),
     ("kesinti ve ulaşım", 3, [r"elektrik kesinti", r"su kesinti", r"doğal ?gaz kesinti", r"kesinti yapılacak", r"elektrikler kesil",
@@ -154,6 +158,90 @@ def top_team_hit(text: str):
     return None
 
 
+# ÇOK DEĞERLİ (kullanıcı kararı, 23 Ekim: sondakika.com'dan "sadece çok değerli, kıymetli haberleri çekelim"; art arda üretilen sıradan
+# değerli haberler Instagram'ın "too many actions" engeline takılıyordu). Değerli haberlerin içinde ülkenin tamamını ilgilendiren ya da
+# büyük olay olanlar: 1) NATIONAL grubundan vuruş (maaş/asgari ücret, tatil/izin, kamu duyurusu, büyük siyaset, milli başarı);
+# 2) STRONG kalıbı (ulusal zam/vergi/faiz, terör/bomba/şehit/patlama, afet ölçeği sözleri, kırmızı/turuncu kod, orman yangını, salgın/
+# toplatma, sosyal yardım/KYK/TOKİ, af/infaz paketi, savaş/ateşkes/NATO, uçuş iptali/grev, yürürlüğe giren düzenleme…); 3) ölçek: ≥3 ölü/
+# yaralı/kişi ya da ≥5,0 büyüklüğünde deprem; 4) iki farklı aileden vuruş (olay ailesi: can kaybı, kaza/afet, acı olay, suç ve vahşet,
+# kayıp ve arama, güvenlik tek aile — "silahlı saldırı: 1 yaralı" yerel olay —; uyarı ailesi: hava ve doğa uyarısı + resmi uyarı + eğitim
+# duyurusu + yeni düzenleme — bakanlık/vali duyurusu —; fiyat ailesi: zam/fiyat/vergi + kesinti ve ulaşım + iş ve geçim — "elektrik"
+# iki grupta da geçer —; adli olay sayılmaz; magazin ve ilk 5 takım ancak
+# başka bir aileyle: "ünlü oyuncu kazada öldü" çok değerli, "ünlü oyuncu nişanlandı" değil). Tek ölümlü yerel kaza, cinayet, yerel
+# yağış uyarısı, elektrik kesintisi, magazin, transfer: değerli ama ÇOK değerli değil. Modelin önemi 5 → çok değerli; 1-2 → değil.
+NATIONAL = {"emekli/memur maaşı", "tatil/izin", "kamu duyurusu", "büyük siyaset", "milli başarı"}
+FAMILY = {"can kaybı": "olay", "kaza/afet": "olay", "acı olay": "olay", "suç ve vahşet": "olay", "kayıp ve arama": "olay", "güvenlik": "olay",
+          "hava ve doğa uyarısı": "uyarı", "resmi uyarı": "uyarı", "eğitim duyurusu": "uyarı", "yeni düzenleme": "uyarı",
+          "zam/fiyat/vergi": "fiyat", "kesinti ve ulaşım": "fiyat", "iş ve geçim": "fiyat"}
+NO_FAMILY = {"adli olay", "magazin/spor"}          # ikili sayımda yok
+WEAK_FAMILY = {"magazin ve ünlüler", "ilk 5 takım"}  # yalnız başka bir aileyle birlikte
+STRONG = [
+    # ulusal fiyat/zam/vergi/faiz
+    r"zam(?:m[ıi]|landı| geldi| yolda| kararı| oran\w*| müjde)", r"asgari ücret", r"(?:akaryakıt|benzin|motorin|lpg|doğal ?gaz|elektri[kğ]|köprü)\w*[^.!?]{0,30}(?:zam|indirim|fiyat|tarife)",
+    r"faiz kararı", r"faiz(?:i|leri)? (?:artır|indir|sabit)", r"enflasyon (?:rakam|veri|açıklandı|oran)", r"vergi (?:zam|artış|aff|düzenleme|dilim)", r"ötv", r"kdv",
+    r"kira (?:artış|zam)", r"köprü ve otoyol", r"tüik", r"merkez bankası",
+    # terör ve büyük güvenlik olayı
+    r"terör", r"bomba", r"rehine", r"şehit", r"patlama", r"darbe", r"suikast", r"saldırı\w*[^.!?]{0,30}(?:\d{2,}|çok sayıda|onlarca)",
+    # afet ölçeği
+    r"çok sayıda", r"onlarca", r"yüzlerce", r"binlerce", r"facia", r"katliam", r"felaket", r"ölü sayısı", r"can kayb\w*[^.!?]{0,20}(?:art|yüksel)",
+    r"tsunami", r"kırmızı kod", r"turuncu kod", r"orman yangın", r"heyelan", r"çığ", r"sel felaket", r"sel(?:de|ler)?[^.!?]{0,30}(?:öl|kayıp|mahsur|sürükle)", r"hortum",
+    r"(?:bina|apartman|köprü|tünel|maden)\w*[^.!?]{0,20}çök", r"göçük", r"maden\w*[^.!?]{0,30}(?:kaza|patlama|mahsur|göçük)",
+    r"(?:uça[kğ]|helikopter|tren|gemi|feribot|otobüs)\w*[^.!?]{0,30}(?:düştü|kaza|devrildi|battı|çarpıştı|raydan|pistten|acil iniş)",
+    # sağlık ve gıda ulusal
+    r"salgın", r"toplatıl", r"toplatma", r"piyasadan çekil", r"geri çağır", r"zehirlen\w*[^.!?]{0,30}(?:\d{2,}|çok sayıda|onlarca|yüzlerce)",
+    r"kuş gribi", r"kızamık", r"kolera", r"şap hastalı", r"zorunlu aşı",
+    # para ve destek ulusal
+    r"sosyal yardım", r"kira yardım", r"doğum yardım", r"evde bakım", r"engelli (?:maaş|aylı)", r"yaşlı aylı", r"65 yaş", r"işsizlik (?:maaş|ödene)",
+    r"kyk", r"öğrenim kredi", r"toki", r"sosyal konut", r"kredi kart", r"taksit sınır", r"konut kredi", r"ihtiyaç kredi",
+    r"(?:dolar|euro|avro|gram altın|altın|ons)\w*[^.!?]{0,40}(?:rekor|zirve|tarihi)", r"borsa\w*[^.!?]{0,40}(?:çöktü|çöküş|sert düş|devre kesici|rekor)",
+    # destek ve af
+    r"af yasa", r"genel af", r"infaz (?:düzenleme|paketi|indirim|yasası)", r"yargı paketi", r"vergi aff", r"prim aff", r"imar aff", r"cezası? aff",
+    r"kosgeb", r"hibe", r"faizsiz kredi", r"devlet desteği", r"borç(?:lar)? silin", r"yapılandırma",
+    # dünya ve savaş (Türkiye'yi ilgilendiren)
+    r"savaş(?!çı)", r"ateşkes", r"nükleer", r"füze", r"işgal", r"nato", r"türkiye'?ye (?:tehdit|yaptırım|saldırı)", r"sınır ötesi", r"büyükelçi\w*[^.!?]{0,20}(?:çağrıldı|sınır dışı)",
+    # ulaşım ve kesinti ulusal
+    r"uçuş\w* iptal", r"seferler durdu", r"havalimanı kapan", r"grev", r"marmaray", r"metro seferleri", r"köprü geçiş", r"otoyol ücret", r"toplu taşıma\w*[^.!?]{0,20}(?:zam|ücret|ücretsiz)",
+    r"(?:elektrik|su|doğal ?gaz) kesinti\w*[^.!?]{0,40}(?:\d{2,} (?:il|ilçe)|il genelinde|türkiye)", r"\d{2,} ilde", r"türkiye genelinde", r"yurt genelinde", r"81 il",
+    # yeni düzenleme ulusal
+    r"yürürlüğe gir", r"meclis'?ten geçti", r"yasalaştı", r"resmi gazete", r"zorunlu (?:oldu|hale|olacak)", r"ehliyet", r"pasaport", r"kimlik kart",
+    r"trafik ceza", r"kanun teklifi", r"kararname", r"genelge",
+    # eğitim ulusal
+    r"okullar (?:ne zaman|açıl|tatil|kapat)", r"öğretmen atama", r"sınav (?:sonuç|tarih|ertelen|iptal)", r"yks", r"lgs", r"kpss",
+]
+_STRONG_RE = [re.compile(r"(?<![\wçğıöşü])" + p) for p in STRONG]
+_COUNT_RE = re.compile(r"(?<![\w.,])(\d{1,4})(?: bin)? (?:kişi|ölü|yaralı|can|işçi|öğrenci|asker|polis|vatandaş|çocuk|madenci|turist|yolcu|kişinin|kişiyi|kişiye)")
+_MAG_RE = re.compile(r"(\d(?:[.,]\d)?)\s*(?:büyüklüğ|şiddet)")
+
+
+def strong_hits(t: str, hits: list) -> list:
+    """Çok değerli nedenleri (boş liste: değil). t küçük harfli metin, hits score()'un grupları."""
+    fams = {}
+    for h in hits:
+        if h in NO_FAMILY or h.startswith("anahtar:"):
+            continue
+        key = "ilk 5 takım" if h.startswith("ilk 5 takım") else h
+        fams.setdefault(FAMILY.get(key, key), key)
+    why = [h for h in hits if h in NATIONAL]
+    m = next((p for p in _STRONG_RE if p.search(t)), None)
+    if m:
+        why.append(f"ulusal ölçek: {m.search(t).group(0)[:30]}")
+    for c in _COUNT_RE.finditer(t):
+        n = int(c.group(1)) * (1000 if " bin" in c.group(0) else 1)
+        if n >= 3:
+            why.append(f"ölçek: {c.group(0)}")
+            break
+    for c in _MAG_RE.finditer(t):
+        try:
+            if float(c.group(1).replace(",", ".")) >= 5.0:
+                why.append(f"deprem {c.group(1)}")
+                break
+        except ValueError:
+            pass
+    if len(fams) >= 2 and any(k not in WEAK_FAMILY for k in fams.values()):
+        why.append("birden çok değer grubu: " + " + ".join(fams.values()))
+    return why
+
+
 def score(text: str, extra_keywords=None, importance=None) -> dict:
     t = tr_lower(text or "")
     hits = []
@@ -185,7 +273,13 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     reason = ", ".join(hits) or (f"önem {imp}/5" if imp else "sıradan haber")
     if imp is not None and hits:
         reason += f" · önem {imp}/5"
-    return {"valuable": valuable, "score": total, "importance": imp, "reasons": hits, "reason": reason}
+    # çok değerli: değerli + (ulusal grup, ulusal kalıp, ölçek ya da iki aile); modelin önemi 5 → çok değerli, 1-2 → değil
+    sw = strong_hits(t, hits) if valuable else []
+    strong = valuable and (imp == 5 or (bool(sw) and (imp is None or imp >= 3)))
+    if valuable and imp == 5 and not sw:
+        sw = [f"önem {imp}/5"]
+    return {"valuable": valuable, "score": total, "importance": imp, "reasons": hits, "reason": reason,
+            "strong": strong, "strongReason": ", ".join(sw) if strong else ("değerli ama çok değerli değil" if valuable else "")}
 
 
 if __name__ == "__main__":

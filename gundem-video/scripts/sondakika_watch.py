@@ -392,6 +392,7 @@ def annotate(items: list) -> list:
         srcs = sorted(set(source_count(x["title"], bst) if x["title"] else []) | {"Sondakika.com"})
         v = score(f"{x['title']} {(x.get('description') or '')[:200]}", kw)
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
+        x["strong"], x["strongReason"] = v["strong"], v["strongReason"]  # çok değerli (news_value; sondakika strictValuable)
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
         m = match_produced(x["title"], x.get("description") or "", x.get("url") or "") if x["title"] else None
@@ -539,6 +540,7 @@ def article(url: str) -> dict:
     a["published"], a["video"] = _published(page), _video(page, url)
     v = value(a)
     a["valuable"], a["valueReason"] = v["valuable"], v["reason"]
+    a["strong"], a["strongReason"] = v["strong"], v["strongReason"]
     return mw.with_dup(a)
 
 
