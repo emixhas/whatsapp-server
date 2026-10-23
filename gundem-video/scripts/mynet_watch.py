@@ -136,6 +136,7 @@ def headlines(page: str, base: str, count: int) -> list:
         srcs = sorted(set(source_count(x["title"])) | {"Mynet"})
         v = score(x["title"], kw)
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
+        x["strong"], x["strongReason"] = bool(v.get("strong")), v.get("strongReason") or ""  # ⭐⭐ çok değerli (panel: yalnız çok değerli manşetler)
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
         # bu haberin videosu üretildi mi (üretilen haber hafızası; manşette özet yok: başlık + adres). Panel burada yalnız adres

@@ -59,6 +59,18 @@ def seen_before(item_words, used):
     return False
 
 
+# yumuşak haber kalıbı (y=1; değerli haberde bakılmaz): hayvan/doğa görüntüsü, ilginç/sevimli an, kutlama/şenlik, tarif, burç, güzellik, turizm
+# manzarası. Kaza/suç/afet bağlamı news_value ile zaten değerlidir; "görüntülendi/kameraya yansıdı" tek başına yumuşak sayılmaz
+SOFT = re.compile(
+    r"\b(?:yunus(?:lar)?|balina|fok|kaplumbağa|leylek|flamingo|pelikan|martı|kuğu|kelebek|arı(?:lar)?|kedi(?:si|ler|cik)?|köpe(?:k|ği|kler)|yavru|"
+    r"sincap|tilki|geyik|ceylan|ayı(?:lar)?|kurt(?:lar)?|kartal|şahin|baykuş|papağan|at(?:lar)?ı?\b|eşek|koyun|keçi|inek|kuzu|tavuk|horoz|ördek|kaz(?:lar)?)\b"
+    r".{0,60}\b(?:görüntülendi|görüldü|göründü|kameraya|kameralara|objektif|şaşırttı|renkli|sevimli|gülümsetti|keyif|dans|oyun|oynadı|sürü halinde|sürüsü|cirit)|"
+    r"\b(?:renkli görüntü|sevimli|gülümseten|ilginç (?:an|görüntü|olay)|şaşırtan görüntü|hayran bırak|büyüledi|mest etti|görsel şölen|güneşin batışı|gün batımı|"
+    r"gün doğumu|manzara(?:sı|yı)?|kartpostal|doğa harikası|lavanta|lale|çiçek açtı|kiraz çiçeği|festival|şenlik|şenliği|konser(?:i|de)?|yarışması|güzellik yarışması|"
+    r"burç(?:lar|unuz)?|günlük burç|yemek tarifi|tarifi|nasıl yapılır|moda haftası|defile|tatilci(?:ler)?|turist(?:ler)?\b.{0,30}\b(?:akın|doldu|keyf)|plaj(?:lar)?\b.{0,30}\bdoldu)",
+    re.I)
+
+
 def main():
     src, dst, n = sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 50
     need = int(os.environ.get("HABER", "4"))
@@ -144,7 +156,11 @@ def main():
             except Exception:
                 valuable = False
         cl["m"] = 1 if (on_front or valuable or cl["p"] == 3) and not cl.get("old") else 0
-    chosen.sort(key=lambda cl: (cl["p"], cl["m"], bool(cl.get("trend")), len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
+        # yumuşak haber (kullanıcı isteği, 23 Ekim: "gereksiz haberleri yapmayalım, denizde yunus balıkları göründü istemiyorum"): değerli
+        # olmayan ve hayvan/doğa görüntüsü, ilginç an, kutlama/şenlik, tarif/burç kalıbındaki haber y=1 → sıralamada en sona, istemde
+        # yalnız değerli haber yetmezse en çok bir tane (senaryo.md)
+        cl["y"] = 1 if (not valuable and cl["p"] < 3 and SOFT.search(f"{t} {(cl['item'].get('summary') or '')[:200]}")) else 0
+    chosen.sort(key=lambda cl: (not cl["y"], cl["p"], cl["m"], bool(cl.get("trend")), len(cl["sources"]), cl["item"].get("published") or ""), reverse=True)
     chosen = chosen[:n]
     slim = []
     for cl in chosen:
@@ -156,13 +172,16 @@ def main():
             row["e"] = 1
         if cl.get("trend"):
             row["t"], row["tr"] = 1, cl["trend"]
+        if cl.get("y"):
+            row["y"] = 1
         slim.append(row)
     counts = {k: sum(1 for r in slim if r["p"] == k) for k in (3, 2, 1)}
     multi = sum(1 for r in slim if r["c"] > 1)
     json.dump({"aciklama": "p=önem (3 sert haber, 2 önemli karar, 1 diğer) c=aynı olayı veren kaynak sayısı (yüksek c = en çok konuşulan) "
                "k=kaynak b=başlık o=özet s=saat(UTC) e=1 önceki videoda kullanılmış (yalnızca yeni haber yoksa). "
                "t=1 Türkiye'de şu an Google'da çok aranan konu (tr=aranan ifade). m=1 manşetlik haber (sitelerin manşetinde/son dakikasında "
-               "ya da halk için değerli; kanca bunlardan seçilir)." + note, "haberler": slim},
+               "ya da halk için değerli; kanca bunlardan seçilir). y=1 yumuşak haber (hayvan/doğa görüntüsü, ilginç an, kutlama; yalnız değerli "
+               "haber yetmezse en çok bir tane)." + note, "haberler": slim},
               open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print(f"{len(slim)} haber Claude'a gidiyor (önem 3: {counts[3]}, önem 2: {counts[2]}, önem 1: {counts[1]}; çok kaynaklı: {multi}; "
           f"önceki videolardan elenen: {len(old)}; toplam {len(items)})")

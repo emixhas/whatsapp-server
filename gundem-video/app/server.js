@@ -73,7 +73,7 @@ const defaults = { autopublish: { youtube: false, instagram: false, tiktok: fals
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 }, muted: false,
-  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true, digest: true }, scheduleHours: 5 };
+  whatsapp: { enabled: true, owner: "905321308827", notifyOnVideo: true, sendVideoFile: true, requireApproval: true, autoStart: true, notifyStages: true, digest: true, onlyUserVideos: true }, scheduleHours: 5 };
 const deepMerge = (a, b) => { const o = { ...a }; for (const [k, v] of Object.entries(b || {})) o[k] = v && typeof v === "object" && !Array.isArray(v) ? deepMerge(a[k] || {}, v) : v; return o; };
 const settings = () => deepMerge(defaults, readJson(SETTINGS, {}));
 const patchSettings = (patch) => { const s = deepMerge(settings(), patch); writeJson(SETTINGS, s); return s; };
@@ -176,7 +176,7 @@ async function sendDigest(why) {
   if (vqCancelledVideos.has(d.mp4)) { digestPending = null; push(`⏹ ${d.mp4}: video kuyruğundan iptal edilen işin videosu; WhatsApp'a bildirilmedi`); return; }
   digestPending = null;
   const summary = state.log.slice(Math.max(0, state.log.length - 200)).filter((l) => /^📤 /.test(l) && !/tekrar denenecek/.test(l));
-  try { const r = await wa.notifyVideo(d.mp4, { ask: true, summary }); if (!r.ok) push(`💬 WhatsApp özeti gönderilemedi: ${r.error}`); } catch (e) { push(`💬 WhatsApp özeti gönderilemedi: ${e.message}`); }
+  try { const r = await wa.notifyVideo(d.mp4, { ask: true, summary }); if (!r.ok && !r.skipped) push(`💬 WhatsApp özeti gönderilemedi: ${r.error}`); } catch (e) { push(`💬 WhatsApp özeti gönderilemedi: ${e.message}`); }
   if (why !== "yayın bitti") push(`💬 WhatsApp özeti ${why} gönderildi`);
 }
 function notifyStage(line) {
@@ -1044,7 +1044,14 @@ const MYNET_DONE = path.join(DATA, "mynet_produced.json");
 // Mynet ve son dakika siteleri AYNI aralıkla, AYNI taramada kontrol edilir (settings.watchIntervalMin, varsayılan 10 dk):
 // aynı anda düşen değerli haberler tek partide toplanıp birleşik videoya girer (queueValuable).
 const watchMin = () => Math.min(60, Math.max(3, Number(settings().watchIntervalMin) || 5)); // değerli haber kaçmasın: 5 dk
-const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 15, duration: 30, ...(settings().mynet || {}), intervalMin: watchMin() });
+const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 15, duration: 30, onlyValuable: true, strictValuable: true, ...(settings().mynet || {}), intervalMin: watchMin() });
+// Otomatik haber seviyesi (kullanıcı isteği, 23 Ekim: "gereksiz haberleri yapmayalım, denizde yunus balıkları göründü istemiyorum"; sondakika.com'daki
+// onlyValuable/strictValuable kuralının aynısı Mynet manşeti ve son dakika siteleri için; varsayılan ⭐⭐ çok değerli): "all" her yeni haber,
+// "valuable" news_value değerli, "strong" yalnız çok değerli (ulusal grup/kalıp, ölçek ya da iki değer ailesi). Elle üretim (kart düğmesi) hep geçer
+const newsLevel = (c) => (c?.onlyValuable === false ? "all" : c?.strictValuable === false ? "valuable" : "strong");
+const levelName = (lvl) => (lvl === "strong" ? "⭐⭐ çok değerli" : "⭐ değerli");
+const passesLevel = (lvl, it) => lvl === "all" || (lvl === "strong" ? !!it?.strong : !!it?.valuable);
+const levelSkipWhy = (it) => (it?.valuable ? `değerli ama çok değerli değil (${it.valueReason || ""})` : "sıradan haber");
 const today = () => new Date().toISOString().slice(0, 10);
 const mynetDone = () => readJson(MYNET_DONE, {});
 const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
@@ -1058,8 +1065,10 @@ async function mynetProduce(url, { manual = false, item = null } = {}) {
   // listede yalnız adres eşleşmesi atlanır: manşette özet yok, genel başlık ("Konya'da yolcu otobüsü devrildi") aynı ildeki başka olayı da
   // tutar; başlık eşleşmesine sayfa okununca (mynetStart) gövdeyle bakılır (kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar yakalamayalım")
   if (!manual && item?.dup && item.dupInfo?.reason === "aynı haber adresi") { push(`📰 Mynet: "${(item.title || "").slice(0, 70)}" atlandı — ${dupWhy(item.dupInfo)}`); return { ok: false, error: "aynı haber zaten üretildi" }; }
+  // yalnız (çok) değerli manşetler (mynet.onlyValuable/strictValuable): sıradan ya da yalnız değerli manşet üretilmez, kartta 🎬 ile elle üretilebilir
+  if (!manual && !passesLevel(newsLevel(c), item)) { push(`📰 Mynet: manşet atlandı — ${levelSkipWhy(item)}; yalnız ${levelName(newsLevel(c))} manşetler üretiliyor (kartta elle üretilebilir): "${(item?.title || "").slice(0, 70)}"`); return { ok: false, error: `yalnız ${levelName(newsLevel(c))} manşetler üretiliyor` }; }
   if (!manual && !item?.valuable && resting()) { push(`⏸ sistem durduruldu: sıradan Mynet manşeti için video üretilmedi (${(item?.title || "").slice(0, 70)}); değerli haber gelirse sistem kendiliğinden başlar`); return { ok: false, resting: true, error: "dinlenmede" }; }
-  if (item?.valuable) push(`⭐ Mynet: değerli manşet (${item.valueReason}) — video YouTube'a da gidecek`);
+  if (item?.valuable) push(`${item.strong ? "⭐⭐" : "⭐"} Mynet: ${item.strong ? "çok değerli" : "değerli"} manşet (${item.strong && item.strongReason ? item.strongReason : item.valueReason}) — video YouTube'a da gidecek`);
   return inflight(item?.title || url, (tok) => mynetStart(url, { manual, item, day, list, done, tok }), { sourceCount: item?.sources?.length || 1 });
 }
 async function mynetStart(url, { manual, item, day, list, done, tok }) {
@@ -1098,7 +1107,7 @@ async function mynetCheck({ manual = false } = {}) {
   if (!r.items?.length) push("📰 Mynet: manşet alanı bulunamadı (sayfa yapısı değişmiş olabilir)");
   else if (r.first) push(`📰 Mynet manşet takibi başladı: ${r.items.length} haber kaydedildi; bundan sonra yeni girenler için video üretilecek`);
   else if (manual || r.new.length) push(`📰 Mynet kontrol edildi: ${r.items.length} manşet, ${r.new.length} yeni`);
-  for (const it of [...(r.new || [])].sort((a, b) => (b.valuable ? 1 : 0) - (a.valuable ? 1 : 0))) await mynetProduce(it.url, { item: it });
+  for (const it of [...(r.new || [])].sort((a, b) => ((b.strong ? 2 : 0) + (b.valuable ? 1 : 0)) - ((a.strong ? 2 : 0) + (a.valuable ? 1 : 0)))) await mynetProduce(it.url, { item: it });
   return r;
 }
 app.get("/api/mynet", (_req, res) => { const st = readJson(path.join(DATA, "mynet_state.json"), {}); res.json({ ...mynetCfg(), items: st.items || [], lastCheck: st.lastCheck || null, producedToday: (mynetDone()[today()] || []), nextCheckIn: mynetCfg().enabled ? Math.max(0, watchLast + watchMin() * 60000 - Date.now()) : null }); });
@@ -1109,7 +1118,7 @@ app.post("/api/mynet/produce-all", async (_req, res) => { const st = readJson(pa
 // ---------- çoklu son dakika takibi (scripts/breaking_watch.py): Hürriyet, Sözcü, NTV, AA, Habertürk son dakika akışları.
 // Değerli ya da 3+ sitede çıkan YENİ olay → anlık video (kaynak: ilk veren site). Günlük sınır breaking.maxPerDay.
 const BREAKING_DONE = path.join(DATA, "breaking_daily.json");
-const breakingCfg = () => ({ enabled: true, maxPerDay: 4, valuableMaxPerDay: 15, duration: 30, ...(settings().breaking || {}), intervalMin: watchMin() });
+const breakingCfg = () => ({ enabled: true, maxPerDay: 4, valuableMaxPerDay: 15, duration: 30, onlyValuable: true, strictValuable: true, ...(settings().breaking || {}), intervalMin: watchMin() });
 let breakingLast = 0;
 async function breakingCheck({ manual = false } = {}) {
   breakingLast = Date.now();
@@ -1119,7 +1128,10 @@ async function breakingCheck({ manual = false } = {}) {
   if (manual || r.candidates?.length || bad.length) push(`🗞 son dakika kaynakları kontrol edildi: ${r.fresh} yeni haber, ${r.candidates.length} video adayı${bad.length ? ` · ulaşılamayan: ${bad.join(", ")}` : ""}`);
   for (const d of (r.dups || []).slice(0, 3)) push(`🗞 son dakika: "${String(d.title).slice(0, 70)}" (${d.source}) atlandı — ${dupWhy(d)}`); // videosu üretilmiş haber aday olmadı
   const done = readJson(BREAKING_DONE, {}); const day = today(); const list = done[day] || [];
+  const lvl = newsLevel(breakingCfg());
   for (const c of r.candidates || []) {
+    // yalnız (çok) değerli haberler (breaking.onlyValuable/strictValuable): 3+ sitede çıkan sıradan olay ya da yalnız değerli haber üretilmez
+    if (!passesLevel(lvl, c)) { push(`🗞 son dakika: "${c.title.slice(0, 70)}" atlandı — ${levelSkipWhy(c)}${c.count > 1 ? ` (${c.count} kaynakta)` : ""}; yalnız ${levelName(lvl)} haberler üretiliyor (kartta elle üretilebilir)`); continue; }
     // sıradan (çok kaynaklı) adaylar günde maxPerDay (4); değerli haberler ayrı ve yüksek sınır (15): değerli haber kaçmasın
     const cap = c.valuable ? Number(breakingCfg().valuableMaxPerDay) : Number(breakingCfg().maxPerDay);
     if (list.length >= cap) { push(`🗞 günlük ${c.valuable ? "değerli " : ""}son dakika sınırı (${cap}) doldu: "${c.title.slice(0, 70)}" atlandı`); continue; }
@@ -1131,7 +1143,7 @@ async function breakingCheck({ manual = false } = {}) {
       const read = !!(a && a.ok !== false && a.title);
       if (read ? a.dup : c.dup) { push(`🗞 son dakika: "${c.title.slice(0, 70)}" atlandı — ${dupWhy(read ? a.dupInfo : c.dupInfo)}`); continue; }
       const topic = [c.title, a?.ok !== false && a?.description, a?.ok !== false && a?.body || c.summary].filter(Boolean).join(". ").replace(/\.\s*\./g, ".").slice(0, 1500);
-      push(`${c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.valueReason}) → video üretiliyor`);
+      push(`${c.strong ? "⭐⭐" : c.valuable ? "⭐" : "🗞"} son dakika: ${c.title.slice(0, 90)} (${c.sources.join(", ")}; ${c.strong && c.strongReason ? c.strongReason : c.valueReason}) → video üretiliyor`);
       if (c.valuable) { // değerli: toplayıcıya (aynı anda düşen Mynet/son dakika haberleriyle tek video, dinlenmeyi bozar)
         anlikInflight.delete(tok); // artık toplayıcıda (kendi yoldaki kaydıyla "aynı olay" sayılmasın)
         list.push(c.title);
@@ -2931,7 +2943,7 @@ async function execAction0(a) {
     case "automode": return setAutoMode(a.enabled !== false);
     case "selftest": return selfTest();
     case "connect": { const plat = ["instagram", "youtube", "tiktok"].includes(a.platform) ? a.platform : "instagram"; const r = await fetch(`http://127.0.0.1:${PORT}/api/connect/${plat}`, { method: "POST" }); return r.json(); }
-    case "whatsapp_send": return wa.notifyVideo(a.video || listVideos()[0]?.name, { ask: true });
+    case "whatsapp_send": return wa.notifyVideo(a.video || listVideos()[0]?.name, { ask: true, force: true }); // sahip istedi: kendi ürettiği video da gider
     case "open_url": { const url = toUrl(String(a.target || a.url || "")); const o = await openInBrowser(url); return { ok: o.ok, url }; }
     default: return { ok: false, error: "bilinmeyen eylem" };
   }
@@ -2985,7 +2997,7 @@ app.post("/api/whatsapp/start", async (_req, res) => res.json(await wa.start()))
 app.post("/api/whatsapp/stop", async (_req, res) => res.json(await wa.stop()));
 app.post("/api/whatsapp/logout", async (_req, res) => res.json(await wa.logout()));
 app.post("/api/whatsapp/test", async (_req, res) => { try { await wa.send("✅ Emixhas test mesajı. Bağlantı çalışıyor."); res.json({ ok: true }); } catch (e) { res.json({ ok: false, error: e.message }); } });
-app.post("/api/whatsapp/send-latest", async (req, res) => { const v = listVideos()[0]; if (!v) return res.json({ ok: false, error: "video yok" }); res.json(await wa.notifyVideo(req.body?.name || v.name, { ask: true })); });
+app.post("/api/whatsapp/send-latest", async (req, res) => { const v = listVideos()[0]; if (!v) return res.json({ ok: false, error: "video yok" }); res.json(await wa.notifyVideo(req.body?.name || v.name, { ask: true, force: true })); }); // panel düğmesi: kendi ürettiği video da gider
 if (settings().whatsapp?.enabled && settings().whatsapp?.autoStart) setTimeout(() => wa.start().catch((e) => push(`✖ WhatsApp: ${e.message}`)), 2500);
 
 // Yeni video (panelden veya launchd'den) → WhatsApp bildirimi. out/ klasörü izlenir, bilinen dosyalar atlanır.

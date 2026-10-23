@@ -27,6 +27,9 @@ KURALLAR
 - "e":1 işaretli haberler önceki videoda kullanıldı. p=3 ve e=1 ise (gelişen büyük olay) yalnızca
   YENİ bir gelişme varsa (artan can kaybı, yeni karar, gözaltı) o gelişmeyi anlatarak seç; aynı
   bilgiyi tekrar etme. Diğer e=1 haberleri yalnızca yeterli yeni haber yoksa en sonda kullan.
+- "y":1 işaretli haberler YUMUŞAK haberdir (hayvan/doğa görüntüsü, ilginç an, kutlama, şenlik, tarif; "denizde yunuslar görüldü" gibi):
+  gündem videosuna girmez. Yalnız y=0 haberler __HABER__'den azsa en çok BİR tane ve en sonda; o da yoksa haber sayısını bir azalt
+  (__HABER__ − 1). Gereksiz haberle doldurma (kanal kararı: her haber izleyici için değerli olsun).
 - Tam olarak __HABER__ haber seç. Kanca haberi aynı zamanda 1. haber olarak kalır (tam metniyle).
   Haber sayısı kadar "haber" segmenti yaz; şemadaki örnek 4 haber içindir, sayıyı __HABER__ yap.
 - Her haber için: kısa ekran başlığı ("title", en fazla 8 kelime) ve 1-2 cümlelik tarafsız

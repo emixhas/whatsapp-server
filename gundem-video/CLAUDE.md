@@ -1430,6 +1430,32 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     sonuçta, assemble script.json `hookType`, düzeltmede kanca korunur; sentetik 7 videoyla hook_stats (izlenme ve kanca tutma ipucu) ve istemde
     kanca_gecmisi; tsc temiz; Remotion still (yerel Chromium) ile üç kalıbın damgası (YANLIŞ, ?, DUR) 26. ve 60. karede gözle doğrulandı. Gerçek
     Claude'un kalıp seçimi ve seslerin Mac'teki ses karışımı DENENMEDİ (ses seviyeleri diğer efektlerle aynı tepe normalizasyonunda).
+- WhatsApp'a yalnız sahibin gönderdiği videolar (kullanıcı isteği, 23 Ekim: "kendi ürettiği haberleri vs bana göndermesin WhatsApp'tan; sadece
+  benim gönderdiğim link veya videodaki ürettiklerini bana göndersin ve onayımı beklesin"): `settings.whatsapp.onlyUserVideos` (varsayılan açık;
+  panel Ayarlar → WhatsApp → 📨 anahtarı). `whatsapp.js notifyVideo0` en başta: `force` yoksa ve anahtar açıksa `videoInfo(name).userVideo`
+  olmayan (5 saatlik gündem, sondakika/Mynet/son dakika siteleri, şablon, günün/haftanın özeti) ya da `queueSource === "trend-auto"` (otomatik
+  trend) video WhatsApp'a gitmez: log "💬 WhatsApp'a gönderilmedi (…): sistemin kendi ürettiği video; yalnız sizin gönderdiğiniz …", dönüş
+  `{ok: false, skipped: true}` (sendDigest skipped'i hata saymaz). Otomatik yayın kuralları değişmez; onay istenmeyen platformlara panelden
+  yüklenir. Sahibin açık isteği yine gönderir (`force: true`): WhatsApp "son videoyu gönder", panel "Son videoyu gönder" (`/api/whatsapp/
+  send-latest`), beyin `whatsapp_send`. Sahibin videoları (WhatsApp videosu, sosyal medya/YouTube linki, fragman, özet, benzer video,
+  düzeltme) eskisi gibi gelir ve onay bekler. Sağlık uyarıları, günlük rapor, Instagram bekleme/sıra bildirimleri değişmedi. help.js'te satır.
+- Gereksiz haber üretilmez (kullanıcı isteği, 23 Ekim: "gereksiz haberleri yapmayalım, mesela şu denizde yunus balıkları göründü vs istemiyorum"):
+  - Mynet manşeti ve son dakika siteleri de sondakika.com'daki seviye kuralını aldı: `mynet.onlyValuable/strictValuable` ve
+    `breaking.onlyValuable/strictValuable` (varsayılan ikisi de açık = yalnız ⭐⭐ çok değerli; `server.js newsLevel/passesLevel/levelName/
+    levelSkipWhy`): `mynetProduce` otomatik yolda seviyeyi geçmeyen manşeti atlar ("📰 Mynet: manşet atlandı — sıradan haber / değerli ama çok
+    değerli değil (…); yalnız ⭐⭐ çok değerli manşetler üretiliyor (kartta elle üretilebilir)"), `breakingCheck` 3+ sitede çıkan sıradan olayı
+    da atlar; elle üretim (kart düğmeleri, `manual`) hep geçer. `mynet_watch.py --check` ve `breaking_watch.py` (adaylar ve liste) artık
+    `strong`/`strongReason` verir (news_value), adaylar ⭐⭐ → ⭐ → kaynak sayısı sırasıyla; log "⭐⭐ Mynet: çok değerli manşet (…)". Panel: iki kartta
+    "⭐ Hangi … otomatik üretilsin" seçimi (yalnız ÇOK değerli / değerli / hepsi), `/api/mynet` ve `/api/breaking` ayarı döner.
+  - 5 saatlik gündem videosu (`slim_news.py` → `prompts/senaryo.md`): değerli olmayan ve `SOFT` kalıbına uyan haber (hayvan/doğa görüntüsü —
+    yunus, köpek yavrusu, leylek… + görüntülendi/sevimli/sürü —, renkli görüntü, manzara, lavanta/lale, festival/şenlik/konser, güzellik
+    yarışması, burç, yemek tarifi, moda haftası, tatilci/turist akını, plaj doldu) `y:1` (yumuşak) işaretlenir ve sıralamada en sona düşer;
+    istem: y=1 haber gündem videosuna girmez, y=0 haber __HABER__'den azsa en çok bir tane ve en sonda, o da yoksa haber sayısı bir eksik
+    (assemble HABER_MIN = __HABER__ − 1 zaten izin verir). Kaza/suç/afet bağlamı news_value ile değerli olduğundan "kaza anı kameraya
+    yansıdı: 3 yaralı" yumuşak sayılmaz. Günün/haftanın özeti değişmedi.
+  - Sandbox'ta denendi: server.js'in gerçek mynetProduce/breakingCheck'i sahte bağımlılıklarla 11 denetim (strong/valuable/all seviyeleri,
+    elle muafiyet, toplayıcı, log satırları); sentetik 7 haberlik akışta slim_news (yunus, köpek yavrusu, lavanta y=1 ve sonda; yangın, kaza,
+    faiz, düzenleme y=0 önde); panel kopyasında Playwright (📨 anahtarı ve iki seviye seçimi ayar POST'u); whatsapp.js kapısı (aşağıda).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

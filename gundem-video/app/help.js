@@ -5,6 +5,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 🧠 Bu kalıpları ezberlemenize gerek yok: ne istediğinizi kendi cümlenizle yazın, Claude anlayıp yapar (soru sorarsanız cevaplar). Aşağıdakiler örnektir.
 
 ✅ *Yayın onayı*
+• 📨 WhatsApp'a yalnız SİZİN gönderdiğiniz link ya da videodan üretilen videolar gelir ve onay bekler; sistemin kendi ürettiği videolar (5 saatlik gündem, son dakika, şablon, günün özeti, otomatik trend) gelmez, panelde durur (isterseniz *son videoyu gönder* yazın; ayar: panel → WhatsApp → 📨)
 • onay / evet — bekleyen videoyu yayınla
 • onay insta / onay youtube / onay tiktok — yalnız o platformda yayınla (ör. *onay insta youtube*); diğerleri beklemede kalır, sonra *onay tiktok* ya da *iptal*
 • iptal — yayınlama

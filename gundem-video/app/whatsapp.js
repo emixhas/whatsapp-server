@@ -399,7 +399,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (videoInstruction && !sc) { const vr = await videoInstruction(text); if (vr) { if (typeof vr === "string") await send(jid, vr); return; } } // "düzelt …" talimat değil
     if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
     if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
-    if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
+    if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false, force: true }); return; } // sahip istedi: kendi ürettiği video da gider
     try { await sock?.sendPresenceUpdate?.("composing", jid); } catch { /* "yazıyor…" gösterilemedi */ }  // Claude düşünürken
     const r = await handleCommand(text, { source: "whatsapp" });
     try { await sock?.sendPresenceUpdate?.("paused", jid); } catch { /* yok */ }
@@ -634,9 +634,22 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
 
   async function notifyVideo(...a) { sending++; try { return await notifyVideo0(...a); } finally { sending--; } }
   async function sendOrUnpend(jid, text, video, onSent = null) { try { await send(jid, text, onSent); } catch (e) { const p = video && pend.find((x) => x.video === video); if (p) dropPending(p); throw e; } }
-  async function notifyVideo0(name, { ask = true, summary = null } = {}) {
+  async function notifyVideo0(name, { ask = true, summary = null, force = false } = {}) {
     const w = settings().whatsapp || {};
     if (!w.enabled) return { ok: false, error: "WhatsApp kapalı" };
+    // Yalnız sahibin gönderdiği link/videodan üretilenler (kullanıcı isteği, 23 Ekim: "kendi ürettiği haberleri bana göndermesin; sadece benim
+    // gönderdiğim link veya videodaki ürettiklerini göndersin ve onayımı beklesin"; settings.whatsapp.onlyUserVideos, varsayılan açık): 5 saatlik
+    // gündem, son dakika, şablon, günün/haftanın özeti ve otomatik trend videoları WhatsApp'a gitmez (panelde dururlar; otomatik yayın kuralları
+    // değişmez, onay istenmediği için otomatik olmayan platformlara panelden yüklenir). "son videoyu gönder", panelin "Son videoyu gönder"
+    // düğmesi ve beyin isteği (force) yine gönderir
+    if (!force && w.onlyUserVideos !== false) {
+      const vi = videoInfo(name);
+      if (!vi) return { ok: false, error: "video bulunamadı" };
+      if (!vi.userVideo || vi.queueSource === "trend-auto") {
+        push(`💬 WhatsApp'a gönderilmedi (${vi.label}): ${vi.queueSource === "trend-auto" ? "otomatik trend videosu" : "sistemin kendi ürettiği video"}; yalnız sizin gönderdiğiniz link/videodan üretilenler gider (Ayarlar → WhatsApp → 📨)`);
+        return { ok: false, skipped: true, error: "yalnız sahibin gönderdiği videolar WhatsApp'a gider" };
+      }
+    }
     if (st.status !== "connected") { // bağlantı kopukken bildirim kaybolmasın: kısa metin kuyruğa girer, bağlanınca gider
       const v0 = videoInfo(name);
       const sched0 = v0?.publishAt && Date.parse(v0.publishAt) > Date.now();
