@@ -1456,6 +1456,33 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   - Sandbox'ta denendi: server.js'in gerçek mynetProduce/breakingCheck'i sahte bağımlılıklarla 11 denetim (strong/valuable/all seviyeleri,
     elle muafiyet, toplayıcı, log satırları); sentetik 7 haberlik akışta slim_news (yunus, köpek yavrusu, lavanta y=1 ve sonda; yangın, kaza,
     faiz, düzenleme y=0 önde); panel kopyasında Playwright (📨 anahtarı ve iki seviye seçimi ayar POST'u); whatsapp.js kapısı (aşağıda).
+- Sahibin işi önce ve uzun işte aşama bildirimi (kullanıcı isteği, 23 Ekim: "link/video gönderirsem üretimimi derhal yapmalı, sonra haberlere
+  geçmeli; üretim uzun sürüyorsa ne aşamada olduğunu, bir sorun var mı yok mu bildirmeli"):
+  - `startAnlik`: sahibin işi (`opts.userVideo`: WhatsApp videosu, link, fragman, özet, benzer video, düzeltme) anlık sırasının BAŞINA girer
+    (sahip işleri kendi aralarında geliş sırasıyla; `ownerWaiting()` varken yeni sahip işi de arkasına), otomatik iş (`opts.auto`, tek ya da
+    çoklu `startAnlikMulti`) sahibin işi beklerken başlamaz, sıraya girer. Süren üretim OTOMATİK anlık haberse (`anlikNow.auto`, kuyruk işi
+    değil: sondakika.com, Mynet, son dakika siteleri, toplayıcı) `preemptAuto` boru hattını kapatır (`killTree`; pipeline.sh cleanup kilidi,
+    rezerve adı ve hafıza kayıtlarını siler), haberi `preempted: true` ile sahip işlerinden sonra sıraya geri koyar ("⏭ otomatik üretim
+    durduruldu (…): sizin işiniz (…) önce üretilecek…"); `productionFailed` 90 sn içinde hata uyarısı göndermez. 5 saatlik gündem, günün/
+    haftanın özeti ve şablon videoları KESİLMEZ (anlikNow yok), sahibin işi hemen ardına girer. `anlikNow` artık `{titles, at, vq, auto,
+    topic, duration, multi?, opts}` tutar (geri sıralama için). WhatsApp yanıtı: "⏭ Süren otomatik haber üretimi durduruldu; sizin videonuz
+    şimdi üretime giriyor…" ya da "⏳ Şu an süren üretim … bitince videonuz hemen başlayacak"; `startAnlik` dönüşü `preempted`, `owner`.
+  - Aşama bildirimi (`ownerJobs`, `ownerJobStart/Stage/Warn/End`, `OWNER_STAGES` wa_video satırları — indiriliyor, inceleniyor, Claude yazıyor,
+    N sahne çiziliyor, sahne çizildi, kurgu hazır —, `PIPE_STAGES` boru hattı satırları — seslendirme, görseller, altyazı, render, kapaklar,
+    bitti —; `ownerLine` yalnız `anlikNow.opts.ownerJob` sahibin işiyken; ⚠️/! satırları son uyarı): `runVideoNews0` işi kaydeder (otomatik
+    trend kuyruğu işi değil), `ownerTick` her dakika: 4 dakikayı geçen işte her 4 dakikada WhatsApp'a "⏳ *Hâlâ sürüyor* (N dk): <iş> / Aşama:
+    … (K dk'dır) / Sorun yok; bitince video gelecek." ya da "⚠️ Son uyarı: …" (kısa mesaj modunda da). ✔/✖ üretim satırı ya da wa_video
+    hatası kaydı siler; 3 saati geçen kayıt unutulmuş sayılır. Hata ve başarı mesajları eskisi gibi ayrıca gider.
+  - "özet reels" (kullanıcı isteği, 23 Ekim: "link özet reels yazarsam o kare videodan svg özet reels üretmeli"): `reelsAsk` ("özet reels",
+    "reels özet", "svg özet", "özet reel/shorts") → benzer video yolu (`recreate`), talimata "Bu uzun videonun ÖZETİ: ana fikri ve en önemli 3-5
+    noktayı … çizilmiş sahnelerle anlat; 60 saniye" eklenir (`reelsInstruction`; talimatta "N saniye" varsa o). 10 dakikaya kadar video
+    bütün iner; daha uzun YouTube videosunda social_video düşük çözünürlüklü kopya + altyazı indirir (özet yolu), benzer video o kopyayla
+    çalışır. Log "🎨 özet reels: 10 dakikalık video çizilmiş sahnelerle özetlenecek (hedef 60 sn)". help.js'te iki satır.
+  - Sandbox'ta denendi: server.js'in gerçek startAnlik/startAnlikMulti/preemptAuto/ownerJob* fonksiyonları sahte bağımlılıklarla 21 denetim
+    (boşta hemen başlama; otomatik üretim durdurulup geri sıraya alınma; kuyruk işi ve düzenli üretim kesilmez; otomatik iş sahibi bekler;
+    sahip işleri FIFO; öncelikli otomatik sırası eski kuralla; aşama eşlemeleri; 2/5/7/10 dk bildirim kuralı; uyarı satırı; pipeline aşaması
+    yalnız sahibin işinde; 3 saat temizliği; reelsAsk/reelsInstruction). Gerçek boru hattının SIGTERM sonrası temizliği Mac'te DENENMEDİ
+    (video kuyruğunun iptal yolu aynı killTree'yi kullanıyor).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,
