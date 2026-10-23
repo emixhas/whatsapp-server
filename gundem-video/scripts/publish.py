@@ -244,7 +244,7 @@ def yt_upload(path: Path):
     meta = episode_meta(path.name) or {}
     lists = yt_add_to_playlists(yt, vid, meta)
     fc = yt_first_comment(yt, vid, meta)
-    url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") else f"https://youtube.com/shorts/{vid}"
+    url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") or meta.get("kare") else f"https://youtube.com/shorts/{vid}"  # kare uzun video Shorts değil
     return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
             "titleVariant": meta.get("titleVariant"), "playlists": lists, **fc, **({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})}
 
@@ -372,7 +372,7 @@ def yt_retitle() -> dict:
         if age < float(c["afterHours"]):
             continue
         meta = episode_meta(name) or {}
-        late = age > float(c["afterHours"]) + 6 or meta.get("format") in ("gunluk", "haftalik")
+        late = age > float(c["afterHours"]) + 6 or meta.get("format") in ("gunluk", "haftalik") or meta.get("kare")  # uzun video Shorts ölçüsüyle karşılaştırılmaz
         base = [x["views"] for x in rec.values() if not x.get("skip") and x.get("views") is not None][-20:]
         rec[name] = {"views": y["views"], "ageH": round(age, 1), "at": time.time(), **({"skip": True} if late else {})}
         if late or len(base) < int(c["minBaseline"]):
@@ -472,7 +472,8 @@ def playlist_names(meta: dict) -> list:
     # uzun video özeti ve viral/mizah videosu son dakika değil: yalnız kategori listesi
     # benzer video (sıfırdan çizilmiş hikâye) de son dakika değil
     calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated")
-    names = [] if meta.get("trailer") or calm else [
+    # kare uzun video: Son Dakika listesine girmez (kategori listesi yine eklenir)
+    names = [] if meta.get("trailer") or calm or (meta.get("kare") and meta.get("slotLabel") != "SON DAKİKA") else [
              f"{ch} · Son Dakika" if (meta.get("anlik") or fmt == "anlik")
              else f"{ch} · Günün Özeti (uzun)" if fmt == "gunluk"
              else f"{ch} · Haftanın Özeti (uzun)" if fmt == "haftalik"

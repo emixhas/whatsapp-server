@@ -1488,6 +1488,63 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     sahip işleri FIFO; öncelikli otomatik sırası eski kuralla; aşama eşlemeleri; 2/5/7/10 dk bildirim kuralı; uyarı satırı; pipeline aşaması
     yalnız sahibin işinde; 3 saat temizliği; reelsAsk/reelsInstruction). Gerçek boru hattının SIGTERM sonrası temizliği Mac'te DENENMEDİ
     (video kuyruğunun iptal yolu aynı killTree'yi kullanıyor).
+- Kare (1:1) uzun video (kullanıcı isteği, 23 Ekim: "bazen 10 dakikalık kare video linki gönderebilirim; link kare video yazarsam gönderdiğim
+  video kaç dakika ise ortalama o dakikalarda bir kare video üretmeli"): videonun TAMAMI 1080x1080 ve kendi sesiyle tek "sesli" bölümde oynar;
+  Claude yalnız çerçeveyi yazar (kanca, giriş, bölüm başlıkları, kapanış, baş/son kesimi). Video süresi ≈ kaynağın süresi + ~16 sn.
+  - Tanıma: `common.KARE_ASK/kare_ask` = `server.js KARE_ASK/kareAsk` (katlanmış metin): "kare video(su)", "kare format(ında)", "kare olsun/yap/
+    olarak", "kare bir video", "uzun kare video", "square video", "1:1"/"1x1"; "kareler", "kareyi kes", "kare çizelgesi", "21:15" değil. Ayar
+    `settings.kare` {enabled true, maxSeconds 1800} (`common.kare_cfg` = `server.js kareCfg`: nesne değilse false/"false"/0 kapatır, bozuk/0 sayı
+    varsayılan; panelde alan yok). "özet reels" ve benzer video isteği önce gelir (ikisi de varsa kare değil).
+  - Link yolu (`server.js socialVideoNews`): karar indirmeden ÖNCE verilir, `social_video.py --kare` → `fetch(kare=True)`: bölüm seçimi ve özet
+    kararı yok, videonun tamamı 1080p iner (`--match-filter duration <? maxSeconds`, `--max-filesize 1500M`, 25 dk zaman aşımı; daha uzun video
+    Türkçe hata: "kare video için en çok 30 dk; daha kısa gönderin ya da özet reels yazın"); YouTube klibi ve canlı yayın eski yol; çıktı
+    `social.kare`, `duration` (inen dosya), `note` ("kare video: 10 dk videonun tamamı alındı" → WhatsApp'a "⬛ …" satırı); fragman/özet
+    kararına girmez → `runVideoNews({kare: true})`. Haber araması (ilgili_haberler) eskisi gibi (mizahta yok). WhatsApp videosunda (link
+    değil) talimatta "kare video" varsa aynı yol (`runVideoNews0` `v.kare`; `wa_video.build()` `job.kare` ya da sosyal olmayan işte `kare_ask`).
+  - `wa_video.build_kare` (`prompts/kare.md`; Claude kullanım türü "kare"): tek video (fazlası yok sayılır; 20 sn'den kısa ya da maxSeconds'tan
+    uzun → hata); ffprobe, sahne geçişleri (1000'e kadar, isteme 150), konuşma dökümü (Türkçe; YouTube altyazısı yedek; isteme en çok 200 satır
+    eşit aralıklı), 24 karelik çizelge, konuşmasız videoda 3 yazı karesi; girdi {talimat (yalnız "kare video" gibiyse `KARE_TALIMAT`), video,
+    bugun, kaynak_paylasim, ilgili_haberler, iletilen_aciklama}. Plan {label, category, titles, hashtags, importance, importanceReason,
+    firstComment, cuts, ekran_yazilari, kanca{title, narration, clips}, giris{…}, bolumler[{saniye, baslik}], kapanis{…}, bas_kes, son_kes}.
+    Doğrulama: baş/son kesimi 0-20 sn (kalan ≥ 15 sn, yoksa 0); giriş yoksa hata, kanca yoksa girişin ilk cümlesi (≤ 10 kelime), kapanış yoksa
+    sabit cümle; `kare_chapters`: 0 ≤ saniye < süre − 15, sıralı, aralık ≥ 20 sn, başlık ≤ 40 karakter, en çok 12, ilk bölüm 0'da (20 sn içindeyse
+    başa çekilir, yoksa "Başlangıç" eklenir), baş kesimi düşülür; kanca/giriş/kapanış parçaları kesilen baş/son bölgesine düşmez (geçersizse
+    kullanılan bölgenin başından ya da — kapanışta — sonundan seslendirme kadar yedek). Montaj: her parça 1080x1080 (`cut`, oranı uymayan bulanık
+    zemin), sesli bölüm = tamamı kendi sesiyle (loudnorm −17 LUFS; ses izi yoksa sessiz), altyazı kelimeleri `WORDS`tan (konuşma tanıma kuruluysa).
+    Senaryo: hook → intro (etiketin kendisi; SON DAKİKA'da "Son dakika.") → haber (giriş) → sesli {soundDuration, soundWords, chapters} → haber
+    (kapanış) → outro; kategori planın tek kategorisi (assemble asayiş zorlaması yine çalışır). İş klasörü: part-0..3 (+ jpg/tall), cards.json
+    (sesli kart `sound` + `fullFrame`), meta.json {kare, chapters, sourceSeconds, trim}, `kare_dokum.txt` (bölümler + zaman damgalı döküm).
+    Sonuç {kare, duration (= sesli + seslendirme/2,4 + 16), soundSeconds, sourceSeconds, plan{kare, label, chapters, trim, segments, narration,
+    speech, screenText…}}. Log "⬛ kare video: 10:00 …", "⬛ video 1: …", "⬛ Claude videoyu inceliyor", "⬛ videonun tamamı 1080x1080 kesiliyor",
+    "✂️ …"; OWNER_STAGES bunları aşama olarak bildirir; zaman aşımı 45 dk.
+  - Panel: `startAnlik(…, {kare: true})` süre sınırı 1800 (diğer işlerde 60/90), env `KARE=1`; `startPipeline` KARE'de 20-1800 sn ("⬛ N dakikalık
+    KARE VİDEO üretimi başlatıldı"); info etiket plandan (SON DAKİKA → "Son dakika." + SON DAKİKA kartı; diğerinde `breaking: false`, kapanış
+    "Videonun tamamı buydu. Yeni videolar için takip etmeyi unutma."). WhatsApp: "⬛ Videoyu inceliyorum …", "⬛ *Kare video kurgusu hazır*"
+    (kaynak → video süresi, kesim, 📑 bölümler, ekran yazıları, konuşma tanıma uyarısı; kısa modda tek satır); dosya 60 MB'yi aşarsa
+    `whatsapp.sendVideo` yalnız bağlantı gönderir (mesajda söylenir). `pipeline.sh`: `KARE=1` → COMP `KareVideo`, altyazı denetimi
+    (caption_qa) atlanır. `assemble_script` meta `kare`; `listVideos/videoInfo` `kare` (panelde "⬛ kare" rozeti).
+  - Yayın: yalnız YouTube (`post_pipeline.targets` diğer platformları atar: "⬛ kare uzun video: yalnız YouTube'a gider"; `waLinks` onayı yalnız
+    YouTube'u sorar — Reels dikey 9:16 ve kısa ister, TikTok uzun kare videoyu almaz); `publish.py` URL `watch?v=` (Shorts değil), Son Dakika
+    listesine girmez (SON DAKİKA etiketi hariç), başlık değiştirme ölçüsüne girmez; `build_caption` başlık "📺 <ETİKET>: … | kanal" (#Shorts yok;
+    SON DAKİKA'da "🔴 SON DAKİKA:"), açıklamada YouTube bölümleri ("00:00 Giriş" + sesli bölümün kendi saniyesi + öncesindeki segmentlerin
+    süresi), kapanış satırı "Videonun tamamı kendi sesiyle…", #sondakika ve #shorts yok (`caption_tags` aynı). Kapaklar eskisi gibi
+    (Thumb 1080x1920 ve ThumbWide; YouTube 16:9 kapağı kare videoya da olur).
+  - Remotion `src/KareVideo.tsx` (`KARE` 1080x1080, Root'ta "KareVideo"; `types.ts` Segment.chapters, Episode.kare): kanca (flaş, punch-in,
+    etiket bandı, kelime kelime çarpan başlık — anahtar kelime sarı kutuda —, altyazı 52 px), intro (etiket, TÜRKİYE GÜNDEMİ, gün, takip
+    düğmeleri), giriş/kapanış kartı (video sessiz döngü, kategori bandı, altyazı 46 px 690-870, başlık 884'te 54 px, ilerleme), sesli bölüm
+    (video kendi sesiyle, sağ üstte küçük kanal işareti, bölüm başında 5 sn soldan giren "BÖLÜM n/N + başlık" bandı — 300'de —, sonra sol altta
+    küçük sürekli etiket "n/N · başlık", bölüm çentikli ilerleme çubuğu, kelime altyazısı 44 px), kapanış (harita 560, "HER GÜN / YENİ VİDEO",
+    takip düğmeleri, altyazı). Müzik sesli bölümde susar; whoosh/sting/chime aynı.
+  - Sandbox'ta denendi (sahte Claude, gerçek `claude` PATH'te değil; 75 sn'lik sentetik 16:9 kaynak): link işi ve "kare video olsun"
+    talimatlı WhatsApp işi → 4 parça 1080x1080 (sesli parça 73,5 sn sesli, diğerleri sessiz), bölüm doğrulaması (yakın/aşan/bozuk bölümler
+    atıldı, geç başlayan plana "Başlangıç", baş kesimi düşülmüş saniyeler), 20 sn'yi aşan son kesimi 20'ye indirilip kapanış parçası kalan
+    bölgeye alındı; assemble (TEMPLATE_DIR + KARE=1: meta kare, sesli bölümde chapters, SON DAKİKA kartı yok, kapanış INFO_OUTRO); build_caption
+    ve caption_tags (📺 RÖPORTAJ başlığı #Shorts'suz, 00:00 bölümler, #sondakika/#shorts yok); social_video `--kare` sahte yt_dlp modülüyle
+    (yalnız bilgi + bütün indirme, `duration <? 1800`, `social.kare`; `--kare`siz aynı video eskisi gibi); post_pipeline.targets (yalnız YouTube;
+    onaylı işte boş); JS/Python kareAsk 26 ifadede ve kareCfg 12 ayar biçiminde aynı; panel startAnlik (KARE env, 650 sn, 2400 → 1800, kare
+    olmayan iş 60); `tsc --noEmit` temiz; KareVideo 8 karesi (kanca, intro, giriş, bölüm bandı 1 ve 2, küçük etiket, kapanış, outro) Remotion
+    still ile gözle doğrulandı. Gerçek YouTube indirmesi (10 dk 1080p dosya boyutu), Mac'te 10 dakikalık Remotion render süresi, 60 MB üstü
+    WhatsApp gönderimi ve YouTube'un kare videoyu uzun video sayması DENENMEDİ.
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

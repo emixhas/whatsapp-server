@@ -516,6 +516,8 @@ def main(src: str, dst: str):
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
         "summary": os.environ.get("SUMMARY") == "1" or None,
         "recreated": RECREATE or None,  # benzer video (sıfırdan): açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video: …"
+        # kare (1:1) uzun video (KARE=1; wa_video.build_kare): videonun tamamı kendi sesiyle; Shorts değil, yalnız YouTube; açıklamada bölümler
+        "kare": os.environ.get("KARE") == "1" or None,
         "jobDir": os.environ.get("TEMPLATE_DIR") or None,  # şablon/video işinin klasörü (benzer videoda düzeltme turu plan.json'u buradan okur)
         "revision": int(os.environ["REVISION_N"]) if (os.environ.get("REVISION_N") or "").isdigit() else None,  # düzeltilmiş sürüm numarası (✏️ düzelt)
         "revisionOf": os.environ.get("REVISION_OF") or None,  # düzeltilen önceki video (yayınlanmaz; onayı kaldırılır)

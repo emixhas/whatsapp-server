@@ -110,6 +110,11 @@ def targets(video: str, s: dict) -> tuple[list, str]:
         if dropped:
             print(f"📺 günün özeti yatay uzun video: yalnız YouTube'a gider ({', '.join(dropped)} atlandı)")
         chosen = [p for p in chosen if p == "youtube"]
+    if meta.get("kare"):  # kare (1:1) uzun video: yalnız YouTube (Reels dikey 9:16 ve kısa ister, TikTok uzun kare videoyu kabul etmez)
+        dropped = [p for p in chosen if p != "youtube"]
+        if dropped:
+            print(f"⬛ kare uzun video: yalnız YouTube'a gider ({', '.join(dropped)} atlandı)")
+        chosen = [p for p in chosen if p == "youtube"]
     off = [p for p in chosen if p not in conn]
     for p in off:
         print(f"📤 {p}: hesap bağlı değil, atlandı (Ayarlar → Yayın hesapları)")

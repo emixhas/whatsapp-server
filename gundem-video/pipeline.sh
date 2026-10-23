@@ -55,6 +55,8 @@ TEMPLATE_DIR="${TEMPLATE_DIR:-}"
 if [ -n "$TEMPLATE_DIR" ]; then [ -s "$TEMPLATE_DIR/claude_out.json" ] || { echo "HATA: şablon senaryo bulunamadı ($TEMPLATE_DIR)"; exit 1; }; fi
 export TEMPLATE_DIR INFO_KIND="${INFO_KIND:-}" INFO_LABEL="${INFO_LABEL:-}" INFO_INTRO="${INFO_INTRO:-}" INFO_OUTRO="${INFO_OUTRO:-}" INFO_BREAKING="${INFO_BREAKING:-}"
 export ANLIK="${ANLIK:-0}" GUNLUK="${GUNLUK:-0}" HAFTALIK="${HAFTALIK:-0}" ANLIK_SOURCE="${ANLIK_SOURCE:-}" ANLIK_URL="${ANLIK_URL:-}"
+# Kare (1:1) uzun video (KARE=1; wa_video.build_kare): şablon düzeninde iş klasörü, Remotion KareVideo 1080x1080, süre kaynağın süresi
+export KARE="${KARE:-0}"
 # Intro sabit cümle (assemble_script.py da zorlar): "Güne Başlarken, son 5 saatin Türkiye gündemi."
 SCHED_H=$($PY -c "import json;print(json.load(open('data/settings.json')).get('scheduleHours') or 5)" 2>/dev/null || echo 5)
 [ "$ANLIK" = "1" ] || [ "$GUNLUK" = "1" ] || FORMAT_INTRO="$($PY -c "import sys;l=sys.argv[1];print(l[:1]+l[1:].replace('I','ı').replace('İ','i').lower())" "$FORMAT_LABEL"), son ${SCHED_H} saatin Türkiye gündemi."
@@ -177,14 +179,16 @@ N=$($PY -c "import json;print(json.load(open('public/episode.json'))['episodeOfD
 OUT="out/${DATE}-${N}.mp4"
 if [ -f "$OUT" ]; then echo "!! $OUT zaten var, üzerine yazılmıyor"; N=$(( $(ls out/${DATE}-*.mp4 2>/dev/null | wc -l) + 1 )); OUT="out/${DATE}-${N}.mp4"; $PY -c "import json;p='public/episode.json';d=json.load(open(p));d['episodeOfDay']=$N;json.dump(d,open(p,'w'),ensure_ascii=False,indent=2)"; fi
 COMP="GundemVideo"; [ "$GUNLUK" = "1" ] && COMP="GunlukOzet"  # günlük özet yatay
+[ "$KARE" = "1" ] && COMP="KareVideo"  # kare (1:1) uzun video: videonun tamamı kendi sesiyle
 npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 --log error
 # Ses seviyesini YouTube standardına getir (-14 LUFS, tepe -1 dB); görüntüye dokunmaz
 ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
 VIDEO_OK=1  # video var: hafıza kayıtları kalır
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"
-# altyazı denetimi: son videonun sesi konuşma tanımayla dinlenir, altyazı zamanlarıyla karşılaştırılır (kurulu değilse atlanır)
-$PY scripts/caption_qa.py "$OUT" 2>/dev/null | grep -v '^{' || true
+# altyazı denetimi: son videonun sesi konuşma tanımayla dinlenir, altyazı zamanlarıyla karşılaştırılır (kurulu değilse atlanır);
+# kare uzun videoda atlanır (10 dakikalık sesi dinlemek uzun sürer, seslendirme yalnız giriş ve kapanışta)
+[ "$KARE" = "1" ] || $PY scripts/caption_qa.py "$OUT" 2>/dev/null | grep -v '^{' || true
 echo "-- kapaklar"
 $PY scripts/render_thumbs.py public/episode.json "out/${DATE}-${N}" || echo "  ! kapak adımı atlandı"
 echo "== bitti: $OUT ($(du -h "$OUT" | cut -f1))"

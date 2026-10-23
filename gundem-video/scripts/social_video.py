@@ -47,7 +47,7 @@ from urllib.parse import urljoin
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, SECRETS, content_kind, news_request, recreate_ask, recreate_on, settings, summary_cfg, summary_secs, trailer_ask  # noqa: E402
+from common import kare_cfg, ROOT, SECRETS, content_kind, news_request, recreate_ask, recreate_on, settings, summary_cfg, summary_secs, trailer_ask  # noqa: E402
 
 PLATFORMS = [(r"instagram\.com", "Instagram"), (r"tiktok\.com", "TikTok"), (r"(^|\.)(x|twitter)\.com", "X"),
              (r"youtube\.com|youtu\.be", "YouTube"), (r"facebook\.com|fb\.watch", "Facebook")]
@@ -684,7 +684,9 @@ def download_sections(url: str, sections: list, tag: str, timeout: int = 900) ->
     return out, err
 
 
-def fetch(url: str, instruction: str = "") -> dict:
+def fetch(url: str, instruction: str = "", kare: bool = False) -> dict:
+    """kare=True (kullanıcı isteği, 23 Ekim: "link kare video"): videonun TAMAMI 1080p iner (en çok settings.kare.maxSeconds, 30 dk); bölüm
+    seçimi ve uzun video özeti kararı yapılmaz (wa_video.build_kare tamamını kendi sesiyle kare videoya çevirir)."""
     cmd = ytdlp()
     if not cmd:
         return {"ok": False, "error": "yt-dlp kurulu değil (.venv'de pip install yt-dlp)"}
@@ -699,6 +701,10 @@ def fetch(url: str, instruction: str = "") -> dict:
     base = [*cmd, "--no-playlist", "--no-warnings", "--socket-timeout", "25"]
     args = [*base, "--max-filesize", "300M", "--match-filter", f"duration <? {int(cfg['maxSeconds'])}",
             "-f", FMT, "--merge-output-format", "mp4", "--write-info-json", "-o", tmpl]
+    kc = kare_cfg() if kare else {}
+    if kare:  # kare uzun video: 30 dakikaya kadar bütün video, dosya sınırı geniş (10 dk 1080p ~300-600 MB)
+        args = [*base, "--max-filesize", "1500M", "--match-filter", f"duration <? {int(kc['maxSeconds'])}",
+                "-f", FMT, "--merge-output-format", "mp4", "--write-info-json", "-o", tmpl]
     auth = _auth(plat)
     args += auth
     meta, cues, cap_lang, extra, r = {}, [], "", {}, None
@@ -746,6 +752,16 @@ def fetch(url: str, instruction: str = "") -> dict:
         extra = {"live": True, "liveSeconds": int(secs), "note": note}
     elif status == "post_live" and not dur:
         return {"ok": False, "error": "Canlı yayın yeni bitti; YouTube kaydı hazırlıyor. Birkaç dakika sonra linki yeniden gönderin."}
+    elif kare and not clip:  # kare uzun video: tamamı (bölüm seçimi, özet yok); süre sınırı settings.kare.maxSeconds
+        if dur > kc["maxSeconds"]:
+            return {"ok": False, "error": f"Video çok uzun ({dur_text(dur)}); kare video için en çok {dur_text(kc['maxSeconds'])} uzunluğundaki videonun "
+                                          "tamamını alabiliyorum. Daha kısa bir video gönderin ya da \"özet reels\" yazın."}
+        _log(f"⬛ kare video{f' ({dur_text(dur)})' if dur else ''}: videonun tamamı 1080p indiriliyor (bölüm seçimi yok)")
+        try:
+            r = subprocess.run([*args, url], capture_output=True, text=True, timeout=1500)
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "videonun tamamı 25 dakikada inmedi (internet yavaş ya da video çok uzun)"}
+        extra = {"kare": True, "note": f"kare video: {dur_text(dur) + ' ' if dur else ''}videonun tamamı alındı"}
     elif (summ := (not clip and plat == "YouTube" and not (time_hint(instruction, dur, cfg["longWindowSeconds"], cfg["maxSeconds"]) or url_time(url) is not None)
                    and wants_summary(instruction, dur, plat, str(meta.get("title") or ""), str(meta.get("description") or "")))) and summ[0] and dur > cfg["maxSeconds"]:
         # uzun video özeti: videonun tamamı analiz için düşük çözünürlükte (en çarpıcı anlar wa_video.py'de seçilip HD iner); zaman
@@ -839,7 +855,9 @@ def fetch(url: str, instruction: str = "") -> dict:
             social.update({"duration": _probe_secs(video), "sourceDuration": None if clip else dur or None, **extra})  # klipte asıl video süresi bilinmez
         if cues:
             social.update({"captions": [list(c) for c in cues][:600], "captionsLang": cap_lang})
-    if not social.get("summary") and not extra.get("live") and not extra.get("window"):  # videonun tamamı indi: talimat özet isterse özet modu
+    if extra.get("kare"):  # kare uzun video: inen dosyanın süresi (bütün video); özet kararı yok
+        social.update({"duration": _probe_secs(video) or dur or None, **extra})
+    if not social.get("summary") and not extra.get("live") and not extra.get("window") and not extra.get("kare"):  # videonun tamamı indi: talimat özet isterse özet modu
         full = _probe_secs(video) or float(info.get("duration") or 0)
         ok, why = wants_summary(instruction, full, plat, title, caption) if not clip else (False, "")
         if ok:
@@ -879,7 +897,7 @@ if __name__ == "__main__":
         ins = sys.argv[sys.argv.index("--instruction") + 1] if "--instruction" in sys.argv else ""
         if "--kind" in sys.argv and sys.argv[sys.argv.index("--kind") + 1] in ("haber", "trend", "mizah"):
             KIND_TAG = sys.argv[sys.argv.index("--kind") + 1]
-        res = fetch(sys.argv[sys.argv.index("--url") + 1], ins) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}
+        res = fetch(sys.argv[sys.argv.index("--url") + 1], ins, kare="--kare" in sys.argv) if "--url" in sys.argv else {"ok": False, "error": "kullanım: --url URL"}
     except Exception as e:
         res = {"ok": False, "error": str(e)[:300]}
     print(json.dumps(res, ensure_ascii=False))

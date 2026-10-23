@@ -41,6 +41,8 @@ export type Segment = {
   sound?: boolean;
   /** dikey tam ekran haber (FullFrame.tsx): WhatsApp'tan gelen dikey video kart yerine tüm kareyi kaplar. */
   fullFrame?: boolean;
+  /** kare uzun videoda (KareVideo.tsx) sesli bölümün bölüm başlıkları: t = bölümün kendi saniyesi (wa_video.build_kare, prompts/kare.md) */
+  chapters?: { t: number; title: string }[];
 };
 
 export type Episode = {
@@ -77,6 +79,8 @@ export type Episode = {
   hookPromise?: string | null;
   /** şablon/video türü (assemble meta infoKind): video → intro'da kurgu planının etiketi (SON DAKİKA değilse, ör. GÖRÜNTÜLÜ HABER) */
   infoKind?: string | null;
+  /** kare (1:1) uzun video (assemble meta kare; kullanıcı isteği, 23 Ekim: "link kare video"): KareVideo kompozisyonu, videonun tamamı kendi sesiyle */
+  kare?: boolean | null;
   segments: Segment[];
 };
 

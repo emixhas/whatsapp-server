@@ -798,6 +798,37 @@ def recreate_on() -> bool:
     return not _off((w if isinstance(w, dict) else {}).get("recreate", True))
 
 
+# Kare video (kullanıcı isteği, 23 Ekim: "bazen 10 dakikalık kare video linki gönderebilirim; link kare video yazarsam gönderdiğim video kaç
+# dakika ise ortalama o dakikalarda bir kare video üretmeli"): talimat kare (1:1) UZUN video istiyor mu — videonun tamamı kendi sesiyle,
+# başta kanca + kısa giriş, sonda kısa kapanış, bölüm başlıkları. "kare video", "kare videosu", "kare format", "kare olsun", "kare yap",
+# "uzun kare video", "1:1"; "kareler", "kareyi kes", "kare çizelgesi" değil. server.js kareAsk aynı kural (katlanmış metin, _kind_text).
+KARE_ASK = re.compile(r"(?<![^\W\d_])(?:kare|square)(?:\s+(?:uzun|format(?:ta|inda)?|bir))?\s*(?:video\w*|format\w*|olsun|yap\w*|haber\w*|olarak)(?![^\W\d_])|"
+                      r"(?<![^\W\d_])uzun\s+kare(?:\s+video\w*)?(?![^\W\d_])|(?<![\d.,:])1\s*[:x]\s*1(?![\d.,:])", re.I)
+KARE_DEFAULTS = {"enabled": True, "maxSeconds": 1800}
+
+
+def kare_ask(instruction: str) -> bool:
+    """Talimat kare (1:1) uzun video istiyor mu (server.js kareAsk aynı kural)."""
+    return bool(KARE_ASK.search(_kind_text(instruction)))
+
+
+def kare_cfg() -> dict:
+    """settings.kare {enabled true, maxSeconds 1800}: bozuk/0 sayı varsayılana düşer; false/"false"/0 kapatır."""
+    raw = settings().get("kare")
+    s = raw if isinstance(raw, dict) else {"enabled": False} if raw is not None and _off(raw) else {}
+    try:
+        mx = float(s.get("maxSeconds"))
+    except (TypeError, ValueError):
+        mx = float(KARE_DEFAULTS["maxSeconds"])
+    if not math.isfinite(mx) or mx <= 0:
+        mx = float(KARE_DEFAULTS["maxSeconds"])
+    return {**s, "enabled": not _off(s.get("enabled", True)), "maxSeconds": mx}
+
+
+def kare_on() -> bool:
+    return kare_cfg()["enabled"]
+
+
 def episode_meta(video_name: str):
     return load_json(OUT / video_name.replace(".mp4", ".json"), None)
 
@@ -874,12 +905,29 @@ def build_caption(video_name: str, max_len: int = 2000):
             head = f"🎨 {meta.get('slotLabel') or 'HİKÂYE'}"
         if meta.get("trailer"):  # fragman analizi: son dakika değil → "🎬 FRAGMAN: …" (etiket kurgu planından: YENİ FRAGMAN…)
             head = f"🎬 {meta.get('slotLabel') or 'FRAGMAN'}"
-        if meta.get("trailer") or meta.get("recreated"):
+        if meta.get("kare") and meta.get("slotLabel") != "SON DAKİKA":  # kare (1:1) uzun video: son dakika değilse "📺 VİDEO: …"
+            head = f"📺 {meta.get('slotLabel') or 'VİDEO'}"
+        if meta.get("trailer") or meta.get("recreated") or meta.get("kare"):
             room = 100 - len(f"{head}:  | {s['channelName']} #Shorts")  # uzun başlık kanal adını ve #Shorts'u kesmesin
             if len(first) > room:
                 first = first[:room].rsplit(" ", 1)[0].rstrip(" ,;:-–") or first[:room]
-        title = f"{head}: {first} | {s['channelName']} #Shorts"
+        # kare uzun video Shorts değildir (YouTube "#Shorts" etiketiyle 3 dk üstü videoyu Shorts saymaz; yanıltmasın)
+        title = f"{head}: {first} | {s['channelName']}" + ("" if meta.get("kare") else " #Shorts")
         lines = [f"{head} · {s['channelName']} · {day} · {rng}", ""]
+        if meta.get("kare"):  # YouTube bölümleri: 00:00 giriş + orijinal sesli bölümdeki bölüm başlıkları (wa_video.build_kare)
+            t, chapters = 0.0, []
+            for seg in meta.get("segments", []):
+                if seg.get("kind") == "sesli":
+                    for ch in seg.get("chapters") or []:
+                        try:
+                            at = t + float(ch.get("t") or 0)
+                        except (TypeError, ValueError, AttributeError):
+                            continue
+                        if str(ch.get("title") or "").strip():
+                            chapters.append(f"{int(at // 60):02d}:{int(at % 60):02d} {str(ch['title']).strip()}")
+                t += float(seg.get("duration") or 0)
+            if chapters:
+                lines += ["00:00 Giriş", *chapters, ""]
     else:
         title = f"{first} | {s['channelName']} {day} {slot.lower()} #Shorts".strip()
         lines = [f"{s['channelName']} · {stamp}", f"Son {meta.get('scheduleHours', 5)} saatin en önemli {len(haber)} haberi.", ""]
@@ -906,12 +954,15 @@ def build_caption(video_name: str, max_len: int = 2000):
     elif meta.get("sourceUrl") and not social_src and meta["sourceUrl"] not in shown_urls:
         lines += [f"Haber kaynağı: {meta.get('sourceName') or 'kaynak'} · {meta['sourceUrl']}", ""]
     from hashtags import for_meta
-    # uzun video özeti, viral ve mizah videosu, benzer video (sıfırdan) son dakika haberi değil: #sondakika yok
-    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated")
+    # uzun video özeti, viral ve mizah videosu, benzer video (sıfırdan), SON DAKİKA olmayan kare uzun video son dakika haberi değil: #sondakika yok
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated") or (meta.get("kare") and meta.get("slotLabel") != "SON DAKİKA")
     tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"],
                                                                                    ["#sondakika"] if anlik and not calm and meta.get("infoKind") in (None, "", "deprem", "meteo", "alarm", "video") else [])
+    if meta.get("kare"):  # kare uzun video Shorts değil: kanal etiketlerindeki #shorts atılır
+        tags = [t for t in tags if t.lower() != "#shorts"]
     # mizah videosu: mizah olduğu açıklamanın SONUNDA söylenir (kullanıcı isteği, 19 Ekim: "girişte yazarsa izlenmez, sonunda belirtelim")
-    lines += ["Yeni hikâyeler ve kısa anlatımlar için takip et, abone ol." if meta.get("recreated")
+    lines += ["Videonun tamamı kendi sesiyle. Yeni videolar için takip et, abone ol." if meta.get("kare") and meta.get("slotLabel") != "SON DAKİKA"
+              else "Yeni hikâyeler ve kısa anlatımlar için takip et, abone ol." if meta.get("recreated")
               else "😄 Bu video mizah amaçlıdır. Güldüren videolar için takip et, abone ol." if meta.get("contentKind") == "mizah"
               else "Sosyal medyanın en çok konuşulan videoları için takip et, abone ol." if meta.get("contentKind") == "trend"
               else "Gelişmeleri takip etmeye devam ediyoruz. Takip et, abone ol." if meta.get("trailer") and meta.get("slotLabel") == "TANITIM FİLMİ"
@@ -936,8 +987,10 @@ def caption_tags(video_name: str) -> list:
     meta = episode_meta(video_name) or {}
     s = settings()
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
-    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated")
+    calm = (meta.get("summary") and meta.get("slotLabel") != "SON DAKİKA") or meta.get("contentKind") in ("trend", "mizah") or meta.get("recreated") or (meta.get("kare") and meta.get("slotLabel") != "SON DAKİKA")
     tags = trailer_tags(meta, s["hashtags"]) if meta.get("trailer") else for_meta(meta, calm_tags(s["hashtags"]) if calm else s["hashtags"], ["#sondakika"] if anlik and not calm else [])
+    if meta.get("kare"):  # kare uzun video Shorts değil
+        tags = [t for t in tags if t.lower() != "#shorts"]
     try:
         import censor
         return censor.clean_tags(tags)

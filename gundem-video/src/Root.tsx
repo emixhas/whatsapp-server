@@ -1,6 +1,7 @@
 import { CalculateMetadataFunction, Composition, staticFile } from "remotion";
 import { GundemVideo } from "./GundemVideo";
 import { GunlukOzet, WIDE_H, WIDE_W } from "./GunlukOzet";
+import { KareVideo, KARE } from "./KareVideo";
 import { Thumb } from "./Thumb";
 import { InfoCard } from "./InfoCard";
 import { SvgScene, calculateSvgSceneMetadata } from "./SvgScene";
@@ -53,6 +54,17 @@ export const Root = () => (
     durationInFrames={6 * FPS}
     defaultProps={sampleScene}
     calculateMetadata={calculateSvgSceneMetadata}
+  />
+  {/* kare (1:1) uzun video: videonun tamamı kendi sesiyle, bölüm başlıklı (pipeline KARE=1; wa_video.build_kare) */}
+  <Composition
+    id="KareVideo"
+    component={KareVideo}
+    fps={FPS}
+    width={KARE}
+    height={KARE}
+    durationInFrames={60 * FPS}
+    defaultProps={{ episode: sampleEpisode }}
+    calculateMetadata={calculateMetadata}
   />
   {/* günlük uzun özet: yatay, YouTube (pipeline GUNLUK=1) */}
   <Composition

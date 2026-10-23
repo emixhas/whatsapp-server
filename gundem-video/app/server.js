@@ -111,6 +111,7 @@ function listVideos({ archived = false } = {}) {
       youtube: m.youtube || null, instagram: m.instagram || null, tiktok: m.tiktok || null, remakeOf: meta?.remakeOf || null, peakHour: meta?.peakHour ?? null,
       // çizilmiş benzer video (✏️ düzelt): panelde düğme, WhatsApp düzeltme komutunun hedefi; revision düzeltilmiş sürüm numarası
       recreated: !!meta?.recreated, revision: Number(meta?.revision) || 0, revisionOf: meta?.revisionOf || null,
+      kare: !!meta?.kare, // ⬛ kare (1:1) uzun video: panelde rozet, yalnız YouTube
       // panel araması: başlıklar, seslendirme, kaynaklar, tarih, format (küçük harf, Türkçe)
       search: meta ? [meta.publishTitle, meta.titles?.A, meta.titles?.B, meta.dayLabel, meta.slotLabel, meta.formatLabel, meta.sourceName, ...(meta.hashtags || []),
         ...meta.segments.flatMap((x) => [x.title, x.narration, x.source])].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").slice(0, 4000) : f.toLowerCase(),
@@ -330,10 +331,10 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   const lock = path.join(WORK, "pipeline.lock", "pid");
   if (existsSync(lock)) { try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return { ok: false, error: "Zamanlayıcıdan başlamış bir üretim sürüyor; bitince tekrar deneyin." }; } catch { /* eski kilit, pipeline temizler */ } }
   const formatDuration = duration === "format"; // zamanlanmış üretimin telafisi: süreyi saate göre format seçer (launchd gibi)
-  duration = formatDuration ? null : extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : Math.min(180, Math.max(15, Number(duration) || 30));
+  duration = formatDuration ? null : extraEnv.GUNLUK === "1" ? Math.min(600, Math.max(60, Number(duration) || 240)) : extraEnv.KARE === "1" ? Math.min(1800, Math.max(20, Number(duration) || 60)) : Math.min(180, Math.max(15, Number(duration) || 30));
   Object.assign(state, { running: true, startedAt: Date.now(), duration, log: [], exitCode: null });
   restPending = null; // dinlenme kararını bu üretimin sonu verir
-  push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
+  push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.KARE === "1" ? `⬛ ${Math.round(duration / 60)} dakikalık KARE VİDEO üretimi başlatıldı (videonun tamamı kendi sesiyle, 1080x1080)` : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, ...(formatDuration ? {} : { DURATION: String(duration) }), ...extraEnv } });
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) { state.lastVideo = path.basename(m[1]); vqProduced(state.lastVideo); } });
@@ -363,7 +364,7 @@ function startAnlik(topic, duration, opts = {}) {
   const vc = vqCtx(); if (vc) { if (vc.cancelled) return { ok: false, error: "video kuyruğundan iptal edildi" }; opts = { ...opts, vq: vc.id, vqNo: vc.no, vqSrc: vc.src }; }
   topic = String(topic || "").replace(/\s+/g, " ").trim().slice(0, 1500);
   if (topic.length < 8) return { ok: false, error: "Konuyu biraz daha ayrıntılı yazın (en az birkaç kelime)." };
-  duration = Math.min(opts.recreate ? 90 : 60, Math.max(20, Number(duration) || 30)); // benzer video: referansın süresi (en çok 90 sn)
+  duration = Math.min(opts.kare ? 1800 : opts.recreate ? 90 : 60, Math.max(20, Number(duration) || 30)); // benzer video: referansın süresi (en çok 90 sn); kare uzun video: kaynağın süresi (en çok 30 dk)
   if (resting()) { if (opts.auto) { push(`⏸ sistem durduruldu: otomatik anlık haber başlatılmadı (${topic.slice(0, 70)}); elle "🎬 Video üret" ile üretebilirsiniz`); return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; } restEnd("elle anlık haber talimatı"); }
   // video kuyruğunun işi, anlık sırasında bekleyen iş varken (üretim bitip sıranın 10 sn'lik kontrolü gelmeden) öne geçmez, sıranın sonuna girer
   // (7. tur, inceleme, 21 Ekim: 5 linkli mesajda üretim sırası #1 → #4 → #2 → #3 → #5 oluyordu)
@@ -400,6 +401,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (Number(opts.vqNo) > 0) { env.VQ_NO = String(opts.vqNo); if (opts.vqSrc) env.VQ_SRC = String(opts.vqSrc); }
   if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
   if (opts.recreate) env.RECREATE = "1"; // benzer video (sıfırdan): meta recreated → açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video"
+  if (opts.kare) env.KARE = "1"; // ⬛ kare (1:1) uzun video: Remotion KareVideo, meta kare → Shorts değil, yalnız YouTube, açıklamada bölümler
   if (opts.revisionOf) { env.REVISION_OF = String(opts.revisionOf); env.REVISION_N = String(Math.max(1, Number(opts.revision) || 1)); } // ✏️ düzeltilmiş sürüm: meta revision/revisionOf
   if (opts.summary) env.SUMMARY = "1"; // uzun video özeti: meta summary → intro ve açıklamada özet etiketi (SON DAKİKA değilse #sondakika yok)
   if (["trend", "mizah"].includes(opts.contentKind)) env.CONTENT_KIND = opts.contentKind; // viral/mizah videosu: meta contentKind
@@ -2186,6 +2188,19 @@ for (const r of [REFUSED_RE, NEWS_RE, HO_END, HO_THIS, NEWS_SEN, LAUGH, SD_LABEL
   KIND_ASK_RE, KIND_PROG_RE, KIND_PAST_RE, KIND_SCHED_RE, KIND_TAIL, KIND_LEAD, KIND_PHRASE_RE, KIND_PHRASE_S, KIND_ASK_PHRASE, TRAILER_ASK, RECREATE_ASK,
   RECREATE_STRONG, RECREATE_PL, RECREATE_PL_STRONG, RC_KEEP]) for (const w of ["⟪ a ".repeat(300), "a, ".repeat(400)]) { r.lastIndex = 0; r.test(w); r.lastIndex = 0; }
 const recreateOn = () => { const v = waVideoCfg().recreate; return !(v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase())); };
+// ⬛ Kare (1:1) uzun video (kullanıcı isteği, 23 Ekim: "bazen 10 dakikalık kare video linki gönderebilirim; link kare video yazarsam gönderdiğim video kaç
+// dakika ise ortalama o dakikalarda bir kare video üretmeli"): talimat kare uzun video istiyor mu — common.py KARE_ASK/kare_ask ile aynı kural
+// (katlanmış metin). "kare video", "kare format", "kare olsun", "kare yap", "uzun kare video", "1:1"; "kareler", "kareyi kes" değil.
+// Ayar settings.kare {enabled true, maxSeconds 1800} (common.kare_cfg aynı kural).
+const KARE_ASK = /(?<![\p{L}\p{N}_])(?:kare|square)(?:\s+(?:uzun|format(?:ta|inda)?|bir))?\s*(?:video\w*|format\w*|olsun|yap\w*|haber\w*|olarak)(?![\p{L}\p{N}_])|(?<![\p{L}\p{N}_])uzun\s+kare(?:\s+video\w*)?(?![\p{L}\p{N}_])|(?<![\d.,:])1\s*[:x]\s*1(?![\d.,:])/iu;
+const kareAsk = (t) => KARE_ASK.test(kindFold(String(t || "")));
+const kareCfg = () => {
+  const raw = settings().kare, off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
+  const k = raw && typeof raw === "object" ? raw : {};
+  const mx = Number(k.maxSeconds);
+  return { ...k, enabled: raw != null && typeof raw !== "object" ? !off(raw) : !off(k.enabled ?? true), maxSeconds: Number.isFinite(mx) && mx > 0 ? mx : 1800 };
+};
+const kareOn = () => kareCfg().enabled;
 // "özet reels" (kullanıcı isteği, 23 Ekim: "link özet reels yazarsam o kare videodan svg özet reels üretmeli"): uzun (10 dakikalık) videonun
 // çizilmiş sahnelerle özeti = benzer video yolu (build_recreate: döküm + kareler → Claude özet planı → SVG sahneler), hedef 60 sn (talimatta
 // "N saniye" varsa o). Biçimler: "özet reels", "reels özet", "svg özet", "özet reel", "özet shorts"
@@ -2320,7 +2335,9 @@ function ownerJobEnd(id) { ownerJobs.delete(id); }
 const OWNER_STAGES = [
   [/^🔗 sosyal medya paylaşımı indiriliyor|^🔗 uzun video|^📡 canlı/, () => "video indiriliyor"],
   [/^🔗 indirildi/, () => "video indirildi; inceleme başlıyor"],
-  [/^(?:🎬|🎨) video \d+:|^🎬 konuşma|^🖼 video|^📝 /, () => "video inceleniyor (konuşma dökümü, kareler, ekrandaki yazılar)"],
+  [/^(?:🎬|🎨) video \d+:|^🎬 konuşma|^🖼 video|^📝 |^⬛ kare video:|^⬛ video 1|^⬛ konuşma/, () => "video inceleniyor (konuşma dökümü, kareler, ekrandaki yazılar)"],
+  [/^⬛ Claude/, () => "Claude kanca, giriş, bölüm başlıkları ve kapanışı yazıyor (1-4 dk)"],
+  [/^⬛ videonun tamamı/, () => "videonun tamamı kare (1080x1080) kesiliyor (ffmpeg; uzun videoda birkaç dakika)"],
   [/^🎨 Claude videoyu inceliyor|^🎬 Claude|^✏️ Claude|kurgu planı/, () => "Claude senaryoyu ve sahneleri yazıyor (1-4 dk)"],
   [/^🎨 (\d+) sahne çiziliyor/, (m) => `sahneler çiziliyor (${m[1]} sahne, Remotion; sahne başına 1-3 dk)`],
   [/^🎨 (kanca|\d+\. sahne): (.{0,40})/, (m) => `sahne çizildi: ${m[1]} — ${m[2].split(" — ")[0]}`],
@@ -2361,27 +2378,32 @@ async function runVideoNews0(v) {
   if (rv) v.recreate = true;
   if (v.recreate === undefined) { v.recreate = !v.social && !v.trailer && !v.summary && recreateOn() && (recreateAsk(v.instruction) || reelsAsk(v.instruction)); if (v.recreate && reelsAsk(v.instruction)) v.instruction = reelsInstruction(v.instruction); } // WhatsApp videosunda "özet reels"
   const rc = !!v.recreate;
+  // ⬛ kare (1:1) uzun video: link yolu socialVideoNews'te karar verir (v.kare); WhatsApp videosunda talimattan ("kare video")
+  if (v.kare === undefined) v.kare = !v.social && !v.trailer && !v.summary && !rc && kareOn() && kareAsk(v.instruction);
+  const kr = !!v.kare;
   // sahibin kendi videosu / yanıtı: yayın saati satırı (timeTail; linkte handleCommand yanıtı söyler)
   const tl = v.social || rv ? "" : timeTail({ publishAt: v.publishAt, timeDoubt: v.timeDoubt, ignoredTime: v.timeNote }, true);
-  push(`${rv ? "✏️" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
+  push(`${rv ? "✏️" : kr ? "⬛" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : kr ? `kare uzun video (${v.social?.duration ? `${Math.round(Number(v.social.duration) / 60)} dk, ` : ""}videonun tamamı kendi sesiyle)` : v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
   if (rv) { if (v.src === "panel") await sendW(`✏️ Panelden düzeltme (${rv.revision}. sürüm): "${String(rv.instruction).slice(0, 120)}" — değişen sahneler yeniden çiziliyor, kalanlar korunuyor. Bitince video gelecek; eski sürüm yayınlanmayacak.`); }
-  else if (!waBrief()) await sendW((rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
+  else if (!waBrief()) await sendW((kr ? `⬛ Videoyu inceliyorum: konuşmasını kelimelere döküyor, karelerine bakıyorum; sonra çarpıcı bir kanca, kısa giriş, bölüm başlıkları ve kapanış yazıp videonun TAMAMINI kendi sesiyle kare (1:1) uzun video yapacağım${v.social?.duration ? ` (kaynak ${Math.round(Number(v.social.duration) / 60)} dk; hazırlık 5-20 dk)` : " (hazırlık 5-20 dk)"}.`
+    : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
     : v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`) + tl);
-  else if (!v.social) await sendW((rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
+  else if (!v.social) await sendW((kr ? "⬛ Başladı: videonuz kare (1:1) uzun video olarak hazırlanıyor (tamamı kendi sesiyle). Bitince video gelecek." : rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
   // sahibin uzun işi (ownerJobs): otomatik trend kuyruğu işi (quiet) değil
   const oj = vqCtx()?.quiet ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
   writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "" } : {}),
     ...(["haber", "trend", "mizah"].includes(v.kind) ? { kind: v.kind } : {}),
-    ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
+    ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(kr ? { kare: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
     ...(rv ? { revise: { job: rv.job, instruction: rv.instruction, of: rv.of, revision: rv.revision } } : {}) });
   // özet: videonun tamamının analizi + iki Claude çağrısı + HD anlar (en çok 60 dk); benzer video: Claude + sahnelerin çizimi (en çok 50 dk);
   // satırlar anında loga (çerçeve 🖼, ekrandaki yazılar 📝, açıklamasız paylaşımın haber araması 🔎 dahil; inceleme, 19 Ekim: yanlış
   // kırpma logda hiç görünmüyordu)
-  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? 50 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
+  // kare: 10 dakikalık videonun dökümü (konuşma tanıma) + tamamının 1080x1080 kesimi uzun sürer (en çok 45 dk)
+  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? 50 : kr ? 45 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|⬛|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
   rmSync(jobFile, { force: true });
   let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
   if (!j?.ok) {
@@ -2411,16 +2433,28 @@ async function runVideoNews0(v) {
     if (!waBrief()) await sendW(`🎨 *Sıfırdan üretildi*: ${p.scenes} sahne çizildi — ${p.titles?.A || p.hook}${p.konu ? `\n🔎 Konu: ${String(p.konu).slice(0, 160)}` : ""}${p.mesaj ? `\n💡 Mesaj: ${String(p.mesaj).slice(0, 160)}` : ""}${p.hookType ? `\n🎣 Kanca: ${p.hookLabel || p.hookType}${p.hookPromise ? ` — ${String(p.hookPromise).slice(0, 120)}` : ""}` : ""}\n📝 Videodan çıkarılan: ${ref ? `"${ref.slice(0, 200)}${ref.length > 200 ? "…" : ""}"` : "konuşma ya da yazı bulunamadı; hikâye görüntüden çıkarıldı"}${p.speech === false ? " (konuşma tanıma Mac'te kurulu değil: bash scripts/install_align.sh)" : ""}\n\n${p.cuts ? `Neler korundu, neler değişti: ${p.cuts}\n\n` : ""}Sahneler:\n${(p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.sahne || "çizim"}${s.fallback ? " (sade yedek çizim)" : ""}`).join("\n")}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   }
   // özette sorun olabilecek iki durum kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir)
+  if (kr) {
+    // kare: kaynak süresi, bölümler, baş/son kesimi; dosya 60 MB'yi aşarsa WhatsApp yalnız bağlantı gönderir (whatsapp.sendVideo)
+    const mins = (x) => `${Math.floor(x / 60)}:${String(Math.round(x % 60)).padStart(2, "0")}`;
+    const chap = (p.chapters || []).map((c) => `• ${mins(c.t)} ${c.title}`).join("\n");
+    push(`⬛ kare video planı: ${p.chapters?.length || 0} bölüm, kaynak ${mins(j.sourceSeconds || 0)} → video ≈ ${mins(j.duration)}${p.trim?.some(Boolean) ? ` (baştan ${p.trim[0]} sn, sondan ${p.trim[1]} sn kesildi)` : ""}`);
+    if (!waBrief()) await sendW(`⬛ *Kare video kurgusu hazır* — ${p.titles?.A || p.hook}\n⏱ Kaynak ${mins(j.sourceSeconds || 0)} → video ≈ ${mins(j.duration)} (tamamı kendi sesiyle, 1080x1080)${p.trim?.some(Boolean) ? `\n✂️ Baştan ${p.trim[0]} sn, sondan ${p.trim[1]} sn kesildi` : ""}${chap ? `\n\n📑 Bölümler:\n${chap}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulu değil): bölüm başlıkları karelerden, kelime altyazısı yok. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 500)}\n\nVideo üretiliyor (${mins(j.duration)}; uzun videoda çizim 10-30 dk sürer); bitince buraya gelecek (dosya 60 MB'yi aşarsa yalnız panel bağlantısı), yayın için *onay* isteyeceğim (yalnız YouTube; Reels ve TikTok uzun kare videoyu almaz).`);
+    else await sendW(`⬛ Kare video kurgusu hazır: ${p.titles?.A || p.hook} — ${p.chapters?.length || 0} bölüm, ≈ ${mins(j.duration)}. Üretiliyor; yalnız YouTube'a, onayla.`);
+  }
   if (p.summary && p.unsuitable) await sendW(`⚠️ Video habere pek uygun görünmüyor (${String(p.unsuitable).slice(0, 140)}); yine de en iyi anlarıyla hazırladım.`);
   if (p.summary && p.lowres) await sendW(`⚠️ ${p.lowres} an YouTube'dan HD inmedi; o anlar düşük çözünürlüklü kopyadan kesildi (görüntü bulanık olabilir).`);
-  if (!rc && !waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : p.contentKind === "mizah" ? "Kurgu hazır (mizah: sonda belirtilecek)" : p.contentKind === "trend" ? "Kurgu hazır (viral video)" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${p.frameCropped?.length ? `\n🖼 Çerçeve kırpıldı (logo ve başlık bandı videoda görünmeyecek)${v.files.length > 1 ? `: ${p.frameCropped.join(", ")}. video` : ""}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+  if (!rc && !kr && !waBrief()) await sendW(`✂️ *${v.trailer ? "Fragman kurgusu hazır" : p.summary ? "Özet kurgusu hazır" : p.contentKind === "mizah" ? "Kurgu hazır (mizah: sonda belirtilecek)" : p.contentKind === "trend" ? "Kurgu hazır (viral video)" : "Kurgu hazır"}* — ${p.titles?.A || p.hook}${v.trailer && p.film ? `\n🎬 ${p.film}${p.speechLang ? ` · konuşma dili: ${p.speechLang}` : ""}` : ""}${p.summary && p.konu ? `\n🔎 ${hm(p.sourceSeconds || 0)} videonun konusu: ${String(p.konu).slice(0, 200)}${p.moments?.length > 1 ? `\n🎞 Seçilen anlar: ${p.moments.map((m) => `${hm(m[0])}–${hm(m[1])}`).join(", ")}` : ""}` : ""}${p.frameCropped?.length ? `\n🖼 Çerçeve kırpıldı (logo ve başlık bandı videoda görünmeyecek)${v.files.length > 1 ? `: ${p.frameCropped.join(", ")}. video` : ""}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${j.vertical ? "\n📱 Dikey video: haberler tam ekran dikey düzende" : ""}${j.soundSeconds ? `\n🔊 ${String(j.soundSeconds).replace(".", ",")} sn videonun kendi sesiyle${j.soundFull ? (j.soundSeconds >= j.sourceSeconds - 2.5 ? " (videonun tamamı)" : ` (${Math.round(j.sourceSeconds)} sn'lik videonun en önemli bölümü; tamamı ~3 dk sınırını aşıyordu)`) : ""}` : ""}\n\n${p.cuts ? `Kesimler: ${p.cuts}\n\n` : ""}Kullanılan bölümler:\n${segLines}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulamadı); kurgu yalnız görüntüye göre yapıldı. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : p.speechSource === "youtube" ? `\n\n📝 Konuşma YouTube altyazısından okundu (${p.speechOff === false ? "konuşma tanıma konuşma bulamadı" : "konuşma tanıma Mac'te kurulu değil; kurmak için bir kez: bash scripts/install_align.sh"})` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   // kısa mesaj modunda da tek satır: kırpma yanlış olabilir (gerçek videolarda denenmedi), sahip görsün ve gerekirse kapatsın
   if (!rc && waBrief() && p.frameCropped?.length) await sendW(`🖼 Çerçeve kırpıldı${v.files.length > 1 ? ` (${p.frameCropped.join(", ")}. video)` : ""}: logo ve başlık bandı videoda görünmeyecek. Yanlışsa panelden "🖼 çerçeveyi kırp" kapatılabilir.`);
   // fragman: etiket plandan (FRAGMAN / YENİ FRAGMAN / HAYRAN FRAGMANI / TANITIM FİLMİ), giriş ve kapanış etikete göre wa_video.py'den
   // ("Yeni fragman." yalnız yeni fragmanda; eski fragmana "yeni" denmez), SON DAKİKA kartı yok; yine onaylı (userVideo), en çok izlenen
   // saat tekrarına girmez (infoKind video)
   // benzer video (sıfırdan): son dakika değil; etiket, giriş ve kapanış plandan (HİKÂYE: "Kısa bir hikâye."), SON DAKİKA kartı yok
-  const info = rc ? { kind: "video", label: p.label || "HİKÂYE", intro: p.intro || "Kısa bir hikâye.", outro: p.outro || "Takip etmeyi unutma.", breaking: false }
+  // kare uzun video: etiket plandan (RÖPORTAJ, AÇIKLAMA, VİDEO…); SON DAKİKA değilse SON DAKİKA kartı yok, kapanış uzun videoya göre
+  const kl = String(p.label || "VİDEO");
+  const info = kr ? (kindFold(kl).replace(/[^a-z]/g, "") === "sondakika" ? { kind: "video", label: "SON DAKİKA", intro: "Son dakika." }
+      : { kind: "video", label: kl, intro: `${kl.charAt(0)}${kl.slice(1).toLocaleLowerCase("tr-TR")}.`, outro: "Videonun tamamı buydu. Yeni videolar için takip etmeyi unutma.", breaking: false })
+    : rc ? { kind: "video", label: p.label || "HİKÂYE", intro: p.intro || "Kısa bir hikâye.", outro: p.outro || "Takip etmeyi unutma.", breaking: false }
     : v.trailer ? { kind: "video", label: p.label || "FRAGMAN", intro: p.intro || "Fragman analizi.", outro: p.outro || "Yeni fragmanları kaçırmamak için takip etmeyi unutma.", breaking: false }
     // özet: etiket plandan (ÖZET, AÇIKLAMA, RÖPORTAJ…); SON DAKİKA kartı ve "Son dakika." yalnız SON DAKİKA etiketinde
     : p.summary ? { kind: "video", label: p.label || "ÖZET", intro: p.intro || "Kısa özet.", ...(p.label === "SON DAKİKA" ? {} : { breaking: false }) }
@@ -2430,7 +2464,7 @@ async function runVideoNews0(v) {
     : { kind: "video", label: p.label, intro: `${p.label.charAt(0)}${p.label.slice(1).toLocaleLowerCase("tr-TR")}.`, breaking: false }; // GÖRÜNTÜLÜ HABER, ÖZEL HABER: "Son dakika." denmez
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
     source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
-    ...(rv ? { revisionOf: rv.of, revision: rv.revision } : {}), ...(oj ? { ownerJob: oj } : {}) });
+    ...(rv ? { revisionOf: rv.of, revision: rv.revision } : {}), ...(kr ? { kare: true } : {}), ...(oj ? { ownerJob: oj } : {}) });
   if (!res.ok) { if (oj) ownerJobEnd(oj); await sendW(`❌ Üretim başlatılamadı: ${res.error}`); }
   else if (res.queued) {
     if (oj) ownerJobStage(oj, res.preempted ? "üretim sırasında (durdurulan otomatik üretim kapanınca hemen başlayacak)" : `üretim sırasında (${res.position}. sırada; süren üretim bitince başlayacak)`);
@@ -2518,7 +2552,10 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     // talimat social_video.py'ye de gider: uzun YouTube videosunda bölüm seçimi ("12:30'dan itibaren", başlık + talimat kelimeleri);
     // süre: bilgi + altyazı (≤3 dk) + bölüm indirme (≤12 dk) + haber araması
     // uzun video özetinde videonun tamamı (≤3 saat, düşük çözünürlük) iner: en çok 30 dk; ilerleme satırları anında loga
-    const r = await runLines(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : []), ...(kind ? ["--kind", kind] : [])], { timeout: 30 * 60000, onLine: (l) => { if (/^(🔗|📡)/.test(l)) push(l.trim()); } });
+    // ⬛ kare (1:1) uzun video ("link kare video"): social_video.py videonun tamamını indirir (bölüm seçimi ve özet kararı yok; en çok settings.kare.maxSeconds)
+    const kare = kareOn() && kareAsk(instruction) && !(recreateOn() && (recreateAsk(instruction) || reelsAsk(instruction)));
+    if (kare) push(`⬛ kare video istendi: videonun tamamı indirilecek (en çok ${Math.round(kareCfg().maxSeconds / 60)} dk)`);
+    const r = await runLines(PY, ["scripts/social_video.py", "--url", url, ...(instruction ? ["--instruction", instruction] : []), ...(kind ? ["--kind", kind] : []), ...(kare ? ["--kare"] : [])], { timeout: 30 * 60000, onLine: (l) => { if (/^(🔗|📡|⬛)/.test(l)) push(l.trim()); } });
     const outLines = String(r.stdout || "").trim().split("\n");
     let j = null; try { j = JSON.parse(outLines.pop()); } catch { /* yanıt yok */ }
     if (!j?.ok) { const err = j?.error || String(r.stderr || "yanıt yok").slice(-200); push(vqCtx()?.cancelled ? `🔗 paylaşım indirilmedi${vqTag()}: video kuyruğundan iptal edildi` : `🔗 paylaşım indirilemedi${vqTag()}: ${err}`); await sendW(`❌ Paylaşım indirilemedi${vqWho()}: ${err}`); return { ok: false, error: err }; }
@@ -2532,11 +2569,16 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     // canlı yayın / uzun videonun yalnız bir bölümü alındıysa kullanıcı bilsin (kısa mesaj modunda da tek satır; bölümü değiştirme yolu)
     const note = String(s.note || ""), Note = note.charAt(0).toLocaleUpperCase("tr-TR") + note.slice(1);
     if (note && s.live) await sendW(`📡 ${Note}.`);
+    else if (note && s.kare) await sendW(`⬛ ${Note}.`);
     else if (note && s.summary) await sendW(`🔎 ${Note}.${s.summaryProxy ? ` Belirli bir bölümden haber için linkin yanına zamanı yazın: "12:30'dan itibaren".` : ""}`);
     else if (note && s.window) await sendW(`🔗 ${Note}.${s.clip ? "" : ` Başka bölüm için linkin yanına zamanı yazın: "12:30'dan itibaren", "5. dakikadan", "son 3 dakika".`}`);
     if (rc) {
       push(`🎨 benzer video (sıfırdan): ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}izlenip kelimeleri çıkarılacak, hikâyesi kendi cümlelerimizle yeniden yazılıp sahneleri çizilecek`);
       return await runVideoNews({ files: [j.file], instruction, social: s, related: [], publishAt, recreate: true });
+    }
+    if (kare) {
+      push(`⬛ kare uzun video: ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}${s.duration ? `(${Math.round(Number(s.duration) / 60)} dk) ` : ""}tamamı kendi sesiyle 1080x1080; kanca, giriş, bölüm başlıkları ve kapanış yazılacak`);
+      return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, kare: true, kind });
     }
     // fragman mı: talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser geçiyorsa ya da başlık fragmansa (autoDetect)
     const tc = trailerCfg();
@@ -3048,8 +3090,10 @@ async function think(text, mode = "chat", opts = {}) {
 // ---------- WhatsApp köprüsü
 const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok },
   recreated: !!meta.recreated, jobDir: meta.jobDir || null, revision: Number(meta.revision) || 0, revisionOf: meta.revisionOf || null, // ✏️ düzelt
+  kare: !!meta.kare,
   queueNo: (() => { const n = queueNoOf(v.name); return n > 0 ? n : 0; })(), queueSource: meta.queue?.source || (() => { try { return vq.sourceOf(v.name); } catch { return null; } })() }; };
-const waLinks = async (name) => { const conn = await brain.connections(); const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
+// kare (1:1) uzun video yalnız YouTube'a gider (post_pipeline.targets aynı kural): WhatsApp onayı da yalnız YouTube'u sorar
+const waLinks = async (name) => { const conn = await brain.connections(); const kare = !!readJson(path.join(OUT, String(name).replace(/\.mp4$/, "") + ".json"), null)?.kare; const platforms = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected && (!kare || p === "youtube")); const base = encodeURIComponent(name.replace(/\.mp4$/, "")); return { lan: `http://${lanIp()}:${PORT}/w/${base}`, tunnel: tunnel.url ? `${tunnel.url}/w/${base}` : null, platforms, thumb: await thumbBuffer(name) }; };
 const statusText = async () => {
   const sch = await getSchedule(); const conn = await brain.connections(); const accs = ["youtube", "instagram", "tiktok"].filter((p) => conn[p]?.connected);
   const vids = listVideos(); const ap = settings().autopublish || {};

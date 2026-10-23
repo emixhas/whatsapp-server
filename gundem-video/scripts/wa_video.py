@@ -18,6 +18,12 @@ konuşma dili kendiliğinden algılanır (fragman çoğu zaman İngilizce), kare
 hariç, en çok 24, tüm fragmana yayılmış), siyah bölümler parçalardan ayıklanır, `prompts/fragman.md`; döküm iş klasörüne `fragman_dokum.txt`.
 Etiket, giriş ve kapanış `trailer_label()` (eski fragmana "yeni" denmez), geçersiz parçanın yedeği baştaki logolardan sonra başlar.
 
+Kare modu (`job.kare` ya da talimatta "kare video"; kullanıcı isteği, 23 Ekim: "10 dakikalık kare video linki gönderebilirim; link kare
+video yazarsam gönderdiğim video kaç dakika ise ortalama o dakikalarda bir kare video üretmeli"): `build_kare` — videonun TAMAMI
+1080x1080 (oranı uymayan bulanık zeminle) ve KENDİ SESİYLE tek "sesli" bölümde oynar; Claude (`prompts/kare.md`) yalnız kanca, giriş,
+bölüm başlıkları (`chapters`, sesli bölümün altında ve YouTube açıklamasında), kapanış ve baş/son kesimini yazar. Remotion `KareVideo`
+(1080x1080); video süresi ≈ kaynağın süresi (en çok settings.kare.maxSeconds, 30 dk); yalnız YouTube'a gider.
+
   python3 scripts/wa_video.py --job IS.json     # IS.json: {"videos": [yol, ...], "instruction": "...", "duration": 30}
                                                 # düzeltme (çizilmiş benzer video): {"revise": {"job": "work/jobs/video-…", "instruction": "2. sahnede …", "of": "2026-10-23-3.mp4", "revision": 2}}
                                                 # fragman: {..., "trailer": true, "film": "Dune: Part Three", "social": {...}}
@@ -36,7 +42,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import ROOT, content_kind, kind_fold, kind_only, recreate_ask, recreate_on, settings, summary_cfg, summary_secs  # noqa: E402
+from common import ROOT, content_kind, kare_ask, kare_cfg, kare_on, kind_fold, kind_only, recreate_ask, recreate_on, settings, summary_cfg, summary_secs  # noqa: E402
 from info_card import new_job  # noqa: E402
 import social_video as sv  # noqa: E402
 import frame_crop as fc  # noqa: E402
@@ -1500,6 +1506,209 @@ NO_TEXT_RULE = ("EKRANDAKİ YAZILAR VE ÇERÇEVE\n- Kare resimlerini ve yazı ka
 CERCEVE_NOTE = "kırpıldı: kareler ve kesimler çerçevenin içindeki videodan"
 
 
+KARE_TALIMAT = ("Bu videoyu kare uzun video olarak hazırla: videoda gerçekten söylenen ya da görülen en çarpıcı şeyle bir kanca, kısa bir giriş, "
+                "bölüm başlıkları ve kısa bir kapanış yaz; videonun tamamı kendi sesiyle oynar.")
+
+
+def kare_chapters(raw, dur: float) -> list:
+    """Claude'un bölüm başlıklarını doğrular: 0 ≤ saniye < süre − 15, sıralı, aralarında en az 20 sn, başlık ≤ 40 karakter, en çok 12;
+    ilk bölüm 0. saniyede (20 sn içindeyse başa çekilir, yoksa "Başlangıç" eklenir). Dönen saniyeler sesli bölümün kendi saniyesidir."""
+    out = []
+    for c in raw if isinstance(raw, list) else []:
+        if not isinstance(c, dict):
+            continue
+        try:
+            t = float(c.get("saniye", c.get("t")))
+        except (TypeError, ValueError):
+            continue
+        title = re.sub(r"\s+", " ", str(c.get("baslik") or c.get("title") or "")).strip()[:40].rstrip(" ,;:-–")
+        if title and 0 <= t < max(0.0, dur - 15):
+            out.append({"t": round(t, 1), "title": title})
+    out.sort(key=lambda x: x["t"])
+    res: list = []
+    for c in out:
+        if res and c["t"] - res[-1]["t"] < 20:
+            continue
+        res.append(c)
+    if res and res[0]["t"] > 0:
+        if res[0]["t"] <= 20:
+            res[0]["t"] = 0.0
+        else:
+            res.insert(0, {"t": 0.0, "title": "Başlangıç"})
+    return res[:12]
+
+
+def build_kare(job: dict, srcs: list, instruction: str) -> dict:
+    """Kare (1:1) uzun video: videonun tamamı kendi sesiyle tek sesli bölümde; Claude yalnız kanca, giriş, bölüm başlıkları, kapanış ve
+    baş/son kesimini yazar (prompts/kare.md). Çıktı iş klasörü şablon düzeninde (claude_out.json + cards.json); sesli kartta
+    `chapters` (KareVideo.tsx alt bant, build_caption YouTube bölümleri)."""
+    social, rel = job.get("social") or None, job.get("related") or []
+    so = social or {}
+    kc = kare_cfg()
+    p = srcs[0]
+    name = f"video-{time.strftime('%Y%m%d-%H%M%S')}"
+    tmp = ROOT / "work" / "jobs" / f"{name}-analiz"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    TMPDIRS.append(tmp)
+    info = probe(p)
+    dur = float(info["duration"])
+    if dur < 20:
+        return {"ok": False, "error": "kare video için video çok kısa (en az 20 sn); kısa videoyu haber ya da benzer video olarak gönderin"}
+    if dur > kc["maxSeconds"]:
+        return {"ok": False, "error": f"video çok uzun ({hms(dur)}); kare video için en çok {hms(kc['maxSeconds'])} (settings.kare.maxSeconds)"}
+    if len(srcs) > 1:
+        log(f"⬛ kare video: yalnız ilk video kullanılıyor ({len(srcs)} video gönderildi)")
+    log(f"⬛ kare video: {hms(dur)}, {info['width']}x{info['height']} — konuşma dökümü, sahne geçişleri ve kareler çıkarılıyor; videonun tamamı "
+        "kendi sesiyle 1080x1080 oynayacak")
+    info["cuts"] = scenes(p, 1000)
+    info["scenes"] = info["cuts"][::max(1, math.ceil(len(info["cuts"]) / 150))]
+    info["speech"] = transcript(p, tmp) if info["audio"] else []
+    caps = so.get("captions") if info["audio"] else None
+    if caps and (SPEECH_OFF or not info["speech"]):  # konuşma tanıma bir şey çıkarmadıysa YouTube altyazısı döküm olur
+        try:
+            info["speech"] = [(round(float(a), 1), round(float(b), 1), str(t).strip()) for a, b, t in caps if str(t).strip() and 0 <= float(a) < dur]
+        except (TypeError, ValueError):
+            info["speech"] = []
+        if info["speech"]:
+            info["captions"] = True
+    lines = info["speech"]
+    step = max(1, math.ceil(len(lines) / 200))  # istem: en çok 200 döküm satırı, eşit aralıklı
+    dok = [f"[{a}-{b}] {t}" for a, b, t in lines[::step]]
+    sheet = tmp / "kareler-1.jpg"
+    info["frames"] = contact_sheet(p, dur, sheet, tmp, shot_times(dur, info["cuts"], [], n=24))
+    info["sheet"] = sheet.name if info["frames"] else None
+    vcfg = settings().get("waVideo") or {}
+    if len(lines) < 3 and vcfg.get("screenText") is not False:  # konuşmasız videoda bilgi çoğu zaman ekrandadır
+        info["text"] = fc.text_frames(p, dur, info["scenes"], tmp, "yazi-1", 3)
+    block = {"video": 1, "sure": round(dur, 1), "boyut": f"{info['width']}x{info['height']}", "sahne_gecisleri": info["scenes"],
+             "konusma_dili": LANGS.get(str(p)), "konusma": dok, "kareler_dosyasi": info["sheet"], "kareler": info["frames"]}
+    if info.get("text"):
+        block["yazi_kareleri"] = info["text"]
+    n_text = len(info.get("text") or [])
+    log(f"⬛ video 1: {hms(dur)}, {len(info['cuts'])} sahne geçişi, {len(lines)} konuşma satırı"
+        f"{' (YouTube altyazısından)' if info.get('captions') else ''}, {len(info['frames'])} kare{f', {n_text} yazı karesi' if n_text else ''}")
+    if SPEECH_OFF and not info.get("captions"):
+        log("⬛ konuşma tanıma çalışmadı (mlx-whisper kurulamadı ya da kapalı): bölüm başlıkları kareler ve sahne geçişlerinden; sesli bölümde kelime altyazısı "
+            "olmayacak — Mac'te bir kez 'bash scripts/install_align.sh'")
+    inp = {"talimat": instruction if len(re.sub(r"kare\w*|square|video\w*|format\w*|olsun|yap\w*|olarak|uzun|bir|[\W\d_]", "", instruction, flags=re.I)) >= 3 else KARE_TALIMAT,
+           "video": block, "bugun": time.strftime("%d.%m.%Y")}
+    fwd = forwarded_caption(job)
+    if fwd:
+        inp["iletilen_aciklama"] = fwd
+    if social:
+        inp["kaynak_paylasim"] = {k: so.get(k) for k in ("platform", "credit", "uploader", "caption", "title", "views", "likes", "date")}
+        inp["ilgili_haberler"] = rel[:5]
+    tpl = (ROOT / "prompts" / "kare.md").read_text(encoding="utf-8")
+    prompt = tpl + json.dumps(inp, ensure_ascii=False, indent=1)
+    log("⬛ Claude videoyu inceliyor: kanca, giriş, bölüm başlıkları ve kapanışı yazıyor (kurgu planı)")
+    seen = bool(block["kareler_dosyasi"] or block.get("yazi_kareleri"))
+    rc, text = claude(prompt, tmp, images=seen, kind="kare")
+    if rc not in (0, 2):
+        log(f"  ! ilk deneme olmadı ({text[:120]}); kare resimleri olmadan yeniden deneniyor")
+        seen = False
+        rc, text = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", "Kareleri GÖREMİYORSUN (Read aracı kapalı): dökümden ve sahne geçişlerinden karar ver, "
+                                         "görüntüyü tarif etme. Görebilseydin bakacağın şeyler") + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="kare")
+    if rc:
+        return {"ok": False, "error": f"kare video planı yazılamadı: {text[:200]}", "limit": rc == 2}
+    try:
+        plan = parse_plan(text)
+    except Exception as e:
+        return {"ok": False, "error": f"kare video planı okunamadı: {e}"}
+    # baş/son kesimi (0-20 sn); kalan en az 15 sn
+    def secs(v, hi=20.0):
+        try:
+            return max(0.0, min(hi, float(v)))
+        except (TypeError, ValueError):
+            return 0.0
+    bas, son = secs(plan.get("bas_kes")), secs(plan.get("son_kes"))
+    if dur - bas - son < 15:
+        bas = son = 0.0
+    hook, giris, kap = (plan.get(k) if isinstance(plan.get(k), dict) else {} for k in ("kanca", "giris", "kapanis"))
+    g_narr = " ".join(str(giris.get("narration") or "").split())
+    if not g_narr:
+        return {"ok": False, "error": "planda giriş yok"}
+    h_narr = " ".join(str(hook.get("narration") or "").split()) or re.split(r"(?<=[.!?])\s", g_narr)[0]
+    h_narr = " ".join(h_narr.split()[:10]).rstrip(",;:") + ("" if h_narr.endswith((".", "!", "?")) else ".")
+    k_narr = " ".join(str(kap.get("narration") or "").split()) or "Videonun tamamı buydu. Siz ne düşünüyorsunuz? Yorumlara yazın."
+    cat = plan.get("category") if plan.get("category") in CATS else "genel"
+    label = news_label(str(plan.get("label") or "VİDEO"))
+    chapters = kare_chapters(plan.get("bolumler"), dur - bas - son)
+    if bas:  # bölüm saniyeleri sesli bölümün kendi saniyesine (baş kesimi düşülür)
+        chapters = kare_chapters([{"saniye": max(0.0, c["t"] - bas), "baslik": c["title"]} for c in chapters], dur - bas - son)
+    infos, used, d = [info], {}, tmp / "parcalar"
+    d.mkdir(exist_ok=True)
+
+    def seg_clips(raw, need: float, tail: bool = False) -> list:
+        # kanca/giriş/kapanış parçaları baştan ve sondan kesilen (sarsıntı, jenerik) bölgeye düşmez; hiç geçerli parça kalmazsa yedek parça
+        # kullanılan bölgenin başından (kanca, giriş) ya da sonundan (kapanış) seslendirme kadar
+        raw = [{**c, "video": 1} for c in (raw if isinstance(raw, list) else []) if isinstance(c, dict)]
+        ok = [c for c in clean_clips(raw, infos, need, used, bas, fallback=False) if c["start"] >= bas - 0.05 and c["end"] <= dur - son + 0.05]
+        if ok:
+            return ok
+        n = max(1.5, min(need, (dur - son - bas) / 2))
+        st = max(bas, min((dur - son - 0.5 - n) if tail else bas + 0.5, dur - son - n))
+        return [{"video": 1, "start": round(st, 2), "end": round(st + n, 2)}]
+    parts = [("hook", hook.get("title") or "", h_narr, seg_clips(hook.get("clips"), len(h_narr.split()) / 2.4 + 0.5)),
+             ("haber", giris.get("title") or "Giriş", g_narr, seg_clips(giris.get("clips"), len(g_narr.split()) / 2.4 + 0.5)),
+             ("sesli", "", "", [{"video": 1, "start": round(bas, 2), "end": round(dur - son, 2)}]),
+             ("haber", kap.get("title") or "Kapanış", k_narr, seg_clips(kap.get("clips"), len(k_narr.split()) / 2.4 + 0.5, tail=True))]
+    cards, segs_out, plan_out = [], [], []
+    for k, (kind, title, narr, clips) in enumerate(parts):
+        sesli = kind == "sesli"
+        vid = d / f"seg-{k}.mp4"
+        if sesli:
+            log(f"⬛ videonun tamamı 1080x1080 kesiliyor (kendi sesiyle; {hms(bas)}–{hms(dur - son)}){' — birkaç dakika sürebilir' if dur > 180 else ''}")
+        if not cut(clips, srcs[:1], 1080, 1080, vid, audio=[bool(info["audio"])] if sesli else None):
+            return {"ok": False, "error": f"{k + 1}. bölüm kesilemedi (ffmpeg)"}
+        c0 = clips[0]
+        mid = c0["start"] + min(1.0, (c0["end"] - c0["start"]) / 2)
+        img, tall = d / f"seg-{k}.jpg", d / f"seg-{k}-tall.jpg"
+        still(p, mid, 1840, 1120, img)
+        still(p, mid, 1080, 1920, tall)
+        clen = round(sum(c["end"] - c["start"] for c in clips), 2)
+        cards.append({"video": vid, "image": img if img.exists() else tall, "tall": tall if tall.exists() else img, "videoDuration": clen,
+                      **({"sound": True, "fullFrame": True} if sesli else {})})
+        seg = {"kind": kind, "title": str(title)[:60], "narration": narr, "source": "" if social else "Türkiye Gündemi", "category": cat}
+        if sesli:
+            ws = [{"w": w, "s": round(a - c0["start"], 3), "e": round(min(b, c0["end"]) - c0["start"], 3)}
+                  for w, a, b in WORDS.get(str(p), []) if a >= c0["start"] and b <= c0["end"] + 0.05]
+            seg.update({"soundWords": ws, "soundDuration": clen, "chapters": chapters})
+        segs_out.append(seg)
+        plan_out.append({"kind": kind, "title": seg["title"], "clips": clips, "seconds": clen, "narrationSeconds": round(len(narr.split()) / 2.4, 1) if narr else 0})
+        log(f"✂️ {'kanca' if kind == 'hook' else '🔊 videonun tamamı (kendi sesi)' if sesli else seg['title']}: "
+            + ", ".join(f"{c['start']:.1f}-{c['end']:.1f} sn" for c in clips) + f" (toplam {clen} sn)")
+    first = str(plan.get("firstComment") or "").strip()[:160] or "Siz bu konuda ne düşünüyorsunuz? Yorumlarda buluşalım 👇"
+    script = {"titles": plan.get("titles") or {}, "hashtags": plan.get("hashtags") or [], "importance": plan.get("importance", 3),
+              "importanceReason": plan.get("importanceReason", "Kare uzun video"), "firstComment": first,
+              "segments": [segs_out[0], {"kind": "intro", "narration": "Son dakika." if label == "SON DAKİKA" else f"{label[:1]}{label[1:].lower()}."},
+                           *segs_out[1:], {"kind": "outro", "narration": "Takip etmeyi unutma."}]}
+    so_mem = {"title": str(so.get("title") or "")[:200], "caption": str(so.get("caption") or "")[:600], "url": so.get("url") or ""} if social else None
+    job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": [str(p)], "kare": True,
+                                         "chapters": chapters, "sourceSeconds": round(dur, 1), "trim": [bas, son], **({"social": so_mem} if so_mem else {})})
+    jd = ROOT / job_dir
+    for i, c in enumerate(cards):
+        for key, suf in (("video", ".mp4"), ("image", ".jpg"), ("tall", "-tall.jpg")):
+            dst = jd / f"part-{i}{suf}"
+            shutil.copyfile(c[key], dst)
+            c[key] = str(dst.relative_to(ROOT))
+    (jd / "cards.json").write_text(json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8")
+    (jd / "kare_dokum.txt").write_text("\n".join([f"# {hms(dur)} · {len(lines)} satır · bölümler:", *[f"  {hms(c['t'] + bas)} {c['title']}" for c in chapters], "",
+                                                     *[f"[{hms(a)}-{hms(b)}] {t}" for a, b, t in lines]]), encoding="utf-8")
+    shutil.rmtree(tmp, ignore_errors=True)
+    words = sum(len(x["narration"].split()) for x in segs_out if x["kind"] != "sesli")
+    clen_all = cards[2]["videoDuration"]
+    res = {"ok": True, "job": str(job_dir), "duration": int(clen_all + words / 2.4 + 16), "kare": True, "vertical": False,
+           "soundSeconds": round(clen_all, 1), "sourceSeconds": round(dur, 1),
+           "plan": {"kare": True, "label": label, "category": cat, "hook": segs_out[0]["title"], "titles": plan.get("titles") or {},
+                    "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out, "chapters": chapters, "trim": [bas, son],
+                    "narration": " ".join(x["narration"] for x in segs_out if x["kind"] != "sesli")[:900],
+                    "speech": not SPEECH_OFF or bool(info.get("captions")), "lines": len(lines), "transcriptFile": str(job_dir / "kare_dokum.txt"),
+                    **({"speechSource": "youtube", "speechOff": SPEECH_OFF} if info.get("captions") else {}),
+                    **({"screenText": [str(x)[:100] for x in plan.get("ekran_yazilari") if str(x).strip()][:5]} if seen and isinstance(plan.get("ekran_yazilari"), list) else {})}}
+    return res
+
+
 def build(job: dict) -> dict:
     if job.get("revise"):  # çizilmiş benzer videonun düzeltme turu: kaynak video gerekmez (önceki sürümün plan.json'u yeter)
         return revise_recreate(job)
@@ -1511,6 +1720,9 @@ def build(job: dict) -> dict:
     # benzer video, sıfırdan (panelin job.recreate'i ya da talimat): fragman ve özet işi değil; referansın görüntüsü kullanılmaz
     if not trailer and not job.get("summary") and (job.get("recreate") or (recreate_ask(instruction) and recreate_on())):
         return build_recreate(job, srcs, instruction)
+    # kare (1:1) uzun video (panelin job.kare'si: "link kare video"; WhatsApp videosunda talimat): videonun tamamı kendi sesiyle
+    if not trailer and not job.get("summary") and (job.get("kare") or (not job.get("social") and kare_on() and kare_ask(instruction))):
+        return build_kare(job, srcs, instruction)
     tr_cfg = tr_settings() if trailer else {}  # fragman olmayan iş settings.trailer'ı hiç okumaz
     # uzun video özeti: panel (social_video.py kararı: uzun YouTube videosu ya da talimatta özet) ya da tek WhatsApp videosunda "özetle"
     summary = not trailer and (bool(job.get("summary")) or (not job.get("social") and len(srcs) == 1
