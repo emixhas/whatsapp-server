@@ -516,6 +516,9 @@ def main(src: str, dst: str):
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
         "summary": os.environ.get("SUMMARY") == "1" or None,
         "recreated": RECREATE or None,  # benzer video (sıfırdan): açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video: …"
+        "jobDir": os.environ.get("TEMPLATE_DIR") or None,  # şablon/video işinin klasörü (benzer videoda düzeltme turu plan.json'u buradan okur)
+        "revision": int(os.environ["REVISION_N"]) if (os.environ.get("REVISION_N") or "").isdigit() else None,  # düzeltilmiş sürüm numarası (✏️ düzelt)
+        "revisionOf": os.environ.get("REVISION_OF") or None,  # düzeltilen önceki video (yayınlanmaz; onayı kaldırılır)
         # sosyal medya videosunun türü (trend | mizah): son dakika değil; intro etiketi, açıklama başlığı, kapanış notu, etiketler
         "contentKind": os.environ.get("CONTENT_KIND", "").strip() if os.environ.get("CONTENT_KIND", "").strip() in ("trend", "mizah") else None,  # uzun video özeti: intro ve açıklamada kendi etiketi (ÖZET…), son dakika değil
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)

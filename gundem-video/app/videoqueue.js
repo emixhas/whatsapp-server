@@ -232,8 +232,26 @@ export const platsOf = (s) => {
   if (has(new RegExp(`^(?:tiktok${suf}|tt)$`, "u"))) out.push("tiktok");
   return out;
 };
-// {kind: "approve", nums | all, plats} | {kind: "cancel", nos} | null (numara 1-999; 0 numara değil)
+// ✏️ düzeltme (çizilmiş benzer video; server.js reviseCommand; kullanıcı isteği, 23 Ekim: "önce ben izleyecektim, düzeltmemiz gereken yerler varsa
+// yazacaktım"): mesaj "düzelt" ile BAŞLAR — "düzelt 3: 2. sahnede …", "düzelt #3 …", "#3 düzelt …", "3 düzelt: …", "düzelt: …" (numarasız: tek onay
+// bekleyen çizilmiş video ya da son 24 saatin çizilmiş videosu). Yalın "düzelt" (düzeltme/düzeltin/düzeltir misin değil: "düzeltme" olumsuz emir de
+// olabilir); numara yalnız "#3" biçiminde ya da hemen ardından ayraç/satır sonu/metin sonu gelirse ("düzelt 2. sahnede …" → 2 sahnenin sırasıdır,
+// metinde kalır). Düzeltme metni OLDUĞU GİBİ kalır (küçük harfe çevrilmez, emoji atılmaz): Claude'a gider
+const S_REV_A = /^\s*(?:[#＃]\s?(\d{1,3})\s+)?d[üu]zelt(?![\p{L}])(?:\s*[#＃]\s?(\d{1,3})(?![\p{L}\p{N}])|\s+(\d{1,3})(?=\s*(?:[:：,;\-–—]|\n|$)))?\s*(?:[:：,;\-–—]+\s*)?(?!\s*[#＃]\s?\d)([\s\S]*)$/iu;
+const S_REV_B = /^\s*(\d{1,3})\s+d[üu]zelt(?![\p{L}])\s*(?:[:：,;\-–—]+\s*)?([\s\S]*)$/iu;
+export function reviseCommandOf(text) {
+  const raw = String(text || "");
+  if (raw.length > 4000) return null;
+  let m = raw.match(S_REV_A);
+  if (m) return { kind: "revise", no: Number(m[1] || m[2] || m[3]) || 0, text: m[4].trim(), raw };
+  m = raw.match(S_REV_B);
+  if (m) return { kind: "revise", no: Number(m[1]) || 0, text: m[2].trim(), raw };
+  return null;
+}
+// {kind: "approve", nums | all, plats} | {kind: "cancel", nos} | {kind: "revise", no, text} | null (numara 1-999; 0 numara değil)
 export function strictCommand(text) {
+  const rv = reviseCommandOf(text);
+  if (rv) return rv;
   const t = cmdNorm(text);
   if (!t || t.length > 120) return null;
   for (const re of S_APPROVE) { const m = t.match(re); if (m) { const nums = sNums(m[1]); return nums.length && !nums.includes(0) ? { kind: "approve", nums, plats: platsOf(m[2]) } : null; } }

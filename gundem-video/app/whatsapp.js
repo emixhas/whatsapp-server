@@ -396,7 +396,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       else if (!sil && await bareMulti(jid, t, at)) return;
     }
     // talimatı bekleyen WhatsApp videosu: bu mesaj nasıl bir haber istendiğidir ("iptal" vazgeçer)
-    if (videoInstruction) { const vr = await videoInstruction(text); if (vr) { if (typeof vr === "string") await send(jid, vr); return; } }
+    if (videoInstruction && !sc) { const vr = await videoInstruction(text); if (vr) { if (typeof vr === "string") await send(jid, vr); return; } } // "düzelt …" talimat değil
     if (/^(yardım|help|\?|komutlar|komut listesi|neler yapabilirsin)$/.test(t)) { await send(jid, HELP_TEXT); return; }
     if (/^(durum|status|ne var ne yok)$/.test(t)) { await send(jid, await statusText()); return; }
     if (/(son videoyu|videoyu) (gönder|yolla|at)/.test(t)) { const v = videoInfo(); if (!v) return send(jid, "Video yok."); await notifyVideo(v.name, { ask: false }); return; }
@@ -490,6 +490,9 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     ? `\n\nYayın: *onay* (${platforms.map((pl) => PL[pl]).join(", ")})${platforms.length > 1 ? ` · ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : ""} · *iptal*`
     : `\n\n✅ Hepsinde yayınlamak için *onay* → ${platforms.map((pl) => PL[pl]).join(", ")}` +
     (platforms.length > 1 ? `\n▫️ Yalnız birinde: ${platforms.map((pl) => `*onay ${SHORT[pl]}*`).join(" · ")}` : "") + "\n❌ Yayınlamamak için *iptal*";
+  // çizilmiş benzer video (meta recreated; kullanıcı isteği, 23 Ekim): sahip izleyip beğenmediği yeri yazar (server.js reviseCommand): yalnız o
+  // sahneler yeniden çizilir, eski sürümün onayı kalkar, yeni sürüm gelince yine onay istenir
+  const revLine = (v, id = null) => v?.recreated ? `\n✏️ Beğenmediğiniz yer varsa: *düzelt${id ? ` ${id}` : ""}: ne değişsin* (yalnız o sahne yeniden çizilir)` : "";
   const titleOf = (v) => v.segments?.find((s) => s.kind === "haber")?.title || v.label;
   // kuyruk videosu: otomatik trendden üretildiyse onay mesajında söylenir (6. tur: sahip videoyu kendisinin göndermediğini anlasın)
   const autoHint = (v) => (v?.queueSource === "trend-auto" ? "\n🤖 otomatik (trend)" : "");
@@ -642,7 +645,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       let ask0 = "", it0 = null;
       const q0 = Number(v0?.queueNo) || 0;
       if (v0 && ask && v0.userVideo && (q0 || (!sched0 && !settings().waVideo?.autoPublish))) {
-        try { const pl0 = (await links(name)).platforms.filter((pl) => !(v0.published || {})[pl]); if (pl0.length) { it0 = setPending(name, { label: v0.label, title: titleOf(v0), platforms: pl0, qno: q0, keepUntil: q0 && sched0 ? Date.parse(v0.publishAt) + 6 * 3600000 : 0 }); ask0 = (q0 && sched0 ? queueTimeLine(v0.publishAt, it0.id) : "") + approveLine(pl0, it0.numbered ? it0.id : null); } } catch { /* hesap durumu okunamadı */ }
+        try { const pl0 = (await links(name)).platforms.filter((pl) => !(v0.published || {})[pl]); if (pl0.length) { it0 = setPending(name, { label: v0.label, title: titleOf(v0), platforms: pl0, qno: q0, keepUntil: q0 && sched0 ? Date.parse(v0.publishAt) + 6 * 3600000 : 0 }); ask0 = (q0 && sched0 ? queueTimeLine(v0.publishAt, it0.id) : "") + approveLine(pl0, it0.numbered ? it0.id : null) + revLine(v0, it0.numbered ? it0.id : null); } } catch { /* hesap durumu okunamadı */ }
       }
       // onay, kuyruktaki mesaj bağlantı gelince gerçekten gidince ulaşmış sayılır
       if (v0) await send(null, `🎬 Yeni video hazır${q0 ? ` (#${it0?.id || q0})` : ""} — ${v0.label}${autoHint(v0)}\n${v0.segments.filter((x) => x.kind === "haber").slice(0, 5).map((x) => `• ${x.title}`).join("\n")}` +
@@ -687,7 +690,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (qn) head = `🎬 *Yeni video hazır* (#${vno}) — ${v.label} (${v.duration ?? "?"} sn)${autoHint(v)}`;
     const qLine = qTime && needAsk ? queueTimeLine(qTime, vno) : "";
     const askLine = needAsk
-      ? qLine + approveLine(platforms, aid)
+      ? qLine + approveLine(platforms, aid) + revLine(v, aid)
       : (!autoPl.length && !L.platforms.length ? "\n\n(Yayın için bağlı platform yok; panelden hesap bağlayın.)" : "");
     const jid = await ownerTarget();
     if (summary && brief()) { // kısa: ne hazır, nerede yayında, sorun varsa ne, onay gerekiyorsa tek satır
@@ -697,7 +700,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       const pub = qn ? [] : publishLines(summary).filter((l) => !/^ℹ️/.test(l));
       const okPl = pub.filter((l) => l.startsWith("✅")).map((l) => l.replace(/^✅ /, "").replace(/[:\s(].*$/, ""));
       const bad = pub.filter((l) => !l.startsWith("✅")).map((l) => l.slice(0, 90));
-      const pending = needAsk ? qLine + approveLine(platforms, aid) : "";
+      const pending = needAsk ? qLine + approveLine(platforms, aid) + revLine(v, aid) : "";
       const msg = [`✅ *Video hazır*${qn ? ` (#${vno})` : ""}: ${first} (${v.duration ?? "?"} sn)${qn ? autoHint(v) : ""}`, okPl.length && !schedAt ? `📤 Yayında: ${okPl.join(", ")}` : "",
         ...(schedAt ? [] : bad), schedAt ? `⏰ ${atLabel(whenLabel(schedAt))} yayınlanacak` : ""].filter(Boolean).join("\n") + pending;
       let fileSent = false;
@@ -709,7 +712,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (summary) { // tek mesaj: video dosyası + kısa özet aynı mesajda (dosya gönderilmezse düz metin)
       const titles = v.segments.filter((s) => s.kind === "haber").slice(0, 5).map((s) => `• ${s.breaking ? "🔴 " : ""}${s.title}`).join("\n");
       const pub = qn ? [] : publishLines(summary).filter((l) => !(needAsk && /^ℹ️ otomatik yayın yapılmadı/.test(l)));  // onay satırı zaten anlatıyor; kuyruk videosunda yok (yukarıda)
-      const pending = needAsk ? qLine + approveLine(platforms, aid) : "";
+      const pending = needAsk ? qLine + approveLine(platforms, aid) + revLine(v, aid) : "";
       const watchLine = `\n\n▶ ${L.tunnel || L.lan}`;
       let msg = `${head}\n\n${titles}${pub.length && !schedAt ? "\n\n📤 *Yayın*\n" + pub.join("\n") : ""}${schedLine}${pending}${watchLine}`;
       if (msg.length > 1000) msg = msg.slice(0, 990) + "…";

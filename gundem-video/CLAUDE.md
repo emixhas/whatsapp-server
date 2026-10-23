@@ -1354,6 +1354,53 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yap", "Togg'un benzerini…", "benzerini yapmanı istemem, haber yap" HEAD gibi haber montajına, "bunun gibisini yap", "buna benzer bi video
   yap", "bundan esinlenerek bir video yap" benzer videoya gidiyor; `fit_words` 5 denetim geçti (ders sondan bir önceki cümleyken son sahne
   değişmiyor; yalnız son sahne kısalabiliyorsa ilk ve son iki cümle kalıyor; önceki kod 4'ünde dersi ya da ilk cümleyi siliyordu).
+- Düzeltme turu (kullanıcı isteği, 23 Ekim: "video linki atacaktım, benzerinden yap diyecektim, sesi çıkartıp görüntüleri inceleyip görsel üreterek
+  yayına alacaktık; ama önce ben izleyecektim, düzeltmemiz gereken yerler varsa yazacaktım, düzenleyecektik, tekrar devam edecektik; bu sistemin
+  eksiksiz çalışmasını istiyorum"): çizilmiş benzer video (meta `recreated`) gelince sahip izler, beğenmediği yeri yazar; YALNIZ o yer değişir, video
+  yeniden üretilip gelir, yine onay ister; istediği kadar tekrarlanır (her sürümün kendi plan.json'u var).
+  - Komut (`videoqueue.strictCommand` kind "revise" = `reviseCommandOf`; mesaj "düzelt" ile BAŞLAR, metin olduğu gibi Claude'a gider, küçük harfe
+    çevrilmez): "düzelt 3: 2. sahnede yılan kırmızı olsun", "düzelt #3 …", "#3 düzelt …", "3 düzelt: …", numarasız "düzelt: …" / "düzelt …" (3 = onay
+    mesajındaki numara). Yalın "düzelt" (düzeltme/düzeltin/düzeltir misin değil: "düzeltme" olumsuz emir de olabilir); sayı yalnız "#3" biçiminde ya da
+    hemen ardından ayraç/satır sonu/metin sonu gelirse numaradır ("düzelt 2. sahnede …" → 2 sahne sırası, metinde kalır; "düzelt #3a x" tam kalıp
+    değil → numaralı liste). `numberGuard` düzeltme komutunu korumaya almaz; whatsapp.js'te talimat bekleyen videoya gitmez (`videoInstruction && !sc`);
+    `handleCommand` kuyruk, kurallar ve beyinden ÖNCE `reviseCommand`. help.js'te satır.
+  - Hedef (`server.js reviseTarget`): numara → `wa.status().pendingList`teki o video (çizilmiş değilse ret, bekleyen listesiyle); numarasız → tek onay
+    bekleyen çizilmiş video, birden çoksa numaralı liste, hiç yoksa son 24 saatin en yeni çizilmiş videosu (`listVideos` artık `recreated`, `revision`,
+    `revisionOf` verir), o da yoksa ret. Metin boşsa "Ne değişsin?" + örnek + hedef. Yanıt hemen ("✏️ Düzeltme alındı (#3) → 2. sürüm …"), iş arka
+    planda (`reviseVideo` → `runVideoNews`).
+  - `reviseCheck(name)`: out/<ad>.json `recreated` ve `jobDir` (assemble meta: TEMPLATE_DIR; ayrıca `revision`/`revisionOf` env REVISION_N/REVISION_OF,
+    `startAnlik` opts revision/revisionOf) → iş klasöründe `plan.json` olmalı; yoksa Türkçe neden (disk temizliği 2 gün: eski video düzeltilemez, videoyu
+    "benzerini yap" ile yeniden gönderin). Panel: videonun penceresinde ✏️ Düzelt (yalnız `recreated`, arşivde değil) → metin penceresi `askText()`
+    (Ctrl/Cmd+Enter gönderir, Esc vazgeçer; tarayıcının prompt()'u değil) → `POST /api/videos/:name/revise {instruction}`; meta satırında "✏️ 2. sürüm
+    (… düzeltildi)". WhatsApp onay mesajında çizilmiş videoda ek satır "✏️ Beğenmediğiniz yer varsa: *düzelt N: ne değişsin*" (`revLine`).
+  - `runVideoNews0` `v.revise {job, instruction, of, revision}` → iş JSON'unda `revise` (videos boş, kaynak video gerekmez) → `wa_video.build()` →
+    `revise_recreate`: önceki sürümün `plan.json`u (ilk üretimden beri her benzer videonun iş klasörüne yazılır: temizlenmiş plan, her sahnenin başlığı/
+    seslendirmesi/tarifi/çizimi — yedek çizime düşen sahnede boş + `fallback` — ve süresi, palet, hedef süre, referansın dökümü `ref.infos` ve kaynak
+    paylaşım bilgisi, kaynak video yolları, `history`) + düzeltme metni → istem `prompts/benzer.md` + `prompts/benzer_duzelt.md` (yalnız istenen yer
+    değişir; değişmeyen sahnenin title/narration/sahne/svg KARAKTERİ KARAKTERİNE kopya; "2. sahne" = ikinci haber sahnesi, kanca ayrı; silme/ekleme;
+    palet yalnız istenirse — değişince hepsi çizilir; yedek çizim istenmese de yeniden çizilir; kurala aykırı istek en yakın hâliyle + açıklama; ek alan
+    "degisiklikler") + JSON {duzeltme, onceki_plan, talimat, hedef_sure, referans_ozeti {konusma ≤80 satır, ekran_yazilari, kaynak_paylasim},
+    onceki_duzeltmeler (zincirde, geri alınmasın), referans_videolar (kaynak video hâlâ duruyorsa 16 karelik çizelge, yalnız hatırlatma; konuşma yeniden
+    tanınmaz)}. Süre: düzeltmede "40 saniye" yazılırsa hedef o (`trailer_secs`), yoksa öncekinin hedefi.
+  - `recreate_finish` (build_recreate'in ortak kuyruğu; ilk üretimde log, istem, Claude argümanları ve iş klasörü HEAD ile birebir aynı, yalnız plan.json
+    eklendi): düzeltmede çizimi, süresi (seslendirmenin kelime sayısı) ve paleti değişmeyen sahne ÇİZİLMEZ, önceki sürümün part-k.mp4/jpg/-tall.jpg
+    dosyaları kopyalanır (log "♻️ 5 sahne önceki sürümden alındı …, 1 sahne yeniden çiziliyor"; eşleme içerikle: sahne silinip sıra kaysa da bulunur;
+    `scene_svg.sanitize` her geçişte grupları bir kat daha sardığı için kayıtlı çizim bir kez daha temizlenip Claude'un kopyasının temizlenmişiyle
+    karşılaştırılır, `svg_key`); yalnız değişenler Remotion'a. Yeni iş klasörü: claude_out.json, cards.json, meta.json (`revision`, `revisionOf`, `revise`,
+    `changes`, `previousJob`, `reused`), plan.json (revision, history), benzer_dokum.txt ("Düzeltme (N. sürüm): istek → değişiklik" satırları). Sonuç
+    `revision`, `reused`, `changed`, `changes`; plan `reusedScenes`, `changedScenes`, `paletteChanged`.
+  - Sonrası: log "✏️ düzeltildi (2. sürüm): 1 sahne yeniden çizildi, 5 sahne korundu — …", WhatsApp'a tek mesaj "✏️ Düzeltme uygulandı …" (kısa modda
+    da; panelden başlatıldıysa başlangıçta da bir satır), `startAnlik(..., {recreate, revisionOf, revision})` → pipeline (seslendirme, altyazı, müzik
+    yeniden) → yeni video `notifyVideo` ile onay ister. Yeni sürüm üretime girince `retireOldVersion`: eski sürümün WhatsApp onay kaydı
+    (`wa.dropApprovalVideo`) ve planlı yayını kalkar (video panelde durur, elle yayınlanabilir; `vqCancelledVideos`a girmez). wa_video hata verirse eski
+    sürümün onayı DEĞİŞMEZ ("❌ Düzeltme yapılamadı … Eski sürüm duruyor; yeniden düzelt yazabilir ya da panelden yayınlayabilirsiniz").
+  - Sandbox'ta denendi (sahte Claude + sahte çizici; gerçek `claude` PATH'te değil, yerine konan tuzak tetiklenmedi): ilk üretim HEAD ile aynı
+    (+plan.json); 2. sahne değişikliği (1 çizildi, 5 kopyalandı), zincir 2. → 3. sürüm (hepsi kopya, istemde önceki düzeltmeler), palet değişimi
+    (hepsi çizildi), sahne silme (5 kopya, sıra kaydı), son cümle kısaltma (yalnız o sahne), "40 saniye" hedef, yedek çizime düşmüş sahneler yeniden
+    çizildi, plan.json yok / metin boş hataları; 24 komut biçimi + numberGuard; server.js fonksiyonları sahte bağımlılıklarla 20 denetim (iş dosyası,
+    boru hattı env'i, onay/planlı yayın kaldırma, hata yolu, komut yanıtları); panel kopyasında Playwright (1280/400 px): düğme yalnız çizilmiş videoda,
+    metin penceresi, POST, Esc. Gerçek Claude'un "değişmeyeni birebir kopyala" kuralına uyması ve gerçek Remotion çizimi Mac'te DENENMEDİ (kopyalamazsa
+    o sahne yeniden çizilir, video yine çıkar; logda ♻️ satırı kaç sahnenin korunduğunu söyler).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

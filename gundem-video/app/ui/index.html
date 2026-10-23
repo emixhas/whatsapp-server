@@ -97,6 +97,7 @@
   .tag{display:inline-block;font-size:9px;letter-spacing:2px;padding:2px 6px;border-radius:6px;background:#1b2440;color:var(--mut);margin:4px 3px 0 0}.tag.brk{background:var(--red);color:#fff}.tag.yt{background:#3a0d12;color:#ff6b6b}.tag.ig{background:#3a1030;color:#ff8ad8}.tag.tt{background:#0f2a2e;color:#69f0e6}
   .askbg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:40}.askbg.open{display:flex}
   .askbox{background:#0E1424;border:1px solid var(--line);border-radius:16px;padding:18px;max-width:460px;width:100%;white-space:pre-wrap;font-size:14px;line-height:1.45}.askbox .acts{justify-content:flex-end;margin-top:14px}
+  .askbox textarea{display:block;width:100%;box-sizing:border-box;margin-top:10px;background:#0a0f1c;color:inherit;border:1px solid var(--line);border-radius:10px;padding:8px;font:inherit;font-size:14px;resize:vertical}
   .modal{position:fixed;inset:0;background:rgba(0,0,0,.78);display:none;align-items:center;justify-content:center;padding:20px;z-index:10}.modal.open{display:flex}
   .box{background:#0E1424;border:1px solid var(--line);border-radius:20px;padding:18px;max-width:960px;width:100%;display:grid;grid-template-columns:280px 1fr;gap:18px;max-height:92vh;overflow:auto}
   @media(max-width:700px){.box{grid-template-columns:1fr}}
@@ -405,10 +406,11 @@
 <div class="modal" id="modal"><div class="box">
   <div><video id="player" controls playsinline></video></div>
   <div><h3 id="mTitle" style="margin:0 0 6px"></h3><div id="mMeta" style="color:var(--mut);margin-bottom:8px"></div><div id="mStats" style="margin-bottom:8px"></div><div id="mHead"></div>
-    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost ok" id="aRemake" title="Aynı haberi farklı senaryo ve görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
+    <div class="acts"><button class="ghost ok" id="aPubYt">▶ YouTube'a yükle</button><button class="ghost ok" id="aPubIg">◎ Instagram'a yükle</button><button class="ghost ok" id="aPubTt">♪ TikTok'a gönder</button><button class="ghost" id="aShare">📱 Telefona</button><a class="ghost" id="aDl" download>⬇ İndir</a><button class="ghost" id="aReveal">📂 Finder</button><button class="ghost ok" id="aRemake" title="Aynı haberi farklı senaryo ve görsellerle yeniden üret ve yayınla">🔁 Yeniden yayınla</button><button class="ghost ok" id="aRevise" title="Çizilmiş benzer video: beğenmediğiniz yeri yazın, yalnız o sahneler yeniden çizilir; eski sürüm yayınlanmaz">✏️ Düzelt</button><button class="ghost danger" id="aDel">🗑 Sil</button><button class="ghost" id="aClose">Kapat</button></div>
     <div class="qr" id="qr" style="display:none"></div></div>
 </div></div>
 <div class="askbg" id="askBg"><div class="askbox"><div id="askTxt"></div><div class="acts"><button class="ghost" id="askNo">Vazgeç</button><button class="ghost ok" id="askYes">Evet</button></div></div></div>
+<div class="askbg" id="txBg"><div class="askbox"><div id="txTxt"></div><textarea id="txIn" rows="4"></textarea><div class="acts"><button class="ghost" id="txNo">Vazgeç</button><button class="ghost ok" id="txYes">Gönder</button></div></div></div>
 
 <script>
 const $=s=>document.querySelector(s);const api=(u,o)=>fetch(u,o).then(r=>r.json());const post=(u,b)=>api(u,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b||{})}).then(r=>{if(u==='/api/settings'&&typeof toast==='function')toast('Kaydedildi ✓');if(u==='/api/schedule'&&typeof toast==='function')toast(r.ok?'Zamanlayıcı güncellendi ✓':'Zamanlayıcı ayarlanamadı',!r.ok);return r;});
@@ -419,6 +421,11 @@ function ask(text){return new Promise(res=>{const bg=$('#askBg');$('#askTxt').te
   const done=v=>{bg.classList.remove('open');document.removeEventListener('keydown',key,true);$('#askYes').onclick=$('#askNo').onclick=bg.onclick=null;res(v);};
   const key=e=>{if(e.key==='Escape'){e.preventDefault();done(false);}else if(e.key==='Enter'){e.preventDefault();done(true);}};
   document.addEventListener('keydown',key,true);$('#askYes').onclick=()=>done(true);$('#askNo').onclick=()=>done(false);bg.onclick=e=>{if(e.target===bg)done(false);};$('#askYes').focus();});}
+// Metin soran pencere (tarayıcının prompt()'u da engellenebilir): Ctrl/Cmd+Enter = gönder, Esc = vazgeç; vazgeçince null
+function askText(text,ph=''){return new Promise(res=>{const bg=$('#txBg'),inp=$('#txIn');$('#txTxt').textContent=text;inp.value='';inp.placeholder=ph;bg.classList.add('open');
+  const done=v=>{bg.classList.remove('open');document.removeEventListener('keydown',key,true);$('#txYes').onclick=$('#txNo').onclick=bg.onclick=null;res(v);};
+  const key=e=>{if(e.key==='Escape'){e.preventDefault();done(null);}else if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();done(inp.value.trim());}};
+  document.addEventListener('keydown',key,true);$('#txYes').onclick=()=>done(inp.value.trim());$('#txNo').onclick=()=>done(null);bg.onclick=e=>{if(e.target===bg)done(null);};inp.focus();});}
 // Görünmeyen JS hatası kalmasın: düğme "çalışmıyor" gibi görünürse nedeni sohbette yazsın
 window.addEventListener('error',e=>{const m='Panel hatası: '+(e.message||e.error)+(e.lineno?' (satır '+e.lineno+')':'');console.error(m);if(typeof addMsg==='function')addMsg('j',m);if(typeof toast==='function')toast(m,true);});
 window.addEventListener('unhandledrejection',e=>{const m='Panel hatası: '+(e.reason?.message||e.reason);if(typeof addMsg==='function')addMsg('j',m);if(typeof toast==='function')toast(m,true);});
@@ -530,7 +537,8 @@ async function remake(name,btn){const v=videos.find(x=>x.name===name)||{};
 function openVideo(name){current=videos.find(v=>v.name===name);if(!current)return;const arch=!!current.archived;
   // arşivlenmiş video: oynatıcı, indirme, paylaşım ve yükleme yok; yalnız platformlardan silme ve yeniden yayın (ikisi de kaydı kullanır)
   $('#player').style.display=arch?'none':'';for(const id of ['aPubYt','aPubIg','aPubTt','aShare','aDl','aReveal'])$('#'+id).style.display=arch?'none':'';$('#aDel').textContent=arch?'🗑 Platformlardan sil':'🗑 Sil';
-  if(arch)$('#player').removeAttribute('src');else $('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}${arch?' · 🗄 video dosyası disk temizliğinde silindi (kayıt ve platformdaki gönderi duruyor)':''}`;
+  $('#aRevise').style.display=current.recreated&&!arch?'':'none'; // ✏️ düzeltme yalnız çizilmiş benzer videoda
+  if(arch)$('#player').removeAttribute('src');else $('#player').src='/videos/'+name;$('#mTitle').textContent=(current.date??name)+(current.episodeOfDay?` · günün ${current.episodeOfDay}. özeti`:'');$('#mMeta').textContent=`${current.duration??'?'} sn · hedef ${current.targetDuration??'-'} sn · ${name}${current.revision?` · ✏️ ${current.revision}. sürüm${current.revisionOf?` (${current.revisionOf} düzeltildi)`:''}`:''}${arch?' · 🗄 video dosyası disk temizliğinde silindi (kayıt ve platformdaki gönderi duruyor)':''}`;
   const st=[];if(current.youtube)st.push(`<a href="${current.youtube.url}" target="_blank" class="tag yt">YouTube ▶ ${current.youtube.views??'?'} · ♥ ${current.youtube.likes??'?'}</a>`);if(current.instagram)st.push(`<a href="${current.instagram.url}" target="_blank" class="tag ig">Instagram ▶ ${current.instagram.views??'?'} · ♥ ${current.instagram.likes??'?'} · ↗ ${current.instagram.shares??'?'}</a>`);if(current.tiktok)st.push(`<a href="${current.tiktok.url||'#'}" target="_blank" class="tag tt">TikTok ${current.tiktok.status==='SEND_TO_USER_INBOX'?'gelen kutusunda':'▶ '+(current.tiktok.views??'?')+' · ♥ '+(current.tiktok.likes??'?')}</a>`);$('#mStats').innerHTML=st.join(' ');
   $('#mHead').innerHTML=current.headlines.map((h,i)=>`<div>${i+1}. ${h.title} ${tagHtml(h)}</div>`).join('');$('#aDl').href='/videos/'+name;$('#qr').style.display='none';for(const [id,p,lbl] of [['aPubYt','youtube',"▶ YouTube'a yükle"],['aPubIg','instagram',"◎ Instagram'a yükle"],['aPubTt','tiktok',"♪ TikTok'a gönder"]]){const b=$('#'+id);const done=!!current[p];const conn=!!status.connections?.[p]?.connected;
     // zaten yayındaysa ya da hesap bağlı değilse neden tıklanmadığı düğmede yazsın
@@ -564,6 +572,12 @@ async function publish(name,platforms){
   addMsg('j',msgs.join('\n')||('Yayın yanıtı alınamadı: '+(r.error||'')));toast(r.ok?'Yayınlandı ✓':'Yayında sorun oldu, ayrıntı sohbette',!r.ok);
   speak(r.ok?'Yayınlandı.':'Yayında sorun oldu, ayrıntı ekranda.');loadVideos();if(current)openVideo(current.name);}
 $('#aRemake').onclick=()=>remake(current.name,$('#aRemake'));
+// ✏️ Düzelt (çizilmiş benzer video): ne değişsin yazılır → /api/videos/:name/revise → yalnız değişen sahneler yeniden çizilir, yeni sürüm WhatsApp'a gelir
+$('#aRevise').onclick=async()=>{const n=current.name;const t=await askText('Ne değişsin? Sahneyi (ör. "2. sahne", "kanca", "son sahne"), cümleyi ya da çizimi yazın. Yalnız istediğiniz yer değişir, kalan sahneler yeniden çizilmez. Eski sürüm yayınlanmaz; yeni sürüm bitince WhatsApp\'a gelir ve onay ister.','ör. 2. sahnede yılan kırmızı olsun, son cümleyi kısalt');if(!t)return;
+  const b=$('#aRevise');b.disabled=true;b.textContent='Düzeltiliyor…';
+  try{const r=await post('/api/videos/'+encodeURIComponent(n)+'/revise',{instruction:t});if(!r.ok){toast(r.error||'Düzeltme başlatılamadı',true);addMsg('j','✏️ Düzeltme yapılamadı: '+(r.error||''));}
+    else{toast('Düzeltme başladı ✏️');addMsg('j',`✏️ Düzeltme alındı (${r.revision}. sürüm): "${t}". Değişen sahneler yeniden çiziliyor, kalanlar korunuyor; yeni video bitince listede görünür ve WhatsApp'a gelir. Eski sürüm yayınlanmayacak.`);closeModal();refreshStatus();}}
+  catch(e){toast('Sunucuya ulaşılamadı',true);}finally{b.disabled=false;b.textContent='✏️ Düzelt';}};
 $('#aPubYt').onclick=async()=>{const n=current.name;if(await ask("YouTube'a yüklensin mi?"))publish(n,['youtube']);};$('#aPubIg').onclick=async()=>{const n=current.name;if(await ask("Instagram'a yüklensin mi?"))publish(n,['instagram']);};$('#aPubTt').onclick=async()=>{const n=current.name;if(await ask("TikTok'a gönderilsin mi?"))publish(n,['tiktok']);};
 
 // ================= üretim ve ayarlar
