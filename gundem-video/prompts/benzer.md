@@ -35,13 +35,15 @@ ANLATIM
 - Dil: Türkçe, akıcı, sade, merak uyandıran; kısa cümleler; kısaltma yok. Hikâyede sıcak bir anlatıcı, bilgide net ve anlaşılır.
 
 YAPI
-- "hook" (kanca): 2-4 kelimelik ekran başlığı ("title", en çok 24 karakter, anlamı tam) + tek cümlelik seslendirme (en çok 10 kelime):
-  doğru bir merak boşluğu ("Fareler neden hiç birleşmedi?"). Kancanın da bir sahnesi (svg) var: hikâyenin en çarpıcı anı.
+- "hook" (kanca): 2-4 kelimelik ekran başlığı ("title", en çok 24 karakter, anlamı tam) + tek cümlelik seslendirme (en çok 10 kelime);
+  kancanın da bir sahnesi (svg) var: hikâyenin en çarpıcı anı. Kanca aşağıdaki KANCA TAKTİĞİ'ne göre kurulur ve "kanca" alanında kalıbı yazılır.
 - Ardından 3-6 "haber" türünde SAHNE (anlatının bir adımı): her biri 12-35 kelime seslendirme + kısa ekran başlığı ("title", 2-5 kelime,
   en çok 30 karakter) + "sahne" (çizdiğin sahnenin bir cümlelik tarifi) + "svg". Son sahne mesajı açıkça söyler ya da izleyiciye
   düşündüren bir soru sorar.
 - Sahne sayısı süreye göre: 30 sn'ye kadar 3, 30-60 sn 4-5, 60 sn'den uzun 5-6. Toplam kelime __KELIME__'yi geçmesin, en az onda sekizi
   olsun.
+
+__KANCA__
 
 ÇİZİM (her sahnenin "svg" alanı). Video sahneyi eski kâğıt dokusu, hafif el titremesi ve yavaş kamera yaklaşmasıyla canlandırır; senin
 işin çizimin kendisi.
@@ -98,6 +100,7 @@ tamamını çizsin.
   "importanceReason": "kısa gerekçe",
   "firstComment": "…",
   "cuts": "…",
+  "kanca": {"tur": "soru", "vaat": "Fareler neden birleşmedi?", "cevap": "son sahne"},
   "ekran_yazilari": [],
   "segments": [
     {"kind": "hook", "title": "…", "narration": "…", "sahne": "…",

@@ -4,6 +4,7 @@ import { Background } from "./scenes/Background";
 import { FullFrame } from "./scenes/FullFrame";
 import { Headline } from "./scenes/Headline";
 import { Hook } from "./scenes/Hook";
+import { hookSound } from "./hooks";
 import { Intro } from "./scenes/Intro";
 import { Outro } from "./scenes/Outro";
 import { Thumb } from "./Thumb";
@@ -48,7 +49,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
         const haberIndex = haberler.indexOf(seg);
         const st = styleFor(seg.category);
         // kanca sesi: viral/mizah ve benzer video (sıfırdan çizim) son dakika değildir → kategori sesi
-        const sceneSfx = seg.kind === "hook" ? (episode.contentKind || episode.recreated ? st.sfx : "sfx/sondakika.wav") : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
+        // kanca kalıbı sesi (hookType; src/hooks.ts): yalnız son dakika olmayan kancada (çizilmiş benzer video, viral/mizah)
+        const sceneSfx = seg.kind === "hook" ? ((episode.contentKind || episode.recreated) && hookSound(episode.hookType) ? hookSound(episode.hookType)! : episode.contentKind || episode.recreated ? st.sfx : "sfx/sondakika.wav") : seg.kind === "intro" ? "sfx/sting.wav" : seg.kind === "outro" ? "sfx/chime.wav" : st.sfx;
         const breakingSfx = seg.kind === "haber" && seg.breaking ? "sfx/sondakika.wav" : null;
         const sceneVol = seg.kind === "haber" ? st.sfxVolume : seg.kind === "hook" ? 0.75 : 0.5;
         return (
@@ -62,7 +64,8 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
             {i > 0 ? <Sequence from={0} durationInFrames={WHOOSH_FRAMES}><Audio src={staticFile("sfx/whoosh.wav")} volume={0.35} /></Sequence> : null}
             {seg.kind === "hook" ? (
               <Hook title={seg.title ?? ""} narration={seg.narration} category={seg.category} categoryLabel={seg.categoryLabel} breaking={seg.breaking} image={seg.imageTall || seg.image}
-                images={seg.imagesTall?.length ? seg.imagesTall : seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} words={seg.words} durationInFrames={dur} />
+                images={seg.imagesTall?.length ? seg.imagesTall : seg.images} video={seg.video} videoDuration={seg.videoDuration} videoStart={seg.videoStart} words={seg.words} durationInFrames={dur}
+                hookType={episode.recreated || episode.contentKind ? episode.hookType : undefined} />
             ) : seg.kind === "intro" ? (
               <Intro dateLabel={episode.dateLabel} episodeOfDay={episode.episodeOfDay} timeLabel={episode.timeLabel} formatLabel={episode.formatLabel} dayLabel={episode.dayLabel}
                 slotLabel={episode.slotLabel} timeRange={episode.timeRange} scheduleHours={episode.scheduleHours} anlik={episode.anlik || episode.format === "anlik"} trailer={episode.trailer} summary={episode.summary} contentKind={episode.contentKind}

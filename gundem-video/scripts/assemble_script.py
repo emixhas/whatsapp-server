@@ -524,6 +524,9 @@ def main(src: str, dst: str):
         "publishAt": os.environ.get("PUBLISH_AT") or None,  # WhatsApp'ta yazılan yayın saati (post_pipeline o saate planlar)  # WhatsApp'tan gönderilen görüntüden montaj (yayın onayla)
         "expiresAt": data.get("expiresAt") or None,  # bilgi bu andan sonra eskir: expire_videos.py YouTube'da liste dışı yapar
         "firstComment": first_comment(data, segs),  # yayından sonra YouTube/Instagram'a kanal adına ilk yorum
+        # kanca kalıbı (prompts/kanca.md; wa_video hook_of): Remotion'da kanca sesi ve damga, analyze.py kalıp performansı
+        "hookType": data.get("hookType") if isinstance(data.get("hookType"), str) and data.get("hookType") else None,
+        "hookPromise": str(data.get("hookPromise") or "")[:120] or None,
         "value": news_value(data, segs) if ANLIK else None,
         "hashtags": topic_hashtags(data),
         "sourceName": src_name or None,

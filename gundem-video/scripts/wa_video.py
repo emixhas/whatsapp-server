@@ -989,7 +989,7 @@ def render_scenes(jobs: list, tmp: Path, tag: str) -> tuple:
     return done, err
 
 
-def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes_out: list, ekran: list, history: list | None = None) -> str:
+def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes_out: list, ekran: list, history: list | None = None, hook: dict | None = None) -> str:
     """benzer_dokum.txt (kullanıcı isteği: "kelimelerini çıkartıp"): referansın zaman damgalı dökümü (ve ekranda okunan yazılar), konu,
     mesaj, tarz, neyin korunup neyin değiştiği, düzeltme geçmişi, yeni seslendirme ve her sahnenin çizimi. `infos`: ref_info özetleri."""
     so = social or {}
@@ -1000,6 +1000,8 @@ def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes
     lines += [" · ".join(x for x in meta if x)] if any(meta) else []
     lines += [""] + [f"{k}: {str(plan.get(f) or '?')[:200]}" for k, f in (("Konu", "konu"), ("Mesaj", "mesaj"), ("Tarz", "tarz"))]
     lines += [f"Neler korundu, neler değişti: {str(plan.get('cuts') or '?')[:600]}"]
+    if hook:
+        lines.append(f"Kanca kalıbı: {hook['label']} — vaat: {hook['promise'] or '?'}; cevap: {hook['answer'] or '?'}")
     for h in history or []:  # düzeltme turları (sahibin isteği → ne değişti)
         lines.append(f"Düzeltme ({h.get('revision')}. sürüm): {str(h.get('text') or '')[:300]}" + (f" → {str(h.get('changes') or '')[:400]}" if h.get("changes") else ""))
     lines += ["", "Referans videonun kelimeleri:"]
@@ -1076,6 +1078,8 @@ def build_recreate(job: dict, srcs: list, instruction: str) -> dict:
     target = max(20, min(90, int(job["duration"]))) if job.get("duration") else recreate_secs(instruction, ref)
     asked = bool(job.get("duration")) or trailer_secs(instruction) > 0  # süre istendiyse seslendirme ona sığar; yoksa en çok 90 sn
     inp = {"talimat": instruction or RECREATE_TALIMAT, "hedef_sure": target, "referans_videolar": blocks}
+    if hook_history():  # kanca çeşitliliği ve kalıp performansı (prompts/kanca.md)
+        inp["kanca_gecmisi"] = hook_history()
     if forwarded_caption(job):
         inp["iletilen_aciklama"] = forwarded_caption(job)
     if social:
@@ -1099,8 +1103,54 @@ def build_recreate(job: dict, srcs: list, instruction: str) -> dict:
 
 
 def recreate_prompt(target: int) -> str:
-    """prompts/benzer.md, yer tutucuları dolu (sonu "GİRDİ:" satırı; JSON girdisi ardına eklenir)."""
-    return (ROOT / "prompts" / "benzer.md").read_text(encoding="utf-8").replace("__SURE__", str(target)).replace("__KELIME__", str(int(target * 2.4) - 6))
+    """prompts/benzer.md, yer tutucuları dolu (sonu "GİRDİ:" satırı; JSON girdisi ardına eklenir); __KANCA__ yerine prompts/kanca.md
+    (kanca taktiği: sekiz kalıp, vaat/cevap, trend açılış sözleri; kullanıcı isteği, 23 Ekim)."""
+    kanca = (ROOT / "prompts" / "kanca.md").read_text(encoding="utf-8").strip() if (ROOT / "prompts" / "kanca.md").exists() else ""
+    return ((ROOT / "prompts" / "benzer.md").read_text(encoding="utf-8").replace("__KANCA__", kanca)
+            .replace("__SURE__", str(target)).replace("__KELIME__", str(int(target * 2.4) - 6)))
+
+
+# Kanca kalıpları (prompts/kanca.md "tur"; src/hooks.ts aynı liste: kanca sesi ve damga): plan dışından gelen değer geçersizdir
+HOOK_TYPES = {"soru": "soru (merak boşluğu)", "ters_kose": "ters köşe", "rakam": "rakam/zaman", "hitap": "doğrudan hitap",
+              "acik_dongu": "açık döngü (vaat)", "yanlis_bilinen": "yanlış bilinen", "kiyas": "kıyas", "ortadan": "ortadan başlama"}
+
+
+def hook_of(plan: dict) -> dict | None:
+    """Planın "kanca" alanı düzlenmiş: {type, label, promise, answer}; kalıp listede değilse None (kanca yine kullanılır, yalnız kalıp kaydı yok)."""
+    k = plan.get("kanca") if isinstance(plan.get("kanca"), dict) else {}
+    t = str(k.get("tur") or "").strip().lower().replace(" ", "_").replace("-", "_")
+    t = {"ters_köşe": "ters_kose", "açık_döngü": "acik_dongu", "yanlış_bilinen": "yanlis_bilinen", "kıyas": "kiyas"}.get(t, t)
+    if t not in HOOK_TYPES:
+        return None
+    return {"type": t, "label": HOOK_TYPES[t], "promise": re.sub(r"\s+", " ", str(k.get("vaat") or "")).strip()[:120],
+            "answer": re.sub(r"\s+", " ", str(k.get("cevap") or "")).strip()[:60]}
+
+
+def hook_history(n: int = 8) -> dict | None:
+    """Kanca geçmişi (istemde "kanca_gecmisi"): son çizilmiş videoların kanca kalıpları (çeşitlilik) ve analyze.py'nin kalıp performansı
+    (data/hook_stats.json "hint"); ikisi de yoksa None (istem değişmez)."""
+    last = []
+    try:
+        for p in sorted((ROOT / "out").glob("*.json"), key=lambda x: x.stat().st_mtime, reverse=True)[:80]:
+            try:
+                m = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(m, dict) and m.get("recreated") and m.get("hookType") in HOOK_TYPES:
+                last.append(m["hookType"])
+            if len(last) >= n:
+                break
+    except OSError:
+        pass
+    hint = ""
+    try:
+        st = json.loads((ROOT / "data" / "hook_stats.json").read_text(encoding="utf-8"))
+        hint = str(st.get("hint") or "").strip()[:400] if isinstance(st, dict) else ""
+    except (OSError, ValueError):
+        pass
+    if not last and not hint:
+        return None
+    return {**({"son_kancalar": last} if last else {}), **({"performans": hint} if hint else {})}
 
 
 def ref_info(info: dict, p: Path) -> dict:
@@ -1146,6 +1196,12 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     except (TypeError, ValueError):
         importance = 3
     first = (plan.get("firstComment") if isinstance(plan.get("firstComment"), str) else "").strip()[:160] or "Siz bu hikâyeden ne ders çıkardınız? Yorumlara yazın 👇"
+    hook = hook_of(plan)  # kanca kalıbı (prompts/kanca.md): senaryoya hookType/hookPromise → assemble meta → Remotion'da kanca sesi ve damga
+    if hook:
+        ans = f" (cevap: {hook['answer']})" if hook["answer"] else ""
+        log(f"🎣 kanca: {hook['label']} — {hook['promise'] or segs[0]['narration']}{ans}")
+    else:
+        log("🎣 kanca kalıbı planda yok ya da tanınmadı: kanca kategori sesiyle, damgasız")
     pal = scene_svg.palette(plan.get("palet"))
     d = tmp / "sahneler"
     d.mkdir(exist_ok=True)
@@ -1230,6 +1286,7 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     # son dakika değil: breaking yok, kaynak kartta yazmaz (sosyal medyada açıklamanın altında)
     script = {"titles": titles, "hashtags": tags, "importance": importance,
               "importanceReason": "Benzer video (sıfırdan)", "firstComment": first,
+              **({"hookType": hook["type"], "hookPromise": hook["promise"], "hookAnswer": hook["answer"]} if hook else {}),
               "segments": [{"kind": "hook", "title": segs[0]["title"], "narration": segs[0]["narration"], "source": "", "category": cat},
                            {"kind": "intro", "narration": intro}]
               + [{"kind": "haber", "title": s["title"], "narration": s["narration"], "source": "", "category": cat} for s in segs[1:]]
@@ -1261,13 +1318,13 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
         "history": history, "palette": pal, "label": label,
         "plan": {**an, "palet": pal, "label": label, "category": cat, "titles": titles, "hashtags": tags, "importance": importance,
                  "importanceReason": str(plan.get("importanceReason") or "")[:200], "firstComment": first, "cuts": str(plan.get("cuts") or "")[:600],
-                 "ekran_yazilari": ekran,
+                 "ekran_yazilari": ekran, **({"kanca": {"tur": hook["type"], "vaat": hook["promise"], "cevap": hook["answer"]}} if hook else {}),
                  "segments": [{"kind": s["kind"], "title": s["title"], "narration": s["narration"], "sahne": str(s.get("sahne") or "")[:200],
                                "svg": "" if sc["fallback"] else j["props"]["svg"], "fallback": sc["fallback"], "secs": j["props"]["seconds"]}
                               for s, j, sc in zip(segs, jobs, scenes_out)]},
         "ref": {"infos": infos, "social": {k: v for k, v in so.items() if k not in ("captions", "captionsFile")} if social else None, "seconds": round(ref, 1)},
         "videos": videos}, ensure_ascii=False, indent=1), encoding="utf-8")
-    (jd / "benzer_dokum.txt").write_text(benzer_text(infos, social, plan, segs, scenes_out, ekran, history), encoding="utf-8")
+    (jd / "benzer_dokum.txt").write_text(benzer_text(infos, social, plan, segs, scenes_out, ekran, history, hook), encoding="utf-8")
     log(f"🎨 benzer video dökümü (referansın kelimeleri + yeni seslendirme): {job_dir / 'benzer_dokum.txt'}")
     shutil.rmtree(tmp, ignore_errors=True)
     words = sum(len(s["narration"].split()) for s in segs)
@@ -1280,6 +1337,7 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
                     "titles": script["titles"], "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out, "scenes": len(segs), "fallbackScenes": nf,
                     "narration": " ".join(s["narration"] for s in segs)[:900], "speech": bool(rv) or not SPEECH_OFF or caps_used,
                     "speechLang": next((x["lang"] for x in infos if x.get("lang")), None), **an,
+                    **({"hookType": hook["type"], "hookLabel": hook["label"], "hookPromise": hook["promise"], "hookAnswer": hook["answer"]} if hook else {}),
                     "transcriptFile": str(job_dir / "benzer_dokum.txt"), "refText": re.sub(r"\s+", " ", ref_text)[:300]}}
     if rv:  # düzeltme: kaç sahne korundu, kaç sahne yeniden çizildi, Claude'un değişiklik özeti
         res.update({"revision": revision, "reused": sorted(reused), "changed": [k for k in range(len(jobs)) if k not in reused], "changes": changes})
@@ -1351,7 +1409,7 @@ def revise_recreate(job: dict) -> dict:
                   "svg": "" if s.get("fallback") else str(s.get("svg") or ""), **({"fallback": True} if s.get("fallback") else {})}
                  for s in (pp.get("segments") or []) if isinstance(s, dict)]
     onceki = {k: pp.get(k) for k in ("konu", "mesaj", "tarz", "palet", "label", "category", "titles", "hashtags", "importance", "importanceReason",
-                                     "firstComment", "cuts", "ekran_yazilari") if pp.get(k) is not None}
+                                     "firstComment", "cuts", "kanca", "ekran_yazilari") if pp.get(k) is not None}
     onceki["segments"] = segs_prev
     so = social or {}
     inp = {"duzeltme": text, "onceki_plan": onceki, "talimat": base_instr or RECREATE_TALIMAT, "hedef_sure": target,

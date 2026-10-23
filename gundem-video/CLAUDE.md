@@ -1401,6 +1401,35 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     boru hattı env'i, onay/planlı yayın kaldırma, hata yolu, komut yanıtları); panel kopyasında Playwright (1280/400 px): düğme yalnız çizilmiş videoda,
     metin penceresi, POST, Esc. Gerçek Claude'un "değişmeyeni birebir kopyala" kuralına uyması ve gerçek Remotion çizimi Mac'te DENENMEDİ (kopyalamazsa
     o sahne yeniden çizilir, video yine çıkar; logda ♻️ satırı kaç sahnenin korunduğunu söyler).
+- Kanca taktiği, bilgilendirme/benzer videolar (kullanıcı isteği, 23 Ekim: "bilgilendirme videoları için kanca taktiğimiz nedir, profesyonel bir
+  kanca taktiğimiz olsun, trend ses efektleri, trend kanca"). Eskiden benzer videonun kancası tek kuraldı ("2-4 kelime başlık + ≤10 kelime,
+  merak boşluğu"), kancada kategori sesi (toplum: şehir uğultusu) çalıyordu ve kanca performansı ölçülmüyordu.
+  - `prompts/kanca.md` (benzer.md'ye `__KANCA__` yerine `wa_video.recreate_prompt` koyar; düzeltme turunda da): ilk kare en çarpıcı AN (eşik,
+    sonuç değil), başlıktaki en güçlü kelime sona ya da rakam (Hook.tsx sarı kutuda vurgular), seslendirme hemen konuya (selamlama, "bu videoda"
+    yok; ≤10 kelime), kanca bir soru/vaat AÇAR video KAPATIR ("vaat"/"cevap": tık tuzağı, cevapsız soru, abartı yok), kanca ile 1. sahne tekrar
+    etmez. Sekiz kalıp ("tur"): soru (merak boşluğu), ters_kose, rakam (sayı/zaman), hitap (izleyiciye uyarı/çağrı), acik_dongu (sonu önden
+    duyuran vaat), yanlis_bilinen (ezber bozma), kiyas (iki şeyi çarpıştırma), ortadan (olayın ortasından); hikâye için 1/5/7/8, bilgi için
+    6/2/3, öğüt için 4. Trend açılış sözleri yalnız uyuyorsa, en çok biri ("Dur, bunu bilmen lazım.", "Kimse bunu söylemiyor ama…", "Sonunu
+    tahmin edemezsin." yalnız son gerçekten şaşırtıcıysa); "sonuna kadar izle" gibi boş çağrı yok. Çıktıda "kanca": {tur, vaat, cevap}.
+  - Akış: `wa_video.hook_of(plan)` kalıbı doğrular (`HOOK_TYPES`; tanınmazsa kanca yine kullanılır, kalıp kaydı yok, log "🎣 kanca kalıbı planda
+    yok") → senaryo `hookType`/`hookPromise`/`hookAnswer` (claude_out.json) → `assemble_script` meta `hookType`/`hookPromise` → tts episode.json
+    → Remotion: `src/hooks.ts` kalıp → ses ve damga; `GundemVideo` kancada (yalnız son dakika olmayan: benzer video, viral/mizah) kategori sesi
+    yerine kalıp sesini çalar; `Hook.tsx` 14. kareden damga (etiketin altı, sağ; başlığa binmez): soru "?", ters köşe "!", hitap "DUR", açık
+    döngü "SONA KADAR", yanlış bilinen "YANLIŞ", kıyas "VS"; rakam ve ortadan damgasız. plan.json "kanca" (düzeltmede önceki plana gider,
+    hookType korunur), benzer_dokum.txt "Kanca kalıbı" satırı, log "🎣 kanca: soru (merak boşluğu) — vaat (cevap: son sahne)", WhatsApp'ın
+    "Sıfırdan üretildi" mesajında "🎣 Kanca: …" satırı; sonuç plan `hookType/hookLabel/hookPromise/hookAnswer`.
+  - Trend ses efektleri, kodla sentezlenmiş (`make_sfx.py`, telifli ses yok; public/sfx/kanca_*.wav depoda): kanca_darbe (riser + 0,45 sn'de
+    derin sinematik darbe; açık döngü, kıyas, ortadan), kanca_soru (yükselen iki nota ding + parıltı), kanca_vinil (plak çizilmesi/durması;
+    ters köşe), kanca_glitch (dijital takılma + alçak vuruş; yanlış bilinen), kanca_tik (üç saat tıkırtısı + yükselen uğultu; rakam),
+    kanca_dur (iki keskin vuruş + derin gövde; hitap). Eski sesler değişmedi (sonda üretilir, rastgele sıra aynı; git diff temiz).
+  - Veriyle öğrenme: `analyze.py hook_stats` çizilmiş videolarda kalıp başına video sayısı, ortalama izlenme (3. gün değeri) ve kancada kalan
+    izleyici yüzdesi (`retention.py` eğrisi) → `data/hook_stats.json` {types, hint}; `wa_video.hook_history` son 8 çizilmiş videonun kalıpları +
+    bu ipucu → istemde "kanca_gecmisi" {son_kancalar, performans} (çeşitlilik: üst üste aynı kalıp seçilmez; iyi kalıba ağırlık, içeriğe
+    uymayanı zorlama). insights.json `hooks`. Haber videolarının kancası (senaryo.md manşet kuralı) değişmedi.
+  - Sandbox'ta denendi (sahte Claude + sahte çizici, tuzak tetiklenmedi): istemde kanca.md ve şema, planın kancası claude_out/plan.json/döküm/
+    sonuçta, assemble script.json `hookType`, düzeltmede kanca korunur; sentetik 7 videoyla hook_stats (izlenme ve kanca tutma ipucu) ve istemde
+    kanca_gecmisi; tsc temiz; Remotion still (yerel Chromium) ile üç kalıbın damgası (YANLIŞ, ?, DUR) 26. ve 60. karede gözle doğrulandı. Gerçek
+    Claude'un kalıp seçimi ve seslerin Mac'teki ses karışımı DENENMEDİ (ses seviyeleri diğer efektlerle aynı tepe normalizasyonunda).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

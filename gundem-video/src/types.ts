@@ -72,6 +72,9 @@ export type Episode = {
   /** benzer video (assemble meta recreated; kullanıcı isteği, 19 Ekim: "o videodaki gibi sıfırdan video üretmesini"): sahneler
    *  sıfırdan çizildi (SvgScene) → son dakika değil: kancada son dakika sesi yerine kategori sesi, kapanış sloganı "HER GÜN / YENİ BİR VİDEO" */
   recreated?: boolean;
+  /** kanca kalıbı (assemble meta hookType; prompts/kanca.md, src/hooks.ts): kancada kalıba özel ses ve damga */
+  hookType?: string | null;
+  hookPromise?: string | null;
   /** şablon/video türü (assemble meta infoKind): video → intro'da kurgu planının etiketi (SON DAKİKA değilse, ör. GÖRÜNTÜLÜ HABER) */
   infoKind?: string | null;
   segments: Segment[];

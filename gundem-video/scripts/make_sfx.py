@@ -195,6 +195,56 @@ def main():
         (glide(900, 1500, 0.16, amp=0.35, attack=0.01, decay=0.12), 0.5),
         (tone(1046, 0.18, decay=0.09, amp=0.45, harmonics=(1, 0.3)), 0.66),
     ))
+    # Kanca sesleri (kullanıcı isteği, 23 Ekim: bilgilendirme/benzer videolar için profesyonel kanca, trend ses efektleri). Kısa video
+    # platformlarındaki alışıldık kanca efektlerinin kodla sentezlenmiş karşılıkları (telifli ses yok). Kalıp → ses eşlemesi src/hooks.ts;
+    # GundemVideo kancada kategori sesi yerine bunu çalar. En sonda: yukarıdaki seslerin rastgele sırası değişmesin.
+    # darbe: yükselen gerilim (riser) + 0,45 sn'de derin sinematik darbe (başlığın anahtar kelimesi inerken) + kısa kuyruk
+    save("kanca_darbe.wav", mix(
+        (glide(70, 420, 0.45, amp=0.35, attack=0.05, decay=0.6, harmonics=(1, 0.5, 0.25)), 0),
+        (noise(0.45, amp=0.45, cutoff=0.25, attack=0.3, decay=0.2), 0),
+        ([math.tanh(2.5 * x) for x in mix((tone(52, 0.9, decay=0.45, amp=1.0, harmonics=(1, 0.5, 0.2)), 0), (noise(0.08, amp=0.8, cutoff=0.6, attack=0.001, decay=0.04), 0))], 0.45),
+        (tone(104, 0.7, decay=0.5, amp=0.25, harmonics=(1, 0.3), attack=0.01), 0.47),
+    ))
+    # soru: yükselen iki nota "ding" + parıltı (merak); hafif, aydınlık
+    save("kanca_soru.wav", mix(
+        (tone(1046, 0.22, decay=0.12, amp=0.6, harmonics=(1, 0.35, 0.12)), 0),
+        (tone(1568, 0.5, decay=0.3, amp=0.6, harmonics=(1, 0.35, 0.12)), 0.14),
+        (glide(1800, 3200, 0.3, amp=0.18, attack=0.02, decay=0.3), 0.3),
+        (tone(2093, 0.45, decay=0.3, amp=0.2, harmonics=(1, 0.2), vibrato=0.005, vib_rate=8), 0.5),
+    ))
+    # vinil: plak çizilmesi/durması (ters köşe, kalıp kırma): hızla düşen tonlu gürültü, ardından ani sessizlik ve kısa "tak"
+    scratch = mix(
+        (glide(1400, 180, 0.28, amp=0.7, attack=0.004, decay=0.35, harmonics=(1, 0.6, 0.4, 0.25), vibrato=0.05, vib_rate=40), 0),
+        (noise(0.28, amp=0.55, cutoff=0.5, attack=0.004, decay=0.3), 0),
+    )
+    save("kanca_vinil.wav", mix(
+        ([math.tanh(2 * x) for x in scratch], 0),
+        (silence(0.1), 0.28),
+        (noise(0.05, amp=0.5, cutoff=0.7, attack=0.001, decay=0.03), 0.4),
+        (tone(160, 0.3, decay=0.18, amp=0.6, harmonics=(1, 0.4), attack=0.001), 0.4),
+    ))
+    # glitch: dijital takılma (yanlış bilinen, ezber bozma): 6 kısa kırpık burst + son alçak vuruş
+    bursts = [((lambda k: [math.tanh(6 * x) for x in mix((tone(330 + k * 97, 0.045, decay=0.03, amp=0.9, harmonics=(1, 0.8, 0.6, 0.4), attack=0.0005), 0),
+                                                            (noise(0.045, amp=0.6, cutoff=0.9, attack=0.0005, decay=0.03), 0))])(k), 0.07 * k) for k in range(6)]
+    save("kanca_glitch.wav", mix(
+        *bursts,
+        (tone(60, 0.6, decay=0.35, amp=0.9, harmonics=(1, 0.5)), 0.46),
+        (noise(0.05, amp=0.6, cutoff=0.5, attack=0.001, decay=0.03), 0.46),
+    ))
+    # tik: saat tıkırtısı üç kez + yükselen alçak uğultu (rakam/zaman, geri sayım hissi)
+    ticks = [(mix((noise(0.03, amp=0.7, cutoff=0.8, attack=0.0005, decay=0.015), 0), (tone(2200, 0.05, decay=0.02, amp=0.6, harmonics=(1, 0.3), attack=0.0005), 0)), 0.02 + k * 0.22) for k in range(3)]
+    save("kanca_tik.wav", mix(
+        *ticks,
+        (glide(80, 160, 0.75, amp=0.3, attack=0.1, decay=0.7, harmonics=(1, 0.5, 0.25)), 0),
+        (tone(55, 0.5, decay=0.3, amp=0.7, harmonics=(1, 0.4)), 0.66),
+    ))
+    # dur: iki keskin vuruş (dikkat! izleyiciye hitap/uyarı) + derin gövde
+    hit = lambda a: mix((noise(0.09, amp=0.9, cutoff=0.45, attack=0.0005, decay=0.05), 0), (tone(185, 0.2, decay=0.1, amp=a, harmonics=(1, 0.5, 0.25), attack=0.0005), 0))  # noqa: E731
+    save("kanca_dur.wav", mix(
+        ([math.tanh(2.5 * x) for x in hit(0.9)], 0),
+        ([math.tanh(2.5 * x) for x in hit(1.0)], 0.13),
+        (tone(58, 0.7, decay=0.4, amp=0.8, harmonics=(1, 0.4)), 0.13),
+    ))
 
 
 if __name__ == "__main__":

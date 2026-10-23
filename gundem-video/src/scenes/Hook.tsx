@@ -4,9 +4,12 @@ import { fitFontSize, textWidth, trUpper } from "../fit";
 import { theme } from "../theme";
 import { Captions } from "./Captions";
 import { MediaBg } from "./MediaBg";
+import { hookStamp } from "../hooks";
 
 type Props = {
-  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; images?: string[]; video?: string; videoDuration?: number; videoStart?: number; words?: { w: string; s: number; e: number }[]; durationInFrames: number };
+  categoryLabel?: string; title: string; narration: string; category?: string; breaking?: boolean; image?: string; images?: string[]; video?: string; videoDuration?: number; videoStart?: number; words?: { w: string; s: number; e: number }[]; durationInFrames: number;
+  /** kanca kalıbı (src/hooks.ts): kalıba özel damga ("?", "!", "DUR", "YANLIŞ", "VS", "SONA KADAR") 14. kareden sonra çarparak belirir */
+  hookType?: string | null };
 
 const YELLOW = "#FFD400";
 const TICK = "SON DAKİKA   •   ";
@@ -20,7 +23,7 @@ const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
  *  ilk 14 karede ve 32-35. karelerde RGB kayması (kırmızı/camgöbeği hayalet), 18-40. kareler arası ışık süpürmesi
  *  dönen ışık huzmeleri, tarama çizgileri, kenar vinyeti; SON DAKİKA ise altta kayan kırmızı bant.
  */
-export const Hook = ({ categoryLabel, title, narration, category, breaking, image, images, video, videoDuration, videoStart, words, durationInFrames }: Props) => {
+export const Hook = ({ categoryLabel, title, narration, category, breaking, image, images, video, videoDuration, videoStart, words, durationInFrames, hookType }: Props) => {
   const frame = useCurrentFrame();
   const { fps, width } = useVideoConfig();
   const st = styleFor(category);
@@ -50,6 +53,9 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
   const sweep = interpolate(frame, [18, 40], [-0.4, 1.4], clamp);
   const underline = spring({ frame: frame - 6 - tw.length * 4, fps, config: { damping: 12 } });
   const labelIn = spring({ frame: frame - 2, fps, config: { damping: 13, stiffness: 160 } });
+  // kalıp damgası: başlık inerken (14. kareden) büyükten küçülerek çarpar, hafif eğik, kategori renginde çerçeve (trend "damga" görünümü)
+  const stamp = breaking ? null : hookStamp(hookType);
+  const stampIn = spring({ frame: frame - 14, fps, config: { damping: 9, stiffness: 240, mass: 0.6 } });
 
   const renderTitle = (color?: string) => (
     <div lang="tr" style={{ fontSize: size, fontWeight: 900, lineHeight: 1.0, letterSpacing: -1, display: "flex", flexWrap: "wrap", gap: `0 ${size * 0.22}px` }}>
@@ -95,6 +101,13 @@ export const Hook = ({ categoryLabel, title, narration, category, breaking, imag
           <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: 8 }}>{label}</div>
         </div>
 
+        {/* kanca kalıbı damgası (hookType): etiketin altında, başlığın üstünde; başlığa binmez (başlık 520'den başlar) */}
+        {stamp ? (
+          <div style={{ position: "absolute", right: 80, top: stamp.length > 3 ? 330 : 300, transform: `rotate(-10deg) scale(${2.2 - 1.2 * Math.min(1, stampIn)})`, opacity: Math.min(1, stampIn * 2),
+            transformOrigin: "50% 50%", padding: stamp.length > 3 ? "6px 26px" : "0 34px", border: `${stamp.length > 3 ? 8 : 12}px solid ${accent}`, borderRadius: 22, color: accent,
+            fontSize: stamp.length > 3 ? 64 : 150, fontWeight: 900, lineHeight: 1.1, letterSpacing: stamp.length > 3 ? 4 : 0, background: "rgba(4,6,12,.6)",
+            boxShadow: `0 0 50px ${accent}99, inset 0 0 30px ${accent}44`, textShadow: `0 0 24px ${accent}aa` }}>{stamp}</div>
+        ) : null}
         {/* başlık: RGB kayma hayaletleri + asıl yazı + ışık süpürmesi */}
         <div style={{ position: "absolute", left: 70, right: 70, top: 520 }}>
           {glitch > 0 ? (

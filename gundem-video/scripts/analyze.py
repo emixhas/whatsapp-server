@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Performans analizi: hangi kategori, süre ve saat tutuyor? data/insights.json + prompt ipucu üretir."""
 import json
+import time
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -31,7 +32,7 @@ def video_rows():
             "breaking": any(h.get("breaking") for h in haber),
             "firstTitle": haber[0]["title"] if haber else None,
             "titleVariant": meta.get("titleVariant"), "publishTitle": meta.get("publishTitle"),
-            "format": meta.get("format"),
+            "format": meta.get("format"), "recreated": bool(meta.get("recreated")), "hookType": meta.get("hookType") or None,
             "published": {"youtube": bool(yt.get("id")), "instagram": bool(ig.get("id")), "tiktok": bool(tt.get("publish_id"))},
             "yt_views": yt.get("views"), "yt_likes": yt.get("likes"),
             "ig_views": ig.get("views"), "ig_likes": ig.get("likes"), "ig_shares": ig.get("shares"), "ig_saves": ig.get("saves"),
@@ -99,8 +100,61 @@ def best_hours(rows: list) -> dict:
     return out
 
 
+HOOK_LABELS = {"soru": "soru (merak boşluğu)", "ters_kose": "ters köşe", "rakam": "rakam/zaman", "hitap": "doğrudan hitap",
+               "acik_dongu": "açık döngü (vaat)", "yanlis_bilinen": "yanlış bilinen", "kiyas": "kıyas", "ortadan": "ortadan başlama"}
+
+
+def hook_stats(rows: list) -> dict:
+    """Kanca kalıbı performansı (çizilmiş benzer videolar; prompts/kanca.md, wa_video hook_history): kalıp başına video sayısı, ortalama
+    izlenme (3. gün değeri) ve kancada kalan izleyici yüzdesi (retention.py eğrisi); en iyi kalıp ipucu → data/hook_stats.json "hint"
+    (wa_video istemde "kanca_gecmisi.performans"). Kullanıcı isteği, 23 Ekim: kanca taktiği veriyle öğrensin."""
+    ret = (load_json(DATA / "retention.json", {}) or {}).get("videos") or {}
+    by = defaultdict(lambda: {"videos": 0, "views": [], "keep": []})
+    try:
+        from retention import video_parts
+    except Exception:
+        video_parts = None
+    for r in rows:
+        t = r.get("hookType")
+        if not t or not r.get("recreated"):
+            continue
+        b = by[t]
+        b["videos"] += 1
+        if r.get("views"):
+            b["views"].append(r["views"])
+        curve = (ret.get(r["name"]) or {}).get("curve") if video_parts else None
+        if curve:
+            try:
+                p = video_parts(r["name"], curve)
+                if p and "hook" in p:
+                    b["keep"].append(p["hook"]["end"])
+            except Exception:
+                pass
+    types = {t: {"label": HOOK_LABELS.get(t, t), "videos": b["videos"], "avgViews": avg(b["views"]) if b["views"] else None,
+                 "hookKeep": round(sum(b["keep"]) / len(b["keep"]) * 100) if b["keep"] else None} for t, b in by.items()}
+    parts = []
+    seen = [t for t, v in types.items() if v["avgViews"] is not None and v["videos"] >= 2]
+    if len(seen) >= 2:
+        best = max(seen, key=lambda t: types[t]["avgViews"])
+        worst = min(seen, key=lambda t: types[t]["avgViews"])
+        if types[best]["avgViews"] >= 1.3 * max(1, types[worst]["avgViews"]):
+            parts.append(f"En çok izlenen kanca kalıbı: {HOOK_LABELS.get(best, best)} (ort. ~{types[best]['avgViews']} izlenme, {types[best]['videos']} video); "
+                         f"en az: {HOOK_LABELS.get(worst, worst)} (~{types[worst]['avgViews']}).")
+    kept = [t for t, v in types.items() if v["hookKeep"] is not None and v["videos"] >= 2]
+    if len(kept) >= 2:
+        bk = max(kept, key=lambda t: types[t]["hookKeep"])
+        wk = min(kept, key=lambda t: types[t]["hookKeep"])
+        if types[bk]["hookKeep"] - types[wk]["hookKeep"] >= 8:
+            parts.append(f"Kancada izleyiciyi en çok tutan kalıp: {HOOK_LABELS.get(bk, bk)} (kanca sonunda %{types[bk]['hookKeep']} kalıyor); "
+                         f"en az tutan: {HOOK_LABELS.get(wk, wk)} (%{types[wk]['hookKeep']}).")
+    out = {"updatedAt": int(time.time()), "videos": sum(v["videos"] for v in types.values()), "types": types, "hint": " ".join(parts)}
+    save_json(DATA / "hook_stats.json", out)
+    return out
+
+
 def main():
     rows = video_rows()
+    hooks = hook_stats(rows)
     with_data = [r for r in rows if r["views"] > 0]
     by_cat, by_dur, by_hour, by_var, by_fmt = defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list), defaultdict(list)
     for r in with_data:
@@ -164,7 +218,7 @@ def main():
         "breakingAvg": breaking_avg, "normalAvg": normal_avg,
         "top": [{k: r.get(k) for k in ("name", "firstTitle", "views", "yt_views", "ig_views", "tt_views", "bestPlatform", "categories", "targetDuration", "urls")} for r in top],
         "byPlatform": by_platform, "leadingPlatform": leader, "bestHours": best_hours(rows), "retention": retention,
-        "hint": hint_text, "rows": rows,
+        "hint": hint_text, "rows": rows, "hooks": {k: v for k, v in hooks.items() if k != "updatedAt"},
     }
     try:  # abone/takipçi: güncel, bugün, 7 gün, 30 gün, günlük seri (scripts/followers.py)
         from followers import summary as followers_summary
