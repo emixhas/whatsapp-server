@@ -517,8 +517,8 @@ export function parseCommand(raw) {
   // Tutan videoyu farklı haliyle yeniden yayınla: "en çok izlenen videoyu yeniden yayınla", "son videoyu yeniden yayınla"
   if (/(yeniden|tekrar) (yayınla|paylaş|üret)/.test(t) && /video/.test(t)) return { action: "remake", which: /(en çok|en fazla|tutan|izlenen|viral)/.test(t) ? "top" : "last", reply: "" };
   if (/kapak(ları|lari)? (yeniden|tekrar) (yükle|gönder)/.test(t)) return { action: "yt_thumbs", reply: "" };
-  // Yayın sırası: "tiktok sırası", "sırada ne var", "bekleyen videolar"
-  if (/(tiktok|youtube|yayın|yükleme)? ?sıra(sı|da ne var|daki videolar)|bekleyen (video|yükleme)/.test(t) && !/sıraya al/.test(t)) return { action: "queue", reply: "" };
+  // Yayın sırası: "instagram sırası", "tiktok sırası", "yayın kuyruğu", "sırada ne var", "bekleyen videolar"
+  if (/(tiktok|youtube|instagram|insta|yayın|yükleme)? ?sıra(sı|da ne var|daki videolar)|(tiktok|youtube|instagram|insta|yayın|yükleme) kuyruğu|bekleyen (video|yükleme)/.test(t) && !/sıraya al/.test(t)) return { action: "queue", reply: "" };
   // Ağır süreçleri ve üretimi durdur (ısınma): "her şeyi durdur", "modelleri kapat", "üretimi durdur"
   if (/(her şeyi|hepsini|tüm modelleri|modelleri|bütün işlemleri|arka plan|üretimi|sistemi|tüm sistemi) (durdur|kapat|bitir|dinlendir)/.test(t)) return { action: "stopall", reply: "" };
   // Dinlenmeden çık: "sistemi başlat", "sistemi uyandır", "sisteme devam"

@@ -129,7 +129,7 @@ const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if 
   if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500);
   // Instagram geçici engeli ("too many actions"): bekleme başlayınca ve sıradaki videolar yüklenince WhatsApp'a (kullanıcı isteği, 22 Ekim)
   if (/^📤 instagram: sınır doldu|^📤 instagram sırası: .*duraklatıldı/.test(line)) setTimeout(() => { try { igHoldNotify(); } catch { /* yok */ } }, 1500);
-  if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan\)$|^📤 instagram: hata .*\(sıradan, atlandı\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
+  if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan\)$|^📤 instagram: hata .*\(sıradan, .*\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
   if (/^✖ üretim hata/.test(line) && digestPending) digestPending = null; }; // hata uyarısı ayrı gider; yarım özet kalmasın
 // Instagram geçici engeli (publish.py IG_THROTTLE_RE → publish_hold.json reason instagram_rate_limit): her yeni bekleme bir kez bildirilir
 // (data/ig_hold_notified.json {until}); sıradaki videolar yüklenince (--flush: post_pipeline her yayından sonra, panel bekleme bitince ve
@@ -154,7 +154,7 @@ function igFlushNote(line) {
   igFlushTimer = setTimeout(async () => {
     const ls = igFlushLines.splice(0); if (!ls.length) return;
     const ok = ls.filter((l) => /^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 instagram: (tamam|zaten yayında) ?/, "").replace(/ \(sıradan\)$/, "").trim());
-    const bad = ls.filter((l) => !/^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 (instagram: hata )?/, "").replace(/ → instagram$/, "").replace(/ \(sıradan, atlandı\)$/, "").trim());
+    const bad = ls.filter((l) => !/^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 (instagram: hata )?/, "").replace(/ → instagram$/, "").replace(/ \(sıradan, (.*)\)$/, " ($1)").trim());
     const head = ok.length ? `✅ *Instagram engeli kalktı*, sıradaki ${ok.length > 1 ? ok.length + " video" : "video"} yüklendi:` : "⚠️ *Instagram sırası*: sıradaki video yüklenemedi:";
     const text = [head, ...ok, ...(bad.length ? [(ok.length ? "Yüklenemeyen:" : ""), ...bad].filter(Boolean) : [])].join("\n");
     try { await wa.send(text); push(`💬 Instagram sıra sonucu WhatsApp'a bildirildi (${ok.length} yüklendi${bad.length ? `, ${bad.length} yüklenemedi` : ""})`); } catch { push("💬 Instagram sıra sonucu WhatsApp'a bildirilemedi (bağlı değil)"); }
@@ -3552,7 +3552,7 @@ async function handleCommand(text, opts = {}) {
       break;
     }
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
-    case "queue": { const r = await logQueues({ all: true }); reply = r.lines?.length ? r.lines.map((l) => l.replace(/^📤 /, "")).join("\n") : "Sıra bilgisi alınamadı."; break; }
+    case "queue": { const q = await queueState(); reply = queueReport(q) || "Sıra bilgisi alınamadı."; break; }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
     case "expire": {
       if (cmd.restore) { const r = await expireRestore("all"); reply = r.ok ? (r.done?.length ? `${r.done.length} video yeniden herkese açık yapıldı.` : "Liste dışı yaptığım video yok.") : r.error; break; }
@@ -3871,5 +3871,58 @@ async function logQueues({ all = false } = {}) {
   for (const l of lines) push(l);
   return { lines, ...(r.json || {}) };
 }
-app.get("/api/queue", async (_req, res) => res.json(await logQueues({ all: true })));
+app.get("/api/queue", async (_req, res) => res.json(await queueState()));
+// Yayın sırası (kullanıcı isteği, 23 Ekim: "Instagram için sıraya alınan videoları görebilelim: hangi video hangi aşamada, yüklendi mi, sorun var mı,
+// sıra akıyor mu"): publish.py --queue (platform başına bekleyenler, deneme/son hata, duraklatma, son olaylar) + panelin bildiği son/sonraki
+// deneme zamanı. Sonraki deneme: bekleme bitişi (dakikalık döngü, dinlenmede de), yoksa saatlik tur ya da süren üretimin sonu.
+const PLAT_TR = { instagram: "Instagram", youtube: "YouTube", tiktok: "TikTok" };
+const QEV_TR = { queued: "⏳ sıraya alındı", uploaded: "✅ yüklendi", failed: "❌ yüklenemedi", dropped: "⏭ sıradan çıkarıldı", held: "⏸ engel sürüyor", hold: "⏸ bekleme başladı", removed: "✖ elle çıkarıldı" };
+async function queueState() {
+  const r = await py("publish.py", ["--queue"]), j = r.json || {};
+  const now = Date.now(), waits = [];
+  for (const p of Object.keys(PLAT_TR)) {
+    const i = j[p]; if (!i?.count) continue;
+    const hold = Date.parse(i.holdUntil || ""); // bekleme bitince dakikalık döngü hemen dener; yoksa saatlik tur (üretim yokken)
+    waits.push(hold > now ? hold + 60000 : Math.max(now + 60000, (lastFlush || 0) + 60 * 60000));
+  }
+  return { ...j, ok: j.ok !== false, lastFlush: lastFlush ? new Date(lastFlush).toISOString() : null, flushing: flushQ, resting: resting(), running: state.running,
+    nextFlush: waits.length ? new Date(Math.min(...waits)).toISOString() : null };
+}
+const hhmmOf = (t) => { const d = new Date(t); return Number.isNaN(d.getTime()) ? "?" : d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }); };
+function queueReport(q) {
+  const out = [], name = (v) => String(v || "").replace(/\.mp4$/, "");
+  for (const p of Object.keys(PLAT_TR)) {
+    const i = q[p]; if (!i) continue;
+    const hold = Date.parse(i.holdUntil || "") > Date.now();
+    if (!i.count && !hold) { out.push(`📤 ${PLAT_TR[p]} sırası: boş`); continue; }
+    out.push(`📤 *${PLAT_TR[p]} sırası*: ${i.count ? `${i.count} video bekliyor` : "boş"}${hold ? ` · ⏸ ${hhmmOf(i.holdUntil)}'e kadar duraklatıldı (${i.holdReason || i.reason})` : i.count ? (q.flushing ? " · ⬆ yükleniyor" : " · akıyor, sıradaki denemede yüklenecek") : ""}`);
+    for (const it of i.items || []) out.push(`• ${name(it.video)} — ${hhmmOf(it.at)}'ten beri sırada${it.tries ? `, ${it.tries} deneme` : ""}${it.lastError ? `, son: ${String(it.lastError).slice(0, 80)}` : ""}`);
+    const ev = (i.events || []).slice(0, 4);
+    if (ev.length) out.push("Son: " + ev.map((e) => `${hhmmOf(e.at)} ${QEV_TR[e.event] || e.event} ${name(e.video)}${e.event === "uploaded" && e.url ? " " + e.url : ""}`.trim()).join(" · "));
+  }
+  if (q.flushing) out.push("⬆ Şu an yükleniyor.");
+  else if (q.nextFlush) out.push(`Sonraki deneme: ${hhmmOf(q.nextFlush)}${q.running ? " (üretim bitince)" : q.resting ? " (sistem dinlenmede; bekleme bitince yine denenir)" : ""}`);
+  return out.join("\n");
+}
+async function flushNow() {
+  if (flushQ) return { ok: false, error: "Sıra zaten yükleniyor." };
+  const q = readJson(path.join(DATA, "publish_queue.json"), []) || [];
+  if (!q.length) return { ok: true, uploaded: [], queued: 0, error: "Sırada bekleyen video yok." };
+  lastFlush = Date.now(); flushQ = true;
+  try {
+    const r = await py("publish.py", ["--flush"]);
+    for (const l of String(r.stdout || "").trim().split("\n").slice(0, -1)) if (l.startsWith("📤")) push(l);
+    if (r.json?.uploaded?.length) await py("analyze.py");
+    const holds = readJson(path.join(DATA, "publish_hold.json"), {}) || {}, held = Object.entries(holds).filter(([p, h]) => Date.parse(h?.until || "") > Date.now() && q.some((x) => x.platform === p)).map(([p, h]) => `${PLAT_TR[p] || p} beklemesi ${hhmmOf(h.until)}'e kadar sürüyor`);
+    return { ok: true, ...(r.json || {}), ...(!r.json?.uploaded?.length && held.length ? { error: held.join("; ") + "; o saatte kendiliğinden yüklenecek." } : {}) };
+  } finally { flushQ = false; }
+}
+app.post("/api/queue/flush", async (_req, res) => { try { res.json(await flushNow()); } catch (e) { res.json({ ok: false, error: e.message }); } });
+app.post("/api/queue/drop", async (req, res) => {
+  const video = path.basename(String(req.body?.video || "")), plat = String(req.body?.platform || "");
+  if (!video || !PLAT_TR[plat]) return res.json({ ok: false, error: "video ve platform gerekir" });
+  const r = await py("publish.py", ["--unqueue", "--file", video, "--platform", plat]);
+  if (r.json?.ok) push(`📤 ${plat}: ${video} elle sıradan çıkarıldı (yüklenmeyecek; panelden elle yüklenebilir)`);
+  res.json(r.json || { ok: false, error: (r.stderr || r.stdout || "").slice(-200) });
+});
 app.listen(PORT, "0.0.0.0", () => console.log(`EMIXHAS paneli: http://localhost:${PORT}   (telefon: http://${lanIp()}:${PORT})`));

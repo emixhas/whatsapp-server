@@ -2010,11 +2010,27 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `content_publishing_limit` günlük kotası, Meta'nın videoyu çekebilmesi (son videonun herkese açık adresine
   facebookexternalhit User-Agent ve Range ile istek: HTTP 200/206 + video içerik türü) ve son hata. Panel
   "🩺 Instagram'ı sına" → `POST /api/instagram/diagnose`, adımlar ✅/❌ olarak sohbete ve loga (🩺).
-- Sınır sıraları logda (kullanıcı isteği: TikTok sırası görünsün): `publish.py --queue` (`queue_info`/`queue_line`):
-  "📤 tiktok sırası: N video bekliyor (adlar) · gönderim HH:MM'e kadar duraklatıldı (neden)"; `--status` tiktok.queue;
+- Sınır sıraları logda (kullanıcı isteği: TikTok sırası görünsün): `publish.py --queue` (`queue_info`/`queue_line`; Instagram, TikTok, YouTube):
+  "📤 tiktok sırası: N video bekliyor (adlar) · gönderim HH:MM'e kadar duraklatıldı (neden)"; `--status` tiktok.queue ve instagram.queue;
   `--flush` sonunda kalan sıralar; `post_pipeline` her yayından sonra boş olmayan/duraklatılmış sırayı yazar; panel
-  açılıştan 1 dk sonra ve 2 saatte bir `logQueues()`; komut "tiktok sırası / sırada ne var / bekleyen videolar"
-  (`queue` eylemi), `GET /api/queue`; TikTok kartında "⏳ Sıra: …".
+  açılıştan 1 dk sonra ve 2 saatte bir `logQueues()`; TikTok kartında "⏳ Sıra: …".
+  Yayın sırası görünür (kullanıcı isteği, 23 Ekim: "Instagram için sıraya alınan videoları görebilelim: hangi video hangi aşamada, yüklendi mi, sorun var
+  mı, sıra akıyor mu"): `publish.py` sıra olaylarını `data/publish_queue_log.json`a yazar (`qlog`, son 100: queued — sıraya alındı —, hold — bekleme
+  başladı, Türkçe neden `hold_reason_tr` —, held — denemede engel sürdü, bekleme yenilendi —, failed — sınır dışı hata, video sırada kalır —, dropped —
+  `QUEUE_MAX_TRIES` (3) başarısız denemeden sonra ya da bayat/silinmiş —, uploaded — url ile —, removed — elle çıkarıldı); sıra kaydı `tries`, `lastTry`,
+  `lastError` taşır (eskiden sınır dışı hatada video ilk denemede sessizce sıradan düşüyordu; flush satırları "(sıradan, N. deneme; yeniden denenecek)" /
+  "(sıradan, N. denemede çıkarıldı)"). `queue_info` {count, videos, items [{video, at, tries, lastTry, lastError}], holdUntil, reason, holdReason, events
+  (son 15, en yeniden eskiye)}; `--unqueue --file --platform` sıradan çıkarır. `server.js queueState()` (`GET /api/queue`): --queue + `lastFlush`,
+  `flushing`, `resting`, `running`, `nextFlush` (bekleme bitişi + 1 dk — dakikalık döngü, dinlenmede de —, yoksa saatlik tur); `queueReport()` WhatsApp
+  komutunun ("instagram sırası", "insta sırası", "tiktok sırası", "yayın sırası/kuyruğu", "sırada ne var", "bekleyen videolar"; `queue` eylemi) metni:
+  platform başına durum satırı (bekliyor / ⏸ duraklatıldı (neden) / akıyor / ⬆ yükleniyor), her video (ne zamandan beri, deneme, son hata), son 4
+  olay (yüklenende link), "Sonraki deneme: HH:MM" (üretim bitince / dinlenmede notu); `POST /api/queue/flush` (`flushNow`: sırayı şimdi yükler,
+  bekleme sürüyorsa nedeni ve saati söyler), `POST /api/queue/drop {video, platform}`. Panel Ayarlar → Yayın hesapları → Instagram kartının altında
+  "📤 Yayın sırası" kutusu (30 sn'de bir): platform başına bekleyenler ⏳ (saat, deneme, son hata, ✖ sıradan çıkar — `ask()`), son 5 olay (✅ yüklendi
+  ↗ link, ❌ yüklenemedi, ⏸ engel sürüyor, ⏭ çıkarıldı), "Sonraki deneme / son deneme", "▶ Sırayı şimdi yükle", "🔄 Yenile". Sahte yükleyiciyle 17
+  denetim (engel → hold + queued, bekleme sürerken flush dokunmaz, engel yenilenince tries/held, sınır dışı hatada 3 denemede çıkarma, yüklenende
+  uploaded + url, unqueue, --queue/--status çıktısı, eski kayıt ve bozuk log), server kopyasında 8 (rapor satırları, sonraki deneme, yükleniyor/üretim
+  notları, flushNow boş/bekleme/yüklendi), komut tanıma 12.
 - TikTok sınırı: gelen kutusu modunda paylaşılmamış taslak birikince `spam_risk_too_many_pending_share` (doğrudan yayında
   `spam_risk_too_many_posts`) → `TT_LIMIT_REASONS` LimitReached gibi: 3 saat bekleme, video sıraya, Türkçe açıklama
   `TT_LIMIT_TR` ("taslakları paylaşın ya da silin"), log "📤 tiktok: sınır doldu" + sesli uyarı.

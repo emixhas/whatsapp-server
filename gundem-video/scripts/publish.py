@@ -32,6 +32,9 @@ HOLD_FILE = DATA / "publish_hold.json"    # {"youtube": {"until": iso, "reason":
 QUEUE_FILE = DATA / "publish_queue.json"  # [{"video": ad, "platform": p, "at": iso}]
 LIMIT_HOURS = 3        # sınır dolunca bu kadar saat sonra yeniden denenir
 QUEUE_MAX_HOURS = 24   # daha eski sıradaki haber videoları yüklenmez (bayat haber)
+QUEUE_MAX_TRIES = 3    # sınır dışı hatada (bozuk dosya, API hatası) sıradaki video bu kadar denemeden sonra çıkarılır
+QUEUE_LOG = DATA / "publish_queue_log.json"  # son 100 sıra olayı: {at, event queued|uploaded|failed|dropped|held|hold|removed, video, platform, detail, url}
+                                             # (kullanıcı isteği, 23 Ekim: "sıraya alınan videoları görebilelim: hangi aşamada, yüklendi mi, sorun var mı, sıra akıyor mu")
 LIMIT_REASONS = ("uploadLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded")
 # TikTok gelen kutusu (inbox) modu: paylaşılmamış taslak sayısı TikTok'un sınırını aşınca (24 saatte birkaç bekleyen
 # gönderim) "spam_risk_too_many_pending_share"; doğrudan yayında da "spam_risk_too_many_posts". İkisi de sınır sayılır.
@@ -68,12 +71,25 @@ def hold_until(plat):
     return until if until and until > datetime.now(timezone.utc) else None
 
 
+def qlog(event, video, plat, detail="", url=""):
+    """Sıra olayı (panel "Yayın sırası" kutusu ve "instagram sırası" komutu için); son 100 olay tutulur."""
+    log = load_json(QUEUE_LOG, []) or []
+    log = log if isinstance(log, list) else []
+    log.append({"at": now_iso(), "event": event, "video": str(video or ""), "platform": plat, "detail": str(detail or "")[:300], **({"url": url} if url else {})})
+    save_json(QUEUE_LOG, log[-100:])
+
+
 def set_hold(plat, reason):
     holds = load_json(HOLD_FILE, {}) or {}
     until = datetime.now(timezone.utc) + timedelta(hours=LIMIT_HOURS)
     holds[plat] = {"until": until.isoformat(), "reason": reason, "since": now_iso()}
     save_json(HOLD_FILE, holds)
+    qlog("hold", "", plat, f"{hold_reason_tr(plat, reason)} · {local_hhmm(until)}'e kadar")
     return until
+
+
+def hold_reason_tr(plat, reason):
+    return (TT_LIMIT_TR.get(reason) if plat == "tiktok" else IG_LIMIT_TR.get(reason) if plat == "instagram" else None) or (PLAT_NAME.get(plat, plat) + " günlük yükleme sınırı dolu" if reason in ("limit", "uploadLimitExceeded", "quotaExceeded", "") else str(reason))
 
 
 def clear_hold(plat):
@@ -87,15 +103,31 @@ def enqueue(video, plat):
     if not any(x.get("video") == video and x.get("platform") == plat for x in q):
         q.append({"video": video, "platform": plat, "at": now_iso()})
         save_json(QUEUE_FILE, q)
+        qlog("queued", video, plat, "sınır/engel yüzünden sıraya alındı")
+
+
+def unqueue(video, plat) -> bool:
+    """Elle sıradan çıkar (panel "✖"); video yüklenmez, panelden elle yüklenebilir."""
+    q = load_json(QUEUE_FILE, []) or []
+    keep = [x for x in q if not (x.get("video") == video and x.get("platform") == plat)]
+    if len(keep) == len(q):
+        return False
+    save_json(QUEUE_FILE, keep)
+    qlog("removed", video, plat, "elle sıradan çıkarıldı")
+    return True
 
 
 def queue_info(plat: str) -> dict:
-    """Bir platformun sınır sırası: bekleyen videolar (eskiden yeniye), duraklatma bitişi ve nedeni."""
-    q = [x for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == plat]
+    """Bir platformun sınır sırası: bekleyen videolar (eskiden yeniye; her birinde sıraya giriş zamanı, deneme sayısı, son hata),
+    duraklatma bitişi ve nedeni (Türkçe holdReason), son 15 sıra olayı (en yeniden eskiye)."""
+    q = sorted([x for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == plat], key=lambda x: x.get("at", ""))
     until = hold_until(plat)
     reason = ((load_json(HOLD_FILE, {}) or {}).get(plat) or {}).get("reason", "") if until else ""
-    return {"count": len(q), "videos": [x.get("video") for x in sorted(q, key=lambda x: x.get("at", ""))],
-            "holdUntil": until.isoformat() if until else None, "reason": reason}
+    events = [e for e in reversed(load_json(QUEUE_LOG, []) or []) if isinstance(e, dict) and e.get("platform") == plat][:15]
+    return {"count": len(q), "videos": [x.get("video") for x in q],
+            "items": [{"video": x.get("video"), "at": x.get("at"), "tries": int(x.get("tries") or 0), "lastTry": x.get("lastTry"), "lastError": x.get("lastError") or ""} for x in q],
+            "holdUntil": until.isoformat() if until else None, "reason": reason, "holdReason": hold_reason_tr(plat, reason) if until else "",
+            "events": events}
 
 
 def queue_line(plat: str) -> str:
@@ -1569,7 +1601,7 @@ def status():
                     "playlists": bool(set(load_json(SECRETS / "youtube_token.json", {}).get("scopes") or []) & YT_MANAGE),
                     "comments": YT_COMMENT in yt_scopes(),  # ilk yorum ve yorum yanıtı (youtube.force-ssl)
                     "queued": sum(1 for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == "youtube")},
-        "instagram": ig_status(env),
+        "instagram": {**ig_status(env), "queue": queue_info("instagram")},
         "tiktok": {"queue": queue_info("tiktok"), "connected": TT_TOKEN_FILE.exists(), "appKeys": bool(env.get("TIKTOK_CLIENT_KEY") and env.get("TIKTOK_CLIENT_SECRET")),
                    "mode": (env.get("TIKTOK_MODE") or "inbox").lower(), "redirect": tt_redirect(env), "scopes": tt_scopes(env),
                    "https": tt_redirect(env).startswith("https://")},
@@ -1588,7 +1620,8 @@ def main():
     ap.add_argument("--delete-remote", help="videoyu yüklendiği platformlardan sil (dosya adı)")
     ap.add_argument("--flush", action="store_true")
     ap.add_argument("--yt-thumbs", action="store_true", help="YouTube'da kapağı reddedilmiş/eksik videolara kapağı yeniden yükle")
-    ap.add_argument("--queue", action="store_true", help="sınır sıraları (YouTube, TikTok): bekleyen videolar ve duraklatma")
+    ap.add_argument("--queue", action="store_true", help="sınır sıraları (Instagram, TikTok, YouTube): bekleyen videolar, duraklatma, son olaylar")
+    ap.add_argument("--unqueue", action="store_true", help="--file ve --platform ile videoyu sıradan çıkar (yüklenmez)")
     ap.add_argument("--retitle", action="store_true", help="tutmayan videonun YouTube başlığını diğer varyanta çevir")
     ap.add_argument("--first-comments", action="store_true", help="ilk yorumu yazılamamış son videolara yorumu yaz")
     a = ap.parse_args()
@@ -1614,9 +1647,14 @@ def main():
     if a.yt_thumbs:
         print(json.dumps(yt_retry_thumbs(), ensure_ascii=False)); return
     if a.queue:
-        for plat in ("tiktok", "youtube"):
+        for plat in ("instagram", "tiktok", "youtube"):
             print(queue_line(plat))
-        print(json.dumps({"ok": True, "tiktok": queue_info("tiktok"), "youtube": queue_info("youtube")}, ensure_ascii=False)); return
+        print(json.dumps({"ok": True, "instagram": queue_info("instagram"), "tiktok": queue_info("tiktok"), "youtube": queue_info("youtube")}, ensure_ascii=False)); return
+    if a.unqueue:
+        if not (a.file and a.platform):
+            print(json.dumps({"ok": False, "error": "--unqueue için --file ve --platform gerekir"}, ensure_ascii=False)); return
+        ok = unqueue(Path(a.file).name, a.platform)
+        print(json.dumps({"ok": ok, "error": None if ok else "sırada böyle bir video yok"}, ensure_ascii=False)); return
     if a.disconnect == "tiktok":
         print(json.dumps({"ok": True, "removed": tt_disconnect(), "message": "TikTok bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.disconnect == "youtube":
@@ -1717,18 +1755,28 @@ def flush() -> dict:
         at = _parse(it.get("at", "")) or now
         path = OUT / Path(name).name
         if not path.exists() or now - at > timedelta(hours=QUEUE_MAX_HOURS):
+            why = "silinmiş" if not path.exists() else f"{QUEUE_MAX_HOURS} saatten eski, bayat"
             print(f"📤 sıradan çıkarıldı (eski ya da silinmiş): {name} → {plat}", flush=True)
+            qlog("dropped", name, plat, why)
             continue
         if hold_until(plat):
             keep.append(it); continue
         res = upload(path, plat)
+        tries = int(it.get("tries") or 0) + 1
         if res.get("ok"):
             done.append(f"{plat}:{name}")
             print(f"📤 {plat}: " + ("zaten yayında " if res.get("skipped") else "tamam ") + f"{res.get('url') or ''} (sıradan)", flush=True)
-        elif res.get("limit"):
-            keep.append(it)
+            qlog("uploaded", name, plat, "sıradan yüklendi" + (f" ({tries}. denemede)" if tries > 1 else ""), res.get("url") or "")
+        elif res.get("limit"):  # bekleme yeniden başladı (engel sürüyor): video sırada kalır
+            keep.append({**it, "tries": tries, "lastTry": now_iso(), "lastError": res.get("error") or ""})
+            qlog("held", name, plat, res.get("error") or "")
+        elif tries >= QUEUE_MAX_TRIES:  # sınır dışı hata (bozuk dosya, API hatası): birkaç denemeden sonra çıkarılır
+            print(f"📤 {plat}: hata {res.get('error')} (sıradan, {tries}. denemede çıkarıldı)", flush=True)
+            qlog("dropped", name, plat, f"{tries} deneme başarısız: {res.get('error') or ''}")
         else:
-            print(f"📤 {plat}: hata {res.get('error')} (sıradan, atlandı)", flush=True)
+            print(f"📤 {plat}: hata {res.get('error')} (sıradan, {tries}. deneme; yeniden denenecek)", flush=True)
+            keep.append({**it, "tries": tries, "lastTry": now_iso(), "lastError": res.get("error") or ""})
+            qlog("failed", name, plat, res.get("error") or "")
     # bu arada başka bir üretimin sıraya eklediklerini koru
     seen = {(x.get("video"), x.get("platform")) for x in q}
     added = [x for x in (load_json(QUEUE_FILE, []) or []) if (x.get("video"), x.get("platform")) not in seen]

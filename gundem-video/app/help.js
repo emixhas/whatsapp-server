@@ -47,7 +47,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 
 📤 *Yayın ve hesaplar*
 • instagram'a yayınla · tiktok'a yayınla · youtube'a yayınla (son video)
-• tiktok sırası · sırada ne var
+• instagram sırası · tiktok sırası · yayın sırası — sınır ya da engel yüzünden bekleyen videolar, deneme sayısı, son yüklemeler, sonraki deneme
 • kapakları yeniden yükle
 • süresi geçenleri liste dışı yap · liste dışı yapılanları geri aç
 • günün hikayesini paylaş — en çok izlenenler Instagram hikâyesine · hikaye paylaşımını kapat / otomatik hikayeyi aç
