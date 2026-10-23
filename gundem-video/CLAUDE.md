@@ -2420,6 +2420,24 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   karakterde kesilir) neden, en çok 5 link (sığmazsa daha az), "tamamı panelde" ve tek satır Facebook Girişi notu. Silmediği biliniyorsa
   liste metni bunu söyler ve "evet sil" yalnız denetler (log "… denetleniyor"; elle silinen kayıttan düşer). Panel Instagram kartı "🗑 Düşük izlenenleri sil"
   (`POST /api/instagram/cleanup/plan`, `/run`).
+- Instagram'a ikişer yükleme düzeltmesi (kullanıcı şikâyeti, 23 Ekim: "ikişerli paylaşılmış haberler instada"; ekran görüntüsünde aynı video — aynı
+  üretim saati kartı — Instagram'da iki kez): `ig_upload` gönderiyi yayınladıktan SONRA bir adım hata verirse (media_publish 60 sn'de yanıt vermedi
+  — Reels yayını uzun sürebiliyor —, bağlantı kopması, permalink okuma hatası) kayıt yazılamıyor, `post_pipeline` 90 sn sonra (ya da sahip
+  "onay"la, ya da sıra) yeniden deniyor ve `upload()` metrikte kimlik bulamayınca aynı videoyu ikinci kez yüklüyordu. Düzeltme (`scripts/publish.py`):
+  1) yüklemeden önce `ig_find_published`: hesabın son 25 gönderisinde (`ig_recent_media`: /me/media ya da /{hesap}/media, id/caption/timestamp/
+  permalink) aynı açıklamalı (boşlukları sadeleştirilmiş birebir ya da ilk 150 karakteri aynı ve uzunluk ±5; açıklama üretim saatini ve başlığı
+  taşıdığı için videoya özgü) son 6 saatlik gönderi varsa o kayda geçer (`recovered: true`), ikinci kopya yüklenmez (log "  ! Instagram: aynı
+  açıklamayla gönderi zaten var …"); 2) `media_publish` zaman aşımı 180 sn; yine yanıtsız kalırsa 10 sn arayla en çok 6 kez hesabın son
+  gönderilerine bakılır, bulunursa kayda geçer; bulunmaz ve konteyner hâlâ FINISHED ise istek ulaşmamıştır, bir kez daha yayınlanır; ikisi de
+  değilse hata (sonraki denemede 1. madde bulur); 3) permalink okunamazsa yayın yine tamam (url boş). `yt_upload`: yükleme bittikten sonraki kapak/
+  liste/ilk yorum adımındaki hata kaydı düşürmez (`postError`). Mevcut tekrarlar: `ig_cleanup.py --dups --days 7` (son 200 gönderi, aynı açıklama
+  → gruplar; her grupta en eski kalır) ve `--dups-run --json` (fazla kopyalar `ig_delete` ile silinir, "izin yok" bağlantıda liste elle silmek için,
+  metrikte silinen kopyayı gösteren kayıt kalan gönderiye bağlanır; `data/ig_cleanup_log.json` `dup: true`). Panel Instagram kartı "♻️ Tekrarları
+  sil" (`POST /api/instagram/dups/plan` → `ask()` → `/api/instagram/cleanup/run`), WhatsApp "instagram tekrarlarını sil" / "instagramda çift
+  paylaşılanları sil" (`ig_dups`, "son 3 gün" de olur) → liste → *evet sil* (aynı `igCleanupPending`; *iptal* vazgeçer). Sandbox'ta yerel sahte
+  Graph sunucusuyla denendi: media_publish yanıtsız kalınca gönderi son gönderilerden bulundu (tek yükleme), permalink hatasında yayın tamam,
+  ikinci çağrıda aynı açıklamalı gönderi bulunup yüklenmedi, FINISHED konteynerde bir kez daha yayın, `--dups`/`--dups-run` gruplama ve silme.
+  Gerçek Instagram'da DENENMEDİ (Mac'te ilk yayınlarda "  !" satırlarına bakın).
 - Otomatik Instagram temizliği (kullanıcı isteği, 17 Ekim: "5000 altında izlenen videoları otomatik silelim, sayıları panelde göreyim,
   değiştireyim, silinmeye adayları da göreyim"; kullanıcı kararları: YALNIZ Instagram, 72 saat bekleme; `settings.igAutoClean` {enabled true,
   maxViews 5000, waitHours 72, maxAgeDays 30, everyHours 3, keep []}): `ig_cleanup.py --auto-plan` → ready (bekleme dolmuş ve sınır altı),

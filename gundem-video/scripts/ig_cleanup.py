@@ -12,6 +12,8 @@
       Instagram kaydı düşer. Her silme `data/ig_cleanup_log.json`a yazılır ve stdout'a "🗑 …" satırı olarak basılır.
   python3 scripts/ig_cleanup.py --support
       silme desteği kaydı (data/ig_delete_support.json) ve geçerli mi (known) — JSON.
+  python3 scripts/ig_cleanup.py --dups --days 7            aynı açıklamayla ikişer yüklenmiş gönderiler (hiçbir şey silmez)
+  python3 scripts/ig_cleanup.py --dups-run --json '[…]'    fazla kopyaları siler (her haberin ilk gönderisi kalır; metrik kaydı ona bağlanır)
 
 Instagram Girişi (graph.instagram.com) gönderi silmeyi desteklemez (Meta yalnız Facebook Girişi + instagram_manage_contents için
 belgeliyor). İlk "izin yok" yanıtı data/ig_delete_support.json'a yazılır {unsupported, at, via, tokenAt, reason}; aynı bağlantıda
@@ -316,6 +318,100 @@ def run(names: list, max_views: int) -> dict:
             **({"halt": halt[0]} if halt else {})}
 
 
+def dups(days: float = 7) -> dict:
+    """Instagram'da aynı açıklamayla birden çok gönderi (yayın adımının yinelenmesi; kullanıcı şikâyeti, 23 Ekim: "ikişerli paylaşılmış
+    haberler"): hesabın son 200 gönderisi okunur (video/Reels), açıklaması aynı olanlar gruplanır; her grupta EN ESKİ kalır, sonrakiler
+    silinecek listeye. Hiçbir şey silmez. {ok, groups: [{title, keep{id,url,at}, dups[{id,url,at}]}], ids, total, scanned}."""
+    from publish import _norm_caption, _ts, ig_creds, ig_recent_media
+    creds = ig_creds()
+    items = ig_recent_media(creds, limit=50, pages=4)
+    now = datetime.now(timezone.utc)
+    groups: dict = {}
+    for m in items:
+        ts = _ts(m.get("timestamp"))
+        if not ts or now - ts > timedelta(days=days) or m.get("media_type") not in (None, "VIDEO", "REELS"):
+            continue
+        key = _norm_caption(m.get("caption"))
+        if len(key) < 20:
+            continue
+        groups.setdefault(key, []).append({"id": str(m["id"]), "url": m.get("permalink"), "at": m.get("timestamp")})
+    out, ids = [], []
+    for key, g in groups.items():
+        if len(g) < 2:
+            continue
+        g.sort(key=lambda x: (x["at"] or "", int(x["id"]) if x["id"].isdigit() else 0))  # en eski kalır; aynı anda en küçük kimlik (ilk yüklenen)
+        out.append({"title": key[:80], "keep": g[0], "dups": g[1:]})
+        ids += [x["id"] for x in g[1:]]
+    out.sort(key=lambda x: x["keep"]["at"] or "", reverse=True)
+    return {"ok": True, "groups": out, "ids": ids, "total": len(ids), "scanned": len(items)}
+
+
+def dups_run(items: list) -> dict:
+    """Verilen fazla kopyaları siler: [{id, url, keepId, keepUrl, title}]. Metriklerde Instagram kaydı silinen kopyayı gösteren video kalan
+    gönderiye bağlanır. İlk "izin yok" yanıtından sonra DELETE denenmez (elle silinecekler listesi); bağlantı/istek sınırı hatasında durur.
+    Sonuç run() ile aynı biçimde: {ok, deleted, failed, manual, via, unsupported, reason}."""
+    from publish import ig_conn, ig_creds, ig_delete
+    sup = support()
+    known = bool(sup.get("known"))
+    conn = ig_conn()
+    try:
+        uid = str(ig_creds()[0])
+    except Exception:
+        uid = ""
+    owner = uid if uid and uid != "me" else None
+    via = sup.get("viaName") if known else conn.get("name")
+    reason = sup.get("reason") if known else None
+    done, failed, manual, unsupported = [], [], [], known
+    log = load_json(LOG, [])
+    log = [x for x in log if isinstance(x, dict)] if isinstance(log, list) else []
+    halt = None
+    for it in items:
+        mid = str(it.get("id") or "")
+        if not mid:
+            continue
+        title = str(it.get("title") or "")[:80]
+        item = {"id": mid, "url": it.get("url"), "title": title, "keepId": it.get("keepId")}
+        if halt:
+            failed.append({**item, "message": halt, "notTried": True})
+            continue
+        if known:  # API bu bağlantıyla silmiyor: liste elle silinmek için
+            manual.append(item)
+            continue
+        r = ig_delete({"id": mid, "url": it.get("url"), **({"owner": owner} if owner else {})})
+        rec = {"at": now_iso(), "video": f"instagram:{mid}", "title": title, "url": it.get("url"), "ok": bool(r.get("ok")), "message": r.get("message"), "dup": True}
+        if r.get("ok"):
+            done.append(item)
+            log.append({**rec, "state": "gone" if r.get("gone") else "deleted"})
+            note_support(r)
+            print(f"🗑 Instagram: tekrar kopya silindi — \"{title}\"{' · ' + str(it.get('url')) if it.get('url') else ''}", flush=True)
+            # metriklerdeki kayıt silinen kopyayı gösteriyorsa kalan gönderiye bağlanır (izlenme, silme ve ilk yorum doğru gönderide)
+            if it.get("keepId"):
+                m = metrics()
+                for name, v in (m.get("videos") or {}).items():
+                    g = v.get("instagram") if isinstance(v, dict) else None
+                    if isinstance(g, dict) and str(g.get("id")) == mid:
+                        g.update({"id": str(it["keepId"]), **({"url": it["keepUrl"]} if it.get("keepUrl") else {})})
+                        print(f"🗑 Instagram: {name} kaydı kalan gönderiye bağlandı", flush=True)
+                save_metrics(m)
+        elif r.get("manual"):
+            manual.append(item)
+            log.append({**rec, "state": "manual", "reason": r.get("reason")})
+            if r.get("unsupported"):
+                note_support(r)
+                known, unsupported, via, reason = True, True, r.get("via") or via, r.get("reason")
+        else:
+            failed.append({**item, "message": r.get("message"), "token": bool(r.get("token")), "retry": bool(r.get("retry"))})
+            log.append({**rec, "state": "failed"})
+            print(f"🗑 Instagram: tekrar kopya SİLİNEMEDİ — {r.get('message')}", flush=True)
+            if r.get("halt") in ("token", "throttled"):
+                halt = r.get("message")
+        time.sleep(1)
+    if manual:
+        print(f"🗑 Instagram: {len(manual)} tekrar kopya elle silinmeli — liste panelde", flush=True)
+    save_json(LOG, log[-100:])
+    return {"ok": True, "deleted": done, "failed": failed, "manual": manual, "via": via, "unsupported": unsupported, "reason": reason}
+
+
 if __name__ == "__main__":
     a = sys.argv
 
@@ -329,6 +425,10 @@ if __name__ == "__main__":
                             [x for x in arg("--keep", "").split(",") if x])
         elif "--run" in a:
             res = run([x for x in arg("--names", "").split(",") if x], int(arg("--max", 1000)))
+        elif "--dups-run" in a:  # fazla kopyalar: --json '[{"id","url","keepId","keepUrl","title"}]'
+            res = dups_run(json.loads(arg("--json", "[]")))
+        elif "--dups" in a:
+            res = dups(float(arg("--days", 7)))
         else:
             res = plan(float(arg("--days", 7)), int(arg("--max", 1000)), float(arg("--min-age-hours", 0)))
     except Exception as e:

@@ -881,9 +881,45 @@ async function igCleanupPlan({ days = 7, max = 1000, minAgeH = 0 } = {}) {
       : `\n\nYalnız Instagram'dan kalıcı olarak silinir (YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`);
   return { ok: true, items, unknown: r.unknown, verifyOnly: !!sup.known, text };
 }
+// ♻️ Instagram'da ikişer paylaşılmış gönderiler (kullanıcı şikâyeti, 23 Ekim: "ikişerli paylaşılmış haberler instada"): yayın adımı yanıt alamayınca
+// (zaman aşımı, bağlantı kopması, bağlantı okuma hatası) 90 sn sonra ya da "onay" ile yeniden deneyip aynı videoyu ikinci kez yüklüyordu;
+// publish.py artık yüklemeden önce aynı açıklamalı gönderiyi arar (ig_find_published). Mevcut tekrarlar için: liste → "evet sil" (aynı onay
+// mekanizması: igCleanupPending.dups) → her haberin İLK gönderisi kalır, sonrakiler silinir, metrik kaydı kalan gönderiye bağlanır.
+async function igDupsPlan({ days = 7 } = {}) {
+  const r = await pyJson(["scripts/ig_cleanup.py", "--dups", "--days", String(days)], 90000).catch(() => null);
+  if (!r?.ok) return { ok: false, text: `Instagram tekrar listesi çıkarılamadı: ${r?.error || "yanıt yok"}` };
+  const groups = r.groups || [];
+  push(`♻️ Instagram tekrar taraması: son ${days} günde ${r.scanned || 0} gönderi bakıldı, ${groups.length} haber birden çok kez paylaşılmış (${r.total || 0} fazla kopya)`);
+  if (!groups.length) { igCleanupPending = null; return { ok: true, groups, text: `Instagram'da son ${days} günde tekrar paylaşılmış gönderi yok.` }; }
+  const sup = await igSupport();
+  igCleanupPending = { dups: groups.flatMap((g) => g.dups.map((d) => ({ ...d, keepId: g.keep.id, keepUrl: g.keep.url, title: g.title }))), days, at: Date.now(), known: !!sup.known };
+  const text = `♻️ Instagram'da son ${days} günde *${groups.length} haber birden çok kez* paylaşılmış (${r.total} fazla kopya). Her haberin ilk gönderisi kalır, sonrakiler silinir:\n` +
+    groups.slice(0, 20).map((g) => `• ${String(g.title).slice(0, 60)} — ${g.dups.length} fazla${g.dups[0]?.url ? ` ${g.dups[0].url}` : ""}`).join("\n") + (groups.length > 20 ? `\n… ve ${groups.length - 20} haber daha` : "") +
+    (sup.known ? `\n\n⚠️ ${igWhy({ unsupported: true, via: sup.viaName })}; fazla kopyaları Instagram uygulamasından elle silin (linkler yukarıda). *evet sil* yazarsanız yalnız liste kesinleşir, hiçbir şey silinmez.`
+      : `\n\nYalnız Instagram'daki fazla kopya silinir (ilk gönderi, YouTube, TikTok ve Mac'teki kopya kalır). Silmek için *evet sil* yazın, vazgeçmek için *iptal* (15 dk geçerli).`);
+  return { ok: true, groups, total: r.total, verifyOnly: !!sup.known, text };
+}
+async function igDupsRun0(p, { notify = true } = {}) {
+  igCleanupPending = null;
+  push(`♻️ Instagram tekrar kopyaları ${p.known ? "listeleniyor (API bu bağlantıyla silmiyor; hiçbir şey silinmez)" : "siliniyor"}: ${p.dups.length} gönderi`);
+  const r = await py("ig_cleanup.py", ["--dups-run", "--json", JSON.stringify(p.dups)]);
+  const j = igRunLog(r);
+  if (!j.ok) { const error = `Instagram tekrar silme çalışmadı: ${j.error || String(r.stderr || "yanıt yok").slice(-160)}`; push(`♻️ ${error}`); return { ok: false, error, text: error }; }
+  const del = j.deleted || [], fail = j.failed || [], man = j.manual || [];
+  const head = `♻️ *Instagram tekrarları*: ${del.length} fazla kopya silindi${man.length ? `, ${man.length} elle silinmeli` : ""}${fail.length ? `, ${fail.length} silinemedi` : ""}.`;
+  const text = head +
+    (man.length ? `\n\n${igWhy(j)}${j.reason ? ` (${String(j.reason).slice(0, 100)})` : ""}. Instagram uygulamasından elle silin:\n` + man.slice(0, 15).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""}`).join("\n") + (man.length > 15 ? `\n… ve ${man.length - 15} kopya daha` : "") + (j.unsupported ? `\n${igFix(j, true)}` : "") : "") +
+    (fail.length ? "\n\nSilinemeyenler:\n" + fail.slice(0, 10).map((x) => `• ${String(x.title).slice(0, 50)}${x.url ? ` ${x.url}` : ""} — ${igCut(x.message, 160)}`).join("\n") : "");
+  const short = head + (man.length ? `\n${igWhy(j)}; elle silinecekler panelde (Ayarlar → Yayın hesapları → Instagram).` : "") + (fail.length ? `\n❌ ${fail.length} silinemedi: ${igCut(fail[0].message, 160)}` : "");
+  push(`♻️ Instagram tekrarları bitti: ${del.length} silindi, ${man.length} elle silinmeli, ${fail.length} silinemedi`);
+  if (notify) { try { await wa.send(waBrief() ? short : text); } catch { push("💬 Instagram tekrar özeti WhatsApp'a gönderilemedi (bağlı değil)"); } }
+  return { ok: true, deleted: del, failed: fail, manual: man, unsupported: !!j.unsupported, via: j.via, text: notify ? text : (waBrief() ? short : text) };
+}
+app.post("/api/instagram/dups/plan", async (req, res) => res.json(await igDupsPlan({ days: Number(req.body?.days) || 7 })));
 const igCleanupRun = counted(igCleanupRun0);
 async function igCleanupRun0({ notify = true } = {}) {
   const p = igCleanupPending;
+  if (p?.dups && Date.now() - p.at <= 15 * 60000) return await igDupsRun0(p, { notify }); // tekrar kopyaları listesi onaylandı
   if (!p || Date.now() - p.at > 15 * 60000) { igCleanupPending = null; return { ok: false, error: "Bekleyen Instagram silme listesi yok ya da 15 dakikalık onay süresi doldu. Önce listeyi isteyin (ör. \"instagramda son 7 günde 1000 izlenmenin altındakileri sil\")." }; }
   igCleanupPending = null;
   push(`🗑 Instagram temizliği başladı: ${p.names.length} video ${p.known ? "denetleniyor (API bu bağlantıyla silmiyor; hiçbir şey silinmez)" : "siliniyor"}`);
@@ -3705,6 +3741,7 @@ async function handleCommand(text, opts = {}) {
       const r = await igCleanupRun({ notify: opts.source !== "whatsapp" });
       reply = r.text || r.error; break;
     }
+    case "ig_dups": { const r = await igDupsPlan({ days: cmd.days }); reply = r.text; break; }
     case "self_update": { const r = await selfUpdate({ source: opts.source || "panel" }); reply = updateText(r); extra = { restarting: !!r.restarting }; break; }
     case "update_check": {
       const r = await updateCheck();

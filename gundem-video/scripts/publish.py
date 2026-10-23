@@ -238,15 +238,20 @@ def yt_upload(path: Path):
             raise LimitReached(reason) from e
         raise
     vid = resp["id"]
-    thumb_err = yt_set_thumb(yt, vid, path)
-    if not thumb_err:  # kapak izni çalışıyor: önceden kapağı reddedilmiş videoları da düzelt (en çok 3)
-        yt_retry_thumbs(yt, limit=3)
     meta = episode_meta(path.name) or {}
-    lists = yt_add_to_playlists(yt, vid, meta)
-    fc = yt_first_comment(yt, vid, meta)
     url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") or meta.get("kare") else f"https://youtube.com/shorts/{vid}"  # kare uzun video Shorts değil
-    return {"id": vid, "url": url, "publishedAt": now_iso(), "title": title,
-            "titleVariant": meta.get("titleVariant"), "playlists": lists, **fc, **({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})}
+    rec = {"id": vid, "url": url, "publishedAt": now_iso(), "title": title, "titleVariant": meta.get("titleVariant"), "playlists": []}
+    try:  # video yüklendi: kapak, oynatma listesi ve ilk yorum adımındaki hata yeniden yüklemeye (ikinci kopya) yol açmasın
+        thumb_err = yt_set_thumb(yt, vid, path)
+        if not thumb_err:  # kapak izni çalışıyor: önceden kapağı reddedilmiş videoları da düzelt (en çok 3)
+            yt_retry_thumbs(yt, limit=3)
+        rec["playlists"] = yt_add_to_playlists(yt, vid, meta)
+        rec.update(yt_first_comment(yt, vid, meta))
+        rec.update({"thumbError": thumb_err} if thumb_err else {"thumbSet": True})
+    except Exception as e:
+        print(f"  ! YouTube yükleme sonrası adım hata verdi ({str(e)[:120]}); video yüklendi: {url}", file=sys.stderr, flush=True)
+        rec["postError"] = str(e)[:160]
+    return rec
 
 
 def first_comment_text(meta: dict) -> str:
@@ -594,13 +599,55 @@ def ig_creds():
     raise RuntimeError("Instagram bağlı değil. Panelde 'Instagram'ı bağla' deyin (IG_APP_ID ve IG_APP_SECRET gerekir, bkz. secrets/README.md)")
 
 
-def ig_call(method, path, params, creds):
+def ig_call(method, path, params, creds, timeout=60):
     uid, token, base = creds
     params = dict(params, access_token=token)
     url = f"{base}/{path}"
     if method == "GET":
-        return ig_http(url + "?" + urllib.parse.urlencode(params))
-    return ig_http(url, urllib.parse.urlencode(params).encode())
+        return ig_http(url + "?" + urllib.parse.urlencode(params), timeout=timeout)
+    return ig_http(url, urllib.parse.urlencode(params).encode(), timeout=timeout)
+
+
+def _norm_caption(s) -> str:
+    return re.sub(r"\s+", " ", str(s or "")).strip()
+
+
+def ig_recent_media(creds, limit: int = 25, pages: int = 1) -> list:
+    """Hesabın en yeni gönderileri [{id, caption, timestamp, permalink, media_type}] (Instagram Girişi /me/media, Facebook Girişi
+    /{hesap}/media; en yeniden eskiye, sayfa başına `limit`); okunamazsa []."""
+    uid, token, base = creds
+    owner = "me" if base == IG_API else uid
+    out, after = [], None
+    for _ in range(max(1, pages)):
+        q = {"fields": "id,caption,timestamp,permalink,media_type", "limit": limit, "access_token": token, **({"after": after} if after else {})}
+        st, body = _graph("GET", f"{base}/{owner}/media?" + urllib.parse.urlencode(q))
+        data = None if graph_error(st, body) else body.get("data")
+        if not isinstance(data, list):
+            break
+        out += [x for x in data if isinstance(x, dict) and x.get("id")]
+        after = ((body.get("paging") or {}).get("cursors") or {}).get("after")
+        if not after or len(data) < limit:
+            break
+    return out
+
+
+def ig_find_published(creds, caption: str, max_age_h: float = 6.0) -> dict | None:
+    """Aynı açıklamayla son `max_age_h` saatte yüklenmiş gönderi (boşlukları sadeleştirilmiş açıklama birebir aynı ya da ilk 150 karakteri
+    aynı ve uzunluk ±5): yayın isteği başarılı olup yanıtı kaybolduysa (zaman aşımı, bağlantı kopması, sonraki adımın hatası) yeniden
+    denemede ikinci kopya yüklenmesin (kullanıcı şikâyeti, 23 Ekim: Instagram'da ikişer paylaşılmış haberler). {id, url, publishedAt} ya da None."""
+    want = _norm_caption(caption)
+    if len(want) < 20:
+        return None
+    now = datetime.now(timezone.utc)
+    for m in ig_recent_media(creds):
+        c = _norm_caption(m.get("caption"))
+        if not c or not (c == want or (c[:150] == want[:150] and abs(len(c) - len(want)) <= 5)):
+            continue
+        ts = _ts(m.get("timestamp"))
+        if ts and (now - ts).total_seconds() > max_age_h * 3600:
+            continue
+        return {"id": str(m["id"]), "url": m.get("permalink"), "publishedAt": m.get("timestamp") or now_iso()}
+    return None
 
 
 def url_reachable(url, timeout=12):
@@ -736,7 +783,16 @@ def ig_upload(path: Path):
     creds = ig_creds()
     uid = creds[0]
     _, caption = build_caption(path.name, max_len=2200)
+    own = {"owner": str(uid)} if uid and str(uid) != "me" else {}
+    # yeniden yükleme koruması (kullanıcı şikâyeti, 23 Ekim: aynı haber Instagram'da ikişer): önceki deneme yayınlamış ama yanıtı kaybolmuşsa
+    # (zaman aşımı, bağlantı kopması, sonraki adımın hatası → kayıt yazılamadı → 90 sn sonra ya da "onay" ile yeniden deneme) aynı
+    # açıklamayla son 6 saatte yüklenmiş gönderi vardır: o gönderi kayda geçer, ikinci kopya yüklenmez
+    dup = ig_find_published(creds, caption)
+    if dup:
+        print(f"  ! Instagram: aynı açıklamayla gönderi zaten var ({dup.get('url') or dup['id']}); yeniden yüklenmedi, kayda geçti", file=sys.stderr, flush=True)
+        return {**dup, "recovered": True, **own}
     pub_srv = _PublicVideo()
+    recovered = False
     try:
         base = pub_srv.ensure(path.name)
         video_url = base + "/videos/" + urllib.parse.quote(path.name)
@@ -760,11 +816,42 @@ def ig_upload(path: Path):
             time.sleep(5)
         else:
             raise RuntimeError("Instagram işleme zaman aşımı")
-        pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds)
+        try:
+            pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds, timeout=180)
+        except Exception as e:
+            # yayın isteği yanıtsız kaldı (zaman aşımı, bağlantı kopması): Instagram yayınlamış olabilir. Hesabın son gönderilerine bakılır;
+            # gönderi bulunursa o kayda geçer (ikinci kopya yok). Bulunmaz ve konteyner hâlâ FINISHED ise istek Instagram'a ulaşmamıştır:
+            # bir kez daha yayınlanır. İkisi de değilse hata (çağıran yeniden denediğinde yukarıdaki koruma bulur)
+            print(f"  ! Instagram yayın isteği yanıtsız kaldı ({str(e)[:120]}); yayınlanıp yayınlanmadığı denetleniyor", file=sys.stderr, flush=True)
+            found, st = None, {}
+            for k in range(6):
+                time.sleep(10)
+                found = ig_find_published(creds, caption, max_age_h=1.0)
+                if found:
+                    break
+                try:
+                    st = ig_call("GET", cid, {"fields": "status_code,status"}, creds)
+                except Exception:
+                    st = {}
+                if st.get("status_code") == "FINISHED" and k >= 2:
+                    break
+            if found:
+                pub, recovered = {"id": found["id"]}, True
+                print(f"  ! Instagram: gönderi yayınlanmış ({found.get('url') or found['id']}); kayda geçti", file=sys.stderr, flush=True)
+            elif st.get("status_code") == "FINISHED":
+                print("  ! Instagram: yayın isteği ulaşmamış (konteyner hâlâ hazır); bir kez daha yayınlanıyor", file=sys.stderr, flush=True)
+                pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds, timeout=180)
+            else:
+                raise RuntimeError(f"Instagram yayın isteği yanıtsız kaldı ({str(e)[:120]}); konteyner durumu {st.get('status_code') or 'bilinmiyor'} — "
+                                   "yayınlanmış olabilir, yeniden denemede aynı açıklamalı gönderi aranır") from e
     finally:
         pub_srv.close()
     mid = pub["id"]
-    info = ig_call("GET", mid, {"fields": "permalink"}, creds)
+    try:  # gönderi yayında: bağlantı okunamazsa yayın yine tamamdır (hata yeniden yüklemeye yol açmasın)
+        info = ig_call("GET", mid, {"fields": "permalink"}, creds)
+    except Exception as e:
+        print(f"  ! Instagram gönderi bağlantısı okunamadı ({str(e)[:100]}); yayın tamam", file=sys.stderr, flush=True)
+        info = {}
     fc = {}
     text = first_comment_text(episode_meta(path.name) or {})
     if text:  # ilk yorum (instagram_business_manage_comments izni; eski bağlantıda yeniden bağlamak gerekebilir)
@@ -775,8 +862,7 @@ def ig_upload(path: Path):
             fc = {"commentError": str(e)[:160]}
             print(f"  ! Instagram ilk yorum yazılamadı: {str(e)[:160]}", file=sys.stderr)
     # owner: yükleyen Instagram hesabının kimliği (silme denetiminde "hesap bizim mi" sorusu buna bakar; ig_exists)
-    own = {"owner": str(uid)} if uid and str(uid) != "me" else {}
-    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **own, **fc}
+    return {"id": mid, "url": info.get("permalink"), "publishedAt": now_iso(), **own, **fc, **({"recovered": True} if recovered else {})}
 
 
 def ig_story_publish(paths: list) -> list:

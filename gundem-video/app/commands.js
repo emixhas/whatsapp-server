@@ -492,6 +492,10 @@ export function parseCommand(raw) {
   if (/liste dışı/.test(t)) return { action: "expire", restore: /(geri al|geri aç|herkese açık|kaldır)/.test(t), reply: "" };
   // Instagram temizliği: "instagramda son 7 günde 1000 izlenmenin altındakileri sil" → önce liste, "evet sil" ile silinir
   if (/^(evet,? sil|evet sil hepsini|sil onaylıyorum|onaylıyorum sil)$/.test(t)) return { action: "ig_cleanup_confirm", reply: "" };
+  // Instagram'da ikişer paylaşılmış gönderiler: "instagram tekrarlarını sil", "instagramda çift paylaşılanları sil", "instagram tekrarları" → liste, "evet sil"
+  // tekrar sözü gönderiyle birlikte ("tekrarları", "çift paylaşılanlar", "mükerrer gönderiler", "kopya gönderiler"); "tekrar bağla/yükle/paylaş" değil
+  if (/(instagram|insta)/.test(t) && (/tekrarlar/.test(t) || /(çift|ikişer|iki kez|mükerrer|kopya|tekrar)\s+(paylaş(ıl|ım)|yüklen|gönderi|kopya|post)/.test(t))
+      && !/(bağla|yeniden|tekrar (yükle|paylaş|gönder|at)|(yükle|paylaş|gönder|at|yayınla)( |$)|üret)/.test(t)) return { action: "ig_dups", days: Number((t.match(/(\d+)\s*gün/) || [])[1]) || 7, reply: "" };
   // otomatik Instagram temizliği: "otomatik silmeyi kapat/aç", "silinecek videolar", "silinmeye aday videolar"
   if (/otomatik (silme|temizli)/.test(t) && /(kapat|durdur|iptal)/.test(t)) return { action: "ig_autoclean", on: false, reply: "" };
   if (/otomatik (silme|temizli)/.test(t) && /(^| )(aç|başlat|etkinleştir)( |$)/.test(t)) return { action: "ig_autoclean", on: true, reply: "" };
