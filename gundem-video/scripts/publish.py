@@ -15,6 +15,7 @@ sınır açılınca sıradakiler en yeniden eskiye yüklenir. QUEUE_MAX_HOURS'te
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 import time
@@ -34,6 +35,13 @@ LIMIT_HOURS = 3        # sınır dolunca bu kadar saat sonra yeniden denenir
 QUEUE_MAX_HOURS = 24   # daha eski sıradaki haber videoları yüklenmez (bayat haber)
 QUEUE_MAX_TRIES = 3    # sınır dışı hatada (bozuk dosya, API hatası) sıradaki video bu kadar denemeden sonra çıkarılır
 QUEUE_LOG = DATA / "publish_queue_log.json"  # son 100 sıra olayı: {at, event queued|uploaded|failed|dropped|held|hold|removed, video, platform, detail, url}
+# Yükleme defteri (kullanıcı şikâyeti, 24 Ekim: "halen daha çift paylaşım var"): her yüklemenin adımı video + platform başına diske yazılır
+# (started → container (Instagram konteyner kimliği) → publishing (yayın isteği gönderildi) → done (kimlik) | failed). metrics.json'daki kayıt
+# eşzamanlı bir yazım yüzünden kaybolsa da (sync_metrics, cleanup), süreç yayın isteğinden sonra ölse de, Instagram'ın gönderi listesi geç
+# gelse de yeniden denemede aynı video ikinci kez yüklenmez: defterdeki konteynerin durumu sorulur (PUBLISHED → yayınlanmış, FINISHED →
+# aynı konteyner yayınlanır, yeni konteyner açılmaz). 7 günden eski kayıtlar düşer.
+LEDGER_FILE = DATA / "upload_ledger.json"  # {video: {platform: {state, at, startedAt, attempt, cid, id, url, publishedAt, owner, unresolved}}}
+LOCK_DIR = DATA.parent / "work" / "publish_locks"  # <video>.<platform>.lock {pid, at}: aynı video aynı anda iki süreçte yüklenmez
                                              # (kullanıcı isteği, 23 Ekim: "sıraya alınan videoları görebilelim: hangi aşamada, yüklendi mi, sorun var mı, sıra akıyor mu")
 LIMIT_REASONS = ("uploadLimitExceeded", "quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded")
 # TikTok gelen kutusu (inbox) modu: paylaşılmamış taslak sayısı TikTok'un sınırını aşınca (24 saatte birkaç bekleyen
@@ -69,6 +77,81 @@ def hold_until(plat):
     h = (load_json(HOLD_FILE, {}) or {}).get(plat) or {}
     until = _parse(h.get("until", ""))
     return until if until and until > datetime.now(timezone.utc) else None
+
+
+def _age_h(ts) -> float:
+    """ISO zamandan bu yana geçen saat (okunamazsa çok büyük: eski sayılır)."""
+    t = _parse(str(ts or ""))
+    if not t:
+        return 1e9
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - t).total_seconds() / 3600
+
+
+def ledger_get(video: str, plat: str) -> dict:
+    d = load_json(LEDGER_FILE, {}) or {}
+    e = (d.get(video) or {}).get(plat) if isinstance(d, dict) and isinstance(d.get(video), dict) else None
+    return dict(e) if isinstance(e, dict) else {}
+
+
+def ledger_set(video: str, plat: str, **fields) -> dict:
+    """Defter kaydını günceller (None değerler yazılmaz; False yazılır); 7 günden eski kayıtlar düşer."""
+    d = load_json(LEDGER_FILE, {}) or {}
+    d = d if isinstance(d, dict) else {}
+    for v in list(d):
+        ents = d.get(v) if isinstance(d.get(v), dict) else {}
+        ents = {pl: e for pl, e in ents.items() if isinstance(e, dict) and _age_h(e.get("at")) < 7 * 24}
+        if ents:
+            d[v] = ents
+        else:
+            d.pop(v, None)
+    e = {**ledger_get(video, plat), **{k: val for k, val in fields.items() if val is not None}, "at": now_iso()}
+    d.setdefault(video, {})[plat] = e
+    save_json(LEDGER_FILE, d)
+    return e
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def upload_lock(video: str, plat: str):
+    """Aynı video + platform için aynı anda tek yükleme: kilit dosyası {pid, at}. Sahibi yaşayan ve 2 saatten yeni kilit → None (çağıran
+    "busy" döner, yeniden denemez); ölü ya da eski kilit silinir. Dönen yol bitince silinir."""
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    p = LOCK_DIR / f"{video}.{plat}.lock"
+    if p.exists():
+        try:
+            cur = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            cur = {}
+        pid = int(cur.get("pid") or 0) if isinstance(cur, dict) else 0
+        try:
+            fresh = (time.time() - p.stat().st_mtime) < 2 * 3600
+        except Exception:
+            fresh = False
+        if pid and pid != os.getpid() and fresh and _pid_alive(pid):
+            return None
+        try:
+            p.unlink()
+        except Exception:
+            pass
+    try:
+        fd = os.open(p, os.O_CREAT | os.O_EXCL | os.O_WRONLY)  # iki süreç aynı anda kilit yazamasın
+    except FileExistsError:
+        return None
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"pid": os.getpid(), "at": now_iso()}))
+    return p
 
 
 def qlog(event, video, plat, detail="", url=""):
@@ -612,9 +695,10 @@ def _norm_caption(s) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip()
 
 
-def ig_recent_media(creds, limit: int = 25, pages: int = 1) -> list:
+def ig_recent_media(creds, limit: int = 25, pages: int = 1, until=None) -> list:
     """Hesabın en yeni gönderileri [{id, caption, timestamp, permalink, media_type}] (Instagram Girişi /me/media, Facebook Girişi
-    /{hesap}/media; en yeniden eskiye, sayfa başına `limit`); okunamazsa []."""
+    /{hesap}/media; en yeniden eskiye, sayfa başına `limit`, en çok `pages` sayfa; `until` (zaman) verilirse ondan eski gönderiye
+    gelince durur); okunamazsa []."""
     uid, token, base = creds
     owner = "me" if base == IG_API else uid
     out, after = [], None
@@ -628,26 +712,64 @@ def ig_recent_media(creds, limit: int = 25, pages: int = 1) -> list:
         after = ((body.get("paging") or {}).get("cursors") or {}).get("after")
         if not after or len(data) < limit:
             break
+        if until is not None:
+            ts = [_ts(x.get("timestamp")) for x in data if isinstance(x, dict)]
+            ts = [t for t in ts if t]
+            if ts and min(ts) < until:
+                break
     return out
 
 
-def ig_find_published(creds, caption: str, max_age_h: float = 6.0) -> dict | None:
-    """Aynı açıklamayla son `max_age_h` saatte yüklenmiş gönderi (boşlukları sadeleştirilmiş açıklama birebir aynı ya da ilk 150 karakteri
-    aynı ve uzunluk ±5): yayın isteği başarılı olup yanıtı kaybolduysa (zaman aşımı, bağlantı kopması, sonraki adımın hatası) yeniden
-    denemede ikinci kopya yüklenmesin (kullanıcı şikâyeti, 23 Ekim: Instagram'da ikişer paylaşılmış haberler). {id, url, publishedAt} ya da None."""
+def ig_find_published(creds, caption: str, max_age_h: float = 6.0, since=None) -> dict | None:
+    """Aynı açıklamayla yüklenmiş gönderi (boşlukları sadeleştirilmiş açıklama birebir aynı ya da ilk 150 karakteri aynı ve uzunluk ±5):
+    yayın isteği başarılı olup yanıtı kaybolduysa (zaman aşımı, bağlantı kopması, sonraki adımın hatası) yeniden denemede ikinci kopya
+    yüklenmesin (kullanıcı şikâyeti, 23 Ekim: Instagram'da ikişer paylaşılmış haberler). Pencere: `since` (zaman; videonun üretim anı —
+    sınır sırasında bir gün bekleyen video da bulunur) ya da son `max_age_h` saat; liste o zamana kadar sayfalanır (en çok 8 sayfa × 50).
+    {id, url, publishedAt} ya da None."""
     want = _norm_caption(caption)
     if len(want) < 20:
         return None
     now = datetime.now(timezone.utc)
-    for m in ig_recent_media(creds):
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    cutoff = since if since is not None else now - timedelta(hours=max_age_h)
+    for m in ig_recent_media(creds, limit=50, pages=8, until=cutoff):
         c = _norm_caption(m.get("caption"))
         if not c or not (c == want or (c[:150] == want[:150] and abs(len(c) - len(want)) <= 5)):
             continue
         ts = _ts(m.get("timestamp"))
-        if ts and (now - ts).total_seconds() > max_age_h * 3600:
+        if ts and ts < cutoff:
             continue
         return {"id": str(m["id"]), "url": m.get("permalink"), "publishedAt": m.get("timestamp") or now_iso()}
     return None
+
+
+def ig_resolve_unresolved(creds) -> int:
+    """Kimliği çözülememiş Instagram kayıtları (unresolved: yayın yanıtı kaybolmuş, konteyner PUBLISHED ama gönderi listede henüz yoktu):
+    aynı açıklamalı gönderi aranır, bulununca kimlik ve bağlantı yazılır (metrics + defter). Dönen: tamamlanan kayıt sayısı."""
+    m = metrics()
+    fixed = {}
+    for name, v in list((m.get("videos") or {}).items()):
+        ig = v.get("instagram") if isinstance(v, dict) else None
+        if not (isinstance(ig, dict) and ig.get("unresolved") and not ig.get("id")) or _age_h(ig.get("publishedAt")) > 72:
+            continue
+        try:
+            _, cap = build_caption(name, max_len=2200)
+        except Exception:
+            continue
+        since = (_ts(ig.get("publishedAt")) or datetime.now(timezone.utc)) - timedelta(hours=1)
+        f = ig_find_published(creds, cap, since=since)
+        if f:
+            fixed[name] = {"id": f["id"], "url": f.get("url"), "publishedAt": f.get("publishedAt") or ig.get("publishedAt")}
+    if fixed:
+        m = metrics()  # taze oku: bu arada yazılan kayıtlar kaybolmasın
+        for name, f in fixed.items():
+            ig = m["videos"].setdefault(name, {}).setdefault("instagram", {})
+            ig.update(f); ig.pop("unresolved", None)
+            ledger_set(name, "instagram", id=f["id"], url=f.get("url"), unresolved=False)
+            print(f"  ! Instagram: {name} gönderisinin kimliği tamamlandı ({f.get('url') or f['id']})", file=sys.stderr, flush=True)
+        save_metrics(m)
+    return len(fixed)
 
 
 def url_reachable(url, timeout=12):
@@ -782,65 +904,120 @@ class _PublicVideo:
 def ig_upload(path: Path):
     creds = ig_creds()
     uid = creds[0]
-    _, caption = build_caption(path.name, max_len=2200)
+    name = path.name
+    _, caption = build_caption(name, max_len=2200)
     own = {"owner": str(uid)} if uid and str(uid) != "me" else {}
-    # yeniden yükleme koruması (kullanıcı şikâyeti, 23 Ekim: aynı haber Instagram'da ikişer): önceki deneme yayınlamış ama yanıtı kaybolmuşsa
-    # (zaman aşımı, bağlantı kopması, sonraki adımın hatası → kayıt yazılamadı → 90 sn sonra ya da "onay" ile yeniden deneme) aynı
-    # açıklamayla son 6 saatte yüklenmiş gönderi vardır: o gönderi kayda geçer, ikinci kopya yüklenmez
-    dup = ig_find_published(creds, caption)
+    try:  # önceki yüklemelerin eksik kalmış kimlikleri (gönderi listesi geç geldiyse) tamamlanır
+        ig_resolve_unresolved(creds)
+    except Exception:
+        pass
+    led = ledger_get(name, "instagram")
+    # arama penceresi: videonun üretim anı ya da ilk yükleme denemesi (hangisi önceyse) − 15 dk
+    try:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    except Exception:
+        mtime = None
+    started = _ts(led.get("startedAt")) if led.get("startedAt") else None
+    since = min([t for t in (mtime, started) if t], default=None)
+    since = since - timedelta(minutes=15) if since else None
+    # 1) yükleme defteri (kullanıcı şikâyeti, 24 Ekim: "halen daha çift paylaşım var"): önceki deneme konteyner açmış ya da yayın isteği
+    # göndermişse Instagram'a konteynerin durumu sorulur. PUBLISHED → yayınlanmış: gönderi aranır, bulunamazsa bile YENİDEN YÜKLENMEZ
+    # (kimlik sonra tamamlanır); FINISHED / IN_PROGRESS → aynı konteyner yayınlanır (video yeniden yüklenmez); yayın isteği gönderilmiş
+    # ama durum okunamıyorsa hata (ikinci kopya olmasın: sonraki denemede yeniden bakılır); ERROR / EXPIRED → yeni konteyner
+    reuse_cid = None
+    if led.get("cid") and led.get("state") in ("container", "publishing") and _age_h(led.get("at")) < 24:
+        cid0 = str(led["cid"])
+        try:
+            st0 = ig_call("GET", cid0, {"fields": "status_code,status"}, creds)
+        except Exception as e:
+            st0 = {"error": str(e)[:120]}
+        code0 = st0.get("status_code")
+        if code0 == "PUBLISHED":
+            print(f"  ! Instagram: önceki denemenin konteyneri yayınlanmış ({cid0}); video yeniden yüklenmedi, gönderi aranıyor", file=sys.stderr, flush=True)
+            found = None
+            for k in range(6):
+                found = ig_find_published(creds, caption, since=since)
+                if found or k == 5:
+                    break
+                time.sleep(10)
+            if found:
+                ledger_set(name, "instagram", state="done", id=found["id"], url=found.get("url"), publishedAt=found.get("publishedAt"))
+                return {**found, "recovered": True, **own}
+            print("  ! Instagram: gönderi listede henüz görünmüyor; kimlik sonraki yüklemede tamamlanacak (yeniden yüklenmedi)", file=sys.stderr, flush=True)
+            res = {"id": None, "url": None, "publishedAt": now_iso(), "recovered": True, "unresolved": True, "cid": cid0, **own}
+            ledger_set(name, "instagram", state="done", unresolved=True, publishedAt=res["publishedAt"])
+            return res
+        if led.get("state") == "publishing" and code0 not in ("FINISHED", "IN_PROGRESS", "ERROR", "EXPIRED"):
+            raise RuntimeError(f"Instagram: önceki yayın isteğinin sonucu doğrulanamadı (konteyner {cid0}, durum {code0 or st0.get('error') or 'bilinmiyor'}); "
+                               "ikinci kopya olmasın diye yeniden yüklenmedi, sonraki denemede yeniden bakılır")
+        if code0 in ("FINISHED", "IN_PROGRESS"):
+            reuse_cid = cid0
+            print(f"  ! Instagram: önceki denemenin konteyneri kullanılıyor ({cid0}, {code0}); video yeniden yüklenmiyor", file=sys.stderr, flush=True)
+    # 2) aynı açıklamalı gönderi (kullanıcı şikâyeti, 23 Ekim): yayın isteği başarılı olup yanıtı kaybolduysa ya da kayıt silindiyse
+    # videonun üretim anından bu yana aynı açıklamayla yüklenmiş gönderi vardır: o gönderi kayda geçer, ikinci kopya yüklenmez
+    dup = ig_find_published(creds, caption, since=since)
     if dup:
         print(f"  ! Instagram: aynı açıklamayla gönderi zaten var ({dup.get('url') or dup['id']}); yeniden yüklenmedi, kayda geçti", file=sys.stderr, flush=True)
+        ledger_set(name, "instagram", state="done", id=dup["id"], url=dup.get("url"), publishedAt=dup.get("publishedAt"))
         return {**dup, "recovered": True, **own}
     pub_srv = _PublicVideo()
     recovered = False
+    ledger_set(name, "instagram", state="started", startedAt=led.get("startedAt") or now_iso(), attempt=int(led.get("attempt") or 0) + 1, cid=reuse_cid)
     try:
-        base = pub_srv.ensure(path.name)
-        video_url = base + "/videos/" + urllib.parse.quote(path.name)
-        # kapak: Hostinger varsa kendi kapağımız (-kapak.jpg) cover_url ile; dış adresten okunduğu doğrulanır (okunamazsa Instagram konteyneri
-        # düşürebiliyor ya da kapaksız bırakıyordu). Hostinger yoksa ya da kapak verilemezse thumb_offset 0: videonun İLK KARESİ zaten kapaktır
-        # (GundemVideo 0. karede Thumb çizer), Instagram o kareyi kapak yapar
-        params = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true", "thumb_offset": "0"}
-        cover = path.with_name(path.stem + "-kapak.jpg")
-        if cover.exists() and hostinger.configured():
-            try:
-                cover_url = hostinger.upload(cover, f"videos/{cover.name}")
-                pub_srv.extra.append(f"videos/{cover.name}")
-                for _ in range(8):
-                    if url_reachable(cover_url):
-                        params["cover_url"] = cover_url
-                        params.pop("thumb_offset", None)
-                        break
-                    time.sleep(2)
-                if "cover_url" in params:
-                    print(f"🌐 Hostinger: kapak yüklendi {cover.name}", file=sys.stderr, flush=True)
-                else:
-                    print(f"  ! kapak dış adresten okunamadı ({cover_url}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
-            except Exception as e:
-                print(f"  ! kapak yüklenemedi ({str(e)[:120]}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
-        elif not cover.exists():
-            print("  ! kapak dosyası yok (-kapak.jpg); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
-        c = ig_call("POST", f"{uid}/media", params, creds)
-        cid = c["id"]
+        if reuse_cid:
+            cid = reuse_cid
+        else:
+            base = pub_srv.ensure(name)
+            video_url = base + "/videos/" + urllib.parse.quote(name)
+            # kapak: Hostinger varsa kendi kapağımız (-kapak.jpg) cover_url ile; dış adresten okunduğu doğrulanır (okunamazsa Instagram konteyneri
+            # düşürebiliyor ya da kapaksız bırakıyordu). Hostinger yoksa ya da kapak verilemezse thumb_offset 0: videonun İLK KARESİ zaten kapaktır
+            # (GundemVideo 0. karede Thumb çizer), Instagram o kareyi kapak yapar
+            params = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true", "thumb_offset": "0"}
+            cover = path.with_name(path.stem + "-kapak.jpg")
+            if cover.exists() and hostinger.configured():
+                try:
+                    cover_url = hostinger.upload(cover, f"videos/{cover.name}")
+                    pub_srv.extra.append(f"videos/{cover.name}")
+                    for _ in range(8):
+                        if url_reachable(cover_url):
+                            params["cover_url"] = cover_url
+                            params.pop("thumb_offset", None)
+                            break
+                        time.sleep(2)
+                    if "cover_url" in params:
+                        print(f"🌐 Hostinger: kapak yüklendi {cover.name}", file=sys.stderr, flush=True)
+                    else:
+                        print(f"  ! kapak dış adresten okunamadı ({cover_url}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
+                except Exception as e:
+                    print(f"  ! kapak yüklenemedi ({str(e)[:120]}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
+            elif not cover.exists():
+                print("  ! kapak dosyası yok (-kapak.jpg); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
+            c = ig_call("POST", f"{uid}/media", params, creds)
+            cid = c["id"]
+            ledger_set(name, "instagram", state="container", cid=cid)  # konteyner açıldı: yeniden denemede yeni konteyner değil bu kullanılır
         for _ in range(72):  # Instagram videoyu çekip işler; 6 dk'ya kadar bekle
             st = ig_call("GET", cid, {"fields": "status_code,status"}, creds)
             if st.get("status_code") == "FINISHED":
                 break
             if st.get("status_code") == "ERROR":
+                ledger_set(name, "instagram", state="failed")
                 raise RuntimeError(f"Instagram işleme hatası: {st}")
             time.sleep(5)
         else:
-            raise RuntimeError("Instagram işleme zaman aşımı")
+            raise RuntimeError("Instagram işleme zaman aşımı")  # defter "container": yeniden denemede aynı konteyner beklenir
+        ledger_set(name, "instagram", state="publishing", cid=cid)  # yayın isteği gidiyor: yanıt kaybolursa yeniden denemede konteynerin durumu sorulur
         try:
             pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds, timeout=180)
         except Exception as e:
-            # yayın isteği yanıtsız kaldı (zaman aşımı, bağlantı kopması): Instagram yayınlamış olabilir. Hesabın son gönderilerine bakılır;
-            # gönderi bulunursa o kayda geçer (ikinci kopya yok). Bulunmaz ve konteyner hâlâ FINISHED ise istek Instagram'a ulaşmamıştır:
-            # bir kez daha yayınlanır. İkisi de değilse hata (çağıran yeniden denediğinde yukarıdaki koruma bulur)
+            # yayın isteği yanıtsız kaldı (zaman aşımı, bağlantı kopması): Instagram yayınlamış olabilir. Konteynerin durumuna ve hesabın son
+            # gönderilerine bakılır; gönderi bulunursa o kayda geçer (ikinci kopya yok). Konteyner PUBLISHED ama gönderi listede yoksa yine
+            # yayınlanmış sayılır (kimlik sonra tamamlanır). Konteyner hâlâ FINISHED ise istek Instagram'a ulaşmamıştır: bir kez daha
+            # yayınlanır. Durum okunamıyorsa hata (defter "publishing": yeniden denemede konteynerin durumu sorulur)
             print(f"  ! Instagram yayın isteği yanıtsız kaldı ({str(e)[:120]}); yayınlanıp yayınlanmadığı denetleniyor", file=sys.stderr, flush=True)
             found, st = None, {}
             for k in range(6):
                 time.sleep(10)
-                found = ig_find_published(creds, caption, max_age_h=1.0)
+                found = ig_find_published(creds, caption, since=since)
                 if found:
                     break
                 try:
@@ -852,22 +1029,30 @@ def ig_upload(path: Path):
             if found:
                 pub, recovered = {"id": found["id"]}, True
                 print(f"  ! Instagram: gönderi yayınlanmış ({found.get('url') or found['id']}); kayda geçti", file=sys.stderr, flush=True)
+            elif st.get("status_code") == "PUBLISHED":
+                print("  ! Instagram: konteyner yayınlanmış ama gönderi listede henüz yok; kimlik sonraki yüklemede tamamlanacak (yeniden yüklenmedi)", file=sys.stderr, flush=True)
+                pub, recovered = {"id": None, "unresolved": True}, True
             elif st.get("status_code") == "FINISHED":
                 print("  ! Instagram: yayın isteği ulaşmamış (konteyner hâlâ hazır); bir kez daha yayınlanıyor", file=sys.stderr, flush=True)
                 pub = ig_call("POST", f"{uid}/media_publish", {"creation_id": cid}, creds, timeout=180)
             else:
                 raise RuntimeError(f"Instagram yayın isteği yanıtsız kaldı ({str(e)[:120]}); konteyner durumu {st.get('status_code') or 'bilinmiyor'} — "
-                                   "yayınlanmış olabilir, yeniden denemede aynı açıklamalı gönderi aranır") from e
+                                   "yayınlanmış olabilir, yeniden denemede konteynerin durumuna ve aynı açıklamalı gönderiye bakılır") from e
     finally:
         pub_srv.close()
-    mid = pub["id"]
+    mid = pub.get("id")
+    if not mid:  # yayınlanmış, kimlik henüz yok (ig_resolve_unresolved sonraki yüklemede tamamlar)
+        res = {"id": None, "url": None, "publishedAt": now_iso(), "recovered": True, "unresolved": True, "cid": cid, **own}
+        ledger_set(name, "instagram", state="done", unresolved=True, publishedAt=res["publishedAt"])
+        return res
+    ledger_set(name, "instagram", state="done", id=str(mid))  # yayın tamam: bundan sonraki her deneme (kayıt kaybolsa da) atlanır
     try:  # gönderi yayında: bağlantı okunamazsa yayın yine tamamdır (hata yeniden yüklemeye yol açmasın)
         info = ig_call("GET", mid, {"fields": "permalink"}, creds)
     except Exception as e:
         print(f"  ! Instagram gönderi bağlantısı okunamadı ({str(e)[:100]}); yayın tamam", file=sys.stderr, flush=True)
         info = {}
     fc = {}
-    text = first_comment_text(episode_meta(path.name) or {})
+    text = first_comment_text(episode_meta(name) or {})
     if text:  # ilk yorum (instagram_business_manage_comments izni; eski bağlantıda yeniden bağlamak gerekebilir)
         try:
             fc = {"firstComment": ig_call("POST", f"{mid}/comments", {"message": text}, creds).get("id")}
@@ -1795,11 +1980,19 @@ PLAT_NAME = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
 
 
 def upload(path: Path, plat: str) -> dict:
-    """Tek yükleme; sınır doluysa sıraya alır ({"ok": False, "limit": True, "queued": True})."""
+    """Tek yükleme; sınır doluysa sıraya alır ({"ok": False, "limit": True, "queued": True}). Aynı video aynı platforma ikinci kez
+    yüklenmez: metrics kaydı, yükleme defteri (metrics kaybolsa da) ve süreç kilidi (aynı anda iki süreç) — kullanıcı şikâyeti, 23-24 Ekim."""
     m = metrics()
     entry = m["videos"].setdefault(path.name, {})
     if entry.get(plat, {}).get("id"):
         return {"ok": True, "skipped": True, "message": f"{plat} için zaten yayınlanmış", **entry[plat]}
+    led = ledger_get(path.name, plat)
+    if led.get("state") == "done" and (led.get("id") or led.get("unresolved")):  # yüklenmiş ama metrics kaydı kaybolmuş (eşzamanlı yazım): kayıt onarılır
+        res = {k: led[k] for k in ("id", "url", "publishedAt", "owner", "unresolved", "cid") if led.get(k) is not None}
+        m["videos"].setdefault(path.name, {})[plat] = {**(entry.get(plat) or {}), **res}
+        save_metrics(m)
+        print(f"  ! {PLAT_NAME[plat]}: bu video daha önce yüklenmiş (yükleme defteri); kayıt onarıldı, yeniden yüklenmedi", file=sys.stderr, flush=True)
+        return {"ok": True, "skipped": True, "recovered": True, **res}
     until = hold_until(plat)
     if until:
         enqueue(path.name, plat)
@@ -1807,41 +2000,53 @@ def upload(path: Path, plat: str) -> dict:
         why = IG_LIMIT_TR.get(reason) if plat == "instagram" else None
         return {"ok": False, "limit": True, "queued": True,
                 "error": f"{why or PLAT_NAME[plat] + ' günlük yükleme sınırı dolu'}; video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek"}
+    lock = upload_lock(path.name, plat)
+    if lock is None:  # aynı video şu anda başka bir süreçte yükleniyor: yeniden denemek ikinci kopya üretir
+        return {"ok": False, "busy": True, "error": f"{PLAT_NAME[plat]}: bu video şu anda başka bir süreçte yükleniyor; ikinci kopya olmasın diye yeniden yüklenmedi"}
     try:
-        res = {"youtube": yt_upload, "instagram": ig_upload, "tiktok": tt_upload}[plat](path)
-    except LimitReached as e:
-        until = set_hold(plat, str(e))
-        enqueue(path.name, plat)
-        why = TT_LIMIT_TR.get(str(e)) if plat == "tiktok" else None
-        return {"ok": False, "limit": True, "queued": True,
-                "error": (f"{why}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı (taslaklar azalınca otomatik gönderilir)"
-                          if why else f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek")}
-    except Exception as e:  # hatayı JSON olarak döndür, panel okur
-        msg = str(e)
-        tt_reason = next((r for r in TT_LIMIT_REASONS if r in msg), None) if plat == "tiktok" else None
-        if tt_reason:  # doğrudan yayın modunda da aynı sınır: duraklat ve sıraya al
-            until = set_hold(plat, tt_reason)
+        try:
+            res = {"youtube": yt_upload, "instagram": ig_upload, "tiktok": tt_upload}[plat](path)
+        except LimitReached as e:
+            until = set_hold(plat, str(e))
             enqueue(path.name, plat)
+            why = TT_LIMIT_TR.get(str(e)) if plat == "tiktok" else None
             return {"ok": False, "limit": True, "queued": True,
-                    "error": f"{TT_LIMIT_TR[tt_reason]}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
-        if plat == "instagram" and IG_THROTTLE_RE.search(msg):  # "User is performing too many actions" / istek sınırı: duraklat, sıraya al
-            until = set_hold(plat, "instagram_rate_limit")
-            enqueue(path.name, plat)
-            return {"ok": False, "limit": True, "queued": True,
-                    "error": f"{IG_LIMIT_TR['instagram_rate_limit']}. Instagram gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
-        err = msg + (ig_hint(msg) if plat == "instagram" else "")
+                    "error": (f"{why}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı (taslaklar azalınca otomatik gönderilir)"
+                              if why else f"{PLAT_NAME[plat]} günlük yükleme sınırı doldu ({e}); video sıraya alındı, {local_hhmm(until)} sonrası otomatik yüklenecek")}
+        except Exception as e:  # hatayı JSON olarak döndür, panel okur
+            msg = str(e)
+            tt_reason = next((r for r in TT_LIMIT_REASONS if r in msg), None) if plat == "tiktok" else None
+            if tt_reason:  # doğrudan yayın modunda da aynı sınır: duraklat ve sıraya al
+                until = set_hold(plat, tt_reason)
+                enqueue(path.name, plat)
+                return {"ok": False, "limit": True, "queued": True,
+                        "error": f"{TT_LIMIT_TR[tt_reason]}. TikTok gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
+            if plat == "instagram" and IG_THROTTLE_RE.search(msg):  # "User is performing too many actions" / istek sınırı: duraklat, sıraya al
+                until = set_hold(plat, "instagram_rate_limit")
+                enqueue(path.name, plat)
+                return {"ok": False, "limit": True, "queued": True,
+                        "error": f"{IG_LIMIT_TR['instagram_rate_limit']}. Instagram gönderimi {local_hhmm(until)}'e kadar duraklatıldı, video sıraya alındı"}
+            err = msg + (ig_hint(msg) if plat == "instagram" else "")
+            last = load_json(LAST_ERR, {}) or {}
+            last[plat] = {"at": now_iso(), "video": path.name, "error": err[:500]}
+            save_json(LAST_ERR, last)
+            return {"ok": False, "error": err}
+        # yayın tamam: önce defter (metrics.json'u eşzamanlı yazan başka süreç kaydı ezse de yeniden yükleme olmaz), sonra metrics
+        ledger_set(path.name, plat, state="done", id=res.get("id"), url=res.get("url"), publishedAt=res.get("publishedAt"), owner=res.get("owner"),
+                   unresolved=res.get("unresolved"), cid=res.get("cid"))
+        clear_hold(plat)
         last = load_json(LAST_ERR, {}) or {}
-        last[plat] = {"at": now_iso(), "video": path.name, "error": err[:500]}
-        save_json(LAST_ERR, last)
-        return {"ok": False, "error": err}
-    clear_hold(plat)
-    last = load_json(LAST_ERR, {}) or {}
-    if last.pop(plat, None) is not None:
-        save_json(LAST_ERR, last)
-    m = metrics()
-    m["videos"].setdefault(path.name, {})[plat] = res
-    save_metrics(m)
-    return {"ok": True, **res}
+        if last.pop(plat, None) is not None:
+            save_json(LAST_ERR, last)
+        m = metrics()
+        m["videos"].setdefault(path.name, {})[plat] = res
+        save_metrics(m)
+        return {"ok": True, **res}
+    finally:
+        try:
+            lock.unlink()
+        except Exception:
+            pass
 
 
 def flush() -> dict:

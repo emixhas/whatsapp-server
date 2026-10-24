@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import load_env, metrics, now_iso, save_metrics, settings  # noqa: E402
+from common import load_env, merge_fresh_publish, metrics, now_iso, save_metrics, settings  # noqa: E402
 
 CFG = {"freshHours": 72, "dailyUntilDays": 7, **(settings().get("metricsSync") or {})}
 
@@ -137,7 +137,7 @@ def main():
         except Exception as e:
             out["errors"].append(f"{plat}: {e}")
     m["lastSync"] = now_iso()
-    save_metrics(m)
+    save_metrics(merge_fresh_publish(m))  # bu arada yayınlanan videoların kayıtları (publish.py) ezilmesin
     try:  # abone/takipçi anlık sayıları (data/followers.json)
         from followers import sync as followers_sync
         f = followers_sync()

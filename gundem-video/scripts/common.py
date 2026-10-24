@@ -66,6 +66,30 @@ def save_metrics(m):
     save_json(DATA / "metrics.json", m)
 
 
+def merge_fresh_publish(m: dict) -> dict:
+    """Uzun süren bir metrik güncellemesi (sync_metrics: dakikalarca API okur) kaydederken bu arada başka sürecin (publish.py) yazdığı
+    yayın kayıtları kaybolmasın: diskteki güncel dosyada olup bellekteki kopyada olmayan platform kayıtları (kimlikli) ve yeni videolar
+    alınır. Kayıt silen işlemler (ig_cleanup) bunu kullanmaz."""
+    fresh = load_json(DATA / "metrics.json", {}) or {}
+    vids = m.get("videos") if isinstance(m, dict) else None
+    if not isinstance(vids, dict) or not isinstance(fresh.get("videos"), dict):
+        return m
+    has = lambda e: isinstance(e, dict) and bool(e.get("id") or e.get("publish_id") or e.get("unresolved"))  # noqa: E731
+    for name, v in fresh["videos"].items():
+        if not isinstance(v, dict):
+            continue
+        mine = vids.get(name)
+        if mine is None:
+            vids[name] = v
+            continue
+        if not isinstance(mine, dict):
+            continue
+        for plat in ("youtube", "instagram", "tiktok"):
+            if has(v.get(plat)) and not has(mine.get(plat)):
+                mine[plat] = v[plat]
+    return m
+
+
 def _deep_merge(a, b):
     out = dict(a)
     for k, v in (b or {}).items():

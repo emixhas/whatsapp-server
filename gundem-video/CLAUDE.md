@@ -2515,6 +2515,26 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   Graph sunucusuyla denendi: media_publish yanıtsız kalınca gönderi son gönderilerden bulundu (tek yükleme), permalink hatasında yayın tamam,
   ikinci çağrıda aynı açıklamalı gönderi bulunup yüklenmedi, FINISHED konteynerde bir kez daha yayın, `--dups`/`--dups-run` gruplama ve silme.
   Gerçek Instagram'da DENENMEDİ (Mac'te ilk yayınlarda "  !" satırlarına bakın).
+  - Yükleme defteri ve kilit (kullanıcı şikâyeti, 24 Ekim: "halen daha çift paylaşım var" — aynı dakikada üretilen videolar ikişer kez
+    Instagram'da): açıklama araması tek başına yetmiyordu (Instagram'ın gönderi listesi geç gelebiliyor, 6 saatlik pencere sınır sırasında
+    bekleyen videoyu kaçırıyordu, metrics.json kaydı eşzamanlı yazımla kaybolabiliyordu, iki süreç aynı videoyu aynı anda yükleyebiliyordu).
+    `data/upload_ledger.json` {video: {platform: {state started|container|publishing|done|failed, at, startedAt, attempt, cid, id, url, publishedAt,
+    owner, unresolved}}} (7 gün): `publish.upload()` metrics kaydı yoksa deftere bakar — "done" ise yüklemez, metrics kaydını onarır
+    (`recovered`). `ig_upload` her adımı deftere yazar; yeniden denemede defterde konteyner varsa Instagram'a durumu sorulur: PUBLISHED →
+    yayınlanmış sayılır, gönderi `since` penceresinde aranır (6 × 10 sn), bulunamazsa bile YENİDEN YÜKLENMEZ — kayıt `{id: None, unresolved,
+    cid}` olur ve sonraki yüklemede `ig_resolve_unresolved` kimliği tamamlar (72 saat içinde); FINISHED / IN_PROGRESS → aynı konteyner
+    yayınlanır (video Hostinger'a yeniden yüklenmez, yeni konteyner açılmaz); "publishing" durumunda konteynerin durumu okunamıyorsa HATA
+    (ikinci kopya olmasın: sonraki denemede bakılır); ERROR / EXPIRED → yeni konteyner. Yayın isteği yanıtsız kalınca da aynı sıra (liste →
+    PUBLISHED → FINISHED ise bir kez daha yayın → yoksa hata). `ig_find_published(since=…)`: pencere videonun üretim anı ya da ilk deneme
+    (hangisi önceyse) − 15 dk; liste o zamana kadar sayfalanır (`ig_recent_media(until=…)`, en çok 8 × 50). Süreç kilidi
+    `work/publish_locks/<video>.<platform>.lock` {pid, at}: sahibi yaşayan 2 saatten yeni kilit varken `upload()` `{ok: false, busy: true}`
+    döner (post_pipeline busy'yi hata saymaz, 90 sn sonra yeniden denemez); ölü/eski kilit silinir. `common.merge_fresh_publish`: sync_metrics
+    dakikalarca API okuduktan sonra kaydederken diskte bu arada oluşan kimlikli yayın kayıtlarını (publish.py) ve yeni videoları alır (silen
+    işlemler — ig_cleanup — kullanmaz). Sandbox'ta sahte Graph sunucusuyla 15 senaryo: normal, metrics kaybı, yanıtsız yayın, yanıtsız yayın +
+    gecikmeli liste (çözülmemiş kayıt, sonra tamamlanır), yayından sonra ölen süreç (20 saat önceki gönderi bulundu, yükleme yok), hazır
+    konteynerin yeniden kullanımı, durumu okunamayan konteyner (hata, yükleme yok), hatalı konteyner → yeni, canlı/ölü kilit, 9 saat önceki
+    gönderi 70 gönderi gerideyken bulundu, üretimden önceki eski gönderi eşleşmedi, sayfalama until, post_pipeline busy, metrik birleştirme;
+    eski 8 senaryolu sahte test de geçiyor. Mevcut tekrarlar için "instagram tekrarlarını sil".
   - Reels kapağı (kullanıcı şikâyeti, 24 Ekim: "kapak görseller yüklenmiyor" → Instagram kapağı): `ig_upload` kapağı Hostinger'a yükledikten sonra dış
     adresten okunduğunu doğrular (8 × 2 sn); okunuyorsa `cover_url`, değilse ya da Hostinger yoksa ya da -kapak.jpg yoksa `thumb_offset: 0` — videonun
     İLK KARESİ zaten kapaktır (GundemVideo 0. karede Thumb), Instagram o kareyi kapak yapar; her durumda log satırı ("🌐 Hostinger: kapak yüklendi" /

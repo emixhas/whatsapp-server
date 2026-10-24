@@ -183,6 +183,9 @@ def publish(plat: str) -> bool:
     if j.get("limit"):  # günlük sınır: sıraya alındı, 90 sn sonra denemek boşuna
         print(f"📤 {plat}: sınır doldu — {j.get('error')}", flush=True)
         return True
+    if j.get("busy"):  # aynı video başka bir süreçte yükleniyor (publish.py kilidi): yeniden denemek ikinci kopya üretir
+        print(f"📤 {plat}: {j.get('error')}", flush=True)
+        return True
     print(f"📤 {plat}: " + (("zaten yayında " if j.get("skipped") else "tamam ") + (j.get("url") or j.get("note") or "") if j.get("ok") else "hata " + str(j.get("error"))), flush=True)
     return bool(j.get("ok"))
 
