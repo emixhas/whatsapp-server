@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA, load_json, now_iso, save_json, settings  # noqa: E402
 
 STATE = DATA / "trailer_watch.json"
-DEFAULTS = {"enabled": True, "intervalMin": 10, "channels": [], "maxAgeHours": 24, "maxPerDay": 4, "autoPublish": True, "notify": False,
+DEFAULTS = {"enabled": True, "intervalMin": 10, "channels": [], "maxAgeHours": 24, "maxPerDay": 8, "autoPublish": True, "notify": False,
             "onlyTrailers": True, "soundSeconds": 10}
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015", "media": "http://search.yahoo.com/mrss/"}
@@ -146,7 +146,19 @@ def is_trailer(title: str, desc: str) -> bool:
         import social_video as sv
         return bool(sv.is_trailer(title, desc))
     except Exception:
-        return bool(re.search(r"fragman|trailer|teaser", title or "", re.I))
+        return bool(re.search(r"fragman|trailer|teaser|tan[ıi]t[ıi]m|[öo]n\s*g[öo]sterim", title or "", re.I))
+
+
+def promo(title: str, desc: str, author: str = "") -> dict:
+    """Tanıtım türü + dizi adı ve bölüm (social_video.promo_info / film_name): {label, text, tur, no, bolum, film}; ayrıştırılamazsa {}."""
+    try:
+        import social_video as sv
+        p = dict(sv.promo_info(title, desc) or {})
+        film, _ = sv.film_name(title, author)
+        p["film"] = film
+        return p
+    except Exception:
+        return {}
 
 
 def scan(now: float | None = None) -> dict:
@@ -202,8 +214,16 @@ def scan(now: float | None = None) -> dict:
         last_ts = float(ch.get("lastTs") or 0)
         fresh = [x for x in reversed(trailers) if x["ts"] > last_ts and x["videoId"] not in seen and now - x["ts"] <= c["maxAgeHours"] * 3600
                  and x["videoId"] != ch.get("lastVideoId")]
+        pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if fresh else {}
         for x in fresh:
-            new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")}})
+            p = pinfo.get(x["videoId"]) or {}
+            # aynı dizinin aynı bölümünün daha önce yayınlanan tanıtımları (akıştaki eski videolar; kanalın son 15 videosu): kurguda "ilk
+            # fragmandan sonra ikinci fragman da geldi" bağı için (içerikleri bilinmez, yalnız başlık ve tarih)
+            prev = [{"videoId": y["videoId"], "title": y["title"], "published": y["published"], "label": (pinfo.get(y["videoId"]) or {}).get("label")}
+                    for y in sorted(trailers, key=lambda z: z["ts"]) if y["ts"] < x["ts"] and p.get("bolum") and (pinfo.get(y["videoId"]) or {}).get("bolum") == p["bolum"]
+                    and ((pinfo.get(y["videoId"]) or {}).get("film") or "").casefold() == (p.get("film") or "").casefold()][-6:]
+            new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")},
+                        "promo": {k: p.get(k) for k in ("label", "text", "tur", "no", "bolum", "sezon", "final", "film")} if p else None, "previous": prev})
             seen[x["videoId"]] = now
         if trailers[0]["ts"] > last_ts:
             ch.update({"lastVideoId": latest["videoId"], "lastTitle": latest["title"], "lastPublished": latest["published"], "lastTs": latest["ts"], "lastUrl": latest["url"]})

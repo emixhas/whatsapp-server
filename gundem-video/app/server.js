@@ -2467,7 +2467,7 @@ async function runVideoNews0(v) {
   const oj = vqCtx()?.quiet || auto ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
-  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "", ...(Number(v.maxSoundSeconds) > 0 ? { maxSoundSeconds: Number(v.maxSoundSeconds) } : {}) } : {}), // fragman takibi: orijinal sesli anların toplamı (trailerWatch.soundSeconds)
+  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "", ...(Number(v.maxSoundSeconds) > 0 ? { maxSoundSeconds: Number(v.maxSoundSeconds) } : {}), ...(Array.isArray(v.promoPrevious) && v.promoPrevious.length ? { promoPrevious: v.promoPrevious.slice(-6) } : {}) } : {}), // fragman takibi: orijinal sesli anların toplamı (trailerWatch.soundSeconds), aynı bölümün önceki tanıtımları
     ...(["haber", "trend", "mizah"].includes(v.kind) ? { kind: v.kind } : {}),
     ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(kr ? { kare: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
     ...(rv ? { revise: { job: rv.job, instruction: rv.instruction, of: rv.of, revision: rv.revision } } : {}) });
@@ -2679,7 +2679,7 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
       if (!asked) await sendW(`🎬 Bu bir fragman${film ? `: *${film}*` : ""}. ${secs} saniyelik fragman analizi hazırlanıyor (haber olarak isterseniz linki "haber yap" diye yeniden gönderin).`);
       // talimat yoksa "fragman yap": wa_video.py bunu varsayılan analiz talimatına (TRAILER_TALIMAT) çevirir
       return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "",
-        ...(auto ? { trailerAuto: true, twId: auto.twId || "", maxSoundSeconds: Number(auto.maxSoundSeconds) || 0 } : {}) });
+        ...(auto ? { trailerAuto: true, twId: auto.twId || "", maxSoundSeconds: Number(auto.maxSoundSeconds) || 0, promoPrevious: Array.isArray(auto.previous) ? auto.previous : [] } : {}) });
     }
     if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : kind === "mizah" ? "😄 Mizah videosu: haber sitelerinde aranmadı." : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
     // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
@@ -2764,7 +2764,7 @@ function queueGate(video) {
 // autoPublish kapalıysa video sahibin işi gibi onaya gelir. Günde en çok maxPerDay; fazlası "atlandı".
 const TW_STATE = path.join(DATA, "trailer_watch.json"); // trailer_watch.py: {channels: {key: {input, channelId, name, lastVideoId, lastTitle, lastPublished, lastTs, lastUrl, error, first}}, seen, lastScan}
 const TW_DONE = path.join(DATA, "trailer_watch_done.json"); // {videoId: {at, state: sırada|hazırlanıyor|üretimde|üretildi|hata|atlandı, title, channel, url, day, video, error}}
-const TW_DEFAULTS = { enabled: true, intervalMin: 10, channels: [], maxAgeHours: 24, maxPerDay: 4, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0 };
+const TW_DEFAULTS = { enabled: true, intervalMin: 10, channels: [], maxAgeHours: 24, maxPerDay: 8, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0 }; // bir bölümün tanıtımı, 1./2. fragmanı, ön tanıtımı ve ön gösterimi ayrı videolar: günlük sınır 8
 const trailerWatchCfg = () => {
   const raw = settings().trailerWatch, c = { ...TW_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) };
   const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
@@ -2802,11 +2802,13 @@ async function trailerWatchScan({ manual = false } = {}) {
     const done = twDone();
     for (const n of r.new || []) {
       if (!n?.videoId || !n.url || done[n.videoId] || twPending.some((p) => p.videoId === n.videoId)) continue;
-      const item = { videoId: n.videoId, title: String(n.title || "").slice(0, 200), channel: String(n.channel || "").slice(0, 80), url: n.url, published: n.published || null };
+      // tanıtım türü (social_video.promo_info: "16. BÖLÜM 2. FRAGMAN", "16. BÖLÜM TANITIMI", "ÖN GÖSTERİM"…) ve aynı bölümün önceki tanıtımları (kurguya bağ cümlesi için)
+      const item = { videoId: n.videoId, title: String(n.title || "").slice(0, 200), channel: String(n.channel || "").slice(0, 80), url: n.url, published: n.published || null,
+        promoLabel: String(n.promo?.label || "").slice(0, 30), previous: Array.isArray(n.previous) ? n.previous.slice(-6).map((x) => ({ title: String(x.title || "").slice(0, 120), published: String(x.published || "").slice(0, 10), label: String(x.label || "").slice(0, 30) })) : [] };
       if (!c.enabled) { twMark(n.videoId, "atlandı", { ...item, error: "fragman takibi kapalı" }); continue; }
       if (twToday() + twPending.length >= c.maxPerDay) { twMark(n.videoId, "atlandı", { ...item, error: `günlük sınır (${c.maxPerDay}) doldu` }); push(`🎬 yeni fragman atlandı (günlük ${c.maxPerDay} sınırı doldu): ${item.channel} — ${item.title.slice(0, 70)}`); continue; }
       twPending.push(item); twMark(n.videoId, "sırada", item);
-      push(`🎬 YENİ FRAGMAN: ${item.channel} — ${item.title.slice(0, 80)} → fragman analizi sıraya alındı`);
+      push(`🎬 YENİ FRAGMAN: ${item.channel} — ${item.title.slice(0, 80)}${item.promoLabel ? ` (${item.promoLabel}${item.previous.length ? `; aynı bölümün ${item.previous.length} önceki tanıtımı var` : ""})` : ""} → fragman analizi sıraya alındı`);
     }
     sse("trailerwatch", { new: nn });
     twKick().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
@@ -2825,7 +2827,7 @@ async function twKick() {
   if (resting()) restEnd(`yeni fragman düştü: ${String(it.title).slice(0, 60)}`); // kullanıcı "anında" dedi: dinlenme beklenmez (sondakika gibi)
   try {
     const instruction = (c.soundSeconds > 0 ? "fragman yap; en çarpıcı anların orijinal sesini kullan" : "fragman yap") + (c.duration ? `; ${c.duration} saniye` : "");
-    const r = await twAls.run({ quiet: true, twId: it.videoId }, () => socialVideoNews({ url: it.url, instruction, auto: { twId: it.videoId, maxSoundSeconds: c.soundSeconds } }));
+    const r = await twAls.run({ quiet: true, twId: it.videoId }, () => socialVideoNews({ url: it.url, instruction, auto: { twId: it.videoId, maxSoundSeconds: c.soundSeconds, previous: it.previous || [] } }));
     if (r?.ok) twMark(it.videoId, "üretimde", { queued: !!r.queued });
     else twMark(it.videoId, "hata", { error: String(r?.error || "yanıt yok").slice(0, 200) });
   } catch (e) { twMark(it.videoId, "hata", { error: String(e?.message || e).slice(0, 200) }); push(`🎬 fragman takibi hatası: ${e?.message || e}`); }
@@ -2840,7 +2842,7 @@ function twStatusText() {
   const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal · ${c.intervalMin} dk'da bir · bugün ${twToday()}/${c.maxPerDay}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
   const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 10)})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}`);
   const recent = Object.entries(twDone()).map(([id, v]) => ({ id, ...v })).filter((v) => v.state !== "sırada").sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 3)
-    .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)} — ${v.state}${v.error ? ` (${v.error})` : ""}`);
+    .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)}${v.promoLabel ? ` [${v.promoLabel}]` : ""} — ${v.state}${v.error ? ` (${v.error})` : ""}`);
   return head + (lines.length ? `\n${lines.join("\n")}` : "\nKanal ekleyin: fragman kanalı ekle @NetflixTurkiye (ya da panelden)") + (recent.length ? `\nSon fragmanlar:\n${recent.join("\n")}` : "");
 }
 setInterval(() => {

@@ -274,7 +274,7 @@ def sound_window(lines: list, dur: float, secs: float, avoid: list) -> dict:
     return {"start": round(best[1], 2), "end": round(best[2], 2)}
 
 
-def trailer_label(label: str, date) -> tuple:
+def trailer_label(label: str, date, promo: dict | None = None) -> tuple:
     """Fragman etiketi, giriş ve kapanış cümlesi (kullanıcı isteği, 18 Ekim: "fragmanda ne anlatıldı gibi 40 saniyelik video"): "Yeni
     fragman." yalnız yeni fragmanda (yükleme 30 günden eskiyse YENİ FRAGMAN → FRAGMAN; eski fragmana "yeni" denmez), hayran yapımında
     "Hayran yapımı fragman.", film olmayan tanıtım filminde "Tanıtım filmi.", diğerlerinde "Fragman analizi.". Etiket önce düzlenir:
@@ -296,6 +296,14 @@ def trailer_label(label: str, date) -> tuple:
         key = key[:31].rsplit(" ", 1)[0] if " " in key[:31] else key[:30]
     intro = ("Yeni fragman." if key in ("YENİ FRAGMAN", "DİZİ FRAGMANI") and not old else "Hayran yapımı fragman." if key == "HAYRAN FRAGMANI"
              else "Tanıtım filmi." if key == "TANITIM FİLMİ" else "Fragman analizi.")
+    # dizi tanıtım türü (kullanıcı isteği, 24 Ekim; social_video.promo_info): "16. BÖLÜM 2. FRAGMAN", "16. BÖLÜM TANITIMI", "ÖN GÖSTERİM"…
+    # ve girişte "On altıncı bölümün ikinci fragmanı." — Claude'un etiketi yerine (hangi tanıtım olduğu başlıktan kesin); yalnız hayran
+    # yapımı ve tanıtım filmi kararı (içerikten) korunur
+    if isinstance(promo, dict) and promo.get("label") and key not in ("HAYRAN FRAGMANI", "TANITIM FİLMİ"):
+        key = str(promo["label"])[:30]
+        if promo.get("text"):
+            intro = str(promo["text"]).strip()
+            intro = intro if intro.endswith((".", "!", "?")) else intro + "."
     outro = "Takip etmeyi unutma." if key == "TANITIM FİLMİ" else "Yeni fragmanları kaçırmamak için takip etmeyi unutma."
     return key or "FRAGMAN", intro, outro  # Türkçe büyük harf: açıklama başlığı ve etiket karşılaştırmaları ("TANITIM FİLMİ") tutarlı
 
@@ -1886,7 +1894,15 @@ def build(job: dict) -> dict:
                "fragman": {"film": film, "baslik": so.get("title"), "kanal": so.get("uploader") or so.get("handle"),
                            "aciklama": str(so.get("caption") or "")[:1500], "yukleme_tarihi": so.get("date"), "bugun": time.strftime("%d.%m.%Y"),
                            "izlenme": so.get("views"),
-                           "etiketler": so.get("tags") or [], **({"bolum": so["bolum"]} if so.get("bolum") else {})},
+                           "etiketler": so.get("tags") or [], **({"bolum": so["bolum"]} if so.get("bolum") else {}),
+                           # dizi tanıtım türü (16. bölüm 2. fragman, tanıtım, ön tanıtım, ön gösterim) ve aynı bölümün önceki tanıtımları
+                           # (fragman takibi verir): kanca hangi tanıtım olduğunu söyler, etiket ve giriş buradan (prompts/fragman.md)
+                           **({"tanitim_turu": {"etiket": pr["label"], "giris_cumlesi": pr.get("text"), "tur": pr.get("tur"), "bolum": pr.get("bolum"),
+                                                "sira": pr.get("no"), "sezon": pr.get("sezon"), "final": bool(pr.get("final"))}}
+                              if isinstance(pr := so.get("promo"), dict) and pr.get("label") else {}),
+                           **({"onceki_tanitimlar": [{"baslik": str(x.get("title") or "")[:120], "tarih": str(x.get("published") or "")[:10],
+                                                      **({"etiket": x["label"]} if x.get("label") else {})} for x in job["promoPrevious"][:6] if isinstance(x, dict)]}
+                              if isinstance(job.get("promoPrevious"), list) and job.get("promoPrevious") else {})},
                "ilgili_haberler": rel[:5]}
         if WANT_SOUND.search(instruction) and any(i["audio"] for i in infos):  # sessiz fragmanda orijinal ses istenmez
             inp["orijinal_ses_istegi"] = {"en_fazla_saniye": int(max_sound)}
@@ -2080,7 +2096,7 @@ def build(job: dict) -> dict:
     label = news_label(raw_label)
     intro, outro, cats, gen = "Son dakika.", "", CATS, "genel"  # geçersiz kategori → genel
     if trailer:  # etiket, giriş ve kapanış etikete göre (panel startAnlik'e bunları verir); kesme trailer_label'da kelime sınırında
-        label, intro, outro = trailer_label(raw_label, (social or {}).get("date"))
+        label, intro, outro = trailer_label(raw_label, (social or {}).get("date"), (social or {}).get("promo"))
         # fragman.md'nin izin verdiği kategoriler; "asayis", "dunya" gibi etiket fragman konusunu gerçek olay gibi gösterir (polis
         # sireni kartı, #asayiş): fragmanda sinema, film olmayan tanıtım filminde genel
         cats, gen = {"sinema", "teknoloji", "siyaset", "genel"}, "genel" if label == "TANITIM FİLMİ" else "sinema"

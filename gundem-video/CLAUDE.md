@@ -1590,6 +1590,31 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   başlatma, env ve sıra önceliği), sahte Claude ile üç fragman işi (sesli an alanı yok → 8 sn, 10 → 10 sn, bozuk → 8 sn; gerçek `claude`
   PATH'te değil, tuzak tetiklenmedi), başsız Chromium'da panel kartı (durum satırı, liste, ayar yazımları, kanal kaydında tekilleştirme, tarama
   düğmesi, 📡 rozeti). Gerçek YouTube RSS/kanal sayfası ve Mac'te uçtan uca DENENMEDİ.
+  - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
+    16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
+    ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/
+    sezon/final/dizi/"yeni bölüm" bağlamında (başlıkta ya da açıklamanın ilk 200 karakterinde) "tanıtım(ı)", "ön tanıtım", "ön gösterim" de
+    fragmandır (`_PROMO`, `_SERIES_CTX`; "tanıtım filmi/videosu/toplantısı/gecesi/lansmanı/stratejisi…" değil: "Üniversitemizin tanıtım filmi",
+    "Yeni iPhone ön gösterim", "Dizi oyuncuları tanıtım gecesinde" fragman değil; soru başlığı yine değil); `_DESC_TRAILER` "N. Bölüm Tanıtımı".
+    `promo_info(title)` → {tur fragman|teaser|tanitim|on_tanitim|on_gosterim, no ("2. Fragman", "Trailer 2", "Fragman #2", sondaki "Fragman 2";
+    bölüm numarası sıra sayılmaz), bolum, sezon, yeniSezon, final ("Final Fragmanı", "Sezon Finali", "(Final)", "Final Bölümü"; "Final
+    Destination" değil), label (Türkçe büyük harf, ≤30: "100. BÖLÜM 2. FRAGMAN", "100. BÖLÜM FRAGMANI", "100. BÖLÜM TANITIMI", "100. BÖLÜM ÖN
+    TANITIM", "100. BÖLÜM ÖN GÖSTERİM", "120. BÖLÜM TEASER", "FİNAL FRAGMANI", "SEZON FİNALİ TANITIMI", "100. BÖLÜM FİNAL TANITIMI", "2. SEZON
+    TANITIMI", "YENİ SEZON FRAGMANI", "2. SEZON 2. FRAGMAN", "2. FRAGMAN"; sıradan film fragmanı/teaser'ında None → eski YENİ FRAGMAN/FRAGMAN
+    kuralı), text (giriş cümlesi, sayılar yazıyla `tr_ordinal`: "Yüzüncü bölümün ikinci fragmanı.", "On altıncı bölüm tanıtımı.", "Yüzüncü
+    bölümden ön gösterim.", "Final bölümünün fragmanı.", "İkinci sezonun ikinci fragmanı.", "İkinci fragman.")}; `social.promo`. `film_name`
+    artık "2. Sezon", "Yeni Sezon/Bölüm", "Final Bölümü", "(Final)" ve "Tanıtımı/Ön Gösterim" sözlerini addan ayıklar ("Bölüm 45 Fragman - Uzak
+    Şehir" → Uzak Şehir, bölüm başka parçadan okunur). `wa_video.trailer_label(label, date, promo)`: tanıtım türünün etiketi ve giriş cümlesi
+    Claude'un etiketinin yerine geçer (yalnız HAYRAN FRAGMANI ve TANITIM FİLMİ — içerik kararı — korunur); istem girdisi `fragman.tanitim_turu`
+    {etiket, giris_cumlesi, tur, bolum, sira, sezon, final} ve `fragman.onceki_tanitimlar` (aynı dizinin aynı bölümünün akıştaki daha eski
+    tanıtımları: başlık, tarih, etiket; fragman takibi `new[].previous` → server `auto.previous` → iş JSON `promoPrevious`); `prompts/fragman.md`
+    "DİZİ TANITIMLARI": kanca hangi tanıtım olduğunu söyler, önceki tanıtımlara yalnız bağ cümlesi ("ilk fragmandan sonra ikinci fragman da
+    geldi"; içerikleri bilinmez), ön gösterimde bölümü bozmadan açılış sahneleri, titles.A bölümü içerir, #yenibölüm/#final/#yenisezon. Panel:
+    kayıt ve logda etiket ("YENİ FRAGMAN: Show TV — … (100. BÖLÜM 2. FRAGMAN; aynı bölümün 1 önceki tanıtımı var)"), kartta kalın etiket;
+    günlük sınır varsayılanı 8 (bir bölümün 3-4 tanıtımı ayrı video). Sandbox'ta: 45 başlıklık tanıma/etiket/giriş/ad tablosu (yanlış pozitif
+    listesiyle; HEAD'e göre fragman olan başlıklarda ad değişiklikleri yalnız istenenler), tarama testinde aynı bölümün önceki tanıtımları (99.
+    bölüm ve başka dizi hariç, eskiden yeniye), trailer_label 6 durum, sahte Claude ile "100. Bölüm 2. Fragman" işi (istemde tanitim_turu +
+    onceki_tanitimlar + DİZİ TANITIMLARI bölümü; etiket "100. BÖLÜM 2. FRAGMAN", giriş "Yüzüncü bölümün ikinci fragmanı.", ses 10 sn).
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

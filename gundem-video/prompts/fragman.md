@@ -115,7 +115,24 @@ ALANLAR
 - "firstComment": izleyiciye filmle ya da diziyle ilgili soru (en çok 110 karakter), örneğin "Sizce bu savaşı kim kazanır? 👇".
 - "label": "YENİ FRAGMAN" yalnız "yukleme_tarihi" "bugun"den en çok 30 gün önceyse; dizi bölümü fragmanında "DİZİ FRAGMANI"; hayran
   yapımında "HAYRAN FRAGMANI"; film ya da dizi olmayan tanıtımda "TANITIM FİLMİ"; diğerlerinde "FRAGMAN" (eski fragmana "yeni" deme).
-  Talimat başka bir etiket isterse o (DOĞRULUK kurallarına aykırı değilse).
+  Talimat başka bir etiket isterse o (DOĞRULUK kurallarına aykırı değilse). Girdide "tanitim_turu" varsa "label" onun "etiket"idir.
+
+DİZİ TANITIMLARI (girdide "fragman.tanitim_turu" varsa): Türk dizileri bir bölüm için birden çok tanıtım yayınlar — önceki bölümün hemen
+ardından "bölüm tanıtımı" (ilk tanıtım), sonra "1. fragman", "2. fragman" (daha çok sahne), bölümden önce "ön tanıtım", yayın günü
+"ön gösterim" (bölümün ilk sahneleri). Filmlerin de 2. ve 3. fragmanı çıkar. Her biri AYRI videodur ve izleyici hangisi olduğunu
+hemen anlamalıdır:
+- Kanca ve ilk segment hangi tanıtım olduğunu söyler: "giris_cumlesi" anlamında ("On altıncı bölümün ikinci fragmanı", "yüzüncü bölüm
+  tanıtımı", "final bölümünden ön gösterim"); bölüm ve sıra sayısını yazıyla ya da rakamla ("16. bölüm") yazabilirsin, uydurma bölüm
+  numarası yazma. Giriş cümlesinin kendisi otomatik eklenir, onu yazma.
+- "onceki_tanitimlar" (aynı bölümün daha önce yayınlanan tanıtımları: başlık, tarih) varsa kancada ya da ilk segmentte "ilk fragmandan
+  sonra ikinci fragman da geldi", "tanıtımın ardından fragman yayınlandı" gibi tek bir bağ cümlesi kur; öncekilerin İÇERİĞİNİ bilmiyorsun,
+  onlardan sahne, replik ya da bilgi aktarma. Bu videoda yalnız BU tanıtımda görülen ve duyulanı anlat; "yeni sahneler" ancak bu tanıtımda
+  olanları betimlerken denir.
+- "ön gösterim": bölümün ilk dakikalarıdır; sahneleri sırayla, bölümün nasıl açıldığını anlat; gösterilenin ötesinde sonuç, çözüm ya da
+  tahmin yazma (bölümü bozma). "ön tanıtım" ve "tanıtım": kısa ve az sahneli olabilir; görüntü azsa kelime sayısını ve parça sayısını
+  düşür (kısa teaser kuralı).
+- "titles.A" bölümü içersin ("Kızılcık Şerbeti 100. bölüm: Fatih'in kararı sarsıyor"; "fragman" kelimesi yine yok). "hashtags": "#dizi" +
+  dizi adı + "#yenibölüm" (final için "#final"; sezon tanıtımında "#yenisezon").
 - "titles": A haberci (en çok 55 karakter; "fragman" kelimesini kullanma, yayın başlığı zaten "🎬 FRAGMAN:" etiketiyle başlar; örneğin
   "Dune: Part Three: çölde son savaş başlıyor"), B merak uyandıran (yine doğru, en çok 55 karakter), cover kapak için 2-4 kelime.
 - "importance": 1-5 (çok beklenen büyük yapım 4, sıradan 2-3); "importanceReason" kısa gerekçe.

@@ -54,7 +54,16 @@ PLATFORMS = [(r"instagram\.com", "Instagram"), (r"tiktok\.com", "TikTok"), (r"(^
 INBOX = ROOT / "work" / "wa_inbox"
 # fragman tanıma (re.I Türkçe I/ı, İ/i eşlemesini yapar; \w Türkçe harfleri kapsar → kelime sınırı doğru çalışır). Yalnız Türkçe
 # ekleri alınır: fragmanı, fragmanları, fragmanda… ("fragmantasyon" fragman değil)
-_TWORD = r"(?:fragman(?:[ıiae]\w*|l[ae]r\w*|d[ae]\w*)?|trailer(?:s|[ıi]\w*)?|teaser(?:s|[ıi]\w*)?|tan[ıi]t[ıi]m\s+film\w*)"
+_TWORD = r"(?:fragman(?:[ıiae]\w*|l[ae]r\w*|d[ae]\w*)?|trailer(?:s|[ıi]\w*)?|teaser(?:s|[ıi]\w*)?|(?:[öo]n\s*)?tan[ıi]t[ıi]m\w*(?:\s+film\w*)?|[öo]n\s*g[öo]ster[iİı]m\w*)"
+# Dizi tanıtım biçimleri (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
+# 16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bölüm/sezon/final/dizi bağlamındaki "tanıtım(ı)" ("tanıtım filmi/videosu"
+# değil), "ön tanıtım" ve "ön gösterim" de fragmandır (`is_trailer`); hangi tanıtım olduğu `promo_info` ile ayrıştırılır (etiket + giriş cümlesi)
+# "tanıtım" ardından etkinlik/ürün sözü gelirse dizi tanıtımı değil (tanıtım filmi/videosu/toplantısı/gecesi/lansmanı/stratejisi…)
+_PROMO = re.compile(r"(?<!\w)(?:[öo]n\s*tan[ıi]t[ıi]m\w*|[öo]n\s*g[öo]ster[iİı]m\w*|tan[ıi]t[ıi]m(?:[ıi]|lar[ıi]?)?(?!\w)"
+                    r"(?!\s*(?:film|video|klip|reklam|spot|toplant|gece|etkinli|lansman|stand|g[üu]n[üu]|t[öo]ren|stratej|ders|kampanya|bro[şs][üu]r|kitap|yaz[ıi]|metn|afi[şs]|turu|gezisi|s[üu]reci)))", re.I)
+_SERIES_CTX = re.compile(r"(?<!\w)(?:\d+\s*\.?\s*b[öo]l[üu]m\w*|b[öo]l[üu]m\s*\d+|(?:yeni|son|final)\s+b[öo]l[üu]m\w*|episode\s*\d+|sezon\w*|season\w*|final\w*|dizi\w*|series)(?!\w)", re.I)
+_SEASON_PH = re.compile(r"(?<!\w)(?:\d{1,2}\s*\.?\s*sezon\w*|sezon\s*\d{1,2}|season\s*\d{1,2}|(?:yeni|new)\s+(?:sezon|season|b[öo]l[üu]m)\w*|sezon\s+finali|season\s+finale)(?!\w)", re.I)  # "Yeni Bölüm" de ad değil
+_FINAL_PH = re.compile(r"(?<!\w)(?:final\s+b[öo]l[üu]m\w*|\(\s*final\w*\s*\)|final(?=\s+(?:fragman|tan[ıi]t[ıi]m|teaser|trailer|[öo]n\s*(?:tan[ıi]t[ıi]m|g[öo]ster))))", re.I)
 # otomatik tanıma (kullanıcı "fragman" yazmadan fragman moduna geçer), yanlış pozitifler ayıklanır: "tanıtım filmi" sayılmaz (parti,
 # belediye, ürün, üniversite tanıtım filmi film fragmanı değil; talimatta "fragman" yazılırsa yine fragman modu), römork anlamındaki
 # trailer ("Truck and trailer crash", "Trailer park fire", "travel trailer") ve fragmandan soru olarak söz eden haber başlığı
@@ -64,7 +73,7 @@ _VEHICLE = re.compile(r"(?<!\w)(?:(?:tractor|semi|truck|lorry|travel|horse|boat|
                       r"(?:\s+and)?[\s-]+trailers?|trailers?[\s-]+(?:park|parks|home|homes|hitch\w*|truck\w*|crash\w*|fire|tow\w*|camp\w*|house|"
                       r"life|living|sway|wiring|tires?|rental|accident|overturn\w*|jackknif\w*))(?!\w)", re.I)
 _DESC_TRAILER = re.compile(r"(?<!\w)(?:official\s+(?:trailer|teaser)|teaser\s+trailer|resm[iî]\s+(?:fragman|teaser)\w*|"
-                           r"\d+\s*\.\s*b[öo]l[üu]m\s+(?:\d+\s*\.\s*)?fragman\w*)(?!\w)", re.I)
+                           r"\d+\s*\.\s*b[öo]l[üu]m\s+(?:\d+\s*\.\s*)?(?:fragman|tan[ıi]t[ıi]m|[öo]n\s*(?:tan[ıi]t[ıi]m|g[öo]ster[iİı]m))\w*)(?!\w)", re.I)
 # fragman kelimesinin yanındaki sıfatlar (yalnız bitişikken atılır: "Final Destination", "The Final Reckoning" adın parçası kalır)
 _MODS = (r"(?:official|offical|final|new|first|full|main|international|ultimate|exclusive|extended|teaser|resmi|yeni|ilk|son|"
          r"t[üu]rk[çc]e|altyaz[ıi]l[ıi]|dublajl[ıi]|orijinal|uzun|k[ıi]sa|tam|hd|4k|"
@@ -158,11 +167,124 @@ def _trailer_part(x: str) -> bool:
     return bool(m) and "?" not in _QUOTED.sub(" ", x[m.end():])
 
 
+def _promo_part(x: str) -> bool:
+    """Başlık parçası dizi tanıtımı mı ("16. Bölüm Tanıtımı", "Ön Tanıtım", "Ön Gösterim"; soru başlığı değil)."""
+    m = _PROMO.search(x)
+    return bool(m) and "?" not in _QUOTED.sub(" ", x[m.end():])
+
+
 def is_trailer(title: str, description: str = "") -> bool:
     """Başlıkta fragman/trailer/teaser geçiyor mu (römork anlamı ve fragmandan soru olarak söz eden başlık parçası hariç, `_trailer_part`)
-    ya da açıklamanın ilk ~200 karakterinde güçlü fragman ifadesi."""
+    ya da açıklamanın ilk ~200 karakterinde güçlü fragman ifadesi; ya da dizi bağlamında (bölüm, sezon, final, dizi — başlıkta ya da
+    açıklamanın başında) "tanıtım(ı)" / "ön tanıtım" / "ön gösterim" ("Üniversitemizin tanıtım filmi", "Yeni iPhone ön gösterim" değil)."""
     parts = re.split(r"\s*[|｜•·]\s*|\s+[-–—]\s+|:\s+", _VEHICLE.sub(" ", title or ""))
-    return any(_trailer_part(x) for x in parts) or bool(_DESC_TRAILER.search(_VEHICLE.sub(" ", (description or "")[:200])))
+    if any(_trailer_part(x) for x in parts) or bool(_DESC_TRAILER.search(_VEHICLE.sub(" ", (description or "")[:200]))):
+        return True
+    ctx = bool(_SERIES_CTX.search(title or "")) or bool(_SERIES_CTX.search((description or "")[:200]))
+    return ctx and any(_promo_part(x) for x in parts)
+
+
+_TR_UNITS = ["", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+_TR_TENS = ["", "on", "yirmi", "otuz", "kırk", "elli", "altmış", "yetmiş", "seksen", "doksan"]
+
+
+def tr_number(n: int) -> str:
+    """1-999 yazıyla ("on altı", "yüz", "iki yüz beş")."""
+    n = int(n)
+    if n <= 0 or n >= 1000:
+        return str(n)
+    out = []
+    if n >= 100:
+        out.append(("" if n // 100 == 1 else _TR_UNITS[n // 100] + " ") + "yüz")
+    if n % 100 >= 10:
+        out.append(_TR_TENS[n % 100 // 10])
+    if n % 10:
+        out.append(_TR_UNITS[n % 10])
+    return " ".join(out)
+
+
+def tr_ordinal(n: int) -> str:
+    """Türkçe sıra sayısı yazıyla: 1 → birinci, 2 → ikinci, 4 → dördüncü, 16 → on altıncı, 100 → yüzüncü (ünlü uyumu; seslendirme için).
+    Sayı yazıyla söylenemiyorsa (0, 1000+) "16." biçimi döner."""
+    w = tr_number(n)
+    if not w or w.isdigit():
+        return f"{n}."
+    last = w.split()[-1]
+    v = [c for c in last if c in "aeıioöuü"][-1]
+    sv = {"a": "ı", "ı": "ı", "e": "i", "i": "i", "o": "u", "u": "u", "ö": "ü", "ü": "ü"}[v]
+    if last.endswith("t"):  # dört → dördüncü
+        last = last[:-1] + "d"
+    suffix = ("" if last[-1] in "aeıioöuü" else sv) + "nc" + sv
+    return " ".join(w.split()[:-1] + [last + suffix])
+
+
+def _tr_cap(t: str) -> str:
+    return (("İ" if t[0] == "i" else "I" if t[0] == "ı" else t[0].upper()) + t[1:]) if t else t
+
+
+def promo_info(title: str, description: str = "") -> dict:
+    """Fragman başlığından tanıtımın türü: {tur: fragman|teaser|tanitim|on_tanitim|on_gosterim, no (2. fragman → 2), bolum (16. Bölüm → 16),
+    sezon, yeniSezon, final, label (Türkçe büyük harf etiket: "16. BÖLÜM 2. FRAGMAN", "16. BÖLÜM TANITIMI", "16. BÖLÜM ÖN GÖSTERİM",
+    "FİNAL FRAGMANI", "2. SEZON TANITIMI", "2. FRAGMAN"; sıradan film fragmanında None → eski etiket kuralı), text (giriş cümlesi,
+    yazıyla: "On altıncı bölümün ikinci fragmanı.")}. Kullanıcı isteği, 24 Ekim: bir bölümün tanıtımı, 1./2. fragmanı, ön tanıtımı ve ön
+    gösterimi ayrı videolardır; hangisi olduğu etikette ve girişte söylenir."""
+    t = re.sub(r"\s+", " ", str(title or "")).replace("İ", "i").replace("I", "ı").lower()
+    t = _VEHICLE.sub(" ", t)
+    g = lambda m: next((x for x in m.groups() if x), None) if m else None  # noqa: E731
+    bolum = g(re.search(r"(?<!\w)(?:(\d{1,3})\s*\.?\s*b[öo]l[üu]m\w*|b[öo]l[üu]m\s*(\d{1,3})(?!\w)|episode\s*(\d{1,3})(?!\w))", t))
+    sezon = g(re.search(r"(?<!\w)(?:(\d{1,2})\s*\.?\s*sezon\w*|season\s*(\d{1,2})(?!\w)|s(\d{1,2})e\d+(?!\w))", t))
+    new_season = bool(re.search(r"(?<!\w)(?:yeni|new)\s+(?:sezon|season)\w*", t))
+    season_finale = bool(re.search(r"(?<!\w)(?:sezon\s+finali|season\s+finale)", t))
+    final = season_finale or bool(_FINAL_PH.search(t))
+    no = g(re.search(r"(?<!\w)(\d{1,2})\s*\.\s*(?=(?:[öo]n\s*)?(?:fragman|trailer|teaser|tan[ıi]t[ıi]m)\w*(?!\w))", t)
+           or re.search(r"(?<!\w)(?:fragman|trailer|teaser|tan[ıi]t[ıi]m)\w*\s*#\s*(\d{1,2})(?!\w)|(?<!\w)(?:trailer|teaser)\s+(\d)(?!\w)|(?<!\w)(?:fragman|tan[ıi]t[ıi]m)\w*\s+(\d{1,2})\s*$", t))
+    tur = ("on_gosterim" if re.search(r"(?<!\w)[öo]n\s*g[öo]ster[iı]m", t) else "on_tanitim" if re.search(r"(?<!\w)[öo]n\s*tan[ıi]t[ıi]m", t)  # "sezon tanıtımı" ön tanıtım değil
+           else "teaser" if re.search(r"(?<!\w)teaser", t) else "tanitim" if _PROMO.search(t) else "fragman")
+    bolum, sezon, no = (int(bolum) if bolum else None), (int(sezon) if sezon else None), (int(no) if no else None)
+    if no is not None and no == bolum and not re.search(r"(?<!\w)\d{1,2}\s*\.\s*b[öo]l[üu]m\w*\s+\d{1,2}\s*\.", t):
+        no = None  # "16. Bölüm Fragmanı": 16 bölüm numarasıdır, fragman sırası değil
+    head = f"{bolum}. BÖLÜM" if bolum else f"{sezon}. SEZON" if sezon else "YENİ SEZON" if new_season else ""
+    if season_finale and not bolum:
+        head = "SEZON FİNALİ"
+    elif final:
+        head = f"{head} FİNAL".strip()
+    has_head = bool(head)
+    kind = {"on_gosterim": "ÖN GÖSTERİM", "on_tanitim": "ÖN TANITIM", "teaser": "TEASER", "tanitim": "TANITIMI" if has_head else "TANITIM",
+            "fragman": f"{no}. FRAGMAN" if no else "FRAGMANI" if has_head else ""}[tur]
+    label = " ".join(x for x in (head, kind) if x)
+    if not (has_head or no or tur in ("on_gosterim", "on_tanitim", "tanitim")):
+        label = ""  # sıradan film fragmanı / teaser: etiket kuralı değişmez (YENİ FRAGMAN / FRAGMAN)
+    if len(label) > 30:
+        label = label[:31].rsplit(" ", 1)[0] if " " in label[:31] else label[:30]
+    # giriş cümlesi (seslendirme; sayılar yazıyla)
+    core = {"on_gosterim": "ön gösterim", "on_tanitim": "ön tanıtımı", "teaser": "kısa fragmanı", "tanitim": "tanıtımı",
+            "fragman": f"{tr_ordinal(no)} fragmanı" if no else "fragmanı"}[tur]
+    if bolum:
+        hs, gen, abl = f"{tr_ordinal(bolum)} bölüm", f"{tr_ordinal(bolum)} bölümün", f"{tr_ordinal(bolum)} bölümden"
+    elif season_finale:
+        hs, gen, abl = "sezon finali", "sezon finalinin", "sezon finalinden"
+    elif sezon:
+        hs, gen, abl = f"{tr_ordinal(sezon)} sezon", f"{tr_ordinal(sezon)} sezonun", f"{tr_ordinal(sezon)} sezondan"
+    elif new_season:
+        hs, gen, abl = "yeni sezon", "yeni sezonun", "yeni sezondan"
+    elif final:
+        hs, gen, abl = "final bölümü", "final bölümünün", "final bölümünden"
+    else:
+        hs = gen = abl = ""
+    if not label:
+        text = ""
+    elif final and bolum:
+        text = f"{hs}, final {core}." if tur != "on_gosterim" else f"{hs}, finalden ön gösterim."
+    elif tur == "on_gosterim":
+        text = f"{abl} ön gösterim." if abl else "Ön gösterim."
+    elif tur == "tanitim":
+        text = f"{hs} tanıtımı." if hs else "Tanıtım."
+    elif hs:
+        text = f"{gen} {core}."
+    else:
+        text = f"{core}." if tur != "fragman" else (f"{tr_ordinal(no)} fragman." if no else "Fragman.")
+    return {"tur": tur, "no": no, "bolum": bolum, "sezon": sezon, "yeniSezon": new_season, "final": final, "label": label or None,
+            "text": _tr_cap(text) if text else None}
 
 
 def _strip(t: str) -> str:
@@ -199,23 +321,25 @@ def film_name(title: str, uploader: str = "") -> tuple[str, str]:
     for part in parts:  # ilk anlamlı parça (fragman kelimesi, platform, kanal adı ya da yalnız kalite yazısı olan parçalar atlanır)
         m = _PHRASE.search(part)
         cand = part
-        if m:  # fragman ifadesinden önce ad varsa o ("Gladiator II - Resmi Fragman"), yoksa sonrası ("TEASER - Avatar")
+        if m:  # fragman ifadesinden önce ad varsa o ("Gladiator II - Resmi Fragman"), yoksa sonrası ("TEASER - Avatar"); yalnız bölüm/sezon
+            # sözü olan ön kısım ad değildir ("Bölüm 45 Fragman - Uzak Şehir" → Uzak Şehir)
             before, after = _strip(_QUALITY.sub(" ", part[:m.start()])), _strip(_QUALITY.sub(" ", part[m.end():]))
-            cand = before if len(re.sub(r"[\W\d_]", "", before)) >= 2 else after
+            cand = before if len(re.sub(r"[\W\d_]", "", _FINAL_PH.sub(" ", _SEASON_PH.sub(" ", _EPISODE.sub(" ", before))))) >= 2 else after
         cand = _strip(_QUALITY.sub(" ", _PHRASE.sub(" ", cand)))
         if len(re.sub(r"[\W\d_]", "", cand)) < 2 or _PLATFORM.match(cand) or (up and cand.casefold() == up) or _FAN.match(cand):
             continue
         chosen = cand
         break
     chosen = _STUDIO_PREFIX.sub("", chosen)
-    ep = _EPISODE.search(chosen)
+    ep = _EPISODE.search(chosen) or _EPISODE.search(t)  # bölüm başlığın başka parçasında da olabilir ("Bölüm 45 Fragman - Uzak Şehir")
     bolum = _strip(ep.group(0)) if ep else ""
-    if ep:
-        chosen = chosen[:ep.start()] + " " + chosen[ep.end():]
+    if ep and _EPISODE.search(chosen):
+        chosen = _EPISODE.sub(" ", chosen, count=1)
+    chosen = _FINAL_PH.sub(" ", _SEASON_PH.sub(" ", chosen))  # "2. Sezon", "Yeni Sezon", "Final Bölümü", "(Final)" ad değil
     chosen = re.sub(r"\s+(?:filmi|dizisi)$", "", _strip(chosen), flags=re.I)
     chosen = _strip(chosen)
-    if len(re.sub(r"[\W\d_]", "", chosen)) < 2:  # ad bulunamadı: başlığın fragman kelimeleri atılmış hali, o da yoksa boş
-        chosen = _strip(_QUALITY.sub(" ", _PHRASE.sub(" ", re.sub(r"[|｜•·]", " ", t))))
+    if len(re.sub(r"[\W\d_]", "", chosen)) < 2:  # ad bulunamadı: başlığın fragman/bölüm kelimeleri atılmış hali, o da yoksa boş
+        chosen = _strip(_QUALITY.sub(" ", _FINAL_PH.sub(" ", _SEASON_PH.sub(" ", _EPISODE.sub(" ", _PHRASE.sub(" ", re.sub(r"[|｜•·]", " ", t)))))))
         chosen = chosen if len(re.sub(r"[\W\d_]", "", chosen)) >= 2 and not _PLATFORM.match(chosen) else ""
     return _case(chosen)[:80], _case(bolum)
 
@@ -872,7 +996,11 @@ def fetch(url: str, instruction: str = "", kare: bool = False) -> dict:
     except Exception:  # ad ayıklama hiçbir zaman indirmeyi düşürmesin
         trailer, film, bolum = False, "", ""
     series = bool(bolum or re.search(r"sezon|season|episode|dizi|series", f"{title} {caption[:200]}", re.I))
-    social.update({"trailer": trailer, "film": film, "bolum": bolum,
+    try:  # dizi tanıtım türü (16. bölüm 2. fragman, tanıtım, ön tanıtım, ön gösterim): etiket ve giriş cümlesi wa_video'da
+        promo = promo_info(title, caption) if trailer else None
+    except Exception:
+        promo = None
+    social.update({"trailer": trailer, "film": film, "bolum": bolum, "promo": promo,
                    "tags": [str(x) for x in (info.get("tags") or [])[:15]]})
     # mizah videosu haber sitelerinde aranmaz (haber değil; 75 sn boşuna beklenmesin); benzer video (sıfırdan) da: bilgi yalnız
     # referansın kendisinden (döküm, kareler, açıklama)
@@ -886,7 +1014,7 @@ if __name__ == "__main__":
         if "--film" in sys.argv:  # ağsız deneme: fragman mı, film adı ne
             t = sys.argv[sys.argv.index("--film") + 1]
             f, b = film_name(t)
-            print(json.dumps({"ok": True, "trailer": is_trailer(t), "film": f, "bolum": b}, ensure_ascii=False))
+            print(json.dumps({"ok": True, "trailer": is_trailer(t), "film": f, "bolum": b, "promo": promo_info(t) if is_trailer(t) else None}, ensure_ascii=False))
             sys.exit(0)
         if "--sections" in sys.argv:  # deneme: python3 scripts/social_video.py --sections URL 754-770,1200-1215 [--tag ad]
             u, rng = sys.argv[sys.argv.index("--sections") + 1], sys.argv[sys.argv.index("--sections") + 2]
