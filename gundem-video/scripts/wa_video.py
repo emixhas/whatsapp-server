@@ -1743,9 +1743,12 @@ def build(job: dict) -> dict:
     # film adı: panel yalnız başlık fragman diye tanındıysa verir; "fragman: <link>" ile istenen başka başlıktaki ("Video by …") ad
     # ayıklaması film adı sayılmaz, Claude adı karelerden ve açıklamadan okur
     film = str(job["film"] if "film" in job else ((social or {}).get("film") if (social or {}).get("trailer") else "") or "").strip()
-    if trailer:  # fragman baştan sona kendi sesiyle oynamaz: sesli bölüm yalnız açıkça istenirse, toplam en çok 8 sn
+    if trailer:  # fragman baştan sona kendi sesiyle oynamaz: sesli bölüm yalnız açıkça istenirse, toplam en çok 8 sn (fragman takibi işte verir: soundSeconds)
         full_sound = False
-        max_sound = tr_cfg["maxSoundSeconds"]
+        try:
+            max_sound = float(job["maxSoundSeconds"]) if float(job.get("maxSoundSeconds") or 0) > 0 else tr_cfg["maxSoundSeconds"]
+        except (TypeError, ValueError):
+            max_sound = tr_cfg["maxSoundSeconds"]
     if summary:  # özet de baştan sona kendi sesiyle oynamaz: en çok bir kısa alıntı (8 sn; talimat "sesi kapat" derse hiç)
         full_sound = False
         max_sound = 0.0 if NO_BITE.search(instruction) else float(sum_cfg["maxSoundSeconds"])

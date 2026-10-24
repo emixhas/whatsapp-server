@@ -49,6 +49,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 • haftanın en çok izlenenlerini üret
 • en çok izlenen saatler · altın saat tekrarını aç / kapat / şimdi yap
 • sondakika.com'u kontrol et · sondakika takibini aç / kapat — 5 dakikada bir bakılır, düşen her yeni haber onaysız son dakika videosu olur
+• fragman takibi — izlenen YouTube kanalları, kayıtlı son fragmanları, bugünkü üretim · fragman takibini aç / kapat · fragman kanallarını tara (şimdi) · fragman kanalı ekle @NetflixTurkiye / fragman kanalı çıkar @NetflixTurkiye (kanalın linki de olur) — kanallar 10 dakikada bir taranır, ilk taramada yalnız son fragman kaydedilir, sonra düşen her yeni fragman kendiliğinden fragman analizi olur (kanca + fragmandan sahneler + en çarpıcı anların orijinal sesi) ve bağlı hesaplarda yayınlanır (panel 📡 Otomatik içerikler → Fragman takibi: kanal listesi, yayın onayı, günlük sınır)
 
 📤 *Yayın ve hesaplar*
 • instagram'a yayınla · tiktok'a yayınla · youtube'a yayınla (son video)

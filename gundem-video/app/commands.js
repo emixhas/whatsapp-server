@@ -405,6 +405,26 @@ export function parseCommand(raw) {
   const tu = fold(t).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
   if (SELF_UPDATE.test(tu)) return { action: /\?\s*\S{0,4}\s*$/u.test(String(raw).trim()) ? "update_check" : "self_update", reply: "" };
   if (UPDATE_CHECK.test(tu)) return { action: "update_check", reply: "" };
+  // 🎬 Fragman takibi (kullanıcı isteği, 24 Ekim): "fragman takibi" / "fragman takibi durumu" → durum; "fragman takibini aç / kapat / durdur / başlat";
+  // "fragman kanallarını tara" / "fragmanları tara" / "fragman kanallarını kontrol et" → şimdi tara; "fragman kanalı ekle @NetflixTurkiye" /
+  // "fragman kanalı çıkar @NetflixTurkiye" (kanalın linki ya da UC… kimliği de olur). Linkli mesaj kurallarından ÖNCE: kanal linki "video linkini
+  // gönderin" yanıtına ya da açma kuralına düşmesin. Tek fragman linki ve "fragman yap" talimatı buraya girmez (takip/kanal sözü yok).
+  {
+    const tt = t.replace(/[:;–—-]+/g, " ").replace(/\s+/g, " ").trim(); // "ekle: @kanal", "takibi - kapat"
+    const twTrack = /(^| )fragman (takibi|takibini|takibine|takip)( |$)/.test(tt);
+    const twChan = /(^| )fragman kanal\S*( |$)/.test(tt) || /(^| )fragmanları (tara|tarasın|kontrol et)( |$)/.test(tt);
+    if (twTrack || twChan) {
+      const ch = (String(raw).match(/(https?:\/\/[^\s<>"']*youtube\.com\/[^\s<>"']+|(?:^|\s)@[\w.-]{2,}|(?:^|\s)UC[\w-]{20,})/i) || [""])[0].trim().replace(/[).,;!?]+$/, "");
+      if (/(^| )(ekle|eklesene|ekleyin|ekler misin|eklenecek|eklensin)( |$)/.test(tt)) return ch ? { action: "trailer_watch", add: ch, reply: "" } : { action: "none", reply: "Hangi kanalı ekleyeyim? Kanal adını @ ile ya da linkini yazın: fragman kanalı ekle @NetflixTurkiye" };
+      if (/(^| )(çıkar|çıkart|çıkarın|sil|silin|kaldır|kaldırın)( |$)/.test(tt)) return ch ? { action: "trailer_watch", remove: ch, reply: "" } : { action: "none", reply: "Hangi kanalı çıkarayım? fragman kanalı çıkar @NetflixTurkiye" };
+      if (/(^| )(tara|tarasın|tarayın|kontrol et|bak|şimdi)( |$)/.test(tt)) return { action: "trailer_watch", scan: true, reply: "" };
+      if (twTrack) { // "fragman kanallarına bayıldım" gibi fiilsiz kanal sözü komut değil (aşağıdaki yollara düşer)
+        if (/(^| )(kapat|kapatın|kapa|durdur|durdurun|iptal et|devre dışı bırak)( |$)/.test(tt)) return { action: "trailer_watch", on: false, reply: "" };
+        if (/(^| )(aç|açın|başlat|başlatın|etkinleştir|devam et)( |$)/.test(tt)) return { action: "trailer_watch", on: true, reply: "" };
+        return { action: "trailer_watch", reply: "" };
+      }
+    }
+  }
   // "youtube'dan X'i aç", "X şarkısını çal", "git youtube'da X'i oynat". Linkli mesajda fiil tam kelime olmalı: YouTube linkinin yanına
   // yazılan talimattaki "amaç", "kaç", "açıkla" (kullanıcı isteği, 18 Ekim: "<fragman linki> … amaç bir filmin fragmanını analiz edip…")
   // müzik açma sanılmasın; link aşağıda sosyal medya videosuna (fragman analizi) gider. Kibar/ekli emir biçimleri yine açar ("açar mısın",

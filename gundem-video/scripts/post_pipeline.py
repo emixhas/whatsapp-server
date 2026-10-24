@@ -84,6 +84,14 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     # WhatsApp'tan gönderilen görüntüyle yapılan haber: sahibi önce izlesin, "onay" ile yayınlansın (waVideo.autoPublish açılabilir)
     if meta.get("userVideo") and not (s.get("waVideo") or {}).get("autoPublish"):
         return [], "anlık", "gönderdiğiniz görüntü ya da sosyal medya linkiyle yapılan haber önce size gelir, onayınızla yayınlanır"
+    # 🎬 fragman takibi (kullanıcı isteği, 24 Ekim: kanalda yeni fragman düşünce "yayınlasın"): bağlı TÜM hesaplara, anlık/değer kuralları ve
+    # YouTube günlük ek hakkı aranmaz (yayın onayı istenirse userVideo yukarıda yakaladı)
+    if meta.get("trailerAuto"):
+        extra = [p for p in conn if p not in chosen]
+        if extra:
+            print(f"🎬 fragman takibi: bağlı tüm hesaplarda otomatik paylaşılıyor ({', '.join(chosen + extra)})")
+        chosen += extra
+        return [p for p in chosen if p in conn], "anlık", "bağlı yayın hesabı yok (Ayarlar → Yayın hesapları)"
     auto_all = schedule_enabled() or bool(s.get("autoMode"))
     if auto_all:
         extra = [p for p in conn if p not in chosen]

@@ -1545,6 +1545,51 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     olmayan iş 60); `tsc --noEmit` temiz; KareVideo 8 karesi (kanca, intro, giriş, bölüm bandı 1 ve 2, küçük etiket, kapanış, outro) Remotion
     still ile gözle doğrulandı. Gerçek YouTube indirmesi (10 dk 1080p dosya boyutu), Mac'te 10 dakikalık Remotion render süresi, 60 MB üstü
     WhatsApp gönderimi ve YouTube'un kare videoyu uzun video sayması DENENMEDİ.
+- 🎬 Fragman takibi (kullanıcı isteği, 24 Ekim: "yayınlanan YouTube kanallarının fragmanlarını panele gireyim, kanalları tarasın, en son
+  yayınladığı fragmanı kaydetsin, yeni fragman düşerse anında fragmandan sahneler koyarak, çarpıcı yerlerinin orijinallerini de koyarak kancalı
+  bir yapıyla yayınlasın"; `scripts/trailer_watch.py`, `server.js trailerWatchCfg/trailerWatchScan/twKick`, `settings.trailerWatch` {enabled true,
+  intervalMin 10 (2-1440), channels [], maxAgeHours 24, maxPerDay 4 (≤20), autoPublish true, notify false, onlyTrailers true, soundSeconds 10
+  (0-30; 0 = orijinal ses yok), duration 0 (0 = fragman analizi süresi; yoksa 20-60)}): fragman analizinin ("Fragman analizi" yukarıda) üstüne
+  kurulu otomatik kaynak. Kanallar panel 📡 Otomatik içerikler → "📡 Fragman takibi" (metin alanı: her satıra @kanal, kanal linki ya da UC…
+  kimliği; "Kanalları kaydet" kaydedip hemen tarar; "Kanalları şimdi tara"; altında kanal listesi + kayıtlı son fragmanlar + sıra/üretim durumu)
+  ya da WhatsApp ("fragman kanalı ekle @NetflixTurkiye", "fragman kanalı çıkar …", "fragman kanallarını tara", "fragman takibi" durum, "fragman
+  takibini aç / kapat"; `commands.js trailer_watch`, linkli mesaj kurallarından ÖNCE — kanal linki "video linkini gönderin" yanıtına ya da açma
+  kuralına düşmez; fiilsiz "fragman kanallarına bayıldım" komut değil; "fragman yap <link>" ve "fragman: <link>" yine fragman analizi). Tarama
+  (`trailer_watch.py --scan`, panelde `intervalMin` dakikada bir ve açılıştan sonraki ilk dakikada; `--status`, `--resolve X`): kanal kimliği bir
+  kez çözülür (kanal sayfasındaki externalId / channelId / canonical; olmazsa yt-dlp -J --playlist-items 0; çözülemeyen kanalın hatası kartta ve
+  durum yanıtında, diğer kanallar yine taranır), videolar YouTube'un kanal RSS akışından (feeds/videos.xml?channel_id=UC…; son 15 video, kanal
+  başına tek istek, çerez ve API anahtarı gerekmez), fragman kararı `social_video.is_trailer` (başlık + açıklama; onlyTrailers false → kanalın her
+  yeni videosu). İLK taramada kanalın en son fragmanı yalnız KAYDEDİLİR (`first`; üretilmez — eski fragmanlar kuyruğa dolmasın); sonraki
+  taramalarda kayıtlı son fragmandan yeni, maxAgeHours'tan genç ve daha önce görülmemiş fragmanlar (eskiden yeniye) yeni sayılır; kanalın son
+  fragmanı güncellenir (24 saatten yaşlı yeni fragman üretilmez ama kayıt ilerler), görülenler 14 gün saklanır, listeden çıkarılan kanal
+  unutulur, aynı kanal iki yazımla tektir (`channel_key` = `server.js twKey`: @handle küçük harf | UC… | c/Ad). Durum `data/trailer_watch.json`
+  {channels: {key: {input, channelId, name, lastVideoId, lastTitle, lastPublished, lastTs, lastUrl, error, first}}, seen, lastScan}. Panel
+  (`trailerWatchScan`): yeni fragman → günlük sınıra bakılır (`twToday`: bugün üretime giren, hatalılar dahil; sıradakiler de sayılır), dolarsa
+  "atlandı (günlük sınır)"; takip kapalıysa "atlandı (kapalı)"; yoksa sıraya (`twPending`; `data/trailer_watch_done.json` {videoId: {state
+  sırada | hazırlanıyor | üretimde | üretildi | hata | atlandı, title, channel, url, day, video, error}}, 30 gün; yeniden başlatmada "sırada"
+  olanlar kalır). `twKick` (taramadan sonra ve dakikada bir; aynı anda tek fragman; bir link indiriliyorken — socialBusy — bekler): kayıt
+  "hazırlanıyor", log "🎬 fragman takibi: … hazırlanıyor", `notify` açıksa WhatsApp'a tek satır, dinlenmedeyse `restEnd` (kullanıcı "anında" dedi;
+  sondakika gibi), sonra `socialVideoNews({url, instruction: "fragman yap; en çarpıcı anların orijinal sesini kullan" (soundSeconds 0 → "fragman
+  yap"; duration → "; N saniye"), auto: {twId, maxSoundSeconds}})` `twAls` (AsyncLocalStorage) bağlamında: `sendW` bu bağlamda susar (`twQuiet`;
+  onlyUserVideos kuralı — sistemin kendi ürettiği video WhatsApp'a gitmez), `push` panel loguna yazar. `socialVideoNews(auto)`: her durumda
+  fragman yolu (fragman analizi ayarı kapalı olsa da; özet/haber/tür kararı yok); `runVideoNews({trailer, trailerAuto, twId, maxSoundSeconds})`:
+  iş JSON'una `maxSoundSeconds` (wa_video fragman modunda `job.maxSoundSeconds` > 0 ise `trailer.maxSoundSeconds` 8 yerine o; bozuk değerde 8;
+  sesli bölüm yine yalnız talimat isterse — WANT_SOUND — ve fragmanın ses izi varsa), sahibin uzun iş bildirimi yok (`ownerJobStart` atlanır),
+  `startAnlik(…, {trailerAuto, priority, auto (autoPublish açıksa), userVideo (autoPublish kapalıysa)})`: sıradan otomatik işlerin önüne,
+  sahibin işlerinin arkasına (sahibin işi süren fragman üretimini de durdurup 143 ile sıraya geri alır; `twPipelineEnd` 143'ü hata saymaz);
+  env `TRAILER_AUTO=1` → assemble meta `trailerAuto` → `post_pipeline.targets`: userVideo kuralından sonra, anlık/değer kurallarından önce bağlı
+  TÜM hesaplara (YouTube değer kuralı ve günlük ek hak aranmaz; anlikAutoPublish kapalı olsa da); autoPublish kapalıysa video sahibin işi gibi
+  WhatsApp'a onaya gelir. Üretim bitince ("== bitti" satırı, `twProduced`) kayıt "üretildi" + video adı; hata kodunda "hata". Panel listesinde
+  rozet "📡 fragman" (`listVideos.trailerAuto`). `GET /api/trailerwatch` {cfg, channels, lastScan, scanning, running, pending, today, done (son
+  20), nextScanIn}, `POST /api/trailerwatch/scan`; SSE "trailerwatch" kartı yeniler (ayrıca dakikada bir). Tarama hatası (ağ, akış) otomatikte 6
+  saatte bir tek log, elle taramada her hata. Yardım listesinde satır. Video kuyruğundan (vq) geçmez; iki fragman aynı anda düşerse ikincisi
+  sırada bekler. Telif notu fragman analiziyle aynı (Content ID). Sandbox'ta denendi (ağ yok): trailer_watch birim testi (RSS örneği, kanal
+  sayfası çözümü, durum makinesi: ilk tarama kayıt, yeni/eski/fragman olmayan video, seen, maxAgeHours, onlyTrailers, akış hatası, çözülemeyen
+  kanal, aynı kanal iki yazım, 14 gün temizliği, cfg doğrulama), 26 parseCommand cümlesi, post_pipeline.targets 9 durum, server.js gerçek
+  bloğu + startAnlik sahte bağımlılıklarla 32 denetim (sıra, günlük sınır, kapalı, socialBusy, bildirim, hata, üretim kancaları, yeniden
+  başlatma, env ve sıra önceliği), sahte Claude ile üç fragman işi (sesli an alanı yok → 8 sn, 10 → 10 sn, bozuk → 8 sn; gerçek `claude`
+  PATH'te değil, tuzak tetiklenmedi), başsız Chromium'da panel kartı (durum satırı, liste, ayar yazımları, kanal kaydında tekilleştirme, tarama
+  düğmesi, 📡 rozeti). Gerçek YouTube RSS/kanal sayfası ve Mac'te uçtan uca DENENMEDİ.
 - Uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem bunu analiz edip 40 saniyelik habere dökebilir miyiz,
   videodan çarpıcı sahneleri de alarak"; `scripts/social_video.py wants_summary/download_sections`, `scripts/wa_video.py summary_prepare`,
   `prompts/ozet_secim.md` + `prompts/ozet.md`, `settings.longSummary` {enabled true, auto true, duration 40, minSeconds 600, maxSoundSeconds 8,

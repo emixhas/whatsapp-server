@@ -14,6 +14,11 @@ import { makeBrain, claudeBin, claudeEnv, claudeError, claudeModelArgs, CLAUDE_L
 import { makeWhatsApp } from "./whatsapp.js";
 import { makeVideoQueue, vqCtx, vqTag, vqWho, queueCommand, normUrl, parseBatch, cancelTopic, strictCommand } from "./videoqueue.js";
 import { makeTrendAuto } from "./trendauto.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+// 🎬 fragman takibi bağlamı: kendiliğinden üretilen fragman analizinin indirme/kurgu adımları bu bağlamda koşar; sendW susar (WhatsApp'a
+// yalnız sahibin gönderdiği link/videodan üretilenler gider; onlyUserVideos kuralı), panel logu (push) yine yazar
+const twAls = new AsyncLocalStorage();
+const twQuiet = () => !!twAls.getStore()?.quiet;
 
 // WhatsApp şifreleme kütüphanesi (libsignal) oturum açılıp kapanırken oturumun TAMAMINI (özel anahtarlar dahil)
 // konsola ve work/panel.log'a basıyor. Gizli bilgi loga ve terminale düşmesin diye bu satırlar susturulur.
@@ -112,6 +117,7 @@ function listVideos({ archived = false } = {}) {
       // çizilmiş benzer video (✏️ düzelt): panelde düğme, WhatsApp düzeltme komutunun hedefi; revision düzeltilmiş sürüm numarası
       recreated: !!meta?.recreated, revision: Number(meta?.revision) || 0, revisionOf: meta?.revisionOf || null,
       kare: !!meta?.kare, // ⬛ kare (1:1) uzun video: panelde rozet, yalnız YouTube
+      trailerAuto: !!meta?.trailerAuto, // 🎬 fragman takibinden kendiliğinden üretilen fragman analizi: panelde rozet
       // panel araması: başlıklar, seslendirme, kaynaklar, tarih, format (küçük harf, Türkçe)
       search: meta ? [meta.publishTitle, meta.titles?.A, meta.titles?.B, meta.dayLabel, meta.slotLabel, meta.formatLabel, meta.sourceName, ...(meta.hashtags || []),
         ...meta.segments.flatMap((x) => [x.title, x.narration, x.source])].filter(Boolean).join(" ").toLocaleLowerCase("tr-TR").slice(0, 4000) : f.toLowerCase(),
@@ -337,9 +343,9 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   push(formatDuration ? "▶ zamanlanmış üretim (formatın süresiyle) başlatıldı" : extraEnv.KARE === "1" ? `⬛ ${Math.round(duration / 60)} dakikalık KARE VİDEO üretimi başlatıldı (videonun tamamı kendi sesiyle, 1080x1080)` : extraEnv.ANLIK === "1" ? `⚡ ${duration} saniyelik ANLIK HABER üretimi başlatıldı` : extraEnv.HAFTALIK === "1" ? `📺 HAFTANIN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : extraEnv.GUNLUK === "1" ? `📺 GÜNÜN ÖZETİ (yatay, ~${Math.round(duration / 60)} dk) üretimi başlatıldı` : `▶ ${duration} saniyelik üretim başlatıldı`);
   const child = spawn("bash", ["pipeline.sh"], { cwd: ROOT, env: { ...ENV, ...(formatDuration ? {} : { DURATION: String(duration) }), ...extraEnv } });
   pipelineProc = child;
-  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) { state.lastVideo = path.basename(m[1]); vqProduced(state.lastVideo); } });
+  const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) { state.lastVideo = path.basename(m[1]); vqProduced(state.lastVideo); twProduced(state.lastVideo); } });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (vq.wasCancelled(child)) push("⏹ üretim durduruldu (video kuyruğundan iptal edildi)"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { pipelineProc = null; twPipelineEnd(code); setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (vq.wasCancelled(child)) push("⏹ üretim durduruldu (video kuyruğundan iptal edildi)"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
   return { ok: true, duration };
 }
 
@@ -400,6 +406,7 @@ function startAnlik(topic, duration, opts = {}) {
   // ve gönderim hatasından etkilenmez); post_pipeline ne otomatik yayınlar ne planlar
   if (Number(opts.vqNo) > 0) { env.VQ_NO = String(opts.vqNo); if (opts.vqSrc) env.VQ_SRC = String(opts.vqSrc); }
   if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
+  if (opts.trailerAuto) env.TRAILER_AUTO = "1"; // 🎬 fragman takibi (kanaldan düşen yeni fragman): meta trailerAuto → post_pipeline bağlı tüm hesaplara, YouTube değer kuralına takılmaz
   if (opts.recreate) env.RECREATE = "1"; // benzer video (sıfırdan): meta recreated → açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video"
   if (opts.kare) env.KARE = "1"; // ⬛ kare (1:1) uzun video: Remotion KareVideo, meta kare → Shorts değil, yalnız YouTube, açıklamada bölümler
   if (opts.revisionOf) { env.REVISION_OF = String(opts.revisionOf); env.REVISION_N = String(Math.max(1, Number(opts.revision) || 1)); } // ✏️ düzeltilmiş sürüm: meta revision/revisionOf
@@ -2380,7 +2387,7 @@ async function waVideoGo(v = waVid) {
   return runVideoNews(v);
 }
 // video kuyruğunun otomatik trend işi ve iptal edilen iş WhatsApp'a yazmaz (başlama/kurgu/hata mesajı yok; bitince normal video mesajı gelir)
-const sendW = async (t) => { if (vqCtx()?.quiet) return; try { await wa.send(t); } catch { /* WhatsApp bağlı değil: log yeterli */ } };
+const sendW = async (t) => { if (vqCtx()?.quiet || twQuiet()) return; try { await wa.send(t); } catch { /* WhatsApp bağlı değil: log yeterli */ } };
 // kısa mesaj modu (kullanıcı isteği, 14 Ekim): WhatsApp'a yalnız "başladı", "sorun", "başarılı" gider; ara aşamalar yalnız logda
 const waBrief = () => settings().whatsapp?.brief !== false;
 // ⏳ Sahibin uzun süren işi (kullanıcı isteği, 23 Ekim: "üretim uzun sürüyorsa ne aşamada olduğunu bana bildirmeli, bir sorun var mı yok mu
@@ -2443,9 +2450,12 @@ async function runVideoNews0(v) {
   // ⬛ kare (1:1) uzun video: link yolu socialVideoNews'te karar verir (v.kare); WhatsApp videosunda talimattan ("kare video")
   if (v.kare === undefined) v.kare = !v.social && !v.trailer && !v.summary && !rc && kareOn() && kareAsk(v.instruction);
   const kr = !!v.kare;
+  // 🎬 fragman takibi (kanaldan düşen yeni fragman, trailerWatchScan → twKick): kendiliğinden iş — WhatsApp sessiz (sendW twQuiet), sahibin
+  // uzun iş bildirimi yok, yayın otomatik (trailerWatch.autoPublish; kapalıysa onaya gelir), sahibin işleri yine önde (startAnlik auto + priority)
+  const auto = !!v.trailerAuto;
   // sahibin kendi videosu / yanıtı: yayın saati satırı (timeTail; linkte handleCommand yanıtı söyler)
   const tl = v.social || rv ? "" : timeTail({ publishAt: v.publishAt, timeDoubt: v.timeDoubt, ignoredTime: v.timeNote }, true);
-  push(`${rv ? "✏️" : kr ? "⬛" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : kr ? `kare uzun video (${v.social?.duration ? `${Math.round(Number(v.social.duration) / 60)} dk, ` : ""}videonun tamamı kendi sesiyle)` : v.trailer ? "fragman analizi" : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
+  push(`${rv ? "✏️" : kr ? "⬛" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : kr ? `kare uzun video (${v.social?.duration ? `${Math.round(Number(v.social.duration) / 60)} dk, ` : ""}videonun tamamı kendi sesiyle)` : v.trailer ? (auto ? "fragman analizi (fragman takibi: kanalda yeni fragman)" : "fragman analizi") : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
   if (rv) { if (v.src === "panel") await sendW(`✏️ Panelden düzeltme (${rv.revision}. sürüm): "${String(rv.instruction).slice(0, 120)}" — değişen sahneler yeniden çiziliyor, kalanlar korunuyor. Bitince video gelecek; eski sürüm yayınlanmayacak.`); }
   else if (!waBrief()) await sendW((kr ? `⬛ Videoyu inceliyorum: konuşmasını kelimelere döküyor, karelerine bakıyorum; sonra çarpıcı bir kanca, kısa giriş, bölüm başlıkları ve kapanış yazıp videonun TAMAMINI kendi sesiyle kare (1:1) uzun video yapacağım${v.social?.duration ? ` (kaynak ${Math.round(Number(v.social.duration) / 60)} dk; hazırlık 5-20 dk)` : " (hazırlık 5-20 dk)"}.`
     : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
@@ -2454,10 +2464,10 @@ async function runVideoNews0(v) {
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`) + tl);
   else if (!v.social) await sendW((kr ? "⬛ Başladı: videonuz kare (1:1) uzun video olarak hazırlanıyor (tamamı kendi sesiyle). Bitince video gelecek." : rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
   // sahibin uzun işi (ownerJobs): otomatik trend kuyruğu işi (quiet) değil
-  const oj = vqCtx()?.quiet ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
+  const oj = vqCtx()?.quiet || auto ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
-  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "" } : {}),
+  writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "", ...(Number(v.maxSoundSeconds) > 0 ? { maxSoundSeconds: Number(v.maxSoundSeconds) } : {}) } : {}), // fragman takibi: orijinal sesli anların toplamı (trailerWatch.soundSeconds)
     ...(["haber", "trend", "mizah"].includes(v.kind) ? { kind: v.kind } : {}),
     ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(kr ? { kare: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
     ...(rv ? { revise: { job: rv.job, instruction: rv.instruction, of: rv.of, revision: rv.revision } } : {}) });
@@ -2525,7 +2535,9 @@ async function runVideoNews0(v) {
     : !p.label || kindFold(p.label).replace(/[^a-z]/g, "") === "sondakika" ? { kind: "video", label: "SON DAKİKA", intro: "Son dakika." }
     : { kind: "video", label: p.label, intro: `${p.label.charAt(0)}${p.label.slice(1).toLocaleLowerCase("tr-TR")}.`, breaking: false }; // GÖRÜNTÜLÜ HABER, ÖZEL HABER: "Son dakika." denmez
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
-    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: true, ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
+    source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: !auto || !trailerWatchCfg().autoPublish,
+    ...(auto ? { trailerAuto: true, priority: true, ...(trailerWatchCfg().autoPublish ? { auto: true } : {}), ...(v.twId ? { twId: String(v.twId) } : {}) } : {}), // fragman takibi: otomatik + öncelikli (sahibin işleri önde); yayın onaylıysa sahibin işi gibi
+    ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
     ...(rv ? { revisionOf: rv.of, revision: rv.revision } : {}), ...(kr ? { kare: true } : {}), ...(oj ? { ownerJob: oj } : {}) });
   if (!res.ok) { if (oj) ownerJobEnd(oj); await sendW(`❌ Üretim başlatılamadı: ${res.error}`); }
   else if (res.queued) {
@@ -2605,7 +2617,8 @@ app.post("/api/videos/:name/revise", (req, res) => { const r = reviseVideo(req.p
 // sonra runVideoNews (kurgu, kesim, seslendirme). Kaynak hesabı kartlarda ve açıklamada görünür; yayın onaylı (userVideo).
 let socialBusy = false;
 // paylaşım hazırlanırken gelen linkler video kuyruğunda bekler (videoqueue.js, aşağıda vq; socialVideoNews'i yalnız kuyruk çağırır)
-async function socialVideoNews({ url, instruction = "", publishAt = null, kind = "" }) {
+// auto: 🎬 fragman takibi (twKick) — {twId, maxSoundSeconds}: her durumda fragman yolu (özet/haber kararı yok), WhatsApp sessiz (twAls)
+async function socialVideoNews({ url, instruction = "", publishAt = null, kind = "", auto = null }) {
   kind = kindOf({ kind, instruction }); // linke bitişik etiket (commands.js) ya da talimattaki açık etiket
   if (socialBusy) return { ok: false, error: "Bir paylaşım zaten indiriliyor; bitince tekrar gönderin." };
   socialBusy = true;
@@ -2648,11 +2661,11 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     // fragman sayılır ("link/mizah fragman parodisi"; inceleme, 19 Ekim)
     const news = newsRequest(instruction) || kind === "haber";
     const asked = !news && !["trend", "mizah"].includes(kind) && trailerAsk(instruction);
-    const trailer = tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer && !["trend", "mizah"].includes(kind)));
+    const trailer = !!auto || (tc.enabled !== false && !news && (asked || (tc.autoDetect !== false && !!s.trailer && !["trend", "mizah"].includes(kind))));
     // uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem analiz edip 40 saniyelik habere dökebilir miyiz,
     // çarpıcı sahneleri de alarak"): social_video.py karar verdi (uzun video ya da talimatta özet). Fragman ("analiz et", "özetle" denmiş
     // fragman linki) özet değil fragman analizidir; yalnız videonun tamamı düşük çözünürlükte indiyse (uzun video) özet yolu kalır
-    if (s.summary && (!trailer || s.summaryProxy)) {
+    if (s.summary && !auto && (!trailer || s.summaryProxy)) {
       push(`🎬 uzun video özeti: ${s.title ? `"${String(s.title).slice(0, 80)}" ` : ""}(${s.summaryReason || "özet"}; ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı"})`);
       return await runVideoNews({ files: [j.file], instruction, social: s, related: j.related || [], publishAt, summary: true, summaryProxy: !!s.summaryProxy, kind });
     }
@@ -2665,7 +2678,8 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
       push(`🎬 fragman analizi: ${film || "(ad yok)"} (${asked ? "talimatta istendi" : s.title ? "başlıktan tanındı" : "açıklamadan tanındı"}; ${secs} sn, ${j.related?.length ? `haber sitelerinde ${j.related.length} ilgili haber` : "haber sitelerinde bilgi bulunamadı, yalnız fragman ve açıklaması kullanılacak"})`);
       if (!asked) await sendW(`🎬 Bu bir fragman${film ? `: *${film}*` : ""}. ${secs} saniyelik fragman analizi hazırlanıyor (haber olarak isterseniz linki "haber yap" diye yeniden gönderin).`);
       // talimat yoksa "fragman yap": wa_video.py bunu varsayılan analiz talimatına (TRAILER_TALIMAT) çevirir
-      return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "" });
+      return await runVideoNews({ files: [j.file], instruction: instruction || "fragman yap", social: s, related: j.related || [], publishAt, trailer: true, film: s.trailer ? (s.film || "") : "",
+        ...(auto ? { trailerAuto: true, twId: auto.twId || "", maxSoundSeconds: Number(auto.maxSoundSeconds) || 0 } : {}) });
     }
     if (!waBrief()) await sendW(`🔗 Paylaşım indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.date ? ` · ${s.date}` : ""}\n${j.related?.length ? `📰 Aynı olay haber sitelerinde de var (${[...new Set(j.related.map((x) => x.site).filter(Boolean))].slice(0, 3).join(", ")}); bilgiler oradan doğrulanacak.` : kind === "mizah" ? "😄 Mizah videosu: haber sitelerinde aranmadı." : "📰 Haber sitelerinde bulunamadı; paylaşımdaki bilgiler \"iddia\" olarak aktarılacak."}`);
     // talimat yoksa boş gider: wa_video.py türe (haber / viral / mizah) içeriğe bakarak karar verir (eskiden "haber olarak anlat" yazılıp
@@ -2739,6 +2753,108 @@ function queueGate(video) {
 }
 // açılış: kuyruğu kaybolmuş "sırada" kaydı (kuyruk dosyası silinmiş) kartta sonsuza dek "⏳ Sırada" kalmasın
 { const d = igtDone(); let n = 0; for (const [u, v] of Object.entries(d)) if (v?.state === "sırada" && !vq.has(u)) { v.state = "hata"; v.error = "panel yeniden başladı, sıradan düştü"; n++; } if (n) writeJson(IGT_DONE, d); }
+// ---------- 🎬 Fragman takibi (kullanıcı isteği, 24 Ekim: "yayınlanan YouTube kanallarının fragmanlarını panele gireyim, kanalları tarasın, en son
+// yayınladığı fragmanı kaydetsin, yeni fragman düşerse anında fragmandan sahneler koyarak, çarpıcı yerlerinin orijinallerini de koyarak kancalı bir
+// yapıyla yayınlasın"): settings.trailerWatch {enabled, intervalMin 10, channels [], maxAgeHours 24, maxPerDay 4, autoPublish true, notify false,
+// onlyTrailers true, soundSeconds 10, duration 0 (0 = fragman analizi süresi)}. scripts/trailer_watch.py kanal RSS akışlarını okur (ilk taramada
+// kanalın son fragmanı yalnız KAYDEDİLİR); sonraki taramalarda yeni fragman → sıra (data/trailer_watch_done.json) → twKick: socialVideoNews fragman
+// yolu (talimat "fragman yap; en çarpıcı anların orijinal sesini kullan": kanca + fragmandan hızlı kesilmiş sahneler + en çok soundSeconds sn
+// orijinal sesli çarpıcı an) → startAnlik otomatik + öncelikli (sahibin işleri yine önde; sondakika gibi dinlenmeyi bitirir) → meta trailerAuto →
+// post_pipeline bağlı TÜM hesaplara (YouTube değer kuralına takılmaz). WhatsApp sessiz (onlyUserVideos; notify açıksa başlarken tek satır);
+// autoPublish kapalıysa video sahibin işi gibi onaya gelir. Günde en çok maxPerDay; fazlası "atlandı".
+const TW_STATE = path.join(DATA, "trailer_watch.json"); // trailer_watch.py: {channels: {key: {input, channelId, name, lastVideoId, lastTitle, lastPublished, lastTs, lastUrl, error, first}}, seen, lastScan}
+const TW_DONE = path.join(DATA, "trailer_watch_done.json"); // {videoId: {at, state: sırada|hazırlanıyor|üretimde|üretildi|hata|atlandı, title, channel, url, day, video, error}}
+const TW_DEFAULTS = { enabled: true, intervalMin: 10, channels: [], maxAgeHours: 24, maxPerDay: 4, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0 };
+const trailerWatchCfg = () => {
+  const raw = settings().trailerWatch, c = { ...TW_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) };
+  const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
+  c.enabled = !off(c.enabled); c.autoPublish = !off(c.autoPublish); c.notify = c.notify === true || ["true", "1"].includes(String(c.notify)); c.onlyTrailers = !off(c.onlyTrailers);
+  c.channels = Array.isArray(c.channels) ? [...new Set(c.channels.map((x) => String(x).trim()).filter(Boolean))] : [];
+  for (const k of ["intervalMin", "maxAgeHours", "maxPerDay"]) c[k] = Number(c[k]) > 0 ? Number(c[k]) : TW_DEFAULTS[k];
+  c.intervalMin = Math.min(1440, Math.max(2, c.intervalMin)); c.maxPerDay = Math.min(20, Math.round(c.maxPerDay));
+  c.soundSeconds = Number(c.soundSeconds) >= 0 && Number.isFinite(Number(c.soundSeconds)) ? Math.min(30, Number(c.soundSeconds)) : TW_DEFAULTS.soundSeconds; // 0 = orijinal ses yok
+  c.duration = Number(c.duration) > 0 ? Math.min(60, Math.max(20, Number(c.duration))) : 0;
+  return c;
+};
+// kanal anahtarı (trailer_watch.channel_key ile aynı): "@handle" küçük harf | UC… kimliği | "c/Ad"
+const twKey = (inp) => { const t = String(inp || "").trim(); if (/^UC[\w-]{20,}$/.test(t)) return t; const m = t.match(/youtube\.com\/(?:channel\/(UC[\w-]{20,})|@([^/?#\s]+)|(?:c|user)\/([^/?#\s]+))/i); if (m) return m[1] || (m[2] ? `@${m[2].toLowerCase()}` : `c/${m[3]}`); return `@${t.replace(/^@/, "").toLowerCase()}`; };
+const twDone = () => { const d = readJson(TW_DONE, {}); return d && typeof d === "object" && !Array.isArray(d) ? d : {}; };
+function twMark(id, st, extra = {}) {
+  const d = twDone(); d[id] = { ...(d[id] || {}), ...extra, at: Date.now(), state: st }; if (st !== "hata" && st !== "atlandı") delete d[id].error;
+  writeJson(TW_DONE, Object.fromEntries(Object.entries(d).filter(([, v]) => Date.now() - (v?.at || 0) < 30 * 864e5))); // 30 gün
+}
+const twToday = () => Object.values(twDone()).filter((v) => v.day === today() && ["hazırlanıyor", "üretimde", "üretildi", "hata"].includes(v.state)).length; // bugün üretime giren (günlük sınır)
+let twPending = Object.entries(twDone()).filter(([, v]) => v?.state === "sırada").sort((a, b) => (a[1].at || 0) - (b[1].at || 0)).map(([videoId, v]) => ({ videoId, title: v.title, channel: v.channel, url: v.url })); // yeniden başlatmada sıradakiler kalır
+let twBusy = false, twRunning = null, twLast = Date.parse((readJson(TW_STATE, {}) || {}).lastScan || "") || 0, twErrAt = 0;
+async function trailerWatchScan({ manual = false } = {}) {
+  if (twBusy) return { ok: false, busy: true, error: "Fragman kanalları taraması zaten sürüyor." };
+  const c = trailerWatchCfg();
+  if (!c.channels.length) { if (manual) push("🎬 fragman takibi: kanal listesi boş (Ayarlar → 📡 Otomatik içerikler → Fragman takibi ya da \"fragman kanalı ekle @kanal\")"); return { ok: false, error: "Kanal listesi boş; önce kanal ekleyin." }; }
+  twBusy = true; twLast = Date.now();
+  try {
+    const r = (await pyJson(["scripts/trailer_watch.py", "--scan"], 4 * 60000)) || { ok: false, error: "yanıt yok" };
+    const chans = Object.values(r.channels || {}), firsts = chans.filter((x) => x.first).length, errs = [...(r.ok ? [] : [r.error || "yanıt yok"]), ...(r.errors || [])];
+    const nn = (r.new || []).length;
+    if (manual && r.ok) { push(`🎬 fragman kanalları tarandı: ${chans.length} kanal, ${chans.filter((x) => x.lastVideoId).length} kanalın son fragmanı kayıtlı${firsts ? ` (${firsts} kanal ilk kez: son fragmanı kaydedildi, üretilmedi)` : ""} · ${nn} yeni fragman`); for (const e of errs.slice(0, 3)) push(`🎬 fragman takibi: ${e}`); }
+    else if (manual) push(`🎬 fragman kanalları taraması başarısız: ${errs[0]}`);
+    else if (!r.ok) { if (Date.now() - twErrAt > 6 * 3600000) { twErrAt = Date.now(); push(`🎬 fragman takibi: ${errs[0]}`); } }
+    else { if (firsts) push(`🎬 fragman takibi: ${firsts} kanalın son fragmanı kaydedildi (ilk tarama; üretilmez), bundan sonra düşen yeni fragmanlar üretilir`); if (errs.length && Date.now() - twErrAt > 6 * 3600000) { twErrAt = Date.now(); push(`🎬 fragman takibi: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1} kanal daha, ayrıntı panelde)` : ""}`); } }
+    const done = twDone();
+    for (const n of r.new || []) {
+      if (!n?.videoId || !n.url || done[n.videoId] || twPending.some((p) => p.videoId === n.videoId)) continue;
+      const item = { videoId: n.videoId, title: String(n.title || "").slice(0, 200), channel: String(n.channel || "").slice(0, 80), url: n.url, published: n.published || null };
+      if (!c.enabled) { twMark(n.videoId, "atlandı", { ...item, error: "fragman takibi kapalı" }); continue; }
+      if (twToday() + twPending.length >= c.maxPerDay) { twMark(n.videoId, "atlandı", { ...item, error: `günlük sınır (${c.maxPerDay}) doldu` }); push(`🎬 yeni fragman atlandı (günlük ${c.maxPerDay} sınırı doldu): ${item.channel} — ${item.title.slice(0, 70)}`); continue; }
+      twPending.push(item); twMark(n.videoId, "sırada", item);
+      push(`🎬 YENİ FRAGMAN: ${item.channel} — ${item.title.slice(0, 80)} → fragman analizi sıraya alındı`);
+    }
+    sse("trailerwatch", { new: nn });
+    twKick().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
+    return r;
+  } finally { twBusy = false; }
+}
+// sıradaki fragmanı üretime ver: aynı anda tek fragman; link indirilirken (socialBusy) bekler (socialVideoNews bitince vq.kick gibi dakikalık kontrol)
+async function twKick() {
+  if (twRunning || !twPending.length || socialBusy) return;
+  const c = trailerWatchCfg();
+  if (!c.enabled) return;
+  const it = twPending.shift(); twRunning = it;
+  twMark(it.videoId, "hazırlanıyor", { day: today() });
+  push(`🎬 fragman takibi: "${String(it.title).slice(0, 70)}" (${it.channel}) fragman analizi hazırlanıyor${c.autoPublish ? " — bitince bağlı hesaplarda yayınlanacak" : " — bitince onayınıza gelecek"}`);
+  if (c.notify) await sendW(`🎬 Yeni fragman: *${String(it.title).slice(0, 80)}* (${it.channel}). Fragman analizi hazırlanıyor; ${c.autoPublish ? "bitince bağlı hesaplarda yayınlanacak." : "bitince onayınıza gelecek."}`);
+  if (resting()) restEnd(`yeni fragman düştü: ${String(it.title).slice(0, 60)}`); // kullanıcı "anında" dedi: dinlenme beklenmez (sondakika gibi)
+  try {
+    const instruction = (c.soundSeconds > 0 ? "fragman yap; en çarpıcı anların orijinal sesini kullan" : "fragman yap") + (c.duration ? `; ${c.duration} saniye` : "");
+    const r = await twAls.run({ quiet: true, twId: it.videoId }, () => socialVideoNews({ url: it.url, instruction, auto: { twId: it.videoId, maxSoundSeconds: c.soundSeconds } }));
+    if (r?.ok) twMark(it.videoId, "üretimde", { queued: !!r.queued });
+    else twMark(it.videoId, "hata", { error: String(r?.error || "yanıt yok").slice(0, 200) });
+  } catch (e) { twMark(it.videoId, "hata", { error: String(e?.message || e).slice(0, 200) }); push(`🎬 fragman takibi hatası: ${e?.message || e}`); }
+  finally { twRunning = null; sse("trailerwatch", {}); }
+}
+// üretim bitti: anlık işin opts.twId'si fragman takibininse kayıt üretildi/hata (143: sahibin işi için durduruldu, sıraya geri alındı — hata değil)
+const twJobId = () => (anlikNow && anlikNow.at === state.startedAt ? String(anlikNow.opts?.twId || "") : "");
+function twProduced(name) { const id = twJobId(); if (id) { twMark(id, "üretildi", { video: name }); sse("trailerwatch", {}); } }
+function twPipelineEnd(code) { const id = twJobId(); if (id && code !== 0 && code !== 143 && twDone()[id]?.state !== "üretildi") { twMark(id, "hata", { error: `üretim hata ile bitti (kod ${code})` }); sse("trailerwatch", {}); } }
+function twStatusText() {
+  const c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}, chans = Object.values(st.channels || {});
+  const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal · ${c.intervalMin} dk'da bir · bugün ${twToday()}/${c.maxPerDay}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
+  const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 10)})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}`);
+  const recent = Object.entries(twDone()).map(([id, v]) => ({ id, ...v })).filter((v) => v.state !== "sırada").sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 3)
+    .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)} — ${v.state}${v.error ? ` (${v.error})` : ""}`);
+  return head + (lines.length ? `\n${lines.join("\n")}` : "\nKanal ekleyin: fragman kanalı ekle @NetflixTurkiye (ya da panelden)") + (recent.length ? `\nSon fragmanlar:\n${recent.join("\n")}` : "");
+}
+setInterval(() => {
+  const c = trailerWatchCfg();
+  if (c.enabled && c.channels.length && !twBusy && Date.now() - twLast >= c.intervalMin * 60000 - 5000) trailerWatchScan().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
+  else if (twPending.length) twKick().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
+}, 60000);
+app.get("/api/trailerwatch", (_req, res) => {
+  const st = readJson(TW_STATE, {}) || {}, c = trailerWatchCfg();
+  res.json({ cfg: c, channels: st.channels || {}, lastScan: st.lastScan || null, scanning: twBusy, running: twRunning, pending: twPending, today: twToday(),
+    done: Object.entries(twDone()).map(([videoId, v]) => ({ videoId, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 20),
+    nextScanIn: c.enabled && c.channels.length ? Math.max(0, twLast + c.intervalMin * 60000 - Date.now()) : null });
+});
+app.post("/api/trailerwatch/scan", async (_req, res) => res.json(await trailerWatchScan({ manual: true })));
 app.post("/api/igtrends/auto", (req, res) => res.json({ ok: true, reply: trendAuto.setAuto(req.body?.on !== false), auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() } }));
 
 // ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu
@@ -3768,6 +3884,33 @@ async function handleCommand(text, opts = {}) {
       reply = r.text || r.error; break;
     }
     case "ig_dups": { const r = await igDupsPlan({ days: cmd.days }); reply = r.text; break; }
+    case "trailer_watch": { // 🎬 fragman takibi: durum / aç-kapat / şimdi tara / kanal ekle-çıkar
+      const c = trailerWatchCfg();
+      if (cmd.on != null) {
+        patchSettings({ trailerWatch: { enabled: cmd.on } });
+        reply = cmd.on ? `🎬 Fragman takibi açık: ${c.channels.length} kanal ${c.intervalMin} dakikada bir taranır; yeni fragman düşünce fragman analizi üretilir${c.autoPublish ? " ve bağlı hesaplarda yayınlanır" : ", onayınıza gelir"}.${c.channels.length ? "" : " Kanal ekleyin: fragman kanalı ekle @NetflixTurkiye"}`
+          : "⏸ Fragman takibi kapatıldı: kanallar taranmaz, bekleyen fragmanlar üretilmez (kayıtlı son fragmanlar durur).";
+        if (cmd.on) twKick().catch(() => {});
+        break;
+      }
+      if (cmd.add || cmd.remove) {
+        const key = String(cmd.add || cmd.remove).trim(), list = c.channels.filter((x) => twKey(x) !== twKey(key));
+        if (cmd.add && list.length !== c.channels.length) { reply = `🎬 ${key} zaten fragman takibinde (${c.channels.length} kanal).`; break; }
+        if (cmd.remove && list.length === c.channels.length) { reply = `🎬 ${key} listede yok. Kanallar: ${c.channels.join(", ") || "—"}`; break; }
+        if (cmd.add) list.push(key);
+        patchSettings({ trailerWatch: { channels: list } });
+        reply = cmd.add ? `🎬 ${key} fragman takibine eklendi (${list.length} kanal). İlk taramada kanalın son fragmanı yalnız kaydedilir; sonra düşen her yeni fragman üretilir${c.autoPublish ? " ve yayınlanır" : ", onayınıza gelir"}.`
+          : `🎬 ${key} fragman takibinden çıkarıldı (${list.length} kanal).`;
+        if (cmd.add) trailerWatchScan().catch(() => {}); // arka planda: kanalın son fragmanı hemen kaydedilsin
+        break;
+      }
+      if (cmd.scan) {
+        const r = await trailerWatchScan({ manual: true }), nn = (r.new || []).length;
+        reply = !r.ok ? `❌ Tarama yapılamadı: ${r.error}` : `🎬 ${Object.keys(r.channels || {}).length} kanal tarandı, ${nn} yeni fragman${nn ? `:\n${r.new.slice(0, 5).map((n) => `• ${n.channel}: ${String(n.title).slice(0, 60)}`).join("\n")}` : "."}${r.errors?.length ? `\n⚠️ ${r.errors.slice(0, 2).join("; ")}` : ""}`;
+        break;
+      }
+      reply = twStatusText(); break;
+    }
     case "self_update": { const r = await selfUpdate({ source: opts.source || "panel" }); reply = updateText(r); extra = { restarting: !!r.restarting }; break; }
     case "update_check": {
       const r = await updateCheck();
