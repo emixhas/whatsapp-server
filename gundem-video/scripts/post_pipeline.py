@@ -169,8 +169,18 @@ if _at:
     plats = []
 elif not plats:
     print(f"📤 otomatik yayın yapılmadı: {why}. WhatsApp'tan \"onay\" yazarak ya da panelden yayınlayabilirsiniz.")
+PUBLISH_TIMEOUT = 25 * 60  # tek platform yüklemesi en çok 25 dk (Hostinger + Instagram işleme 6 dk + yayın isteği 3 dk + kurtarma); takılırsa süreç kesilir
+FLUSH_TIMEOUT = 40 * 60    # sıradaki videoların yüklenmesi (yalnız otomatik üretimde; sahibin videosunu bekletmez)
+
+
 def publish(plat: str) -> bool:
-    r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True)
+    print(f"📤 {plat}: yükleniyor", flush=True)  # sahibin uzun iş bildirimi aşamayı buradan okur (server.js PIPE_STAGES)
+    try:
+        r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True, timeout=PUBLISH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        # yükleme defteri (publish.py) sayesinde yeniden deneme aynı videoyu ikinci kez yüklemez (konteynerin durumu sorulur)
+        print(f"📤 {plat}: hata yükleme {PUBLISH_TIMEOUT // 60} dakikada bitmedi, kesildi", flush=True)
+        return False
     for line in r.stderr.strip().splitlines():
         if line.startswith(("🌐", "  video", "  geçici", "  !", "  ▶", "  ♪", "  💬")) and "▶ YouTube kapağı yüklendi" not in line:
             print(line, flush=True)
@@ -191,13 +201,39 @@ def publish(plat: str) -> bool:
 
 
 failed = [p for p in plats if not publish(p)]
-# sınır yüzünden bekleyen eski videolar (sınır açıldıysa; yeni video önce gider)
-fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush"], capture_output=True, text=True)
-shown = set()
-for line in fl.stdout.strip().splitlines()[:-1]:
-    print(line, flush=True)
-    if " sırası: " in line:
-        shown.add(line.split()[1])
+
+
+def queue_count() -> int:
+    q = load_json(DATA / "publish_queue.json", []) or []
+    return len(q) if isinstance(q, list) else 0
+
+
+def drain_queue(owner: bool) -> set:
+    """Sınır yüzünden bekleyen eski videolar (sınır açıldıysa; yeni video önce gider). Sahibin videosunda (WhatsApp videosu/linki, fragman,
+    kuyruk videosu — kullanıcı şikâyeti, 24 Ekim: onay bekleyen fragman "yayın adımı"nda 19 dk bekledi: kendi yayını yoktu, sıradaki eski
+    videolar yükleniyordu) sıra BURADA boşaltılmaz: tek satır yazılır, panel üretim bitince sıradakileri kendisi yükler (server.js flushAsap);
+    sahibin videosu hemen gelir. Otomatik üretimde eskisi gibi burada (en çok FLUSH_TIMEOUT)."""
+    n = queue_count()
+    if not n:
+        return set()
+    if owner:
+        print(f"📤 sırada {n} video bekliyor; sizin videonuz beklemesin diye sıradakileri panel üretim bitince yükleyecek", flush=True)
+        return set()
+    try:
+        fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush"], capture_output=True, text=True, timeout=FLUSH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print(f"📤 sıradaki videoların yüklenmesi {FLUSH_TIMEOUT // 60} dakikada bitmedi, kesildi; kalanlar panelden sürer", flush=True)
+        return set()
+    out = set()
+    for line in fl.stdout.strip().splitlines()[:-1]:
+        print(line, flush=True)
+        if " sırası: " in line:
+            out.add(line.split()[1])
+    return out
+
+
+_meta = episode_meta(Path(video).name) or {}
+shown = drain_queue(bool(_meta.get("userVideo") or (_meta.get("queue") or {}).get("no")))
 # sıra boş değilse ya da gönderim duraklatıldıysa her üretimde sıranın durumu loga (TikTok taslak sınırı görünür olsun)
 qs = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--queue"], capture_output=True, text=True)
 for line in qs.stdout.strip().splitlines()[:-1]:
@@ -210,5 +246,8 @@ if failed:
     failed = [p for p in failed if not publish(p)]
     if failed:
         print(f"📤 yayınlanamadı: {', '.join(failed)}. WhatsApp'tan \"onay\" yazarak ya da panelden tekrar deneyebilirsiniz.", flush=True)
-subprocess.run([sys.executable, str(ROOT / "scripts/analyze.py")], capture_output=True)
+try:
+    subprocess.run([sys.executable, str(ROOT / "scripts/analyze.py")], capture_output=True, timeout=10 * 60)
+except subprocess.TimeoutExpired:
+    print("📤 analiz adımı 10 dakikada bitmedi, atlandı", flush=True)
 print(json.dumps({"autopublish": plats, "kind": kind, **({"scheduled": scheduled} if scheduled else {})}, ensure_ascii=False))

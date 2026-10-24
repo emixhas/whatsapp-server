@@ -2535,6 +2535,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     konteynerin yeniden kullanımı, durumu okunamayan konteyner (hata, yükleme yok), hatalı konteyner → yeni, canlı/ölü kilit, 9 saat önceki
     gönderi 70 gönderi gerideyken bulundu, üretimden önceki eski gönderi eşleşmedi, sayfalama until, post_pipeline busy, metrik birleştirme;
     eski 8 senaryolu sahte test de geçiyor. Mevcut tekrarlar için "instagram tekrarlarını sil".
+  - Yayın adımı sahibin videosunu bekletmez (kullanıcı şikâyeti, 24 Ekim: "bu kadar sürmüyordu — Aşama: yayın adımı (19 dk'dır)", onay bekleyen
+    fragman): onay bekleyen videonun kendi yayını yoktur; `post_pipeline` yayın adımında sınır/engel yüzünden sırada bekleyen ESKİ videoları
+    `publish.py --flush` ile tek tek yüklüyordu (her Instagram yüklemesi Hostinger + işleme 2-6 dk + yayın; aynı gün 10 anlık videonun sınıra
+    takılmasıyla sıra uzundu), sahibin videosu bu yüzden WhatsApp'a 20 dk geç geliyordu. Artık sahibin videosunda (meta userVideo ya da kuyruk
+    videosu) sıra orada boşaltılmaz: "📤 sırada N video bekliyor; sizin videonuz beklemesin diye sıradakileri panel üretim bitince yükleyecek"
+    satırı → server.js `flushAsap` → dakikalık kontrol üretim yokken (dinlenmede de) hemen `--flush`. Otomatik üretimde eskisi gibi orada
+    (`drain_queue`, en çok 40 dk). Tek platform yüklemesi en çok 25 dk (`PUBLISH_TIMEOUT`; takılırsa kesilir, yükleme defteri yeniden denemede
+    ikinci kopyayı önler), analiz en çok 10 dk. Sahibin uzun iş bildirimi yayın adımının içini gösterir (`PIPE_STAGES`: "Instagram'a yükleniyor
+    (video dış sunucuya gider, Instagram işler: 2-8 dk)", "Instagram videoyu işliyor", "Instagram yayını: tamamlandı", "yayın 90 sn sonra
+    yeniden denenecek", "sıradaki eski videolar panele bırakıldı"); post_pipeline her platformdan önce "📤 <platform>: yükleniyor" yazar.
   - Reels kapağı (kullanıcı şikâyeti, 24 Ekim: "kapak görseller yüklenmiyor" → Instagram kapağı): `ig_upload` kapağı Hostinger'a yükledikten sonra dış
     adresten okunduğunu doğrular (8 × 2 sn); okunuyorsa `cover_url`, değilse ya da Hostinger yoksa ya da -kapak.jpg yoksa `thumb_offset: 0` — videonun
     İLK KARESİ zaten kapaktır (GundemVideo 0. karede Thumb), Instagram o kareyi kapak yapar; her durumda log satırı ("🌐 Hostinger: kapak yüklendi" /

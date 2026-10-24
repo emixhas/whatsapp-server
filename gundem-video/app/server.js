@@ -136,6 +136,7 @@ const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if 
   if (/^\{"autopublish"/.test(line)) { setTimeout(() => { try { finishProduction("üretim bitti"); } catch { /* yok */ } }, 5000); setTimeout(() => sendDigest("yayın bitti"), 4000); }
   if (/^✖ üretim hata/.test(line)) setTimeout(() => { try { productionFailed(line); } catch { /* yok */ } }, 1500);
   if (/^📤 (yayınlanamadı|otomatik yayın yapılmadı)/.test(line)) setTimeout(() => { try { publishFailed(line); } catch { /* yok */ } }, 1500);
+  if (/^📤 sırada \d+ video bekliyor; .*panel/.test(line)) flushAsap = true; // sahibin videosu sırayı beklemedi: sıradakiler üretim bitince (dakikalık kontrol)
   // Instagram geçici engeli ("too many actions"): bekleme başlayınca ve sıradaki videolar yüklenince WhatsApp'a (kullanıcı isteği, 22 Ekim)
   if (/^📤 instagram: sınır doldu|^📤 instagram sırası: .*duraklatıldı/.test(line)) setTimeout(() => { try { igHoldNotify(); } catch { /* yok */ } }, 1500);
   if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan\)$|^📤 instagram: hata .*\(sıradan, .*\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
@@ -2417,6 +2418,12 @@ const PIPE_STAGES = [
   [/^-- 3\/4 seslendirme/, () => "seslendirme (ses modeli)"], [/^-- görseller/, () => "sahneler ve görseller yerleştiriliyor"],
   [/^🔤 altyazı senkronu/, () => "altyazı sesle eşleniyor"], [/^-- 4\/4 render/, () => "video çiziliyor (Remotion render; süreye göre 2-10 dk)"],
   [/^-- kapaklar/, () => "kapaklar çiziliyor"], [/^== bitti/, () => "video hazır; yayın adımı ve onay mesajı"], [/^-- yayın ve analiz/, () => "yayın adımı"],
+  // yayın adımının içi (post_pipeline / publish.py satırları): sahip hangi platformun beklediğini görsün
+  [/^📤 (youtube|instagram|tiktok): yükleniyor/, (m) => `${{ youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" }[m[1]]}'a yükleniyor${m[1] === "instagram" ? " (video dış sunucuya gider, Instagram işler: 2-8 dk)" : ""}`],
+  [/^🌐 Hostinger: yüklendi/, () => "Instagram videoyu işliyor (2-6 dk)"],
+  [/^📤 (youtube|instagram|tiktok): (tamam|zaten yayında|hata|sınır doldu)/, (m) => `${{ youtube: "YouTube", instagram: "Instagram", tiktok: "TikTok" }[m[1]]} yayını: ${m[2] === "tamam" ? "tamamlandı" : m[2]}`],
+  [/^📤 tekrar denenecek/, () => "yayın 90 sn sonra yeniden denenecek"],
+  [/^📤 sırada \d+ video bekliyor/, () => "yayın adımı bitiyor; sıradaki eski videolar panele bırakıldı (sizin videonuz beklemiyor)"],
 ];
 function ownerStageOf(line, table) { for (const [re, fn] of table) { const m = line.match(re); if (m) return fn(m, line); } return null; }
 function ownerLine(line) {
@@ -4264,6 +4271,7 @@ app.post("/api/weekly-report", async (_req, res) => res.json(await weeklyReport(
 
 // ---------- arka plan görevleri: metrik senkronu, günlük rapor
 let lastReportDay = null, lastFlush = 0, retentionTry = 0;
+let flushAsap = false; // post_pipeline sahibin videosunda sırayı boşaltmadı ("📤 sırada N video bekliyor; … panel … yükleyecek"): üretim biter bitmez burada yüklenir
 setInterval(async () => {
   const s = settings();
   const rest = resting(); // dinlenmede yalnız hafif izlenme/abone senkronu sürer (grafikte gün boşluğu kalmasın)
@@ -4285,9 +4293,9 @@ setInterval(async () => {
   // bekleme (publish_hold.json) son flush'tan sonra bittiyse saati ve dinlenmeyi beklemeden dene: sıradaki video engel kalkar kalkmaz
   // yüklensin (yükleme hafif, model açmaz)
   const holdEnded = Object.values(readJson(path.join(DATA, "publish_hold.json"), {}) || {}).some((h) => { const u = Date.parse(h?.until || ""); return u && u <= Date.now() && u > lastFlush; });
-  if (rest && !holdEnded) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca
-  if (anyConnected && !state.running && (Date.now() - lastFlush > 60 * 60000 || holdEnded) && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
-    lastFlush = Date.now();
+  if (rest && !holdEnded && !flushAsap) return; // YouTube sırası ve günlük rapor (Claude) sistem uyanınca (yükleme hafif: bekleme bitince ve sahibin işi sırayı bıraktığında dinlenmede de)
+  if (anyConnected && !state.running && (Date.now() - lastFlush > 60 * 60000 || holdEnded || flushAsap) && existsSync(path.join(DATA, "publish_queue.json")) && readJson(path.join(DATA, "publish_queue.json"), []).length) {
+    lastFlush = Date.now(); flushAsap = false;
     flushQ = true; // sıradaki videolar yükleniyor: güncelleme yeniden başlatmayı bekler
     const r = await py("publish.py", ["--flush"]).finally(() => { flushQ = false; });
     for (const l of String(r.stdout || "").trim().split("\n").slice(0, -1)) if (l.startsWith("📤")) push(l);
