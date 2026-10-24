@@ -796,15 +796,29 @@ def ig_upload(path: Path):
     try:
         base = pub_srv.ensure(path.name)
         video_url = base + "/videos/" + urllib.parse.quote(path.name)
-        params = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true"}
+        # kapak: Hostinger varsa kendi kapağımız (-kapak.jpg) cover_url ile; dış adresten okunduğu doğrulanır (okunamazsa Instagram konteyneri
+        # düşürebiliyor ya da kapaksız bırakıyordu). Hostinger yoksa ya da kapak verilemezse thumb_offset 0: videonun İLK KARESİ zaten kapaktır
+        # (GundemVideo 0. karede Thumb çizer), Instagram o kareyi kapak yapar
+        params = {"media_type": "REELS", "video_url": video_url, "caption": caption, "share_to_feed": "true", "thumb_offset": "0"}
         cover = path.with_name(path.stem + "-kapak.jpg")
         if cover.exists() and hostinger.configured():
             try:
-                params["cover_url"] = hostinger.upload(cover, f"videos/{cover.name}")
+                cover_url = hostinger.upload(cover, f"videos/{cover.name}")
                 pub_srv.extra.append(f"videos/{cover.name}")
-                print(f"🌐 Hostinger: kapak yüklendi {cover.name}", file=sys.stderr, flush=True)
+                for _ in range(8):
+                    if url_reachable(cover_url):
+                        params["cover_url"] = cover_url
+                        params.pop("thumb_offset", None)
+                        break
+                    time.sleep(2)
+                if "cover_url" in params:
+                    print(f"🌐 Hostinger: kapak yüklendi {cover.name}", file=sys.stderr, flush=True)
+                else:
+                    print(f"  ! kapak dış adresten okunamadı ({cover_url}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
             except Exception as e:
-                print(f"  ! kapak yüklenemedi: {e}", file=sys.stderr)
+                print(f"  ! kapak yüklenemedi ({str(e)[:120]}); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
+        elif not cover.exists():
+            print("  ! kapak dosyası yok (-kapak.jpg); Instagram kapağı videonun ilk karesinden alacak", file=sys.stderr, flush=True)
         c = ig_call("POST", f"{uid}/media", params, creds)
         cid = c["id"]
         for _ in range(72):  # Instagram videoyu çekip işler; 6 dk'ya kadar bekle

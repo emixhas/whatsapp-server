@@ -1523,18 +1523,42 @@ async function igTrendsScan({ manual = false } = {}) {
     const minR = Number(igTrendsCfg().minRatio) || 2; // hızla yükselen taze videonun katı düşük olabilir (0,4): onu "kat" diye yazma
     if (nt.length) push(`🔥 Instagram trendi: ${nt.slice(0, 3).map((it) => `${it.account ? "@" + it.account : it.source} "${String(it.caption || "").slice(0, 50)}" ${igtMetric(it)}${it.ratio >= minR ? ` (hesabın ${it.ratio.toLocaleString("tr-TR", { maximumFractionDigits: 1 })} katı)` : it.fast ? " (hızla yükseliyor)" : ""}`).join(" · ")}${nt.length > 3 ? ` (+${nt.length - 3} daha)` : ""} — panelde 📈 INSTAGRAM TRENDLERİ`);
     try { for (const f of existsSync(IGT_THUMBS) ? readdirSync(IGT_THUMBS) : []) if (Date.now() - statSync(path.join(IGT_THUMBS, f)).mtimeMs > 3 * 864e5) unlinkSync(path.join(IGT_THUMBS, f)); } catch { /* temizlik */ }
+    // kapaklar tarama anında diske (kullanıcı şikâyeti, 24 Ekim: "kapak görseller yüklenmiyor": Instagram CDN adresleri imzalı ve süreli, birkaç
+    // saat sonra 403 veriyor; kart o adresi yüklemeye çalışınca resim gelmiyordu). Dosya gönderi koduyla saklanır (adres değişse de aynı dosya)
+    if (r.ok) { const n = await igtCacheThumbs(r.items || []); if (n && manual) push(`📈 ${n} trend kapağı diske alındı`); }
     await trendAuto.afterScan(r).catch((e) => push(`📈 trend otomatik üretimi: ${e.message}`)); // 🆕, otomatik üretim, çok izlenme uyarısı, kart yenilenir (SSE)
     return r;
   } finally { igtBusy = false; }
 }
 setInterval(() => { if (igTrendsCfg().enabled !== false && !igtBusy && Date.now() - igtLast >= igtEvery() * 60000 - 5000) igTrendsScan().catch((e) => push(`📈 Instagram trendleri: ${e.message}`)); }, 60000);
+// Trend kapağı diskte: work/ig_thumbs/<gönderi kodu>.jpg. Kaynak adres yalnız Instagram CDN'i (cdninstagram.com / fbcdn.net, https), en çok 3 MB,
+// 10 sn; aynı anda en çok 6 indirme. Dönen sayı: bu çağrıda indirilen yeni kapak
+const igtThumbFile = (sc) => (/^[A-Za-z0-9_-]{3,64}$/.test(String(sc || "")) ? path.join(IGT_THUMBS, `${sc}.jpg`) : null);
+const igtCdnUrl = (u) => { try { const x = new URL(String(u || "")); return x.protocol === "https:" && /(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(x.hostname) ? x : null; } catch { return null; } };
+async function igtFetchThumb(u) {
+  const r = await fetch(u.href, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(10000) });
+  const buf = Buffer.from(await r.arrayBuffer());
+  if (!r.ok || !/^image\//.test(r.headers.get("content-type") || "") || buf.length > 3e6 || buf.length < 100) return null;
+  return buf;
+}
+async function igtCacheThumbs(items) {
+  const seen = new Set(); // aynı gönderi listede iki kez geçerse (hesap + hashtag) bir kez indirilir
+  const todo = items.filter((it) => it?.thumb && igtThumbFile(it.shortcode) && !existsSync(igtThumbFile(it.shortcode)) && igtCdnUrl(it.thumb) && !seen.has(it.shortcode) && seen.add(it.shortcode));
+  if (!todo.length) return 0;
+  mkdirSync(IGT_THUMBS, { recursive: true });
+  let n = 0, i = 0;
+  const worker = async () => { while (i < todo.length) { const it = todo[i++]; try { const buf = await igtFetchThumb(igtCdnUrl(it.thumb)); if (buf) { writeFileSync(igtThumbFile(it.shortcode), buf); n++; } } catch { /* CDN vermedi: kart yer tutucusuyla kalır */ } } };
+  await Promise.all(Array.from({ length: Math.min(6, todo.length) }, worker));
+  return n;
+}
 // producedNews: trendin haberi bizde üretildi mi (üretilen haber hafızası; kullanıcı isteği, 18 Ekim: "ürettiğimiz haberi tekrar
 // yakalamayalım") — kart "✓ Bu haber üretildi" gösterir, "Haber yap" düğmesi kalır. produced: bu gönderiden üretim kaydı (ig_trends_done)
 app.get("/api/igtrends", async (_req, res) => {
   const d = readJson(IGT_FILE, {}) || {}, c = igTrendsCfg(), done = igtDone(), top = Math.min(30, Math.max(1, Number(c.top) || 15)), mk = trendAuto.marker();
   const mem = Array.isArray(d.items) && d.items.length ? ((await pyJson(["scripts/ig_trends.py", "--produced"], 20000).catch(() => null))?.produced || {}) : {};
   res.json({ cfg: { ...c, intervalMin: igtEvery() }, at: d.at || null, lastTry: d.lastTry || null, method: d.method || null, accounts: d.accounts || {},
-    items: (Array.isArray(d.items) ? d.items : []).slice(0, top).map((it) => ({ ...it, produced: done[it.url] || null, producedNews: mem[it.url] || null, ...mk(it) })),
+    items: (Array.isArray(d.items) ? d.items : []).slice(0, top).map((it) => ({ ...it, produced: done[it.url] || null, producedNews: mem[it.url] || null, ...mk(it),
+      thumbLocal: igtThumbFile(it.shortcode) && existsSync(igtThumbFile(it.shortcode)) ? `/api/igtrends/thumb?sc=${encodeURIComponent(it.shortcode)}&v=${Math.round(statSync(igtThumbFile(it.shortcode)).mtimeMs / 1000)}` : null })),
     errors: d.errors || [], notes: d.notes || [], error: d.error || null, pausedUntil: d.pausedUntil > Date.now() ? d.pausedUntil : null, pauseReason: d.pauseReason || null,
     trailerEnabled: trailerCfg().enabled !== false, scanning: igtBusy, auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() }, nextScanIn: c.enabled !== false ? Math.max(0, igtLast + igtEvery() * 60000 - Date.now()) : null });
 });
@@ -1557,14 +1581,16 @@ app.post("/api/igtrends/produce", (req, res) => {
 // Kapak resmi vekili: Instagram CDN'i başka siteye gömülen resmi engelleyebilir (CORP); kart önce doğrudan dener, olmazsa buradan.
 // Yalnız Instagram/Facebook CDN adresleri (https), ≤ 3 MB resim, work/ig_thumbs/ önbelleği (3 gün).
 app.get("/api/igtrends/thumb", async (req, res) => {
-  let u; try { u = new URL(String(req.query.u || "")); } catch { return res.status(400).end(); }
-  if (u.protocol !== "https:" || !/(^|\.)(cdninstagram\.com|fbcdn\.net)$/.test(u.hostname)) return res.status(400).end();
-  const f = path.join(IGT_THUMBS, createHash("sha1").update(u.href).digest("hex") + ".jpg");
+  // ?sc=<gönderi kodu>: tarama anında diske alınan kapak; ?u=<CDN adresi>: eski yol (adres hâlâ geçerliyse indirir, varsa koda göre saklar)
+  const sc = String(req.query.sc || ""), fsc = igtThumbFile(sc);
+  if (sc) { if (fsc && existsSync(fsc)) { res.set("Cache-Control", "public, max-age=86400"); return res.type("jpg").sendFile(fsc); } if (!req.query.u) return res.status(404).end(); }
+  const u = igtCdnUrl(req.query.u);
+  if (!u) return res.status(400).end();
+  const f = fsc || path.join(IGT_THUMBS, createHash("sha1").update(u.href).digest("hex") + ".jpg");
   if (existsSync(f)) return res.type("jpg").sendFile(f);
   try {
-    const r = await fetch(u.href, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36" }, signal: AbortSignal.timeout(10000) });
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (!r.ok || !/^image\//.test(r.headers.get("content-type") || "") || buf.length > 3e6) return res.status(404).end();
+    const buf = await igtFetchThumb(u);
+    if (!buf) return res.status(404).end();
     mkdirSync(IGT_THUMBS, { recursive: true }); writeFileSync(f, buf);
     res.type("jpg").send(buf);
   } catch { res.status(404).end(); }
