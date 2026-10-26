@@ -31,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA, load_json, now_iso, save_json, settings  # noqa: E402
 
 STATE = DATA / "trailer_watch.json"
-DEFAULTS = {"enabled": True, "intervalMin": 10, "channels": [], "maxAgeHours": 24, "maxPerDay": 8, "autoPublish": True, "notify": False,
-            "onlyTrailers": True, "soundSeconds": 10}
+DEFAULTS = {"enabled": True, "intervalMin": 3, "channels": [], "maxAgeHours": 24, "maxPerDay": 0, "autoPublish": True, "notify": False,
+            "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True}
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015", "media": "http://search.yahoo.com/mrss/"}
 
@@ -42,13 +42,72 @@ def cfg() -> dict:
     s = raw if isinstance(raw, dict) else {}
     out = {**DEFAULTS, **s}
     out["channels"] = [str(x).strip() for x in (out.get("channels") or []) if str(x).strip()] if isinstance(out.get("channels"), list) else []
-    for k in ("intervalMin", "maxAgeHours", "maxPerDay", "soundSeconds"):
+    for k in ("intervalMin", "maxAgeHours", "maxPerDay", "soundSeconds", "firstFreshHours"):
         try:
             v = float(out.get(k))
-            out[k] = v if (v > 0 or (k == "soundSeconds" and v == 0)) else DEFAULTS[k]
+            out[k] = v if (v > 0 or (k in ("soundSeconds", "maxPerDay", "firstFreshHours") and v == 0)) else DEFAULTS[k]
         except (TypeError, ValueError):
             out[k] = DEFAULTS[k]
+    out["pageScan"] = out.get("pageScan") is not False
     return out
+
+
+_REL = re.compile(r"(\d+)\s*(saniye|dakika|saat|gün|hafta|ay|yıl|second|minute|hour|day|week|month|year)", re.I)
+_REL_SEC = {"saniye": 1, "second": 1, "dakika": 60, "minute": 60, "saat": 3600, "hour": 3600, "gün": 86400, "day": 86400, "hafta": 604800, "week": 604800,
+            "ay": 2592000, "month": 2592000, "yıl": 31536000, "year": 31536000}
+
+
+def rel_seconds(text: str):
+    """"3 saat önce" / "3 hours ago" / "Streamed 2 days ago" → saniye; okunamazsa None."""
+    m = _REL.search(str(text or ""))
+    if not m:
+        return None
+    return int(m.group(1)) * _REL_SEC[m.group(2).lower()]
+
+
+def page_videos(cid: str, now: float | None = None) -> list:
+    """Kanalın videolar sayfasından (ytInitialData) son videolar: RSS gecikince ya da okunamayınca yedek (kullanıcı isteği, 26 Ekim: "asla
+    kaçırmayalım"). Yayın zamanı yaklaşıktır ("3 saat önce" → şimdi − 3 saat; approx: True). Hata: boş liste."""
+    now = now or time.time()
+    try:
+        html = http(f"https://www.youtube.com/channel/{cid}/videos", timeout=25)
+    except Exception:
+        return []
+    out, seen = [], set()
+    for chunk in html.split('"videoRenderer":')[1:]:
+        chunk = chunk[:6000]
+        mid = re.match(r'\{"videoId":"([\w-]{11})"', chunk)
+        if not mid or mid.group(1) in seen:
+            continue
+        mt = re.search(r'"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"', chunk)
+        mp = re.search(r'"publishedTimeText":\{"simpleText":"([^"]*)"', chunk)
+        if not mt:
+            continue
+        title = json.loads('"' + mt.group(1) + '"') if "\\" in mt.group(1) else mt.group(1)
+        secs = rel_seconds(mp.group(1)) if mp else None
+        seen.add(mid.group(1))
+        out.append({"videoId": mid.group(1), "title": title.strip(), "published": "", "ts": (now - secs) if secs is not None else 0.0, "url": f"https://www.youtube.com/watch?v={mid.group(1)}",
+                    "description": "", "author": "", "approx": True, "ago": (mp.group(1) if mp else "")})
+    return out
+
+
+def fetch_items(ch: dict, c: dict, now: float) -> tuple:
+    """Kanalın videoları: RSS (kesin zaman) + videolar sayfası (yedek; RSS'te olmayanlar eklenir, zaman yaklaşık). (liste, hata) — ikisi de
+    okunamazsa hata."""
+    items, err = [], ""
+    try:
+        items = feed(ch["channelId"])
+    except Exception as e:
+        err = f"akış okunamadı ({str(e)[:100]})"
+    if c.get("pageScan", True):
+        have = {x["videoId"] for x in items}
+        extra = [x for x in page_videos(ch["channelId"], now) if x["videoId"] not in have and x["ts"]]
+        if extra:
+            items = sorted(items + extra, key=lambda x: x["ts"], reverse=True)
+            err = ""
+    if not items and err:
+        return [], err
+    return items, ""
 
 
 def http(url: str, timeout: float = 20) -> str:
@@ -185,15 +244,14 @@ def scan(now: float | None = None) -> dict:
                 chans[key] = ch
                 continue
             ch.update({"channelId": r["channelId"], "name": r.get("name") or inp})
-        try:
-            items = feed(ch["channelId"])
-            ch.pop("error", None)
-        except Exception as e:
-            ch["error"] = f"akış okunamadı ({str(e)[:100]})"
+        items, err = fetch_items(ch, c, now)
+        if err:
+            ch["error"] = err
             errors.append(f"{ch.get('name') or inp}: {ch['error']}")
             ch["lastChecked"] = now_iso()
             chans[key] = ch
             continue
+        ch.pop("error", None)
         if not ch.get("name") and items:
             ch["name"] = items[0].get("author") or inp
         trailers = [x for x in items if (not c["onlyTrailers"]) or is_trailer(x["title"], x["description"])]
@@ -204,10 +262,20 @@ def scan(now: float | None = None) -> dict:
             chans[key] = ch
             continue
         latest = trailers[0]
-        if not ch.get("lastVideoId"):  # ilk tarama: son fragman kaydedilir, üretilmez
+        if not ch.get("lastVideoId"):  # ilk tarama: son fragman kaydedilir; son firstFreshHours saatin fragmanları üretilir (kanal eklenince taze fragman kaçmasın)
             ch.update({"lastVideoId": latest["videoId"], "lastTitle": latest["title"], "lastPublished": latest["published"], "lastTs": latest["ts"],
                        "lastUrl": latest["url"], "first": True})
-            seen.setdefault(latest["videoId"], now)
+            fresh0 = [x for x in reversed(trailers) if x["ts"] and now - x["ts"] <= float(c.get("firstFreshHours") or 0) * 3600 and x["videoId"] not in seen]
+            for x in trailers:
+                if x["videoId"] not in {y["videoId"] for y in fresh0}:
+                    seen.setdefault(x["videoId"], now)
+            if fresh0:
+                pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers}
+                for x in fresh0:
+                    p = pinfo.get(x["videoId"]) or {}
+                    new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")},
+                                "promo": {k: p.get(k) for k in ("label", "text", "tur", "no", "bolum", "sezon", "final", "film")} if p else None, "previous": [], "first": True})
+                    seen[x["videoId"]] = now
             chans[key] = ch
             continue
         ch.pop("first", None)

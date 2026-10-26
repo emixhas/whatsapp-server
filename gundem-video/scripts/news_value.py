@@ -242,7 +242,52 @@ def strong_hits(t: str, hits: list) -> list:
     return why
 
 
-def score(text: str, extra_keywords=None, importance=None) -> dict:
+def top_hits(t: str, hits: list, sw: list, imp, sources: int = 0) -> tuple:
+    """En değerli (kullanıcı isteği, 26 Ekim: "haber paylaşımında en değerli olanları yakalamaya çalışalım"): çok değerli nedenlerinin
+    ağırlığı. Puan: model önemi 5 → 2, 4 → 1; farklı ulusal kalıplar 1'er (en çok 3); ölçek 10+ kişi → 2, 3+ → 1; deprem 5,5+ → 2,
+    5,0+ → 1; ulusal grup 1; birden çok değer grubu 1; can kaybı 1; 3+ kaynakta aynı olay 1. 3 ve üstü en değerli. (puan, nedenler)."""
+    pts, why = 0, []
+    if imp == 5:
+        pts += 2; why.append("önem 5/5")
+    elif imp == 4:
+        pts += 1; why.append("önem 4/5")
+    pats = []
+    for p in _STRONG_RE:
+        m = p.search(t)
+        if m and m.group(0)[:30] not in pats:
+            pats.append(m.group(0)[:30])
+        if len(pats) >= 3:
+            break
+    if pats:
+        pts += len(pats); why.append("ulusal kalıp: " + ", ".join(pats[:2]) + (f" (+{len(pats) - 2})" if len(pats) > 2 else ""))
+    n_max = 0
+    for c in _COUNT_RE.finditer(t):
+        n_max = max(n_max, int(c.group(1)) * (1000 if " bin" in c.group(0) else 1))
+    if n_max >= 10:
+        pts += 2; why.append(f"ölçek {n_max}")
+    elif n_max >= 3:
+        pts += 1; why.append(f"ölçek {n_max}")
+    for c in _MAG_RE.finditer(t):
+        try:
+            mag = float(c.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        if mag >= 5.5:
+            pts += 2; why.append(f"deprem {c.group(1)}"); break
+        if mag >= 5.0:
+            pts += 1; why.append(f"deprem {c.group(1)}"); break
+    if any(h in NATIONAL for h in hits):
+        pts += 1; why.append("ulusal grup")
+    if any(w.startswith("birden çok değer grubu") for w in sw):
+        pts += 1; why.append("birden çok değer grubu")
+    if "can kaybı" in hits:
+        pts += 1; why.append("can kaybı")
+    if sources and int(sources) >= 3:
+        pts += 1; why.append(f"{sources} kaynakta")
+    return pts, why
+
+
+def score(text: str, extra_keywords=None, importance=None, sources: int = 0) -> dict:
     t = tr_lower(text or "")
     hits = []
     total = 0
@@ -278,8 +323,13 @@ def score(text: str, extra_keywords=None, importance=None) -> dict:
     strong = valuable and (imp == 5 or (bool(sw) and (imp is None or imp >= 3)))
     if valuable and imp == 5 and not sw:
         sw = [f"önem {imp}/5"]
+    # en değerli (⭐⭐⭐): çok değerli + nedenlerin ağırlığı 3 ve üstü (ulusal kalıp tek başına yetmez: "zam", "ateşkes" gibi tek kalıp
+    # günde onlarca haber üretip Instagram kotasını dolduruyordu; kullanıcı isteği, 26 Ekim)
+    tp, tw = top_hits(t, hits, sw, imp, sources) if strong else (0, [])
+    top = strong and tp >= 3
     return {"valuable": valuable, "score": total, "importance": imp, "reasons": hits, "reason": reason,
-            "strong": strong, "strongReason": ", ".join(sw) if strong else ("değerli ama çok değerli değil" if valuable else "")}
+            "strong": strong, "strongReason": ", ".join(sw) if strong else ("değerli ama çok değerli değil" if valuable else ""),
+            "top": top, "topScore": tp, "topReason": ", ".join(tw) if top else ("çok değerli ama en değerli değil" if strong else "")}
 
 
 if __name__ == "__main__":

@@ -148,7 +148,7 @@ def check() -> dict:
         if hit:
             continue
         srcs = source_count(f["title"], st)
-        v = score(f"{f['title']} {f['summary'][:200]}", kw)
+        v = score(f"{f['title']} {f['summary'][:200]}", kw, sources=len(srcs))
         multi = len(srcs) >= int(c["minSources"])
         if not (v["valuable"] or multi):
             continue
@@ -162,8 +162,9 @@ def check() -> dict:
             continue
         clusters.append({"title": f["title"], "url": f["link"], "source": f["source"], "summary": f["summary"],
                          "sources": srcs, "count": len(srcs), "valuable": v["valuable"], "strong": bool(v.get("strong")), "strongReason": v.get("strongReason") or "",
+                         "top": bool(v.get("top")), "topReason": v.get("topReason") or "",
                          "valueReason": v["reason"] + (f" · {len(srcs)} kaynakta" if len(srcs) > 1 else ""), "dup": bool(m), "dupInfo": m})
-    clusters.sort(key=lambda x: (x["strong"], x["valuable"], x["count"]), reverse=True)
+    clusters.sort(key=lambda x: (x.get("top", False), x["strong"], x["valuable"], x["count"]), reverse=True)
     return {"ok": True, "sources": status, "fresh": len(fresh), "candidates": clusters, "dups": dups[:5]}
 
 
@@ -179,6 +180,7 @@ def listing() -> dict:
         m = match_produced(i["title"], i.get("summary") or "", i.get("link") or "")
         out.append({"source": i["source"], "title": i["title"], "link": i["link"], "valuable": v["valuable"], "valueReason": v["reason"],
                     "strong": bool(v.get("strong")), "strongReason": v.get("strongReason") or "",
+                    "top": bool(v.get("top")), "topReason": v.get("topReason") or "",
                     "sources": source_count(i["title"], st), "produced": bool(m), "producedInfo": m})
     marks = load_json(PRODUCED, [])
     return {"ok": True, "sources": st.get("status", {}), "lastCheck": st.get("lastCheck"), "recent": out,

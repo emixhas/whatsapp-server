@@ -1590,6 +1590,32 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   başlatma, env ve sıra önceliği), sahte Claude ile üç fragman işi (sesli an alanı yok → 8 sn, 10 → 10 sn, bozuk → 8 sn; gerçek `claude`
   PATH'te değil, tuzak tetiklenmedi), başsız Chromium'da panel kartı (durum satırı, liste, ayar yazımları, kanal kaydında tekilleştirme, tarama
   düğmesi, 📡 rozeti). Gerçek YouTube RSS/kanal sayfası ve Mac'te uçtan uca DENENMEDİ.
+  - Sıkı takip ve haber değer düzeyi (kullanıcı isteği, 26 Ekim: "fragman takibini sıkıştıralım, girdiğim linklerdeki fragmanları tanıtımları
+    yakalamamız lazım, çok izleniyor; haber paylaşımında en değerli olanları yakalamaya çalışalım; fragman tanıtımlarını asla kaçırmayalım,
+    direkt onaysız yayınlayalım"): `trailerWatch` varsayılanları intervalMin 3 (en az 2), maxPerDay 0 = sınırsız (0-50), firstFreshHours 12
+    (kanal eklenince ilk taramada son 12 saatin fragmanları da üretilir — eskiden yalnız kaydedilirdi; `new[].first`), pageScan true (RSS'in
+    yanında kanalın videolar sayfası `trailer_watch.page_videos`: ytInitialData'daki videoRenderer'lardan videoId/başlık/"3 saat önce" →
+    yaklaşık zaman `rel_seconds`; RSS'te olmayanlar eklenir, RSS okunamazsa sayfa yeter — `fetch_items`). Fragman takibi işi ACİL
+    (`startAnlik` opts urgent, runVideoNews0 verir): sahibin işlerinden sonra, bütün otomatik haberlerin önüne (`firstPlain`), süren OTOMATİK
+    haber üretimini durdurur (`preemptAuto(…, {byOwner: false})`; başka bir fragman işini durdurmaz), yayın onaysız (autoPublish, bağlı tüm
+    hesaplar), sınır sırasında (`publish.flush_order`) fragman takibi videoları önce. Günlük otomatik haber sınırı `settings.autoNews.maxPerDay`
+    (varsayılan 12, 0 sınırsız; `data/auto_news_daily.json`): `autoNewsGate` üretim BAŞLARKEN (sıradan çıkınca) otomatik anlık haberleri
+    (sondakika.com, Mynet, son dakika siteleri, toplayıcı — çoklu video bir) sayar; fragman takibi, şablon videoları, sahibin işleri, yeniden
+    yayın ve durdurulup sıraya geri alınan iş sayılmaz; dolunca "⏭ günlük otomatik haber sınırı (N) doldu" ile üretilmez. Haber değer düzeyi
+    `settings.newsLevel` (varsayılan "top"; "strong", "valuable", "all"; başka değer — panelde "source" — kaynak kartlarındaki eski
+    onlyValuable/strictValuable ayarı): `newsLevel(c)` üç kaynak için ortak, `passesLevel`/`levelSkipWhy`/`levelName` "top"u tanır;
+    sondakika yolu `sondakikaQual(x, lvl)` ve `sondakikaOnlyHold(x, lvl)` düzeye göre (eski true/false çağrısı da geçer; sayfa gövdesinden
+    `a.top` da okunur). `news_value.score(…, sources=N)` → `top`/`topScore`/`topReason`: çok değerli + `top_hits` ağırlığı ≥ 3 (model önemi 5 → 2,
+    4 → 1; farklı ulusal kalıplar 1'er, en çok 3; ölçek 10+ kişi 2, 3+ 1; deprem 5,5+ 2, 5,0+ 1; ulusal grup 1; birden çok değer grubu 1; can
+    kaybı 1; 3+ kaynakta aynı olay 1) — "zam", "ateşkes", "kdv" gibi TEK kalıpla çok değerli görünen haberler (24 Ekim'de 22 dakikada 10
+    anlık video) elenir; izleyiciler (mynet_watch, breaking_watch, sondakika_watch --check/--read) `top`/`topReason` taşır. Panel 📡 Otomatik
+    içerikler → "📰 Otomatik haber düzeyi" seçici (en değerli / çok değerli / değerli / hepsi / kaynak kartlarındaki ayar) + "günde en çok"
+    sayısı; fragman kartında günlük sınır 0 = sınırsız, "ilk taramada son N saat". Sandbox'ta: news_value 10 sel başlığı (bugünkü: ateşkes,
+    gaziler, doğal gaz, elektrik, kaza…) en değerli değil, 6 büyük haber (asgari ücret + maaş 3 kaynakta, 6,4 deprem 12 ölü, 20 ilde kesinti,
+    yüzlerce zehirlenme, terör 8 şehit, önem 5 infaz düzenlemesi) en değerli; trailer_watch ilk taramada taze fragmanlar (12 saat; 30 saatlik
+    değil), sayfa yedeğinden yeni fragman, RSS düşünce sayfa, ikisi de düşünce hata, örnek ytInitialData ayrıştırma, göreli zaman; sunucu
+    harness 45 denetim (acil işin sırası ve durdurma, sahibin işi acil işlerin önünde, günlük sınır: 3. haber takılır, fragman/şablon/sahip/geri
+    alınan iş sayılmaz, 0 sınırsız); haber düzeyi yardımcıları 9 denetim; flush_order; panel tarayıcı testi.
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/

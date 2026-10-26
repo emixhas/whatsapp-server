@@ -2049,14 +2049,26 @@ def upload(path: Path, plat: str) -> dict:
             pass
 
 
+def flush_order(q: list) -> list:
+    """Sıra: fragman takibi videoları (meta trailerAuto; kullanıcı isteği, 26 Ekim: fragmanlar asla kaçmasın) önce, sonra en yeni haber önce."""
+    def auto_trailer(it):
+        try:
+            return bool((episode_meta(Path(str(it.get("video") or "")).name) or {}).get("trailerAuto"))
+        except Exception:
+            return False
+    out = sorted(q, key=lambda x: x.get("at", ""), reverse=True)
+    out.sort(key=lambda x: 0 if auto_trailer(x) else 1)
+    return out
+
+
 def flush() -> dict:
-    """Sıradaki (sınır yüzünden bekleyen) videoları yükler; en yeni haber önce."""
+    """Sıradaki (sınır yüzünden bekleyen) videoları yükler; fragman takibi videoları önce, sonra en yeni haber önce."""
     q = load_json(QUEUE_FILE, []) or []
     if not q:
         return {"ok": True, "queued": 0}
     now = datetime.now(timezone.utc)
     done, keep = [], []
-    for it in sorted(q, key=lambda x: x.get("at", ""), reverse=True):
+    for it in flush_order(q):
         plat, name = it.get("platform"), it.get("video", "")
         at = _parse(it.get("at", "")) or now
         path = OUT / Path(name).name

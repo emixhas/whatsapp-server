@@ -74,7 +74,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 20, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, newsLevel: "top", autoNews: { maxPerDay: 12 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 }, muted: false,
@@ -366,6 +366,21 @@ async function inflight(title, fn, { firm = false, sourceCount = 1 } = {}) {
   try { return await fn(tok); } finally { anlikInflight.delete(tok); restRecheck(); }
 }
 const pipelineBusy = () => { if (state.running) return true; const lock = path.join(WORK, "pipeline.lock", "pid"); if (!existsSync(lock)) return false; try { process.kill(Number(readFileSync(lock, "utf8").trim()), 0); return true; } catch { return false; } };
+// Günlük otomatik haber sınırı (kullanıcı isteği, 26 Ekim: Instagram'ın günlük yayın kotası fragmanlara ve en değerli haberlere kalsın;
+// settings.autoNews.maxPerDay, varsayılan 12, 0 = sınırsız): sondakika.com / Mynet / son dakika siteleri / toplayıcıdan gelen otomatik anlık
+// haberler sayılır; fragman takibi, şablon videoları (deprem, maç…), sahibin işleri, yeniden yayın ve durdurulup sıraya geri alınan iş sayılmaz
+const AUTO_NEWS_DAILY = path.join(DATA, "auto_news_daily.json"); // {day, n}
+const autoNewsCap = () => Math.max(0, Number(settings().autoNews?.maxPerDay ?? 12) || 0);
+const autoNewsCount = () => { const d = readJson(AUTO_NEWS_DAILY, {}); return d?.day === today() ? Number(d.n) || 0 : 0; };
+const autoNewsBump = () => writeJson(AUTO_NEWS_DAILY, { day: today(), n: autoNewsCount() + 1 });
+const isAutoNews = (opts) => !!opts?.auto && !opts.trailerAuto && !opts.urgent && !opts.templateDir && !opts.userVideo && !opts.remake?.of && !opts.preempted;
+function autoNewsGate(opts, what) {
+  if (!isAutoNews(opts)) return null;
+  const cap = autoNewsCap();
+  if (cap && autoNewsCount() >= cap) { push(`⏭ günlük otomatik haber sınırı (${cap}) doldu: "${String(what || "").slice(0, 70)}" üretilmedi (Instagram kotası fragmanlara ve en değerli haberlere kalsın; Ayarlar → 📡 Otomatik içerikler → günde en çok)`); return { ok: false, capped: true, error: `günlük otomatik haber sınırı (${cap}) doldu` }; }
+  autoNewsBump();
+  return null;
+}
 function startAnlik(topic, duration, opts = {}) {
   // video kuyruğundaki iş (videoqueue.js bağlamı): iptal edildiyse başlatılmaz; iş etiketlenir (opts.vq: anlık sırasından çıkarma, yalnız onun üretimini durdurma)
   const vc = vqCtx(); if (vc) { if (vc.cancelled) return { ok: false, error: "video kuyruğundan iptal edildi" }; opts = { ...opts, vq: vc.id, vqNo: vc.no, vqSrc: vc.src }; }
@@ -378,18 +393,23 @@ function startAnlik(topic, duration, opts = {}) {
   // SAHİBİN İŞİ ÖNCE (kullanıcı isteği, 23 Ekim: "link/video gönderirsem üretimimi derhal yapmalı, sonra haberlere geçmeli"): sahibin işi
   // (userVideo: WhatsApp videosu, link, fragman, özet, benzer video, düzeltme) sıranın başına girer (kendi aralarında geliş sırası), süren
   // üretim OTOMATİK anlık haberse durdurulup sıraya geri alınır (preemptAuto); otomatik iş sahibin işi beklerken başlamaz (ownerWaiting)
-  const owner = !!opts.userVideo;
-  if (pipelineBusy() || ((owner || vc || opts.auto) && ownerWaiting())) { // sırada sahip işi varken yeni sahip işi de onun arkasına (FIFO)
-    const pre = owner && pipelineBusy() ? preemptAuto(opts.title || topic) : false;
+  // 🎬 fragman takibi işi (urgent; kullanıcı isteği, 26 Ekim: "fragman tanıtımlarını asla kaçırmayalım"): sahibin işlerinden sonra, bütün
+  // otomatik haberlerden önce; süren otomatik haber üretimini durdurur (başka bir fragman işini durdurmaz)
+  const owner = !!opts.userVideo, urgent = !owner && !!opts.urgent;
+  if (pipelineBusy() || ((owner || urgent || vc || opts.auto) && ownerWaiting())) { // sırada sahip işi varken yeni sahip işi de onun arkasına (FIFO)
+    const pre = (owner || urgent) && pipelineBusy() ? preemptAuto(opts.title || topic, { byOwner: owner }) : false;
     // priority (değerli sondakika.com haberi, 20 Ekim): sıradaki sıradan OTOMATİK işlerin önüne; elle verilen, öncelikli ve
     // değerli (toplayıcı: valuable, çoklu) işlerin arkasına; sahibin işleri her zaman en önde (kendi aralarında FIFO)
     const firstAuto = () => { const i = anlikQueue.findIndex((q) => !q.opts?.userVideo); return i < 0 ? anlikQueue.length : i; };
-    const pos = owner ? firstAuto() : !opts.priority ? anlikQueue.length : anlikQueue.reduce((n, q, i) => (!q.opts?.auto || q.opts.priority || q.opts.valuable || q.multi || q.opts.userVideo ? i + 1 : n), 0);
+    const firstPlain = () => { const i = anlikQueue.findIndex((q) => !q.opts?.userVideo && !q.opts?.urgent); return i < 0 ? anlikQueue.length : i; };
+    const pos = owner ? firstAuto() : urgent ? firstPlain() : !opts.priority ? anlikQueue.length : anlikQueue.reduce((n, q, i) => (!q.opts?.auto || q.opts.priority || q.opts.valuable || q.multi || q.opts.userVideo || q.opts.urgent ? i + 1 : n), 0);
     anlikQueue.splice(pos, 0, { topic, duration, opts, at: Date.now() });
     push(owner ? `⚡ sizin işiniz sıraya alındı (${pos + 1}. sırada; ${pre ? "durdurulan otomatik üretim kapanır kapanmaz" : pipelineBusy() ? "süren üretim bitince hemen" : "sıradaki sahip işinden sonra"} başlayacak): ${topic.slice(0, 80)}`
+      : urgent ? `🎬 fragman takibi işi öne alındı (${pos + 1}. sırada; sahibin işlerinden sonra, otomatik haberlerden önce${pre ? "; süren otomatik haber durduruldu, sıraya geri alındı" : pipelineBusy() ? "; süren üretim bitince" : ""}): ${topic.slice(0, 80)}`
       : `⚡ anlık haber sıraya alındı (${pos + 1}. sırada, ${pipelineBusy() ? "şu an başka üretim sürüyor" : "sahibin işi bekliyor"}): ${topic.slice(0, 80)}`);
-    return { ok: true, queued: true, position: pos + 1, duration, preempted: pre, owner };
+    return { ok: true, queued: true, position: pos + 1, duration, preempted: pre, owner, urgent };
   }
+  { const g = autoNewsGate(opts, opts.title || topic); if (g) return g; } // günlük otomatik haber sınırı (fragman takibi ve sahibin işleri sayılmaz)
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), topic + "\n");
   // Elle verilen konuda sitelerde bulunan diğer haberler (topic_news ilgili haberlerin başına koyar) ve görüntü sayfaları
@@ -429,8 +449,9 @@ const ownerWaiting = () => anlikQueue.some((q) => q.opts?.userVideo);
 // günün/haftanın özeti ve şablon videoları da değil: anlikNow yok) sahibin işi için durdurur ve sahip işlerinden sonra üretilmek üzere
 // sıraya geri koyar. Boru hattı 143 ile çıkar (pipeline.sh cleanup: kilit, rezerve ad, hafıza kayıtları); hata uyarısı gitmez (preemptedAt)
 let preemptedAt = 0;
-function preemptAuto(forWhat) {
+function preemptAuto(forWhat, { byOwner = true } = {}) {
   if (!state.running || !anlikNow || anlikNow.at !== state.startedAt || !anlikNow.auto || anlikNow.vq || !pipelineProc?.pid) return false;
+  if (!byOwner && anlikNow.opts?.urgent) return false; // fragman işi başka bir fragman işini durdurmaz (yalnız sahibin işi durdurur)
   const back = { topic: anlikNow.topic, duration: anlikNow.duration, ...(anlikNow.multi ? { multi: anlikNow.multi } : {}), opts: { ...(anlikNow.opts || {}), preempted: true }, at: Date.now() };
   try { killTree(pipelineProc.pid); } catch { return false; }
   preemptedAt = Date.now();
@@ -455,6 +476,7 @@ function startAnlikMulti(items, { auto = true } = {}) {
     return { ok: true, queued: true, position: anlikQueue.length, duration, multi: items.length };
   }
   if (resting()) { if (auto) return { ok: false, resting: true, error: "Sistem durduruldu (dinlenmede)." }; restEnd("elle anlık haber talimatı"); }
+  { const g = autoNewsGate({ auto }, items[0]?.title); if (g) return g; } // günlük otomatik haber sınırı (çoklu video bir sayılır)
   mkdirSync(WORK, { recursive: true });
   writeFileSync(path.join(WORK, "anlik_topic.txt"), items.map((it, i) => `${i + 1}) [${it.source}] ${it.title}. ${String(it.text || "").slice(0, 400)}`).join("\n") + "\n");
   writeJson(path.join(WORK, "anlik_related.json"), []); writeJson(path.join(WORK, "anlik_pages.json"), []); writeJson(path.join(WORK, "remake.json"), {}); // önceki tek konulu işten kalmasın
@@ -1118,10 +1140,15 @@ const mynetCfg = () => ({ enabled: true, maxPerDay: 3, valuableMaxPerDay: 15, du
 // Otomatik haber seviyesi (kullanıcı isteği, 23 Ekim: "gereksiz haberleri yapmayalım, denizde yunus balıkları göründü istemiyorum"; sondakika.com'daki
 // onlyValuable/strictValuable kuralının aynısı Mynet manşeti ve son dakika siteleri için; varsayılan ⭐⭐ çok değerli): "all" her yeni haber,
 // "valuable" news_value değerli, "strong" yalnız çok değerli (ulusal grup/kalıp, ölçek ya da iki değer ailesi). Elle üretim (kart düğmesi) hep geçer
-const newsLevel = (c) => (c?.onlyValuable === false ? "all" : c?.strictValuable === false ? "valuable" : "strong");
-const levelName = (lvl) => (lvl === "strong" ? "⭐⭐ çok değerli" : "⭐ değerli");
-const passesLevel = (lvl, it) => lvl === "all" || (lvl === "strong" ? !!it?.strong : !!it?.valuable);
-const levelSkipWhy = (it) => (it?.valuable ? `değerli ama çok değerli değil (${it.valueReason || ""})` : "sıradan haber");
+const newsLevel = (c) => { const g = String(settings().newsLevel ?? "top"); return NEWS_LEVELS.includes(g) ? g : (c?.onlyValuable === false ? "all" : c?.strictValuable === false ? "valuable" : "strong"); };
+// Otomatik haber düzeyi (kullanıcı isteği, 26 Ekim: "haber paylaşımında daha değerli olanları, en değerli olanları yakalamaya çalışalım";
+// settings.newsLevel, varsayılan "top"): tüm otomatik kaynaklar (sondakika.com, Mynet, son dakika siteleri) için tek düzey — "top" ⭐⭐⭐ en
+// değerli (news_value top: çok değerli + nedenlerin ağırlığı ≥ 3), "strong" ⭐⭐, "valuable" ⭐, "all" hepsi; başka değer ("source") kaynak
+// kartlarındaki eski onlyValuable/strictValuable ayarı. Elle üretim hep geçer.
+const NEWS_LEVELS = ["top", "strong", "valuable", "all"];
+const levelName = (lvl) => (lvl === "top" ? "⭐⭐⭐ en değerli" : lvl === "strong" ? "⭐⭐ çok değerli" : "⭐ değerli");
+const passesLevel = (lvl, it) => lvl === "all" || (lvl === "top" ? !!it?.top : lvl === "strong" ? !!it?.strong : !!it?.valuable);
+const levelSkipWhy = (it) => (it?.strong ? `çok değerli ama en değerli değil (${it.strongReason || it.valueReason || ""})` : it?.valuable ? `değerli ama çok değerli değil (${it.valueReason || ""})` : "sıradan haber");
 const today = () => new Date().toISOString().slice(0, 10);
 const mynetDone = () => readJson(MYNET_DONE, {});
 const pyJson = async (args, timeout = 60000) => { const r = await run(PY, args, { timeout }); try { return JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { return { ok: false, error: (r.stderr || r.stdout || "yanıt yok").toString().slice(-200) }; } };
@@ -1338,12 +1365,14 @@ let sondakikaBusy = false, sondakikaLast = 0, sondakikaFail = null; // {since, n
 // sayfası okunan ama üretilmeyen haberin (sıradan çıktı, okunamadı, tekrar, bayat, aynı olay) sonucu peeked taşır; akıştaki yayın
 // zamanı valuableMaxAgeHours'tan eski sıradan haberin sayfası hiç okunmaz (değerli çıksa da bayat).
 // yalnız (çok) değerli kuralı: strict'te news_value "strong", değilse "valuable" gerekir; atlama nedeni panelde ve logda
-const sondakikaQual = (x, strict) => !!(strict ? x?.strong : x?.valuable);
-function sondakikaOnlyHold(x, strict) {
-  const hand = " (kartta 🎬 Video üret ile elle üretilebilir)";
-  if (strict && x?.valuable) return { why: `değerli ama çok değerli değil (${x.valueReason || ""}); yalnız ⭐⭐ çok değerli haberler üretiliyor${hand}`, note: "değerli ama çok değerli değil: yalnız çok değerli haberler üretiliyor" };
-  if (strict) return { why: `sıradan haber; yalnız ⭐⭐ çok değerli haberler üretiliyor${hand}`, note: "sıradan: yalnız çok değerli haberler üretiliyor" };
-  return { why: `sıradan haber; yalnız ⭐ değerli haberler üretiliyor${hand}`, note: "sıradan: yalnız değerli haberler üretiliyor" };
+const sondakikaLvl = (l) => (l === true ? "strong" : l === false ? "valuable" : l); // eski çağrı biçimi (strict true/false) da geçer
+const sondakikaQual = (x, lvl) => passesLevel(sondakikaLvl(lvl), x);
+function sondakikaOnlyHold(x, lvl) {
+  lvl = sondakikaLvl(lvl);
+  const hand = " (kartta 🎬 Video üret ile elle üretilebilir)", name = levelName(lvl), bare = name.replace(/^⭐+ /, "");
+  if (lvl === "top" && x?.strong) return { why: `çok değerli ama en değerli değil (${x.strongReason || x.valueReason || ""}); yalnız ${name} haberler üretiliyor${hand}`, note: `çok değerli ama en değerli değil: yalnız ${bare} haberler üretiliyor` };
+  if (lvl !== "valuable" && x?.valuable) return { why: `değerli ama çok değerli değil (${x.valueReason || ""}); yalnız ${name} haberler üretiliyor${hand}`, note: `değerli ama çok değerli değil: yalnız ${bare} haberler üretiliyor` };
+  return { why: `sıradan haber; yalnız ${name} haberler üretiliyor${hand}`, note: `sıradan: yalnız ${bare} haberler üretiliyor` };
 }
 async function sondakikaProduce(url, { manual = false, force = false, item = null, limit = null, peek = true } = {}) {
   url = String(url || "").trim();
@@ -1359,13 +1388,13 @@ async function sondakikaProduce(url, { manual = false, force = false, item = nul
     // değerli haber sınırsız (valuableUnlimited): sayaca girmez; --check'te sıradan görünen haber sınıra takılacaksa sayfası okunur,
     // gövdeyle de sıradansa aynı satırla atlanır. Kapalıysa eski kural: sınır her habere, sayfa okunmadan.
     const pubH = item?.published ? (Date.now() - Date.parse(item.published)) / 3600000 : 0;
-    const vip = c.valuableUnlimited !== false, only = c.onlyValuable !== false, strict = only && c.strictValuable !== false, fresh = !(pubH > Number(c.valuableMaxAgeHours));
+    const lvl = newsLevel(c), vip = c.valuableUnlimited !== false, only = lvl !== "all", strict = lvl === "strong" || lvl === "top", fresh = !(pubH > Number(c.valuableMaxAgeHours));
     const autoCount = list.filter((x) => !x.manual && !(vip && x.valuable)).length;
     held = limit || (autoCount >= Number(c.maxPerDay) ? { why: `günlük sınır (${c.maxPerDay}) doldu` }
       : anlikQueue.length >= Number(c.maxQueue) ? { why: `anlık sırada ${anlikQueue.length} iş bekliyor (en çok ${c.maxQueue}), haber bayatlamasın diye` } : null);
     // yalnız (çok) değerli haberler (onlyValuable / strictValuable): sıradan — ya da çok değerli olmayan — haber sınıra takılmasa da üretilmez;
     // sayfası okunur, gövdeyle de yetmezse atlanır. Bu kural sınırlardan önce gelir (sınır satırı yerine nedeni yazılır)
-    if (only && !sondakikaQual(item, strict)) held = { ...sondakikaOnlyHold(item, strict), only: true, strict };
+    if (only && !sondakikaQual(item, lvl)) held = { ...sondakikaOnlyHold(item, lvl), only: true, strict, lvl };
     // sayfaya bakılır mı: sınıra takılan haberde yalnız değerli sınırsızken (gövdeyle değerli çıkabilir), yalnız-değerli kuralına takılan haberde her zaman
     const look = peek && fresh && (vip || !!held?.only);
     if (held && !(look || (vip && item?.valuable && !held.only))) return skip(held.why, undefined, held.note);
@@ -1384,11 +1413,12 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held
   if (a?.title) tok.title = a.title;
   if (!a || a.ok === false || !a.title) return manual ? fail(`Haber sayfası okunamadı (${a?.error || "başlık yok"}).`) : held && !item?.valuable ? skip(held.why, undefined, held.note) : skip(`haber sayfası okunamadı (${a?.error || "başlık yok"})`);
   // değerli: --check ya da sayfa (başlık + açıklama + gövdenin ilk cümlesi) öyle derse
-  const vip = !manual && c.valuableUnlimited !== false, valuable = !!(item?.valuable || a.valuable), strong = !!(item?.strong || a.strong);
+  const vip = !manual && c.valuableUnlimited !== false, valuable = !!(item?.valuable || a.valuable), strong = !!(item?.strong || a.strong), top = !!(item?.top || a.top);
   const val = valuable ? { valuable: true, valueReason: item?.valuable ? item.valueReason : `${a.valueReason}; haber metninden`,
-    ...(strong ? { strong: true, strongReason: item?.strong ? item.strongReason : `${a.strongReason}; haber metninden` } : {}) } : {};
-  // yalnız (çok) değerli kuralı: gövdeyle de yetmiyorsa atlanır (gövdeyle değerli çıkıp çok değerli çıkmayan haber nedeniyle)
-  if (held?.only && !sondakikaQual({ valuable, strong }, held.strict)) { const h = sondakikaOnlyHold({ valuable, strong, valueReason: val.valueReason }, held.strict); return skip(h.why, a.title, h.note, val); }
+    ...(strong ? { strong: true, strongReason: item?.strong ? item.strongReason : `${a.strongReason}; haber metninden` } : {}),
+    ...(top ? { top: true, topReason: item?.top ? item.topReason : `${a.topReason}; haber metninden` } : {}) } : {};
+  // yalnız (çok / en) değerli kuralı: gövdeyle de yetmiyorsa atlanır (gövdeyle değerli çıkıp çok değerli çıkmayan haber nedeniyle)
+  if (held?.only && !sondakikaQual({ valuable, strong, top }, held.lvl || held.strict)) { const h = sondakikaOnlyHold({ valuable, strong, top, valueReason: val.valueReason, strongReason: val.strongReason }, held.lvl || held.strict); return skip(h.why, a.title, h.note, val); }
   if (held && !held.only && !valuable) return skip(held.why, a.title, held.note); // sıradan haber: sınır ya da elle durdurma (eski satır)
   if (!manual && a.dup) return skip(dupWhy(a.dupInfo), a.title, undefined, val); // --check'ten bu yana başka kaynak üretmiş olabilir; gövdeyle yeniden bakıldı
   if (manual && a.dup) push(`🔴 sondakika.com (elle): "${a.title.slice(0, 70)}" — ${dupWhy(a.dupInfo)}; elle istendiği için yine üretiliyor`);
@@ -1409,7 +1439,7 @@ async function sondakikaStart(url, { manual, item, c, day, skip, fail, tok, held
   if (!manual && anlikBusyWith(a.title, tok)) return skip("aynı olay bu sırada başka kaynaktan üretime alındı", a.title, undefined, val);
   // değerli otomatik haber sırada sıradan otomatik işlerin önüne geçer; bir sınır atlatacakken üretildiyse loga yazılır
   const prio = vip && valuable, over = held && !held.stop ? (held.only ? (item?.valuable ? "başlıkta çok değerli görünmüyordu, metninden çok değerli çıktı" : `başlıkta sıradan görünüyordu, metninden ${held.strict ? "çok " : ""}değerli çıktı`) : held.why) : prio && ageH > Number(c.maxAgeHours) ? `haber ${Math.round(ageH)} saat önce yayınlanmış` : "";
-  const star = held?.strict && val.strong ? `⭐⭐ çok değerli haber (${val.strongReason})` : `⭐ değerli haber (${val.valueReason})`;
+  const star = held?.lvl === "top" && val.top ? `⭐⭐⭐ en değerli haber (${val.topReason})` : held?.strict && val.strong ? `⭐⭐ çok değerli haber (${val.strongReason})` : `⭐ değerli haber (${val.valueReason})`;
   if (prio && over) push(`🔴 sondakika.com: ${star} → sınırsız, öne alındı: "${a.title.slice(0, 70)}" — ${over}`);
   const r = startAnlik(topic, c.duration, { source, url, pages: src.pages, related: src.related, sourceCount: tok.item.sourceCount, auto: !manual, title: a.title, sondakika: url, ...(prio ? { priority: true } : {}) });
   anlikInflight.delete(tok); // sırada ya da üretimde (araya await girmeden)
@@ -2543,7 +2573,7 @@ async function runVideoNews0(v) {
     : { kind: "video", label: p.label, intro: `${p.label.charAt(0)}${p.label.slice(1).toLocaleLowerCase("tr-TR")}.`, breaking: false }; // GÖRÜNTÜLÜ HABER, ÖZEL HABER: "Son dakika." denmez
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
     source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: !auto || !trailerWatchCfg().autoPublish,
-    ...(auto ? { trailerAuto: true, priority: true, ...(trailerWatchCfg().autoPublish ? { auto: true } : {}), ...(v.twId ? { twId: String(v.twId) } : {}) } : {}), // fragman takibi: otomatik + öncelikli (sahibin işleri önde); yayın onaylıysa sahibin işi gibi
+    ...(auto ? { trailerAuto: true, priority: true, urgent: true, ...(trailerWatchCfg().autoPublish ? { auto: true } : {}), ...(v.twId ? { twId: String(v.twId) } : {}) } : {}), // fragman takibi: otomatik + acil (sahibin işlerinden sonra, bütün otomatik haberlerden önce; süren otomatik haberi durdurur); yayın onaylıysa sahibin işi gibi
     ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
     ...(rv ? { revisionOf: rv.of, revision: rv.revision } : {}), ...(kr ? { kare: true } : {}), ...(oj ? { ownerJob: oj } : {}) });
   if (!res.ok) { if (oj) ownerJobEnd(oj); await sendW(`❌ Üretim başlatılamadı: ${res.error}`); }
@@ -2771,14 +2801,19 @@ function queueGate(video) {
 // autoPublish kapalıysa video sahibin işi gibi onaya gelir. Günde en çok maxPerDay; fazlası "atlandı".
 const TW_STATE = path.join(DATA, "trailer_watch.json"); // trailer_watch.py: {channels: {key: {input, channelId, name, lastVideoId, lastTitle, lastPublished, lastTs, lastUrl, error, first}}, seen, lastScan}
 const TW_DONE = path.join(DATA, "trailer_watch_done.json"); // {videoId: {at, state: sırada|hazırlanıyor|üretimde|üretildi|hata|atlandı, title, channel, url, day, video, error}}
-const TW_DEFAULTS = { enabled: true, intervalMin: 10, channels: [], maxAgeHours: 24, maxPerDay: 8, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0 }; // bir bölümün tanıtımı, 1./2. fragmanı, ön tanıtımı ve ön gösterimi ayrı videolar: günlük sınır 8
+// kullanıcı isteği, 26 Ekim ("fragman takibini sıkıştıralım, tanıtımları asla kaçırmayalım, onaysız yayınlayalım"): 3 dakikada bir tarama, günlük sınır yok
+// (0), ilk taramada son 12 saatin fragmanları da üretilir (firstFreshHours), RSS'in yanında kanalın videolar sayfası da okunur (pageScan)
+const TW_DEFAULTS = { enabled: true, intervalMin: 3, channels: [], maxAgeHours: 24, maxPerDay: 0, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0, firstFreshHours: 12, pageScan: true };
 const trailerWatchCfg = () => {
   const raw = settings().trailerWatch, c = { ...TW_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) };
   const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
   c.enabled = !off(c.enabled); c.autoPublish = !off(c.autoPublish); c.notify = c.notify === true || ["true", "1"].includes(String(c.notify)); c.onlyTrailers = !off(c.onlyTrailers);
   c.channels = Array.isArray(c.channels) ? [...new Set(c.channels.map((x) => String(x).trim()).filter(Boolean))] : [];
-  for (const k of ["intervalMin", "maxAgeHours", "maxPerDay"]) c[k] = Number(c[k]) > 0 ? Number(c[k]) : TW_DEFAULTS[k];
-  c.intervalMin = Math.min(1440, Math.max(2, c.intervalMin)); c.maxPerDay = Math.min(20, Math.round(c.maxPerDay));
+  for (const k of ["intervalMin", "maxAgeHours"]) c[k] = Number(c[k]) > 0 ? Number(c[k]) : TW_DEFAULTS[k];
+  c.intervalMin = Math.min(1440, Math.max(2, c.intervalMin));
+  c.maxPerDay = Number.isFinite(Number(c.maxPerDay)) && Number(c.maxPerDay) >= 0 ? Math.min(50, Math.round(Number(c.maxPerDay))) : TW_DEFAULTS.maxPerDay; // 0 = sınırsız
+  c.firstFreshHours = Number.isFinite(Number(c.firstFreshHours)) && Number(c.firstFreshHours) >= 0 ? Math.min(72, Number(c.firstFreshHours)) : TW_DEFAULTS.firstFreshHours;
+  c.pageScan = !off(c.pageScan);
   c.soundSeconds = Number(c.soundSeconds) >= 0 && Number.isFinite(Number(c.soundSeconds)) ? Math.min(30, Number(c.soundSeconds)) : TW_DEFAULTS.soundSeconds; // 0 = orijinal ses yok
   c.duration = Number(c.duration) > 0 ? Math.min(60, Math.max(20, Number(c.duration))) : 0;
   return c;
@@ -2813,7 +2848,7 @@ async function trailerWatchScan({ manual = false } = {}) {
       const item = { videoId: n.videoId, title: String(n.title || "").slice(0, 200), channel: String(n.channel || "").slice(0, 80), url: n.url, published: n.published || null,
         promoLabel: String(n.promo?.label || "").slice(0, 30), previous: Array.isArray(n.previous) ? n.previous.slice(-6).map((x) => ({ title: String(x.title || "").slice(0, 120), published: String(x.published || "").slice(0, 10), label: String(x.label || "").slice(0, 30) })) : [] };
       if (!c.enabled) { twMark(n.videoId, "atlandı", { ...item, error: "fragman takibi kapalı" }); continue; }
-      if (twToday() + twPending.length >= c.maxPerDay) { twMark(n.videoId, "atlandı", { ...item, error: `günlük sınır (${c.maxPerDay}) doldu` }); push(`🎬 yeni fragman atlandı (günlük ${c.maxPerDay} sınırı doldu): ${item.channel} — ${item.title.slice(0, 70)}`); continue; }
+      if (c.maxPerDay > 0 && twToday() + twPending.length >= c.maxPerDay) { twMark(n.videoId, "atlandı", { ...item, error: `günlük sınır (${c.maxPerDay}) doldu` }); push(`🎬 yeni fragman atlandı (günlük ${c.maxPerDay} sınırı doldu): ${item.channel} — ${item.title.slice(0, 70)}`); continue; }
       twPending.push(item); twMark(n.videoId, "sırada", item);
       push(`🎬 YENİ FRAGMAN: ${item.channel} — ${item.title.slice(0, 80)}${item.promoLabel ? ` (${item.promoLabel}${item.previous.length ? `; aynı bölümün ${item.previous.length} önceki tanıtımı var` : ""})` : ""} → fragman analizi sıraya alındı`);
     }
@@ -2846,7 +2881,7 @@ function twProduced(name) { const id = twJobId(); if (id) { twMark(id, "üretild
 function twPipelineEnd(code) { const id = twJobId(); if (id && code !== 0 && code !== 143 && twDone()[id]?.state !== "üretildi") { twMark(id, "hata", { error: `üretim hata ile bitti (kod ${code})` }); sse("trailerwatch", {}); } }
 function twStatusText() {
   const c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}, chans = Object.values(st.channels || {});
-  const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal · ${c.intervalMin} dk'da bir · bugün ${twToday()}/${c.maxPerDay}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
+  const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal · ${c.intervalMin} dk'da bir · bugün ${twToday()}${c.maxPerDay ? `/${c.maxPerDay}` : ""}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
   const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 10)})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}`);
   const recent = Object.entries(twDone()).map(([id, v]) => ({ id, ...v })).filter((v) => v.state !== "sırada").sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 3)
     .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)}${v.promoLabel ? ` [${v.promoLabel}]` : ""} — ${v.state}${v.error ? ` (${v.error})` : ""}`);

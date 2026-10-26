@@ -134,9 +134,10 @@ def headlines(page: str, base: str, count: int) -> list:
     from breaking_watch import match_produced, source_count
     for x in out:
         srcs = sorted(set(source_count(x["title"])) | {"Mynet"})
-        v = score(x["title"], kw)
+        v = score(x["title"], kw, sources=len(srcs))
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
         x["strong"], x["strongReason"] = bool(v.get("strong")), v.get("strongReason") or ""  # ⭐⭐ çok değerli (panel: yalnız çok değerli manşetler)
+        x["top"], x["topReason"] = bool(v.get("top")), v.get("topReason") or ""  # ⭐⭐⭐ en değerli (panel newsLevel "top")
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
         # bu haberin videosu üretildi mi (üretilen haber hafızası; manşette özet yok: başlık + adres). Panel burada yalnız adres

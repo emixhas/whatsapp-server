@@ -390,9 +390,10 @@ def annotate(items: list) -> list:
     bst = load_json(BSTATE, {})
     for x in items:
         srcs = sorted(set(source_count(x["title"], bst) if x["title"] else []) | {"Sondakika.com"})
-        v = score(f"{x['title']} {(x.get('description') or '')[:200]}", kw)
+        v = score(f"{x['title']} {(x.get('description') or '')[:200]}", kw, sources=len(srcs))
         x["valuable"], x["valueReason"], x["sources"] = v["valuable"], v["reason"], srcs
         x["strong"], x["strongReason"] = v["strong"], v["strongReason"]  # çok değerli (news_value; sondakika strictValuable)
+        x["top"], x["topReason"] = bool(v.get("top")), v.get("topReason") or ""  # en değerli (panel newsLevel "top")
         if len(srcs) > 1:
             x["valueReason"] += f" · {len(srcs)} kaynakta"
         m = match_produced(x["title"], x.get("description") or "", x.get("url") or "") if x["title"] else None
@@ -541,6 +542,7 @@ def article(url: str) -> dict:
     v = value(a)
     a["valuable"], a["valueReason"] = v["valuable"], v["reason"]
     a["strong"], a["strongReason"] = v["strong"], v["strongReason"]
+    a["top"], a["topReason"] = bool(v.get("top")), v.get("topReason") or ""
     return mw.with_dup(a)
 
 
