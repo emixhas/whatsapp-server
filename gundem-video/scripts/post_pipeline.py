@@ -214,6 +214,57 @@ def publish(plat: str) -> bool:
     return bool(j.get("ok"))
 
 
+PREFLUSH_TIMEOUT = 15 * 60  # otomatik haberden önce sıradaki fragmanların yüklenmesi en çok 15 dk
+
+
+def _held(plat: str) -> bool:
+    """Platform duraklatılmış mı (publish_hold.json until ilerideyse)."""
+    from datetime import datetime, timezone
+    try:
+        until = datetime.fromisoformat(str(((load_json(DATA / "publish_hold.json", {}) or {}).get(plat) or {}).get("until") or ""))
+        return until > datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def preflush_trailers(plats: list, meta: dict) -> list:
+    """Fragmanlar haberlerden önce (kullanıcı isteği, 26 Ekim: "Instagram yükleme sırasında önce fragmanlar olsun, fragmanlar yüklendikten sonra
+    haberlere geçilsin"): otomatik haber videosu bir platforma yüklenmeden önce o platformun sırasında bekleyen fragmanlar yüklenir
+    (`publish.py --flush --only-trailers --platform X`; haberler sırada kalır). Sahibin videosu (beklemesin) ve fragmanın kendisi atlar;
+    platform duraklatılmışsa fragmanlar beklemenin bitişinde zaten önce yüklenir. Dönüş: fragmanları yüklenen platformlar."""
+    if not plats or meta.get("userVideo") or (meta.get("queue") or {}).get("no") or meta.get("trailer") or meta.get("trailerAuto"):
+        return []
+    q = load_json(DATA / "publish_queue.json", []) or []
+    if not isinstance(q, list) or not q:
+        return []
+    out = []
+    for plat in plats:
+        trailers = []
+        for x in q:
+            if x.get("platform") != plat:
+                continue
+            m = episode_meta(Path(str(x.get("video") or "")).name) or {}
+            if m.get("trailerAuto") or m.get("trailer"):
+                trailers.append(x.get("video"))
+        if not trailers:
+            continue
+        if _held(plat):
+            print(f"📤 {plat}: sırada {len(trailers)} fragman bekliyor ama platform duraklatılmış; bekleme bitince önce onlar yüklenecek", flush=True)
+            continue
+        print(f"📤 {plat}: sırada bekleyen {len(trailers)} fragman bu haberden önce yükleniyor (fragmanlar haberlerden önce)", flush=True)
+        try:
+            fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush", "--only-trailers", "--platform", plat], capture_output=True, text=True, timeout=PREFLUSH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            print(f"📤 {plat}: fragmanların yüklenmesi {PREFLUSH_TIMEOUT // 60} dakikada bitmedi, kesildi; haber yükleniyor", flush=True)
+            continue
+        for line in fl.stdout.strip().splitlines()[:-1]:
+            if line.startswith("📤") and " sırası: " not in line:
+                print(line, flush=True)
+        out.append(plat)
+    return out
+
+
+preflush_trailers(plats, _meta)
 failed = [p for p in plats if not publish(p)]
 
 

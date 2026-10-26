@@ -33,6 +33,13 @@ HOLD_FILE = DATA / "publish_hold.json"    # {"youtube": {"until": iso, "reason":
 QUEUE_FILE = DATA / "publish_queue.json"  # [{"video": ad, "platform": p, "at": iso}]
 LIMIT_HOURS = 3        # sınır dolunca bu kadar saat sonra yeniden denenir
 QUEUE_MAX_HOURS = 24   # daha eski sıradaki haber videoları yüklenmez (bayat haber)
+# Sıra düzeni (kullanıcı isteği, 26 Ekim: "Instagram yükleme sırasında önce fragmanlar, fragmanlar yüklendikten sonra haberlere geçilsin; sırada ne var
+# göreyim; değeri geçmiş haberi sıradan çıkarayım, silebileyim"): fragman (fragman takibi ya da sahibin fragman analizi) → sahip (WhatsApp'tan istenen
+# video) → haber; her kümede en yeni önce. Fragman sırada bir hafta, sahibin videosu 3 gün bekler (haber 24 saat); 6 saattir bekleyen haber panelde ve
+# WhatsApp yanıtında "değeri geçmiş olabilir" uyarısı alır, çıkarma kararı sahibin.
+QUEUE_KIND_RANK = {"fragman": 0, "sahip": 1, "haber": 2}
+QUEUE_MAX_HOURS_BY_KIND = {"fragman": 7 * 24, "sahip": 72, "haber": QUEUE_MAX_HOURS}
+QUEUE_STALE_HINT_HOURS = 6
 QUEUE_MAX_TRIES = 3    # sınır dışı hatada (bozuk dosya, API hatası) sıradaki video bu kadar denemeden sonra çıkarılır
 QUEUE_LOG = DATA / "publish_queue_log.json"  # son 100 sıra olayı: {at, event queued|uploaded|failed|dropped|held|hold|removed, video, platform, detail, url}
 # Yükleme defteri (kullanıcı şikâyeti, 24 Ekim: "halen daha çift paylaşım var"): her yüklemenin adımı video + platform başına diske yazılır
@@ -189,26 +196,75 @@ def enqueue(video, plat):
         qlog("queued", video, plat, "sınır/engel yüzünden sıraya alındı")
 
 
-def unqueue(video, plat) -> bool:
-    """Elle sıradan çıkar (panel "✖"); video yüklenmez, panelden elle yüklenebilir."""
+def unqueue(video, plat=None) -> bool:
+    """Elle sıradan çıkar (panel "✖", WhatsApp "sıradan çıkar N"); platform verilmezse her platformun sırasından. Video yüklenmez, panelden elle yüklenebilir."""
+    return bool(unqueue_all(video, plat))
+
+
+def unqueue_all(video, plat=None) -> list:
+    """Videoyu sıradan çıkarır (platform verilmezse hepsinden); çıkarıldığı platformların listesi."""
     q = load_json(QUEUE_FILE, []) or []
-    keep = [x for x in q if not (x.get("video") == video and x.get("platform") == plat)]
-    if len(keep) == len(q):
-        return False
-    save_json(QUEUE_FILE, keep)
-    qlog("removed", video, plat, "elle sıradan çıkarıldı")
-    return True
+    gone = [x for x in q if x.get("video") == video and (plat is None or x.get("platform") == plat)]
+    if not gone:
+        return []
+    save_json(QUEUE_FILE, [x for x in q if x not in gone])
+    for x in gone:
+        qlog("removed", video, x.get("platform"), "elle sıradan çıkarıldı")
+    return [x.get("platform") for x in gone]
+
+
+def queue_kind(name, meta=None) -> str:
+    """Sıradaki videonun türü: fragman (fragman takibi ya da sahibin fragman analizi) > sahip (WhatsApp'tan istenen video, kuyruk videosu) > haber."""
+    if isinstance(meta, dict):
+        m = meta
+    else:
+        m = (episode_meta(Path(str(name or "")).name) or {}) if name else {}
+    if m.get("trailerAuto") or m.get("trailer"):
+        return "fragman"
+    if m.get("userVideo") or (m.get("queue") or {}).get("no"):
+        return "sahip"
+    return "haber"
+
+
+def queue_title(meta) -> str:
+    """Sıra satırındaki başlık: yayın başlığı, yoksa A başlığı, yoksa ilk haber başlığı."""
+    m = meta if isinstance(meta, dict) else {}
+    titles = m.get("titles") if isinstance(m.get("titles"), dict) else {}
+    t = m.get("publishTitle") or titles.get("A") or ""
+    if not t:
+        h = (m.get("headlines") or [{}])[0] if isinstance(m.get("headlines"), list) and m.get("headlines") else {}
+        t = (h.get("title") if isinstance(h, dict) else "") or m.get("title") or ""
+    return str(t or "").strip()[:110]
+
+
+def queue_max_hours(kind: str) -> int:
+    return int(QUEUE_MAX_HOURS_BY_KIND.get(kind, QUEUE_MAX_HOURS))
 
 
 def queue_info(plat: str) -> dict:
-    """Bir platformun sınır sırası: bekleyen videolar (eskiden yeniye; her birinde sıraya giriş zamanı, deneme sayısı, son hata),
-    duraklatma bitişi ve nedeni (Türkçe holdReason), son 15 sıra olayı (en yeniden eskiye)."""
-    q = sorted([x for x in (load_json(QUEUE_FILE, []) or []) if x.get("platform") == plat], key=lambda x: x.get("at", ""))
+    """Bir platformun sınır sırası: bekleyen videolar YÜKLENECEKLERİ SIRAYLA (flush_order: fragman → sahip → haber, en yeni önce; her birinde
+    sıra numarası, tür, başlık, sıraya giriş zamanı ve kaç saattir beklediği, haber değeri, deneme sayısı, son hata, "değeri geçmiş olabilir"
+    uyarısı), duraklatma bitişi ve nedeni (Türkçe holdReason), son 15 sıra olayı (en yeniden eskiye)."""
+    q = [x for x in flush_order(load_json(QUEUE_FILE, []) or []) if x.get("platform") == plat]
     until = hold_until(plat)
     reason = ((load_json(HOLD_FILE, {}) or {}).get(plat) or {}).get("reason", "") if until else ""
     events = [e for e in reversed(load_json(QUEUE_LOG, []) or []) if isinstance(e, dict) and e.get("platform") == plat][:15]
-    return {"count": len(q), "videos": [x.get("video") for x in q],
-            "items": [{"video": x.get("video"), "at": x.get("at"), "tries": int(x.get("tries") or 0), "lastTry": x.get("lastTry"), "lastError": x.get("lastError") or ""} for x in q],
+    now = datetime.now(timezone.utc)
+    items = []
+    for i, x in enumerate(q, 1):
+        name = str(x.get("video") or "")
+        meta = episode_meta(Path(name).name) or {} if name else {}
+        kind = queue_kind(name, meta)
+        at = _parse(x.get("at", ""))
+        age_h = round((now - at).total_seconds() / 3600, 1) if at else None
+        v = meta.get("value") if isinstance(meta.get("value"), dict) else None
+        items.append({"pos": i, "video": name, "kind": kind, "title": queue_title(meta), "at": x.get("at"), "ageHours": age_h,
+                      "staleHint": bool(kind == "haber" and age_h is not None and age_h >= QUEUE_STALE_HINT_HOURS), "dropAfterHours": queue_max_hours(kind),
+                      "value": ({"valuable": bool(v.get("valuable")), "top": bool(v.get("top")), "reason": str(v.get("reason") or "")[:80]} if v else None),
+                      "label": str(meta.get("infoLabel") or meta.get("label") or "")[:30],
+                      "tries": int(x.get("tries") or 0), "lastTry": x.get("lastTry"), "lastError": x.get("lastError") or ""})
+    return {"count": len(q), "videos": [x.get("video") for x in q], "items": items,
+            "order": "önce fragmanlar, sonra sizin videolarınız, sonra haberler (en yeni önce)", "staleHintHours": QUEUE_STALE_HINT_HOURS,
             "holdUntil": until.isoformat() if until else None, "reason": reason, "holdReason": hold_reason_tr(plat, reason) if until else "",
             "events": events}
 
@@ -1907,7 +1963,8 @@ def main():
     ap.add_argument("--flush", action="store_true")
     ap.add_argument("--yt-thumbs", action="store_true", help="YouTube'da kapağı reddedilmiş/eksik videolara kapağı yeniden yükle")
     ap.add_argument("--queue", action="store_true", help="sınır sıraları (Instagram, TikTok, YouTube): bekleyen videolar, duraklatma, son olaylar")
-    ap.add_argument("--unqueue", action="store_true", help="--file ve --platform ile videoyu sıradan çıkar (yüklenmez)")
+    ap.add_argument("--unqueue", action="store_true", help="--file ile videoyu sıradan çıkar (yüklenmez); --platform verilirse yalnız o platformun sırasından")
+    ap.add_argument("--only-trailers", action="store_true", help="--flush ile yalnız sıradaki fragmanları yükle (haberler sırada kalır); --platform ile tek platform")
     ap.add_argument("--retitle", action="store_true", help="tutmayan videonun YouTube başlığını diğer varyanta çevir")
     ap.add_argument("--first-comments", action="store_true", help="ilk yorumu yazılamamış son videolara yorumu yaz")
     a = ap.parse_args()
@@ -1929,7 +1986,7 @@ def main():
             print(json.dumps({"ok": False, "error": str(e)[:300]}, ensure_ascii=False))
         return
     if a.flush:
-        print(json.dumps(flush(), ensure_ascii=False)); return
+        print(json.dumps(flush(only="fragman" if a.only_trailers else None, plat_only=a.platform), ensure_ascii=False)); return
     if a.yt_thumbs:
         print(json.dumps(yt_retry_thumbs(), ensure_ascii=False)); return
     if a.queue:
@@ -1937,10 +1994,10 @@ def main():
             print(queue_line(plat))
         print(json.dumps({"ok": True, "instagram": queue_info("instagram"), "tiktok": queue_info("tiktok"), "youtube": queue_info("youtube")}, ensure_ascii=False)); return
     if a.unqueue:
-        if not (a.file and a.platform):
-            print(json.dumps({"ok": False, "error": "--unqueue için --file ve --platform gerekir"}, ensure_ascii=False)); return
-        ok = unqueue(Path(a.file).name, a.platform)
-        print(json.dumps({"ok": ok, "error": None if ok else "sırada böyle bir video yok"}, ensure_ascii=False)); return
+        if not a.file:
+            print(json.dumps({"ok": False, "error": "--unqueue için --file gerekir"}, ensure_ascii=False)); return
+        plats = unqueue_all(Path(a.file).name, a.platform)
+        print(json.dumps({"ok": bool(plats), "platforms": plats, "error": None if plats else "sırada böyle bir video yok"}, ensure_ascii=False)); return
     if a.disconnect == "tiktok":
         print(json.dumps({"ok": True, "removed": tt_disconnect(), "message": "TikTok bağlantısı kesildi"}, ensure_ascii=False)); return
     if a.disconnect == "youtube":
@@ -2050,19 +2107,22 @@ def upload(path: Path, plat: str) -> dict:
 
 
 def flush_order(q: list) -> list:
-    """Sıra: fragman takibi videoları (meta trailerAuto; kullanıcı isteği, 26 Ekim: fragmanlar asla kaçmasın) önce, sonra en yeni haber önce."""
-    def auto_trailer(it):
+    """Yükleme sırası (kullanıcı isteği, 26 Ekim: "Instagram'da önce fragmanlar yüklensin, fragmanlar yüklendikten sonra haberlere geçilsin"):
+    1) fragmanlar (fragman takibi + sahibin fragman analizi; fragmanlar asla kaçmasın), 2) sahibin WhatsApp'tan istediği videolar, 3) haberler;
+    her kümede en yeni önce. Kararlı sıralama: aynı türde giriş zamanı belirler."""
+    def rank(it):
         try:
-            return bool((episode_meta(Path(str(it.get("video") or "")).name) or {}).get("trailerAuto"))
+            return QUEUE_KIND_RANK.get(queue_kind(it.get("video")), 2)
         except Exception:
-            return False
+            return 2
     out = sorted(q, key=lambda x: x.get("at", ""), reverse=True)
-    out.sort(key=lambda x: 0 if auto_trailer(x) else 1)
+    out.sort(key=rank)
     return out
 
 
-def flush() -> dict:
-    """Sıradaki (sınır yüzünden bekleyen) videoları yükler; fragman takibi videoları önce, sonra en yeni haber önce."""
+def flush(only: str | None = None, plat_only: str | None = None) -> dict:
+    """Sıradaki (sınır yüzünden bekleyen) videoları yükler: önce fragmanlar, sonra sahibin videoları, sonra en yeni haber önce (flush_order).
+    only="fragman": yalnız fragmanlar yüklenir, diğerleri sırada kalır (post_pipeline otomatik haberden önce çağırır); plat_only: yalnız o platform."""
     q = load_json(QUEUE_FILE, []) or []
     if not q:
         return {"ok": True, "queued": 0}
@@ -2070,10 +2130,14 @@ def flush() -> dict:
     done, keep = [], []
     for it in flush_order(q):
         plat, name = it.get("platform"), it.get("video", "")
+        kind = queue_kind(name)
+        if (only and kind != only) or (plat_only and plat != plat_only):
+            keep.append(it); continue
         at = _parse(it.get("at", "")) or now
         path = OUT / Path(name).name
-        if not path.exists() or now - at > timedelta(hours=QUEUE_MAX_HOURS):
-            why = "silinmiş" if not path.exists() else f"{QUEUE_MAX_HOURS} saatten eski, bayat"
+        max_h = queue_max_hours(kind)
+        if not path.exists() or now - at > timedelta(hours=max_h):
+            why = "silinmiş" if not path.exists() else f"{max_h} saatten eski, bayat"
             print(f"📤 sıradan çıkarıldı (eski ya da silinmiş): {name} → {plat}", flush=True)
             qlog("dropped", name, plat, why)
             continue
@@ -2083,7 +2147,7 @@ def flush() -> dict:
         tries = int(it.get("tries") or 0) + 1
         if res.get("ok"):
             done.append(f"{plat}:{name}")
-            print(f"📤 {plat}: " + ("zaten yayında " if res.get("skipped") else "tamam ") + f"{res.get('url') or ''} (sıradan)", flush=True)
+            print(f"📤 {plat}: " + ("zaten yayında " if res.get("skipped") else "tamam ") + f"{res.get('url') or ''} (sıradan{', fragman' if kind == 'fragman' else ''})", flush=True)
             qlog("uploaded", name, plat, "sıradan yüklendi" + (f" ({tries}. denemede)" if tries > 1 else ""), res.get("url") or "")
         elif res.get("limit"):  # bekleme yeniden başladı (engel sürüyor): video sırada kalır
             keep.append({**it, "tries": tries, "lastTry": now_iso(), "lastError": res.get("error") or ""})

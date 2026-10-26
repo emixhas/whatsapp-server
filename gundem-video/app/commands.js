@@ -541,7 +541,27 @@ export function parseCommand(raw) {
   // Tutan videoyu farklı haliyle yeniden yayınla: "en çok izlenen videoyu yeniden yayınla", "son videoyu yeniden yayınla"
   if (/(yeniden|tekrar) (yayınla|paylaş|üret)/.test(t) && /video/.test(t)) return { action: "remake", which: /(en çok|en fazla|tutan|izlenen|viral)/.test(t) ? "top" : "last", reply: "" };
   if (/kapak(ları|lari)? (yeniden|tekrar) (yükle|gönder)/.test(t)) return { action: "yt_thumbs", reply: "" };
-  // Yayın sırası: "instagram sırası", "tiktok sırası", "yayın kuyruğu", "sırada ne var", "bekleyen videolar"
+  // Yükleme sırasından çıkarma / silme (kullanıcı isteği, 26 Ekim: "haberin değeri geçmişse silebilmeliyim, sıradan çıkartmalıyım"): "sıradan çıkar 2",
+  // "instagram sırasından 2'yi çıkar", "2 numarayı sıradan çıkar", "2. sıradakini sil", "sıradan sil 3" (video Mac'ten de silinir), "sıradan çıkar
+  // 2026-10-24-3". norm() nokta ve kesmeyi boşluğa çevirir ("2'yi" → "2 yi", "2." → "2"); \b Türkçe harfte çalışmaz, kelime sınırı boşlukla aranır.
+  // "sıradan" (= alelade) başka cümlelerde de geçer: fiil YALNIZ emir/kibar biçimiyle ve ya numara/video adı var ya da fiil "sıradan/sırasından"a
+  // (aralarında en çok numara/sıra sözleri) bitişik ("sıradan haberleri sil", "sıradan haberlerden 5 tane kaldıralım mı" komut değil).
+  {
+    const VERB = /(?:^|\s)(?:çıkar(?:t)?(?:sana|ın)?|kaldır(?:sana|ın)?|sil(?:sene|in)?|çıkar(?:t)?ır mısın|siler misin|kaldırır mısın)(?=\s|$)/;
+    const hasQ = /(?:^|\s)sıra(?:dan|sından|daki\S*)(?=\s|$)/.test(t);
+    if (hasQ && VERB.test(t) && !/sıraya al/.test(t)) {
+      const name = (t.match(/(?:^|\s)(\d{4}-\d{2}-\d{2}-\d+)(?:\s+mp4)?(?=\s|$)/) || [])[1] || "";
+      const toks = t.split(" "), isV = (w) => VERB.test(" " + w), near = (i) => toks.slice(Math.max(0, i - 3), i + 4).some((w) => /^sıra/.test(w) || isV(w));
+      let num = ""; // "2", "2 yi"/"2yi", "2 numara…", "2 nolu", "3 sıradaki": sıra sözüne ya da fiile en çok üç kelime uzaklıkta
+      if (!name) toks.forEach((w, i) => { const m = w.match(/^(\d{1,2})(?:yi|yı)?$/); if (m && !num && near(i)) num = m[1]; });
+      const adjacent = /(?:^|\s)sıra(?:dan|sından)(?:\s+(?:\d{1,2}(?:yi|yı)?|yi|yı|numara\S*|nolu|no lu|videoyu|videosunu|haberi|olanı|\d{4}-\d{2}-\d{2}-\d+|mp4))*\s+(?:çıkar|çıkart|kaldır|sil)/.test(t);
+      if (name || num || adjacent) {
+        const pm = t.match(/(?:^|\s)(instagram|insta|youtube|tiktok)(?=\s|$)/);
+        return { action: "queue_drop", n: num ? Number(num) : 0, name, platform: pm ? (pm[1] === "insta" ? "instagram" : pm[1]) : "", del: /(?:^|\s)sil(?:sene|in|er misin)?(?=\s|$)/.test(t), reply: "" };
+      }
+    }
+  }
+  // Yayın sırası: "instagram sırası", "tiktok sırası", "yayın kuyruğu", "sırada ne var", "bekleyen videolar", "yükleme sırası"
   if (/(tiktok|youtube|instagram|insta|yayın|yükleme)? ?sıra(sı|da ne var|daki videolar)|(tiktok|youtube|instagram|insta|yayın|yükleme) kuyruğu|bekleyen (video|yükleme)/.test(t) && !/sıraya al/.test(t)) return { action: "queue", reply: "" };
   // Ağır süreçleri ve üretimi durdur (ısınma): "her şeyi durdur", "modelleri kapat", "üretimi durdur"
   if (/(her şeyi|hepsini|tüm modelleri|modelleri|bütün işlemleri|arka plan|üretimi|sistemi|tüm sistemi) (durdur|kapat|bitir|dinlendir)/.test(t)) return { action: "stopall", reply: "" };

@@ -53,7 +53,7 @@ export const HELP_TEXT = `📋 *Emixhas komutları*
 
 📤 *Yayın ve hesaplar*
 • instagram'a yayınla · tiktok'a yayınla · youtube'a yayınla (son video)
-• instagram sırası · tiktok sırası · yayın sırası — sınır ya da engel yüzünden bekleyen videolar, deneme sayısı, son yüklemeler, sonraki deneme
+• yükleme sırası · instagram sırası · tiktok sırası — sınır ya da engel yüzünden bekleyen videolar yüklenecekleri sırayla ve numaralı (önce 🎬 fragmanlar, sonra 📲 sizin videolarınız, sonra 📰 haberler; en yeni önce), kaç saattir beklediği, değeri, deneme sayısı, "değeri geçmiş olabilir" uyarısı (6 saati geçen haber), son yüklemeler, sonraki deneme · sıradan çıkar 2 — o videoyu sıradan çıkarır (yüklenmez, Mac'te kalır) · sıradan sil 2 — videoyu Mac'ten de siler · panelde Videolar → 📤 Yükleme sırası kartı (✖ çıkar, 🗑 sil). Otomatik haber yüklenmeden önce o platformun sırasındaki fragmanlar yüklenir; 24 saati geçen haber sıradan kendiliğinden düşer, fragman bir hafta bekler
 • kapakları yeniden yükle
 • süresi geçenleri liste dışı yap · liste dışı yapılanları geri aç
 • günün hikayesini paylaş — en çok izlenenler Instagram hikâyesine · hikaye paylaşımını kapat / otomatik hikayeyi aç

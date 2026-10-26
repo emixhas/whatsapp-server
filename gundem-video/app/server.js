@@ -3443,9 +3443,11 @@ async function thumbBuffer(name) { try { return readFileSync(await makeThumb(nam
 app.get("/api/videos", (req, res) => res.json(listVideos({ archived: req.query.archived === "1" })));
 app.get("/api/thumb/:name", async (req, res) => { const name = path.basename(req.params.name); if (!existsSync(path.join(OUT, name))) return res.status(404).end(); const dst = await makeThumb(name, 480); if (!existsSync(dst)) return res.status(404).end(); res.sendFile(dst); });
 // Sil: önce yüklendiği platformlardan (publish.py --delete-remote), sonra Mac'teki dosyalar. ?local=1 yalnız yerel siler.
-app.delete("/api/videos/:name", async (req, res) => { const name = path.basename(req.params.name);
+// Video silme (panel 🗑, yükleme sırası kartı 🗑, WhatsApp "sıradan sil N"): platformlardaki kopyalar (local değilse), Mac'teki dosyalar ve
+// yükleme sırasındaki kayıtları (kullanıcı isteği, 26 Ekim: değeri geçmiş haber silinince sırada kalmasın)
+async function deleteVideo(name, { local = false } = {}) {
   let remote = {};
-  if (req.query.local !== "1") {
+  if (!local) {
     const m = readJson(path.join(DATA, "metrics.json"), { videos: {} }).videos?.[name] || {};
     if (m.youtube?.id || m.instagram?.id || m.tiktok?.publish_id || m.tiktok?.id) {
       push(`🗑 ${name}: platformlardan siliniyor`);
@@ -3458,7 +3460,11 @@ app.delete("/api/videos/:name", async (req, res) => { const name = path.basename
   // diskten zaten silinmiş (arşivlenmiş) videoda bir platformdan silinemediyse kayıt kalır: panelde yine görünsün, yeniden denenebilsin
   const keepMeta = !existsSync(path.join(OUT, name)) && Object.values(remote).some((v) => !v.ok);
   for (const f of [name, ...(keepMeta ? [] : [name.replace(/\.mp4$/, ".json")]), ...["-kapak.jpg", "-kapakA.jpg", "-kapakB.jpg", "-kapakYT.jpg"].map((x) => name.replace(/\.mp4$/, x))]) { const p = path.join(OUT, f); if (existsSync(p)) unlinkSync(p); } const t = path.join(THUMBS, name.replace(/\.mp4$/, ".jpg")); if (existsSync(t)) unlinkSync(t);
-  push(`🗑 ${name}: Mac'ten silindi`); py("analyze.py").catch(() => {}); res.json({ ok: true, remote }); });
+  const uq = await py("publish.py", ["--unqueue", "--file", name]).catch(() => null), unqueued = uq?.json?.platforms || [];
+  if (unqueued.length) push(`📤 ${name}: yükleme sırasından çıkarıldı (${unqueued.map((p) => PLAT_TR[p] || p).join(", ")})`);
+  push(`🗑 ${name}: Mac'ten silindi`); py("analyze.py").catch(() => {}); return { ok: true, remote, unqueued };
+}
+app.delete("/api/videos/:name", async (req, res) => res.json(await deleteVideo(path.basename(req.params.name), { local: req.query.local === "1" })));
 app.post("/api/reveal", async (req, res) => { const p = path.join(OUT, path.basename(req.body.name || "")); if (!existsSync(p) || !isMac) return res.json({ ok: false }); res.json(await run("open", ["-R", p])); });
 app.get("/api/qr", async (req, res) => { const url = `http://${lanIp()}:${PORT}` + (req.query.name ? "/videos/" + path.basename(String(req.query.name)) : "/"); res.json({ url, svg: await QRCode.toString(url, { type: "svg", margin: 1, color: { dark: "#FFFFFF", light: "#00000000" } }) }); });
 
@@ -4073,6 +4079,27 @@ async function handleCommand(text, opts = {}) {
     }
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const q = await queueState(); reply = queueReport(q) || "Sıra bilgisi alınamadı."; break; }
+    case "queue_drop": { // "sıradan çıkar 2" (yalnız o platformun sırasından; video Mac'te kalır), "sıradan çıkar 2026-10-24-3" (her platformdan), "sıradan sil 2" (video da Mac'ten silinir; platformlarda yayınlanmış kopyalar durur)
+      const q = await queueState(), list = queueList(q);
+      if (!list.length) { reply = "Yükleme sırası boş; çıkarılacak video yok."; break; }
+      const nm = String(cmd.name || "").replace(/\.mp4$/, "");
+      let hits = cmd.n ? list.filter((x) => x.n === Number(cmd.n)) : nm ? list.filter((x) => String(x.video).replace(/\.mp4$/, "") === nm) : [];
+      if (cmd.platform) hits = hits.filter((x) => x.platform === cmd.platform);
+      if (!hits.length) { reply = `Sırada ${cmd.n ? `${cmd.n} numaralı` : nm ? `"${nm}" adlı` : "böyle bir"} video yok${cmd.platform ? ` (${PLAT_TR[cmd.platform]})` : ""}. Liste için *yükleme sırası* yazın.`; break; }
+      const it = hits[0], label = it.title ? `${it.title.slice(0, 60)} (${String(it.video).replace(/\.mp4$/, "")})` : String(it.video).replace(/\.mp4$/, "");
+      if (cmd.del) {
+        const r = await deleteVideo(it.video, { local: true });
+        const ps = (r.unqueued || []).map((p) => PLAT_TR[p] || p);
+        reply = `🗑 ${label} Mac'ten silindi${ps.length ? `, ${ps.join(", ")} sırasından çıkarıldı` : ""}. Platformlarda yayınlanmış kopyası varsa duruyor (panelden silebilirsiniz).`;
+      } else {
+        const plat = cmd.platform || (cmd.n ? it.platform : "");
+        const r = await py("publish.py", ["--unqueue", "--file", it.video, ...(plat ? ["--platform", plat] : [])]);
+        const ps = (r.json?.platforms || []).map((p) => PLAT_TR[p] || p);
+        if (r.json?.ok) push(`📤 ${it.video}: ${ps.join(", ")} sırasından WhatsApp'tan çıkarıldı (yüklenmeyecek)`);
+        reply = r.json?.ok ? `✖ ${label} ${ps.join(", ")} sırasından çıkarıldı; yüklenmeyecek (video Mac'te duruyor, panelden elle yüklenebilir).` : `Çıkarılamadı: ${r.json?.error || "hata"}`;
+      }
+      break;
+    }
     case "followers": { const r = await pyJson(["scripts/followers.py", ...(Date.now() - followersSyncAt > 30 * 60000 ? ["--sync"] : [])]); if (r?.lastSync) followersSyncAt = Date.now(); reply = r?.text || "Abone bilgisi alınamadı."; break; }
     case "expire": {
       if (cmd.restore) { const r = await expireRestore("all"); reply = r.ok ? (r.done?.length ? `${r.done.length} video yeniden herkese açık yapıldı.` : "Liste dışı yaptığım video yok.") : r.error; break; }
@@ -4411,17 +4438,31 @@ async function queueState() {
     nextFlush: waits.length ? new Date(Math.min(...waits)).toISOString() : null };
 }
 const hhmmOf = (t) => { const d = new Date(t); return Number.isNaN(d.getTime()) ? "?" : d.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }); };
+// Yükleme sırası listesi (kullanıcı isteği, 26 Ekim: "sırada ne var, ne yüklenecek göreyim; değeri geçmiş haberi sıradan çıkarayım"): publish.py
+// --queue zaten yüklenecek sırayla verir (fragman → sahibin videosu → haber, en yeni önce); burada platform sırasıyla tek numara dizisi
+// (1..N) verilir, "sıradan çıkar 2" / "sıradan sil 2" o numarayı kullanır. Numara her çağrıda güncel sıradan hesaplanır.
+const QKIND_ICON = { fragman: "🎬", sahip: "📲", haber: "📰" }, QKIND_TR = { fragman: "fragman", sahip: "sizin videonuz", haber: "haber" };
+const sinceText = (h) => h == null ? "" : h < 1 ? `${Math.max(1, Math.round(h * 60))} dakikadır` : h < 48 ? `${Math.round(h)} saattir` : `${Math.floor(h / 24)} gündür`;
+function queueList(q) {
+  const out = [];
+  for (const p of Object.keys(PLAT_TR)) for (const it of (q[p]?.items || [])) out.push({ ...it, n: out.length + 1, platform: p });
+  return out;
+}
 function queueReport(q) {
-  const out = [], name = (v) => String(v || "").replace(/\.mp4$/, "");
+  const out = [], name = (v) => String(v || "").replace(/\.mp4$/, ""), list = queueList(q);
   for (const p of Object.keys(PLAT_TR)) {
     const i = q[p]; if (!i) continue;
     const hold = Date.parse(i.holdUntil || "") > Date.now();
     if (!i.count && !hold) { out.push(`📤 ${PLAT_TR[p]} sırası: boş`); continue; }
     out.push(`📤 *${PLAT_TR[p]} sırası*: ${i.count ? `${i.count} video bekliyor` : "boş"}${hold ? ` · ⏸ ${hhmmOf(i.holdUntil)}'e kadar duraklatıldı (${i.holdReason || i.reason})` : i.count ? (q.flushing ? " · ⬆ yükleniyor" : " · akıyor, sıradaki denemede yüklenecek") : ""}`);
-    for (const it of i.items || []) out.push(`• ${name(it.video)} — ${hhmmOf(it.at)}'ten beri sırada${it.tries ? `, ${it.tries} deneme` : ""}${it.lastError ? `, son: ${String(it.lastError).slice(0, 80)}` : ""}`);
+    for (const it of list.filter((x) => x.platform === p)) {
+      const title = String(it.title || "").trim();
+      out.push(`${it.n}. ${QKIND_ICON[it.kind] || "📰"} ${title ? `${title.slice(0, 70)} (${name(it.video)})` : name(it.video)} — ${it.ageHours != null ? `${sinceText(it.ageHours)} sırada` : `${hhmmOf(it.at)}'ten beri sırada`}${it.value?.top ? " · ⭐ en değerli" : it.value?.valuable ? " · ⭐ değerli" : ""}${it.tries ? `, ${it.tries} deneme` : ""}${it.lastError ? `, son: ${String(it.lastError).slice(0, 80)}` : ""}${it.staleHint ? " · ⚠️ değeri geçmiş olabilir" : ""}`);
+    }
     const ev = (i.events || []).slice(0, 4);
     if (ev.length) out.push("Son: " + ev.map((e) => `${hhmmOf(e.at)} ${QEV_TR[e.event] || e.event} ${name(e.video)}${e.event === "uploaded" && e.url ? " " + e.url : ""}`.trim()).join(" · "));
   }
+  if (list.length) out.push("Sıra: önce 🎬 fragmanlar, sonra 📲 sizin videolarınız, sonra 📰 haberler (en yeni önce). Çıkarmak için *sıradan çıkar 2* (video Mac'te kalır) ya da *sıradan sil 2* (video da silinir).");
   if (q.flushing) out.push("⬆ Şu an yükleniyor.");
   else if (q.nextFlush) out.push(`Sonraki deneme: ${hhmmOf(q.nextFlush)}${q.running ? " (üretim bitince)" : q.resting ? " (sistem dinlenmede; bekleme bitince yine denenir)" : ""}`);
   return out.join("\n");
@@ -4440,11 +4481,11 @@ async function flushNow() {
   } finally { flushQ = false; }
 }
 app.post("/api/queue/flush", async (_req, res) => { try { res.json(await flushNow()); } catch (e) { res.json({ ok: false, error: e.message }); } });
-app.post("/api/queue/drop", async (req, res) => {
+app.post("/api/queue/drop", async (req, res) => { // platform verilmezse her platformun sırasından
   const video = path.basename(String(req.body?.video || "")), plat = String(req.body?.platform || "");
-  if (!video || !PLAT_TR[plat]) return res.json({ ok: false, error: "video ve platform gerekir" });
-  const r = await py("publish.py", ["--unqueue", "--file", video, "--platform", plat]);
-  if (r.json?.ok) push(`📤 ${plat}: ${video} elle sıradan çıkarıldı (yüklenmeyecek; panelden elle yüklenebilir)`);
+  if (!video || (plat && !PLAT_TR[plat])) return res.json({ ok: false, error: "video gerekir (platform isteğe bağlı)" });
+  const r = await py("publish.py", ["--unqueue", "--file", video, ...(plat ? ["--platform", plat] : [])]);
+  if (r.json?.ok) push(`📤 ${video}: ${(r.json.platforms || [plat]).map((p) => PLAT_TR[p] || p).join(", ")} sırasından elle çıkarıldı (yüklenmeyecek; panelden elle yüklenebilir)`);
   res.json(r.json || { ok: false, error: (r.stderr || r.stdout || "").slice(-200) });
 });
 app.listen(PORT, "0.0.0.0", () => console.log(`EMIXHAS paneli: http://localhost:${PORT}   (telefon: http://${lanIp()}:${PORT})`));
