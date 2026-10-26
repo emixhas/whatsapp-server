@@ -1590,6 +1590,21 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   başlatma, env ve sıra önceliği), sahte Claude ile üç fragman işi (sesli an alanı yok → 8 sn, 10 → 10 sn, bozuk → 8 sn; gerçek `claude`
   PATH'te değil, tuzak tetiklenmedi), başsız Chromium'da panel kartı (durum satırı, liste, ayar yazımları, kanal kaydında tekilleştirme, tarama
   düğmesi, 📡 rozeti). Gerçek YouTube RSS/kanal sayfası ve Mac'te uçtan uca DENENMEDİ.
+  - Sahibin isteği onaysız ve fragmanlar YouTube'a (kullanıcı isteği, 26 Ekim: "WhatsApp'tan üretim istediğim şeylerde onay beklemeden
+    direkt yayınlansın; üretilen fragmanlar direkt YouTube'a da yüklensin"): `settings.waVideo.autoPublish` varsayılanı AÇIK (tek seferlik
+    geçiş `waVideo.autoPublishMigrated`: panelden kapatılmış olsa da bir kez açılır). Açıkken `post_pipeline.targets` sahibin her videosunu
+    (meta userVideo ya da kuyruk videosu `queue.no`: WhatsApp videosu, link, fragman analizi, uzun video özeti, benzer video; kare yine yalnız
+    YouTube) bağlı TÜM hesaplara onaysız verir (anlık anahtarı ve değer kuralı aranmaz; kuyruk videosunun eski "yalnız numaralı onayla" kuralı
+    — karar 3 — yalnız ayar kapalıyken), linkteki yayın saati kuyruk videosunda da planlanır (`scheduled_publish.json`); `youtube_allowed`
+    fragmanı (meta trailer / trailerAuto) ve sahibin videosunu (userVideo / queue) değer kuralı ve günlük ek hak aranmadan geçirir; kapalıyken
+    eski davranış (önce size gelir, "onay N"). `whatsapp.js notifyVideo0`: `waAuto` açıkken sahibin videosunda onay satırı yok, bağlı tüm
+    hesaplar otomatik (YouTube değer istisnası sahibin videosu ve fragmanda uygulanmaz), kuyruk videosu da planlı yayın saatini kullanır
+    (`qTime` yalnız kapalıyken), özet mesajında yayın satırları görünür; `server.js queueGate` açıkken kuyruk videosunu engellemez (planlı
+    yayın, "son videoyu yayınla", sesli komut), `videoInfo.trailer`. Kare kurgu mesajı ayara göre "YouTube'a yayınlanacak" / "onay
+    isteyeceğim". Panel WhatsApp videosu kartındaki anahtar metni ve yardım güncellendi. Sandbox'ta: post_pipeline.targets 17 durum (sahibin
+    videosu anlık anahtarı kapalıyken de hepsine, kapalı ayarla onay, kuyruk videosu açık/kapalı, sahibin fragmanı YouTube dahil, kare yalnız
+    YouTube, fragman YouTube dahil, sıradan otomatik haberde YouTube yok), whatsapp.js/server.js/post_pipeline statik denetimler, sunucu
+    harness ve panel tarayıcı testi.
   - Sıkı takip ve haber değer düzeyi (kullanıcı isteği, 26 Ekim: "fragman takibini sıkıştıralım, girdiğim linklerdeki fragmanları tanıtımları
     yakalamamız lazım, çok izleniyor; haber paylaşımında en değerli olanları yakalamaya çalışalım; fragman tanıtımlarını asla kaçırmayalım,
     direkt onaysız yayınlayalım"): `trailerWatch` varsayılanları intervalMin 3 (en az 2), maxPerDay 0 = sınırsız (0-50), firstFreshHours 12

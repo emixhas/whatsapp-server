@@ -86,6 +86,8 @@ const patchSettings = (patch) => { const s = deepMerge(settings(), patch); write
 // kademeli izlenme takibi (ilk 3 gün sık, sonra günde bir, 7 günden sonra yok): eski varsayılan 60 dk → 20 dk (bir kez)
 if (!settings().metricsSyncMigrated) patchSettings({ metricsSyncMinutes: Number(settings().metricsSyncMinutes) === 60 ? 20 : settings().metricsSyncMinutes, metricsSyncMigrated: true });
 if (settings().media?.allowYoutubeEmbeds === false && !settings().media?.ytEmbedsMigrated) patchSettings({ media: { allowYoutubeEmbeds: true, ytEmbedsMigrated: true } });
+// Tek seferlik geçiş (kullanıcı isteği, 26 Ekim: "WhatsApp'tan üretim istediğim şeyler onay beklemeden direkt yayınlansın"): panelden kapatılmış olsa da bir kez açılır
+if (!settings().waVideo?.autoPublishMigrated) patchSettings({ waVideo: { autoPublish: true, autoPublishMigrated: true } });
 // Tek seferlik geçiş (kullanıcı isteği, 19 Ekim: "tüm üretilen haberleri ve videoları 2 gün sonra diskten silelim, kapaklar dahil"):
 // eski 30 günlük ayar (ya da kapalı temizlik) 2 güne çekilir; sonra panelden değiştirilebilir
 if (!settings().cleanup?.twoDays) patchSettings({ cleanup: { enabled: true, days: 2, twoDays: true } });
@@ -1821,7 +1823,7 @@ app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({
 // talimattır, yoksa sorulur (settings.waVideo.waitMin içinde gelen ilk mesaj talimat, "iptal" vazgeçer). Arka arkaya gelen videolar
 // (albüm) 8 sn beklenip TEK haberde birleştirilir. wa_video.py çözümler (konuşma, sahneler, kareler), Claude kurgu planını yazar,
 // parçalar kesilir → şablon iş klasörü → startAnlik({templateDir, userVideo}). Yayın varsayılan ONAYLA (waVideo.autoPublish false).
-const waVideoCfg = () => ({ enabled: true, autoPublish: false, duration: 30, waitMin: 30, recreate: true, ...(settings().waVideo || {}) });
+const waVideoCfg = () => ({ enabled: true, autoPublish: true, duration: 30, waitMin: 30, recreate: true, ...(settings().waVideo || {}) }); // autoPublish varsayılan açık (kullanıcı isteği, 26 Ekim)
 // Fragman analizi (kullanıcı isteği, 18 Ekim: "youtube videosunun linkini göndersem analiz edip kelimelere döküp çarpıcı bir kancalı
 // giriş ile fragmanda ne anlatıldı gibi 40 saniyelik video"): talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser
 // geçerse ya da (autoDetect) YouTube başlığı fragmansa wa_video.py fragman modunda çalışır (prompts/fragman.md). Açık haber isteği
@@ -2547,8 +2549,8 @@ async function runVideoNews0(v) {
     const mins = (x) => `${Math.floor(x / 60)}:${String(Math.round(x % 60)).padStart(2, "0")}`;
     const chap = (p.chapters || []).map((c) => `• ${mins(c.t)} ${c.title}`).join("\n");
     push(`⬛ kare video planı: ${p.chapters?.length || 0} bölüm, kaynak ${mins(j.sourceSeconds || 0)} → video ≈ ${mins(j.duration)}${p.trim?.some(Boolean) ? ` (baştan ${p.trim[0]} sn, sondan ${p.trim[1]} sn kesildi)` : ""}`);
-    if (!waBrief()) await sendW(`⬛ *Kare video kurgusu hazır* — ${p.titles?.A || p.hook}\n⏱ Kaynak ${mins(j.sourceSeconds || 0)} → video ≈ ${mins(j.duration)} (tamamı kendi sesiyle, 1080x1080)${p.trim?.some(Boolean) ? `\n✂️ Baştan ${p.trim[0]} sn, sondan ${p.trim[1]} sn kesildi` : ""}${chap ? `\n\n📑 Bölümler:\n${chap}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulu değil): bölüm başlıkları karelerden, kelime altyazısı yok. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 500)}\n\nVideo üretiliyor (${mins(j.duration)}; uzun videoda çizim 10-30 dk sürer); bitince buraya gelecek (dosya 60 MB'yi aşarsa yalnız panel bağlantısı), yayın için *onay* isteyeceğim (yalnız YouTube; Reels ve TikTok uzun kare videoyu almaz).`);
-    else await sendW(`⬛ Kare video kurgusu hazır: ${p.titles?.A || p.hook} — ${p.chapters?.length || 0} bölüm, ≈ ${mins(j.duration)}. Üretiliyor; yalnız YouTube'a, onayla.`);
+    if (!waBrief()) await sendW(`⬛ *Kare video kurgusu hazır* — ${p.titles?.A || p.hook}\n⏱ Kaynak ${mins(j.sourceSeconds || 0)} → video ≈ ${mins(j.duration)} (tamamı kendi sesiyle, 1080x1080)${p.trim?.some(Boolean) ? `\n✂️ Baştan ${p.trim[0]} sn, sondan ${p.trim[1]} sn kesildi` : ""}${chap ? `\n\n📑 Bölümler:\n${chap}` : ""}${p.screenText?.length ? `\n📝 Ekrandaki yazılar: ${p.screenText.slice(0, 3).map((x) => `"${x}"`).join(" · ")}` : ""}${p.speech === false ? "\n\n⚠️ Videodaki konuşma yazıya dökülemedi (konuşma tanıma Mac'te kurulu değil): bölüm başlıkları karelerden, kelime altyazısı yok. Kurmak için Mac'te bir kez: bash scripts/install_align.sh" : ""}\n\n🎙 ${String(p.narration || "").slice(0, 500)}\n\nVideo üretiliyor (${mins(j.duration)}; uzun videoda çizim 10-30 dk sürer); bitince buraya gelecek (dosya 60 MB'yi aşarsa yalnız panel bağlantısı)${waVideoCfg().autoPublish ? " ve YouTube'a yayınlanacak" : ", yayın için *onay* isteyeceğim"} (yalnız YouTube; Reels ve TikTok uzun kare videoyu almaz).`);
+    else await sendW(`⬛ Kare video kurgusu hazır: ${p.titles?.A || p.hook} — ${p.chapters?.length || 0} bölüm, ≈ ${mins(j.duration)}. Üretiliyor; yalnız YouTube'a${waVideoCfg().autoPublish ? "" : ", onayla"}.`);
   }
   if (p.summary && p.unsuitable) await sendW(`⚠️ Video habere pek uygun görünmüyor (${String(p.unsuitable).slice(0, 140)}); yine de en iyi anlarıyla hazırladım.`);
   if (p.summary && p.lowres) await sendW(`⚠️ ${p.lowres} an YouTube'dan HD inmedi; o anlar düşük çözünürlüklü kopyadan kesildi (görüntü bulanık olabilir).`);
@@ -2783,6 +2785,7 @@ function queueNoOf(video) {
 // kuyruk videosunun yayın saati (karar 3): kendiliğinden uygulanmaz, yanıt bunu söyler
 function vqTimeTail(c, no) { return c.publishAt ? `\n${vq.timeLine(new Date(c.publishAt), no)}` : ""; }
 function queueGate(video) {
+  if (waVideoCfg().autoPublish) return null; // onaysız yayın ayarı açık: kuyruk videosu da planlı yayınla, "son videoyu yayınla" ile ve sesli komutla yayınlanır
   const v = path.basename(String(video || ""));
   if (vqCancelledVideos.has(v)) return "Bu video video kuyruğundan iptal edildi; yayınlanmadı (isterseniz panelden yayınlayın).";
   const n = queueNoOf(v);
@@ -3310,7 +3313,7 @@ async function think(text, mode = "chat", opts = {}) {
 }
 
 // ---------- WhatsApp köprüsü
-const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok },
+const videoInfo = (name) => { const v = name ? listVideos().find((x) => x.name === name) : listVideos()[0]; if (!v) return null; const meta = readJson(path.join(OUT, v.name.replace(/\.mp4$/, ".json")), { segments: [] }); return { ...v, label: label(v), path: path.join(OUT, v.name), segments: meta.segments || [], anlik: !!meta.anlik || meta.format === "anlik", format: meta.format || null, value: meta.value || null, userVideo: !!meta.userVideo, trailer: !!meta.trailer, publishAt: meta.publishAt || null, published: { youtube: !!v.youtube, instagram: !!v.instagram, tiktok: !!v.tiktok },
   recreated: !!meta.recreated, jobDir: meta.jobDir || null, revision: Number(meta.revision) || 0, revisionOf: meta.revisionOf || null, // ✏️ düzelt
   kare: !!meta.kare,
   queueNo: (() => { const n = queueNoOf(v.name); return n > 0 ? n : 0; })(), queueSource: meta.queue?.source || (() => { try { return vq.sourceOf(v.name); } catch { return null; } })() }; };

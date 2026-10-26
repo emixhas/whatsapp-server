@@ -49,6 +49,12 @@ def youtube_allowed(video: str, meta: dict, s: dict) -> bool:
     if meta.get("remakeOf"):  # kullanıcının elle seçtiği tutan haber: değer kuralına takılmaz
         print(f"⭐ yeniden yayın ({meta['remakeOf']} tuttu) — YouTube'a da gidiyor")
         return True
+    if meta.get("trailer") or meta.get("trailerAuto"):  # fragman analizi (takipten ya da sahibin linkinden; kullanıcı isteği, 26 Ekim: "fragmanlar direkt YouTube'a da yüklensin")
+        print("🎬 fragman: YouTube'a da gidiyor (değer kuralı ve günlük ek hak aranmaz)")
+        return True
+    if meta.get("userVideo") or (meta.get("queue") or {}).get("no"):  # sahibin WhatsApp'tan istediği video: açık istek, değer kuralı aranmaz
+        print("📲 sizin istediğiniz video: YouTube'a da gidiyor (değer kuralı aranmaz)")
+        return True
     v = meta.get("value")
     if not v:  # eski video: değeri şimdi hesapla
         from news_value import score
@@ -78,12 +84,20 @@ def targets(video: str, s: dict) -> tuple[list, str]:
     meta = episode_meta(Path(video).name) or {}
     anlik = meta.get("anlik") or meta.get("format") == "anlik"
     conn = connected()
-    # video kuyruğunun videosu (meta queue): yalnız numaralı onayla ya da panelden yayınlanır (waVideo.autoPublish de geçmez)
-    if (meta.get("queue") or {}).get("no"):
-        return [], "anlık", f"video kuyruğundan gelen video (#{meta['queue']['no']}) yalnız onayınızla yayınlanır"
-    # WhatsApp'tan gönderilen görüntüyle yapılan haber: sahibi önce izlesin, "onay" ile yayınlansın (waVideo.autoPublish açılabilir)
-    if meta.get("userVideo") and not (s.get("waVideo") or {}).get("autoPublish"):
+    wa_auto = bool((s.get("waVideo") or {}).get("autoPublish"))
+    owner = bool(meta.get("userVideo") or (meta.get("queue") or {}).get("no"))
+    # video kuyruğunun videosu (meta queue) ve WhatsApp'tan gönderilen görüntü/linkle yapılan video: waVideo.autoPublish kapalıysa sahibi önce
+    # izlesin, numaralı "onay" ile yayınlansın; AÇIKSA (varsayılan; kullanıcı isteği, 26 Ekim: "WhatsApp'tan istediğim üretimler onay beklemeden
+    # direkt yayınlansın") bağlı TÜM hesaplara onaysız (anlık/değer kuralları aranmaz; kare video yine yalnız YouTube)
+    if (meta.get("queue") or {}).get("no") and not wa_auto:
+        return [], "anlık", f"video kuyruğundan gelen video (#{meta['queue']['no']}) yalnız onayınızla yayınlanır (Ayarlar → WhatsApp videosu → onay beklemeden yayınlansın)"
+    if meta.get("userVideo") and not wa_auto:
         return [], "anlık", "gönderdiğiniz görüntü ya da sosyal medya linkiyle yapılan haber önce size gelir, onayınızla yayınlanır"
+    if owner and wa_auto:
+        extra = [p for p in conn if p not in chosen]
+        if extra:
+            print(f"📲 sizin istediğiniz video: bağlı tüm hesaplarda onaysız paylaşılıyor ({', '.join(chosen + extra)})")
+        chosen += extra
     # 🎬 fragman takibi (kullanıcı isteği, 24 Ekim: kanalda yeni fragman düşünce "yayınlasın"): bağlı TÜM hesaplara, anlık/değer kuralları ve
     # YouTube günlük ek hakkı aranmaz (yayın onayı istenirse userVideo yukarıda yakaladı)
     if meta.get("trailerAuto"):
@@ -152,7 +166,7 @@ video = sys.argv[1]
 s = settings()
 scheduled = None
 _meta = episode_meta(Path(video).name) or {}
-_at = None if (_meta.get("queue") or {}).get("no") else schedule_at(_meta)  # kuyruk videosu planlanmaz (yalnız onayla)
+_at = None if ((_meta.get("queue") or {}).get("no") and not (s.get("waVideo") or {}).get("autoPublish")) else schedule_at(_meta)  # kuyruk videosu yalnız onaysız yayın ayarı açıkken planlanır
 plats, kind, why = ([], "anlık" if _meta.get("anlik") else "", "") if _at else targets(video, s)
 if _at:
     # kullanıcının verdiği saat açık yayın talimatıdır: bağlı tüm hesaplar (YouTube değer kuralı ve görüntü onayı aranmaz)

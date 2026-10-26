@@ -657,7 +657,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       // yayın saati ya da waVideo.autoPublish olsa da her zaman onay ister, mesaj numarasını yazar
       let ask0 = "", it0 = null;
       const q0 = Number(v0?.queueNo) || 0;
-      if (v0 && ask && v0.userVideo && (q0 || (!sched0 && !settings().waVideo?.autoPublish))) {
+      if (v0 && ask && v0.userVideo && !settings().waVideo?.autoPublish && (q0 || !sched0)) { // onaysız yayın ayarı (varsayılan açık) kapalıysa onay sorulur
         try { const pl0 = (await links(name)).platforms.filter((pl) => !(v0.published || {})[pl]); if (pl0.length) { it0 = setPending(name, { label: v0.label, title: titleOf(v0), platforms: pl0, qno: q0, keepUntil: q0 && sched0 ? Date.parse(v0.publishAt) + 6 * 3600000 : 0 }); ask0 = (q0 && sched0 ? queueTimeLine(v0.publishAt, it0.id) : "") + approveLine(pl0, it0.numbered ? it0.id : null) + revLine(v0, it0.numbered ? it0.id : null); } } catch { /* hesap durumu okunamadı */ }
       }
       // onay, kuyruktaki mesaj bağlantı gelince gerçekten gidince ulaşmış sayılır
@@ -667,7 +667,8 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     }
     const v = videoInfo(name); if (!v) return { ok: false, error: "video bulunamadı" };
     const L = await links(name);
-    const qn = Number(v.queueNo) || 0; // kuyruk videosu (karar 3): yalnız numaralı onayla ya da panelden yayınlanır
+    const qn = Number(v.queueNo) || 0; // kuyruk videosu (karar 3): onaysız yayın ayarı kapalıyken yalnız numaralı onayla ya da panelden yayınlanır
+    const waAuto = !!settings().waVideo?.autoPublish; // WhatsApp'tan istenen üretimler (video, link, fragman, özet, benzer video, kare) onaysız (kullanıcı isteği, 26 Ekim)
     let head = `🎬 *Yeni video hazır* — ${v.label} (${v.duration ?? "?"} sn)`;
     const words = v.segments.map((s, i) => s.kind === "haber" ? `${i}. ${s.breaking ? "🔴 SON DAKİKA · " : ""}[${(s.category || "genel").toUpperCase()}] *${s.title}*\n${s.narration}` : `_${s.narration}_`).join("\n\n");
     const linkLines = "";
@@ -679,15 +680,16 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     if (autoAll()) for (const pl of L.platforms) ap[pl] = true;
     // YouTube günlük sınırı: sıradan anlık haber YouTube'a otomatik gitmez (post_pipeline youtube_allowed); "onay" ile elle gider
     const yp = settings().youtubePolicy || {};
-    if (v.anlik && yp.onlyValuable !== false && !v.value?.valuable) ap.youtube = false;
+    if (v.anlik && yp.onlyValuable !== false && !v.value?.valuable && !v.userVideo && !qn && !v.trailer && !v.trailerAuto) ap.youtube = false; // sahibin isteği ve fragman YouTube'a değer kuralı aranmadan gider (post_pipeline aynı)
     // 5 saatlik (düzenli) video YouTube'a onaysız gider (post_pipeline aynı kuralı uygular)
     if (!v.anlik && !["gunluk", "haftalik"].includes(v.format) && yp.regularAuto !== false && L.platforms.includes("youtube")) ap.youtube = true;
     // WhatsApp'tan gönderilen görüntüyle yapılan haber: varsayılan onaylı (post_pipeline aynı kuralı uygular); kuyruk videosu her zaman
-    if ((v.userVideo && !settings().waVideo?.autoPublish) || qn) for (const pl of Object.keys(ap)) ap[pl] = false;
+    if (!waAuto && (v.userVideo || qn)) for (const pl of Object.keys(ap)) ap[pl] = false;
+    if (waAuto && (v.userVideo || qn)) for (const pl of L.platforms) ap[pl] = true; // sahibin isteği: bağlı tüm hesaplara onaysız (post_pipeline aynı kuralı uygular)
     // linkle birlikte saat yazıldıysa (planlı yayın) onay istenmez; panel o saatte yayınlar. Kuyruk videosu planlanmaz (post_pipeline da), onay
     // ister; saat yalnız not edilir (qTime)
-    const qTime = qn && v.publishAt && Date.parse(v.publishAt) > Date.now() + 60000 ? v.publishAt : null;
-    const schedAt = !qn && v.publishAt && Date.parse(v.publishAt) > Date.now() + 60000 ? new Date(v.publishAt) : null;
+    const qTime = qn && !waAuto && v.publishAt && Date.parse(v.publishAt) > Date.now() + 60000 ? v.publishAt : null;
+    const schedAt = (!qn || waAuto) && v.publishAt && Date.parse(v.publishAt) > Date.now() + 60000 ? new Date(v.publishAt) : null; // onaysız ayar açıkken kuyruk videosu da planlanır
     if (schedAt) for (const pl of Object.keys(ap)) ap[pl] = false;
     const autoPl = L.platforms.filter((pl) => ap[pl] && !already[pl]);      // otomatik yayın açık: onay gerekmez
     const platforms = schedAt ? [] : L.platforms.filter((pl) => !already[pl] && !ap[pl]);  // yalnızca elle yayınlanacaklar için onay
@@ -710,7 +712,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
       const first = v.segments.find((s) => s.kind === "haber")?.title || v.label;
       // kuyruk videosu (karar 3) kendiliğinden yayınlanmaz: özetteki "📤" satırları başka videonundur (7. tur: aynı anda onaylanan videonun yayın
       // satırları "📤 Yayında: YouTube, Instagram" diye bu videoya yazılıyordu)
-      const pub = qn ? [] : publishLines(summary).filter((l) => !/^ℹ️/.test(l));
+      const pub = qn && !waAuto ? [] : publishLines(summary).filter((l) => !/^ℹ️/.test(l));
       const okPl = pub.filter((l) => l.startsWith("✅")).map((l) => l.replace(/^✅ /, "").replace(/[:\s(].*$/, ""));
       const bad = pub.filter((l) => !l.startsWith("✅")).map((l) => l.slice(0, 90));
       const pending = needAsk ? qLine + approveLine(platforms, aid) + revLine(v, aid) : "";
