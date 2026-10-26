@@ -63,6 +63,12 @@
   .ghost{border:1px solid var(--line);background:transparent;color:var(--txt);border-radius:10px;padding:7px 11px;cursor:pointer;font-size:13px}.ghost.danger{color:#ff7b86;border-color:#4a1d24}.ghost.ok{border-color:var(--green);color:var(--green)}
   .sw{position:relative;width:42px;height:22px;background:#1b2440;border-radius:11px;cursor:pointer;flex:none}.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}.sw.on{background:var(--green)}.sw.on::after{left:23px}
   select{background:#0b1020;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:5px}
+  /* ayarlar: soldaki grup menüsü (kullanıcı isteği, 26 Ekim: "menüyü sola taşı, gruplara ayır, çok karışık"): bir grup görünür */
+  .setwrap{display:grid;grid-template-columns:210px 1fr;gap:14px;align-items:start}.setnav{position:sticky;top:12px;display:flex;flex-direction:column;gap:4px}.setnav button{text-align:left;background:transparent;border:1px solid transparent;color:var(--mut);padding:9px 12px;border-radius:10px;cursor:pointer;font-weight:700;font-size:13px;display:flex;gap:8px;align-items:center}.setnav button.on{color:var(--txt);border-color:var(--line);background:rgba(5,8,17,.5)}.setnav button .cnt{margin-left:auto;color:var(--amber);font-weight:600;font-size:11px}
+  .setbody details.grp{display:none;margin:0}.setbody details.grp.on{display:block}.setbody details.grp>summary{pointer-events:none}.setbody details.grp>summary::after{content:""}
+  @media(max-width:980px){.setwrap{grid-template-columns:1fr}.setnav{position:static;flex-direction:row;flex-wrap:wrap}}
+  /* fragman takibi kanal kartları */
+  .twcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;margin:8px 0}.twcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:rgba(5,8,17,.35);font-size:12px}.twcard.stale{border-color:var(--amber)}.twcard.err{border-color:var(--red)}.twcard .twhead{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.twcard .twkey{color:var(--mut);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}.twcard .twmeta{color:var(--mut);margin:6px 0;line-height:1.5}.twcard .twwarn{color:var(--amber);margin:4px 0}.twcard .acts{margin:6px 0 0}
   details.grp{border:1px solid var(--line);border-radius:14px;padding:0 14px;margin:10px 0;background:rgba(5,8,17,.35)}details.grp>summary{cursor:pointer;list-style:none;padding:12px 0;font-weight:800;letter-spacing:1px;display:flex;align-items:center;gap:10px}details.grp>summary::-webkit-details-marker{display:none}details.grp>summary::after{content:"›";margin-left:auto;color:var(--mut);transition:.2s}details.grp[open]>summary::after{transform:rotate(90deg)}details.grp>summary .sum{font-weight:500;color:var(--mut);font-size:12px;letter-spacing:0}details.grp>*:not(summary){margin-left:2px}details.grp h2{margin-top:14px}
   #toast{position:fixed;right:18px;bottom:18px;z-index:50;display:flex;flex-direction:column;gap:8px}#toast div{background:#0b1a12;border:1px solid var(--green);color:#dfffe9;padding:10px 14px;border-radius:12px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);animation:tin .2s}#toast div.err{background:#2a1010;border-color:#ff5c5c;color:#ffd6d6}@keyframes tin{from{transform:translateY(10px);opacity:0}}
   .platgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0 4px}
@@ -257,6 +263,7 @@
     <div class="card tab" id="tab-settings">
       <h2>AYARLAR</h2>
       <div class="conninfo" id="setupSummary"></div>
+      <div class="setwrap"><div class="setnav" id="setNav"></div><div class="setbody" id="setBody">
       <details class="grp" open><summary>⚡ Otomasyon <span class="sum" id="autoSum"></span></summary>
         <div class="conninfo">Tam otomatik mod: her 5 saatte bir üretim, bağlı hesaplara otomatik yayın, WhatsApp onayı kapalı, her aşamada WhatsApp bildirimi. Tek düğmeyle açılır; istediğiniz anahtarı sonradan soldaki Üretim kartından değiştirebilirsiniz.</div>
         <div class="acts"><button class="ghost ok" id="autoOn">⚡ Tam otomatik modu aç</button><button class="ghost" id="autoOff">Durdur (üretim ve yayın kapalı)</button></div>
@@ -309,12 +316,6 @@
         <label class="row"><span>🔗 Sosyal medya çerezleri (Instagram/TikTok/X linkinden video indirmek için; Instagram çoğu videoyu girişsiz vermez): <select id="socialCookies" class="inl"><option value="">yok</option><option value="chrome">Chrome</option><option value="safari">Safari</option><option value="firefox">Firefox</option><option value="brave">Brave</option><option value="edge">Edge</option></select> — seçtiğiniz tarayıcıda Instagram'a giriş yapılı olmalı</span></label>
         <label class="row"><span class="sw" id="trailerOn"></span><span>🎬 Fragman analizi: YouTube fragman linki gönderin ("fragman" yazmanız da yeter) → konuşması kelimelere dökülür, çekimlerden kareler çıkarılır, çarpıcı bir kancayla <input id="trailerDur" type="number" min="20" max="60" class="inl" style="width:56px"> sn'lik "fragmanda ne anlatılıyor" videosu (fragmanın kendi sesi kullanılmaz; önce size gelir, <b>onay</b> ile yayınlanır)</span></label>
         <label class="row"><span class="sw" id="trailerAuto"></span><span>…başlıktan otomatik tanı: başlıkta fragman/trailer/teaser geçiyorsa "fragman" yazmasanız da fragman analizi (talimata "haber yap" yazarsanız normal haber olur)</span></label>
-        <label class="row"><span class="sw" id="twOn"></span><span>📡 Fragman takibi: aşağıdaki YouTube kanalları <input id="twEvery" type="number" min="2" max="1440" class="inl" style="width:56px"> dakikada bir taranır, her kanalın en son fragmanı kaydedilir; YENİ fragman düşünce hemen fragman analizi üretilir (çarpıcı kanca + fragmandan hızlı kesilmiş sahneler + en çarpıcı anların en çok <input id="twSound" type="number" min="0" max="30" class="inl" style="width:56px"> sn orijinal sesi; 0 = orijinal ses yok). Bir bölümün tanıtımı, 1. ve 2. fragmanı, ön tanıtımı ve ön gösterimi ayrı videolardır; etiket ve giriş hangisi olduğunu söyler ("16. BÖLÜM 2. FRAGMAN"). Günde en çok <input id="twMax" type="number" min="0" max="50" class="inl" style="width:56px"> fragman (0 = sınırsız). Kanal eklenince ilk taramada son <input id="twFresh" type="number" min="0" max="72" class="inl" style="width:56px"> saatin fragmanları da üretilir, eskileri yalnız kaydedilir. Yeni fragman sıranın başına geçer (sizin işlerinizden sonra), süren otomatik haber üretimini durdurur; RSS'in yanında kanalın videolar sayfası da okunur.</span></label>
-        <label class="row"><span class="sw" id="twPublish"></span><span>…bitince onay beklemeden bağlı hesaplarda yayınlansın (kapalıyken video önce WhatsApp'a gelir, <b>onay</b> ile yayınlanır)</span></label>
-        <label class="row"><span class="sw" id="twNotify"></span><span>…yeni fragman üretime girince WhatsApp'a tek satır bildir (kapalıyken yalnız panel logu)</span></label>
-        <div class="row"><textarea id="twChannels" rows="3" style="width:100%;box-sizing:border-box" placeholder="Her satıra bir YouTube kanalı: @NetflixTurkiye · https://www.youtube.com/@BKMOnline · UC… kimliği"></textarea></div>
-        <div class="acts"><button class="ghost ok" id="twSave">Kanalları kaydet</button><button class="ghost" id="twScan">🔎 Kanalları şimdi tara</button><span class="note" id="twState"></span></div>
-        <div class="note" id="twList"></div>
         <label class="row"><span class="sw" id="lsumOn"></span><span>📺 Uzun video özeti: uzun bir YouTube videosu (haber programı, basın toplantısı, röportaj, canlı yayın kaydı…) gönderin ya da linkin yanına "özetle" yazın → videonun tamamı incelenir (baştan sona konuşma dökümü ve kareler), en çarpıcı anlar seçilip HD alınır, <input id="lsumDur" type="number" min="20" max="60" class="inl" style="width:56px"> sn'lik haber kurgulanır (en çok 8 sn kısa orijinal sesli alıntı; önce size gelir, <b>onay</b> ile yayınlanır)</span></label>
         <label class="row"><span class="sw" id="lsumAuto"></span><span>…<input id="lsumMin" type="number" min="3" max="60" class="inl" style="width:56px"> dakikadan uzun YouTube videosunu "özetle" yazmasanız da özetle (linkin yanına zaman yazarsanız — "12:30'dan itibaren" — ya da "kendi sesiyle" derseniz o bölüm kendi sesiyle haber olur)</span></label>
         <label class="row"><span class="sw" id="storiesOn"></span><span>📸 Instagram hikâyesi: her akşam <input id="storiesTime" type="time" class="inl"> son 24 saatin en çok izlenen <input id="storiesCount" type="number" min="1" max="5" class="inl" style="width:48px"> haberi (önce sıralama kartı, sonra videolar; 60 sn'den uzunsa kesilir)</span></label>
@@ -323,6 +324,18 @@
         <div class="acts"><button class="ghost" id="expireNow">🙈 Şimdi kontrol et</button><button class="ghost" id="expireUndo">Liste dışı yapılanları geri aç</button></div>
         <label class="row"><span class="sw" id="retitleOn"></span><span>📉 Tutmayan videonun YouTube başlığını değiştir: yayından 3 saat sonra izlenmesi son videoların ortancasının yarısının altındaysa B başlığına geçilir (bir kez)</span></label>
         <label class="row"><span class="sw" id="fcOn"></span><span>💬 Her videoya otomatik ilk yorum: konuya özel soru (YouTube ve Instagram; TikTok API'si izin vermiyor)</span></label>
+      </details>
+      <details class="grp" id="grpTw"><summary>🎬 Fragman takibi <span class="sum" id="twSum"></span></summary>
+        <div class="conninfo">YouTube kanallarının fragman ve tanıtımlarını izler: yeni fragman düşünce hemen fragman analizi üretilir (çarpıcı kanca + fragmandan hızlı kesilmiş sahneler + en çarpıcı anların orijinal sesi), sıranın başına geçer (sizin işlerinizden sonra; süren otomatik haber durdurulur) ve onaysız yayınlanır (YouTube dahil). Bir bölümün tanıtımı, 1. ve 2. fragmanı, ön tanıtımı ve ön gösterimi ayrı videolardır; etiket ve giriş hangisi olduğunu söyler ("16. BÖLÜM 2. FRAGMAN"). Kanallar RSS'ten ve kanalın videolar sayfasından okunur.</div>
+        <label class="row"><span class="sw" id="twOn"></span><span>Fragman takibi açık: kanallar <input id="twEvery" type="number" min="2" max="1440" class="inl" style="width:60px"> dakikada bir taranır (120 = 2 saat)</span></label>
+        <label class="row"><span class="sw" id="twPublish"></span><span>Bitince onay beklemeden bağlı tüm hesaplarda yayınlansın (kapalıyken video önce WhatsApp'a gelir, <b>onay</b> ile yayınlanır)</span></label>
+        <label class="row"><span class="sw" id="twNotify"></span><span>Yeni fragman üretime girince WhatsApp'a tek satır bildir (kapalıyken yalnız panel logu)</span></label>
+        <label class="row"><span>🔊 Orijinal sesli anlar en çok <input id="twSound" type="number" min="0" max="30" class="inl" style="width:52px"> sn (0 = yok) · günde en çok <input id="twMax" type="number" min="0" max="50" class="inl" style="width:52px"> fragman (0 = sınırsız) · kanal eklenince son <input id="twFresh" type="number" min="0" max="72" class="inl" style="width:52px"> saatin fragmanları da üretilir · <input id="twStale" type="number" min="1" max="90" class="inl" style="width:52px"> gündür fragman gelmeyen kanalda uyarı (dizi bitmiş olabilir; kanalı kaldırın)</span></label>
+        <div class="acts" style="align-items:center"><input id="twAdd" class="inl" style="flex:1;min-width:240px" placeholder="Kanal ekle: @NetflixTurkiye · https://www.youtube.com/@BKMOnline · UC… kimliği"><button class="ghost ok" id="twAddBtn">+ Ekle</button><button class="ghost" id="twScan">🔎 Şimdi tara</button></div>
+        <div class="note" id="twState"></div>
+        <div class="twcards" id="twCards"></div>
+        <h2 style="margin-top:14px">SON FRAGMANLAR</h2>
+        <div class="note" id="twList"></div>
       </details>
       <details class="grp"><summary>📣 Yayın hesapları <span class="sum" id="accSum"></span></summary>
 <h2>YOUTUBE</h2><div class="conninfo" id="ytInfo"></div><div class="acts" style="gap:8px;flex-wrap:wrap"><button class="ghost ok" id="ytConnect">YouTube'u bağla</button><button class="ghost" id="ytThumbs" title="Kanal doğrulandıktan sonra (youtube.com/verify) reddedilmiş kapakları yeniden yükler">🖼 Kapakları yeniden yükle</button><button class="ghost danger" id="ytDisconnect" style="display:none">Bağlantıyı kes</button></div>
@@ -408,6 +421,7 @@
               <h2 style="margin-top:14px">SİSTEM</h2>
         <div class="conninfo">Panel arka plan servisi olarak çalışıyorsa terminal gerekmez; güncelleme ve yeniden başlatma başlıktaki düğmelerle yapılır. Servis kurulumu bir kez: <code>bash scripts/install_panel_service.sh</code>.</div>
       </details>
+      </div></div>
   </section>
 </main>
 </div>
@@ -432,7 +446,7 @@ function ask(text){return new Promise(res=>{const bg=$('#askBg');$('#askTxt').te
   const key=e=>{if(e.key==='Escape'){e.preventDefault();done(false);}else if(e.key==='Enter'){e.preventDefault();done(true);}};
   document.addEventListener('keydown',key,true);$('#askYes').onclick=()=>done(true);$('#askNo').onclick=()=>done(false);bg.onclick=e=>{if(e.target===bg)done(false);};$('#askYes').focus();});}
 // Metin soran pencere (tarayıcının prompt()'u da engellenebilir): Ctrl/Cmd+Enter = gönder, Esc = vazgeç; vazgeçince null
-function askText(text,ph=''){return new Promise(res=>{const bg=$('#txBg'),inp=$('#txIn');$('#txTxt').textContent=text;inp.value='';inp.placeholder=ph;bg.classList.add('open');
+function askText(text,ph='',val=''){return new Promise(res=>{const bg=$('#txBg'),inp=$('#txIn');$('#txTxt').textContent=text;inp.value=val;inp.placeholder=ph;bg.classList.add('open');
   const done=v=>{bg.classList.remove('open');document.removeEventListener('keydown',key,true);$('#txYes').onclick=$('#txNo').onclick=bg.onclick=null;res(v);};
   const key=e=>{if(e.key==='Escape'){e.preventDefault();done(null);}else if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();done(inp.value.trim());}};
   document.addEventListener('keydown',key,true);$('#txYes').onclick=()=>done(inp.value.trim());$('#txNo').onclick=()=>done(null);bg.onclick=e=>{if(e.target===bg)done(null);};inp.focus();});}
@@ -954,27 +968,44 @@ $('#socialSound').onclick=()=>infoSet({social:{fullSound:!$('#socialSound').clas
 $('#trailerOn').onclick=()=>infoSet({trailer:{enabled:!$('#trailerOn').classList.contains('on')}});
 $('#trailerAuto').onclick=()=>infoSet({trailer:{autoDetect:!$('#trailerAuto').classList.contains('on')}});
 /* 🎬 Fragman takibi: /api/trailerwatch (ayar + kanal durumu + sıra + son fragmanlar); ayar değişimi settings.trailerWatch'a */
-let twDirty=false;const twEsc=s=>String(s??'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]);
+const twEsc=s=>String(s??'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'})[c]);
 const twSet=async(p)=>{await post('/api/settings',{trailerWatch:p});loadTw();};
-async function loadTw(){const r=await api('/api/trailerwatch').catch(()=>null);if(!r||!r.cfg)return;const c=r.cfg;$('#twOn').classList.toggle('on',c.enabled!==false);$('#twPublish').classList.toggle('on',c.autoPublish!==false);$('#twNotify').classList.toggle('on',!!c.notify);
-  for(const [id,k] of [['twEvery','intervalMin'],['twSound','soundSeconds'],['twMax','maxPerDay'],['twFresh','firstFreshHours']]) if(document.activeElement!==$('#'+id))$('#'+id).value=c[k]??'';
-  if(!twDirty&&document.activeElement!==$('#twChannels'))$('#twChannels').value=(c.channels||[]).join('\n');
-  const ch=Object.values(r.channels||{}),hhmm=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
-  $('#twState').textContent=`${ch.length} kanal · bugün ${r.today}${c.maxPerDay?'/'+c.maxPerDay:''}${r.pending?.length?` · sırada ${r.pending.length}`:''}${r.running?` · hazırlanıyor: ${r.running.title}`:''}${r.scanning?' · taranıyor…':r.lastScan?` · son tarama ${hhmm(r.lastScan)}`:''}${r.nextScanIn!=null&&!r.scanning?` · sonraki ${Math.max(1,Math.ceil(r.nextScanIn/60000))} dk sonra`:''}`;
+let twChannels=[];
+const twWhen=t=>{const d=new Date(t);if(isNaN(d))return '';const diff=(Date.now()-d.getTime())/864e5;const ago=diff<1/24?'az önce':diff<1?`${Math.round(diff*24)} saat önce`:`${Math.floor(diff)} gün önce`;return `${d.toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'})} ${d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'})} (${ago})`;};
+async function loadTw(){const r=await api('/api/trailerwatch').catch(()=>null);if(!r||!r.cfg)return;const c=r.cfg;twChannels=c.channels||[];$('#twOn').classList.toggle('on',c.enabled!==false);$('#twPublish').classList.toggle('on',c.autoPublish!==false);$('#twNotify').classList.toggle('on',!!c.notify);
+  for(const [id,k] of [['twEvery','intervalMin'],['twSound','soundSeconds'],['twMax','maxPerDay'],['twFresh','firstFreshHours'],['twStale','staleDays']]) if(document.activeElement!==$('#'+id))$('#'+id).value=c[k]??'';
+  const list=r.list||[],hhmm=t=>new Date(t).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}),stale=list.filter(x=>x.stale),errs=list.filter(x=>x.error);
+  $('#twState').textContent=`${list.length} kanal${stale.length?` · ⚠️ ${stale.length} kanalda ${c.staleDays} gündür fragman yok`:''}${errs.length?` · ❌ ${errs.length} kanal okunamıyor`:''} · bugün ${r.today}${c.maxPerDay?'/'+c.maxPerDay:''} üretim${r.pending?.length?` · sırada ${r.pending.length}`:''}${r.running?` · hazırlanıyor: ${r.running.title}`:''}${r.scanning?' · taranıyor…':r.lastScan?` · son tarama ${hhmm(r.lastScan)}`:''}${r.nextScanIn!=null&&!r.scanning?` · sonraki ${Math.max(1,Math.ceil(r.nextScanIn/60000))} dk sonra`:''}`;
+  $('#twSum').textContent=`${list.length} kanal${stale.length?` · ⚠️ ${stale.length} uyarı`:''}${c.enabled===false?' · kapalı':''}`;
+  const nb=document.querySelector('#setNav button[data-grp="grpTw"] .cnt');if(nb)nb.textContent=stale.length?`⚠️ ${stale.length}`:'';
+  $('#twCards').innerHTML=list.length?list.map(x=>`<div class="twcard${x.stale?' stale':''}${x.error?' err':''}" data-inp="${twEsc(x.input)}"><div class="twhead"><b>${twEsc(x.name||x.input)}</b><span class="twkey" title="${twEsc(x.input)}">${twEsc(x.input)}</span></div><div class="twmeta">${x.error?`❌ ${twEsc(x.error)}<br>`:''}${x.lastTitle?`📺 Son fragman: <a href="${twEsc(x.lastUrl||'#')}" target="_blank" rel="noopener">${twEsc(x.lastTitle)}</a><br>🕒 ${twEsc(twWhen(x.lastPublished))}`:x.lastChecked?'📺 Henüz fragman bulunmadı':'📺 Henüz taranmadı'}${x.lastProduced?`<br>🎬 Son üretim: ${twEsc(twWhen(x.lastProduced.at))}${x.lastProduced.promoLabel?` · ${twEsc(x.lastProduced.promoLabel)}`:''}`:''}${x.lastChecked?`<br>🔎 Son tarama: ${twEsc(twWhen(x.lastChecked))}${x.trailers!=null?` · akışta ${x.trailers} fragman / ${x.videos} video`:''}`:''}</div>${x.stale?`<div class="twwarn">⚠️ ${x.days} gündür fragman gelmedi${x.never?' (hiç bulunmadı)':''} — dizi bitmiş olabilir; boşuna taranmasın diye kanalı kaldırabilirsiniz</div>`:''}<div class="acts"><button class="ghost" data-edit="${twEsc(x.input)}">✏️ Düzenle</button><button class="ghost danger" data-del="${twEsc(x.input)}">🗑 Kaldır</button></div></div>`).join(''):'<div class="note">Henüz kanal yok. Yukarıya kanal adını (@kanal), linkini ya da UC… kimliğini yazıp Ekle deyin.</div>';
   const ST={sırada:'⏳',hazırlanıyor:'🎬',üretimde:'⚙',üretildi:'✅',hata:'❌',atlandı:'⏭'};
-  $('#twList').innerHTML=ch.map(x=>`<div>📺 <b>${twEsc(x.name||x.input)}</b>: ${x.error?'⚠️ '+twEsc(x.error):x.lastTitle?`son fragman “${twEsc(x.lastTitle)}”${x.lastPublished?' ('+twEsc(String(x.lastPublished).slice(0,10))+')':''}${x.first?' — ilk tarama: kaydedildi, üretilmedi':''}`:'fragman bulunamadı'}</div>`).join('')
-    +(r.done||[]).slice(0,8).map(x=>`<div>${ST[x.state]||'•'} ${twEsc(x.channel||'')} — <a href="${twEsc(x.url||'#')}" target="_blank" rel="noopener">${twEsc(x.title||x.videoId)}</a>${x.promoLabel?` <b>${twEsc(x.promoLabel)}</b>`:''} (${twEsc(x.state)}${x.video?': '+twEsc(x.video):''}${x.error?': '+twEsc(x.error):''})</div>`).join('');}
+  $('#twList').innerHTML=(r.done||[]).slice(0,10).map(x=>`<div>${ST[x.state]||'•'} ${twEsc(x.channel||'')} — <a href="${twEsc(x.url||'#')}" target="_blank" rel="noopener">${twEsc(x.title||x.videoId)}</a>${x.promoLabel?` <b>${twEsc(x.promoLabel)}</b>`:''} (${twEsc(x.state)}${x.video?': '+twEsc(x.video):''}${x.error?': '+twEsc(x.error):''}${x.at?' · '+twEsc(twWhen(x.at)):''})</div>`).join('')||'<div>Henüz üretim yok.</div>';}
+const twSaveChannels=async(list,msg)=>{await twSet({channels:[...new Set(list.map(s=>String(s).trim()).filter(Boolean))]});if(msg)toast(msg);};
 $('#twOn').onclick=()=>twSet({enabled:!$('#twOn').classList.contains('on')});
 $('#twPublish').onclick=()=>twSet({autoPublish:!$('#twPublish').classList.contains('on')});
 $('#twNotify').onclick=()=>twSet({notify:!$('#twNotify').classList.contains('on')});
-$('#twEvery').onchange=()=>twSet({intervalMin:Math.min(1440,Math.max(2,Number($('#twEvery').value)||10))});
+$('#twEvery').onchange=()=>twSet({intervalMin:Math.min(1440,Math.max(2,Number($('#twEvery').value)||120))});
 $('#twSound').onchange=()=>twSet({soundSeconds:Math.min(30,Math.max(0,Number($('#twSound').value)||0))});
 $('#twMax').onchange=()=>twSet({maxPerDay:Math.min(50,Math.max(0,Number($('#twMax').value)||0))});
 $('#twFresh').onchange=()=>twSet({firstFreshHours:Math.min(72,Math.max(0,Number($('#twFresh').value)||0))});
-$('#twChannels').oninput=()=>{twDirty=true;};
-$('#twSave').onclick=async()=>{const list=[...new Set($('#twChannels').value.split(/[\n,]/).map(s=>s.trim()).filter(Boolean))];twDirty=false;await twSet({channels:list});toast(list.length?`${list.length} kanal kaydedildi; ilk taramada son fragmanlar kaydedilir`:'Kanal listesi boşaltıldı');if(list.length)post('/api/trailerwatch/scan').then(()=>loadTw()).catch(()=>{});};
+$('#twStale').onchange=()=>twSet({staleDays:Math.min(90,Math.max(1,Number($('#twStale').value)||10))});
+$('#twAddBtn').onclick=async()=>{const v=$('#twAdd').value.trim();if(!v)return toast('Kanal adı ya da linki yazın',true);if(twChannels.some(x=>x.toLowerCase()===v.toLowerCase()))return toast('Bu kanal zaten listede',true);$('#twAdd').value='';await twSaveChannels([...twChannels,v],`${v} eklendi; taranıyor…`);post('/api/trailerwatch/scan').then(()=>loadTw()).catch(()=>{});};
+$('#twAdd').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$('#twAddBtn').click();}};
+$('#twCards').onclick=async e=>{const del=e.target.closest('[data-del]'),ed=e.target.closest('[data-edit]');
+  if(del){const inp=del.dataset.del;const card=del.closest('.twcard');const name=card?.querySelector('b')?.textContent||inp;if(!await ask(`"${name}" kanalı fragman takibinden kaldırılsın mı? (Taranmaz; üretilmiş videolar kalır)`))return;await twSaveChannels(twChannels.filter(x=>x!==inp),`${name} kaldırıldı`);return;}
+  if(ed){const inp=ed.dataset.edit;const v=await askText('Kanalı düzenle: adı (@kanal), linki ya da UC… kimliği','@kanal · https://www.youtube.com/@kanal · UC…',inp);if(!v||v.trim()===inp)return;await twSaveChannels(twChannels.map(x=>x===inp?v.trim():x),'Kanal güncellendi; taranıyor…');post('/api/trailerwatch/scan').then(()=>loadTw()).catch(()=>{});}};
 $('#twScan').onclick=async()=>{const b=$('#twScan');b.disabled=true;try{toast('Kanallar taranıyor…');const r=await post('/api/trailerwatch/scan');toast(r.ok?`${Object.keys(r.channels||{}).length} kanal tarandı, ${(r.new||[]).length} yeni fragman`:r.error||'Tarama yapılamadı',!r.ok);loadTw();}finally{b.disabled=false;}};
 es.addEventListener('trailerwatch',()=>loadTw());
+/* ayarlar sol menüsü: her grup için düğme; tek grup görünür (seçim localStorage'da) */
+(function(){const body=$('#setBody'),nav=$('#setNav');if(!body||!nav)return;const grps=[...body.querySelectorAll(':scope > details.grp')];grps.forEach((g,i)=>{if(!g.id)g.id='grp'+i;});
+  const label=g=>{const s=g.querySelector(':scope > summary');return [...s.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').trim();};
+  nav.innerHTML=grps.map(g=>`<button data-grp="${g.id}">${twEsc(label(g))}<span class="cnt"></span></button>`).join('');
+  let cur=null;try{cur=localStorage.getItem('setGroup');}catch{}
+  const show=id=>{grps.forEach(g=>{const on=g.id===id;g.classList.toggle('on',on);if(on)g.open=true;});nav.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.grp===id));try{localStorage.setItem('setGroup',id);}catch{}};
+  nav.onclick=e=>{const b=e.target.closest('button[data-grp]');if(b)show(b.dataset.grp);};
+  show(grps.some(g=>g.id===cur)?cur:grps[0].id);
+  window.showSetGroup=show;})();
 // uzun video özeti (kullanıcı isteği, 19 Ekim: "uzun bir YouTube videosu göndersem analiz edip 40 saniyelik habere dökebilir miyiz"): settings.longSummary
 $('#lsumOn').onclick=()=>infoSet({longSummary:{enabled:!$('#lsumOn').classList.contains('on')}});
 $('#lsumAuto').onclick=()=>infoSet({longSummary:{auto:!$('#lsumAuto').classList.contains('on')}});

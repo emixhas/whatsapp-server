@@ -1631,6 +1631,28 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     değil), sayfa yedeğinden yeni fragman, RSS düşünce sayfa, ikisi de düşünce hata, örnek ytInitialData ayrıştırma, göreli zaman; sunucu
     harness 45 denetim (acil işin sırası ve durdurma, sahibin işi acil işlerin önünde, günlük sınır: 3. haber takılır, fragman/şablon/sahip/geri
     alınan iş sayılmaz, 0 sınırsız); haber düzeyi yardımcıları 9 denetim; flush_order; panel tarayıcı testi.
+  - Kanal kartları, eski kanal uyarısı, 2 saatte bir tarama, soldaki ayar menüsü (kullanıcı isteği, 26 Ekim: "eklediğim fragman takip linkleri
+    kart halinde görünsün, silebileyim, düzenleyebileyim, en son o kaynaktan çekilen fragmanın tarihini ve saatini de göreyim; 10 gün fragman
+    gelmezse uyarı çıksın, dizinin finallendiğini anlayıp linki kendim kaldırayım; taramalar 2 saatte bir; fragman bölümü ayrı, menüyü sola taşı,
+    gruplara ayır"): `trailerWatch.intervalMin` varsayılanı 120 (en az 2; tek seferlik geçiş `trailerWatch.intervalMigrated`: kayıtlı aralık 120'den
+    kısaysa bir kez 120 olur, sonra panelden değiştirilen kalır; durum yanıtında 60'a bölünen aralık "2 saatte bir"), yeni `staleDays` 10 (1-90). Panel Ayarlar → "🎬 Fragman takibi" kendi
+    grubu (`#grpTw`; 📡 Otomatik içerikler'den çıktı): açık/yayın/bildirim anahtarları, dakika, ses, günlük sınır, ilk tarama saati, uyarı günü;
+    "Kanal ekle" alanı + "+ Ekle" (Enter de; boş ya da listedekiyle aynı → uyarı; eklenince kaydedip tarar), "Şimdi tara"; `#twCards` kanal
+    kartları (ayar listesi sırası; `GET /api/trailerwatch` `list[]`: input, key, name, lastTitle/lastUrl/lastPublished (son fragmanın yayın tarihi
+    ve saati, "N gün önce"), lastChecked, videos/trailers, error (kırmızı çerçeve), first, stale/days/never, lastProduced {at, title, promoLabel,
+    state} = `trailer_watch_done.json`'da o kanalın (`key`; eski kayıtlarda kanal adı) son hazırlanıyor/üretimde/üretildi kaydı): "✏️ Düzenle"
+    (`askText` mevcut değerle — `askText(text, ph, val)` üçüncü bağımsız değişken; aynı değer → yazılmaz; yeni değer kaydedilir ve taranır) ve
+    "🗑 Kaldır" (`ask`; üretilmiş videolar kalır); menü başlığında ve durum satırında uyarı sayısı. Eski kanal: `twStaleList` — kanalın kayıtlı
+    son fragmanının `lastTs`'inden (hiç fragman bulunmadıysa `trailer_watch.py`'nin kanala yazdığı `addedAt`'tan) `staleDays` geçtiyse; kartta
+    sarı çerçeve + "⚠️ N gündür fragman gelmedi — dizi bitmiş olabilir; boşuna taranmasın diye kanalı kaldırabilirsiniz", `twStaleCheck` her
+    başarılı taramadan sonra: logda kanal başına günde bir satır, WhatsApp'a kanal başına BİR kez ("Kaldırmak için: fragman kanalı çıkar …";
+    `data/trailer_watch_stale.json` {key: {loggedDay, notifiedAt}}; fragman gelince ya da kanal kaldırılınca kayıt silinir, yeniden eskirse yine
+    bir kez), "fragman takibi" durum yanıtında kanal satırına "⚠️ N gündür fragman yok (…)" ve son fragman tarihi saatle. Ayarlar sekmesi soldaki
+    grup menüsüyle (`.setwrap` = `#setNav` düğmeleri + `#setBody`; `#setBody > details.grp` başına bir düğme, tek grup görünür, seçim
+    localStorage `setGroup`, `window.showSetGroup(id)`; dar ekranda menü üstte yatay; `#setNav` bir `<div>` — `<nav>` olsaydı üstteki sekme
+    bağlayıcısı `nav button` seçicisiyle bu düğmelere de bağlanır, sekme kırılırdı). Testler: sunucu harness 59 denetim (staleDays doğrulama,
+    eski kanal listesi/log/WhatsApp/sıfırlama, tarama sonrası denetim, durum metni, API kart listesi), trailer_watch.py addedAt, panel
+    tarayıcı testi (sol menü, kartlar, ekle/düzenle/kaldır pencereleri, ayar yazımları, seçimin kalıcılığı), gömülü betik sözdizimi.
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/
@@ -2039,8 +2061,9 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Aşama bildirimleri (yalnız tek mesaj kapalıyken): `push()` içindeki `notifyStage()` STAGE kalıbına uyan log satırlarını 2,5 sn'de
   toplayıp WhatsApp'a gönderir (`settings.whatsapp.notifyStages`). Hostinger yükleme/silme satırları
   `publish.py` stderr'inden gelir (🌐). Panelde ayar kaydeden her istek sağ altta "Kaydedildi ✓" gösterir.
-- Ayarlar sekmesi `<details class="grp">` gruplarıdır: Otomasyon, Yayın hesapları, WhatsApp, Sesler,
-  Emixhas ve kanal, Gelişmiş. Eleman kimlikleri değişmedi; yeni bir ayar eklerken uygun gruba koy.
+- Ayarlar sekmesi `<details class="grp">` gruplarıdır: Otomasyon, Otomatik içerikler, Fragman takibi, Yayın hesapları, WhatsApp, Sesler,
+  Emixhas ve kanal, Gelişmiş; soldaki menüden (`#setNav`, gruplar `#setBody` içinde) tek grup görünür (26 Ekim; ayrıntı "Fragman takibi →
+  Kanal kartları"). Eleman kimlikleri değişmedi; yeni bir ayar eklerken uygun gruba koy, yeni grup `#setBody`'nin doğrudan çocuğu olsun.
 - Sağlık uyarıları (`healthCheck` her 10 dk, `healthAlert(key, text, {everyH})` → log "⚠️ sağlık:", WhatsApp, sesli
   "Dikkat, bir sistem uyarısı var"; tekrar engeli `data/health_alerts.json`): üretim hata ile bitti (panel ya da
   zamanlayıcı; `pipeline.sh` trap'i hata kodunda "✖ üretim hata ile bitti" yazar, son HATA/! satırları mesaja

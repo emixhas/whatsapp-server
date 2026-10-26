@@ -31,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import DATA, load_json, now_iso, save_json, settings  # noqa: E402
 
 STATE = DATA / "trailer_watch.json"
-DEFAULTS = {"enabled": True, "intervalMin": 3, "channels": [], "maxAgeHours": 24, "maxPerDay": 0, "autoPublish": True, "notify": False,
-            "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True}
+DEFAULTS = {"enabled": True, "intervalMin": 120, "channels": [], "maxAgeHours": 24, "maxPerDay": 0, "autoPublish": True, "notify": False,
+            "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True, "staleDays": 10}
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015", "media": "http://search.yahoo.com/mrss/"}
 
@@ -236,6 +236,7 @@ def scan(now: float | None = None) -> dict:
         keys.append(key)
         ch = dict(chans.get(key) or {})
         ch["input"] = inp
+        ch.setdefault("addedAt", now_iso())  # kanalın eklenme anı (hiç fragman gelmeyen kanalda "N gündür fragman yok" uyarısı buna göre)
         if not ch.get("channelId"):
             r = resolve(inp)
             if r.get("error"):
