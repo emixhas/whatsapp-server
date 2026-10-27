@@ -407,6 +407,11 @@
         <label class="row" style="margin:0"><span>Kadın sesi hızı</span><input type="range" id="spdF" min="0.9" max="1.2" step="0.01" style="width:140px"><span id="spdFTxt"></span></label>
         <label class="row" style="margin:0"><span>Videonun genel ses yüksekliği</span><input type="range" id="lufs" min="-16" max="-9" step="1" style="width:140px"><span id="lufsTxt"></span></label>
       </div>
+      <div class="acts" style="flex-wrap:wrap;gap:14px">
+        <label class="row" style="margin:0"><span class="sw" id="musOn"></span><span>🎵 Arka plan müziği</span></label>
+        <label class="row" style="margin:0"><span>Müzik seviyesi</span><input type="range" id="musLvl" min="-30" max="-12" step="1" style="width:140px"><span id="musLvlTxt"></span></label>
+      </div>
+      <div class="conninfo">Müzik içerik türüne göre seçilir: son dakika (saat tıkırtısı, gerilim), belgesel (piyano, yaylı), hikâye, viral, mizah, fragman, sabah/öğle/akşam gündemi. Seviye konuşmaya göredir: -20 dB konuşmanın altında çok az duyulur; konuşma aralarında biraz açılır.</div>
       <div class="conninfo">Hız perdeyi değiştirmez (%5-8 doğal duyulur). Genel ses yüksekliği: YouTube videoyu kendisi -14'e kısar, Instagram ve TikTok olduğu gibi çalar; -12 (önerilen) ile videolar telefonda belirgin yüksek duyulur.</div>
       <h2>TÜRKÇE SES (TRENDYOL + EMA)</h2><div class="conninfo" id="trInfo"></div>
       <h2>DOĞAL SES (CHATTERBOX)</h2><div class="conninfo" id="ttsInfo"></div>
@@ -667,6 +672,7 @@ function renderConn(s){const c=s.connections||{};
   const tv=s.tts||{};const cb=s.settings?.chatterbox||{};$('#ttsInfo').innerHTML=(tv.running?'⏳ Şu an bir iş için açık; iş bitince kendiliğinden kapanacak. ':'')+'Sürekli açık tutulmaz: bu ses seçiliyse yalnızca üretimde ve ön dinlemede yüklenir, iş bitince kapanır. Kurulum bir kez: <code>bash scripts/install_voice.sh</code>. Klon sesi için 5-10 sn temiz kayıt: <code>voices/ref.wav</code>.';
   const tr=s.turkishVoice||{};$('#voiceSum').textContent=(tr.trendyol?'Trendyol ✓ ':'')+(tr.ema?'EMA ✓ ':'')+(s.tts?.ready?'Chatterbox ✓':'')||'kurulu motor yok';$('#trInfo').innerHTML=(tr.trendyol?'✅ Trendyol-TTS hazır (MLX, Apple Silicon). ':'❌ Trendyol-TTS kurulu değil. ')+(tr.ema?'✅ EMA Lightning hazır.':'❌ EMA Lightning kurulu değil.')+(tr.trendyol&&tr.ema?'<br>Video anlatımı Trendyol ile, Emixhas\'ın konuşması EMA ile yapılır; rakamlar otomatik yazıya çevrilir.':'<br>Kurulum bir kez (~5 GB): <code>bash scripts/install_turkish_voice.sh</code>. Trendyol-TTS: 2026 Türkçe ölçümlerinde en doğal açık model (MIT). EMA Lightning: 34 MB, anında, ElevenLabs düzeyi doğallık ölçümü (Apache-2.0).');
   {const nr=s.settings?.narration||{};const gf=nr.femaleGainDb??3,gm=nr.maleGainDb??0;if(document.activeElement!==$('#gainF')){$('#gainF').value=gf;$('#gainFTxt').textContent='+'+gf+' dB';}if(document.activeElement!==$('#gainM')){$('#gainM').value=gm;$('#gainMTxt').textContent='+'+gm+' dB';}
+  const mu=s.settings?.music||{};$('#musOn').classList.toggle('on',mu.enabled!==false);if(document.activeElement!==$('#musLvl')){$('#musLvl').value=mu.levelDb??-20;$('#musLvlTxt').textContent=musTxt(mu.levelDb??-20);}
   const sm=nr.maleSpeed??1.07,sf=nr.femaleSpeed??1,lu=s.settings?.audio?.masterLufs??-12;if(document.activeElement!==$('#spdM')){$('#spdM').value=sm;$('#spdMTxt').textContent=spdTxt(sm);}if(document.activeElement!==$('#spdF')){$('#spdF').value=sf;$('#spdFTxt').textContent=spdTxt(sf);}if(document.activeElement!==$('#lufs')){$('#lufs').value=lu;$('#lufsTxt').textContent=lu+' LUFS';}}
   $('#narrEngine').value=s.settings?.narrationEngine||'auto';$('#voiceEngine').value=s.settings?.voice?.engine||'auto';$('#exag').value=cb.exaggeration??0.45;$('#exagTxt').textContent=(cb.exaggeration??0.45).toFixed(2);
   if(document.activeElement!==$('#capLead'))$('#capLead').value=s.settings?.captions?.leadSec??0.06;
@@ -715,6 +721,9 @@ async function loadVoices(fresh){const r=await api('/api/voices'+(fresh?'?fresh=
 $('#gainF').oninput=e=>$('#gainFTxt').textContent='+'+e.target.value+' dB';$('#gainM').oninput=e=>$('#gainMTxt').textContent='+'+e.target.value+' dB';
 function spdTxt(v){const p=Math.round((Number(v)-1)*100);return p===0?'normal':(p>0?'%+'+p+' hızlı':'%'+p+' yavaş');}
 $('#spdM').oninput=e=>$('#spdMTxt').textContent=spdTxt(e.target.value);$('#spdF').oninput=e=>$('#spdFTxt').textContent=spdTxt(e.target.value);$('#lufs').oninput=e=>$('#lufsTxt').textContent=e.target.value+' LUFS';
+function musTxt(v){v=Number(v);return v+' dB'+(v<=-24?' (neredeyse duyulmaz)':v<=-19?' (çok az duyulur)':v<=-15?' (hafif duyulur)':' (belirgin)');}
+$('#musOn').onclick=()=>post('/api/settings',{music:{enabled:!$('#musOn').classList.contains('on')}}).then(()=>$('#musOn').classList.toggle('on'));
+$('#musLvl').oninput=e=>$('#musLvlTxt').textContent=musTxt(e.target.value);$('#musLvl').onchange=e=>post('/api/settings',{music:{levelDb:Number(e.target.value)}});
 $('#spdM').onchange=e=>post('/api/settings',{narration:{maleSpeed:Number(e.target.value)}});$('#spdF').onchange=e=>post('/api/settings',{narration:{femaleSpeed:Number(e.target.value)}});$('#lufs').onchange=e=>post('/api/settings',{audio:{masterLufs:Number(e.target.value)}});
 $('#gainF').onchange=e=>post('/api/settings',{narration:{femaleGainDb:Number(e.target.value)}});$('#gainM').onchange=e=>post('/api/settings',{narration:{maleGainDb:Number(e.target.value)}});
 function modeInfo(){const alt=$('#nModeAlt').checked;$('#nModeInfo').textContent=alt?'Dönüşümlü: kanca ve 1., 3., 5. haber ilk sesle; intro ve 2., 4. haber ikinci sesle okunur. Seçtiğiniz ses hazır değilse o segment otomatik sıradaki sesle üretilir.':'Tüm video seçtiğiniz tek sesle okunur.';}

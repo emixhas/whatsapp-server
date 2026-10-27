@@ -10,6 +10,8 @@ import { setCaptionLead, Word } from "./captionGroups";
 import { CaptionText, useCaption } from "./scenes/Captions";
 import { Thumb } from "./Thumb";
 import { Episode, FPS, Segment } from "./types";
+import { levelAt, musicLevels } from "./music";
+import { useMemo } from "react";
 
 /** Günlük uzun özet (YouTube, 1920x1080): günün en önemli haberleri, her biri solda büyük medya, sağda başlık
  *  ve yanan altyazı; altta sıradaki haberlerin kayan bandı. Dikey GundemVideo ile aynı episode.json'u okur. */
@@ -164,11 +166,12 @@ export const GunlukOzet = ({ episode }: { episode: Episode }) => {
   setCaptionLead(episode.captionLead);
   const haberler = episode.segments.filter((s) => s.kind === "haber");
   const first = haberler[0];
+  const lv = useMemo(() => musicLevels(episode, FPS), [episode]);
   let cursor = 0;
   return (
     <AbsoluteFill style={{ width: WIDE_W, height: WIDE_H }}>
       <Background />
-      {episode.music ? <Audio src={staticFile(episode.music)} volume={(episode.musicVolume ?? 0.07) * 0.8} loop /> : null}
+      {episode.music ? <Audio src={staticFile(episode.music)} volume={(f) => levelAt(lv, f) * 0.8} loop /> : null}
       {episode.segments.map((seg, i) => {
         const from = Math.round(cursor * FPS);
         const dur = Math.max(1, Math.round(seg.duration * FPS));

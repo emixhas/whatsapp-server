@@ -158,8 +158,25 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
   aksam 17-05 90 sn "Günün Özeti"}; `FORMAT`/`DURATION` env verilmezse saat seçer. Prompt'a
   `__FORMAT_ADI__`, `__FORMAT_INTRO__`, `__FORMAT_TON__` gider; intro'da format etiketi görünür.
-- Müzik: `scripts/make_music.py` üç yatağı sentezler (`public/music/*.mp3`), `settings.musicVolume`
-  (0.07) ile döngülü çalar. Telifli dosya kullanma; yatakları betikten yeniden üret.
+- Müzik (kullanıcı isteği, 27 Ekim: "arkalara belgesel, son dakika haber gibileri için çok az duyulacak şekilde müzik ekleyelim"):
+  `scripts/make_music.py` (numpy; telifli dosya, örnek ya da dışarıdan ses YOK) dokuz yatağı sentezler → `public/music/<ad>.mp3` (git'te;
+  stereo 96 kbps, 58-69 sn, hepsi ~-20,5 LUFS): sondakika (124 bpm, saat tıkırtısı, kesik synth nabzı, alçak gerilim, 4 ölçüde bir vuruş,
+  yükselen geçiş), belgesel (72 bpm, yavaş piyano arpeji, sıcak yaylı, alçak çello), hikaye (84 bpm, müzik kutusu ezgisi, pizzicato), viral
+  (118 bpm, pluck akorları, el çırpma), mizah (132 bpm, "um-pa" pizzicato, marimba, tahta blok), fragman (90 bpm, yaylı ostinato, "braam",
+  gerilim tremolosu), sabah/ogle/aksam (düzenli gündem formatları; eski yataklar yeniden yazıldı). Çalgılar toplamsal sentez; yankı dairesel
+  evrişim, notalar halka tampona yazılır: kuyruklar başa sarar, döngü dikişsiz (ffmpeg mp3 kodlayıcı payını kırpar: çözülen örnek sayısı
+  birebir). Telefon hoparlörü 200 Hz altını vermez: yatakların enerjisinin %49-89'u 300-4000 Hz'de, %8-23'ü 200 Hz altında (eski yataklar
+  0,07 seviyesinde karışımda ölçülemiyordu: espeak-ng konuşmasıyla karışım müziksizle aynı -14,8 LUFS çıktı). Seçim
+  `assemble_script.music_bed`: fragman → fragman; mizah → mizah; viral → viral; çizilmiş benzer video → hikaye (BİLGİ/GÜNDEM/DERS → belgesel);
+  uzun video özeti → belgesel; günün/haftanın özeti → aksam; anlık: deprem/meteoroloji/alarm/düz son dakika/SON DAKİKA etiketli video →
+  sondakika, maç → ogle, piyasa/takvim → sabah, derleme → aksam, GÖRÜNTÜLÜ/ÖZEL HABER → belgesel; düzenli üretim formatın yatağı. Seviye
+  `music_choice` (meta music, musicBed, musicVolume, musicGapVolume; `settings.music` {enabled true, levelDb -20, duckDb 6}; eski
+  `settings.musicVolume` 0,07 artık kullanılmaz): konuşma sırasında konuşmanın levelDb altı, konuşma aralarında duckDb açık; `MUSIC_NARR_LUFS`
+  Remotion çıktısında ölçülerek ayarlandı (levelDb -20 → konuşma sırasında -20,1 dB, aralarda -17,5 dB). `src/music.ts musicLevels` kare kare
+  seviye (konuşma anları kelime zamanlarından, 0,35 sn'den kısa aralar konuşma sayılır; kısılma ~0,1 sn, açılma ~0,6 sn: pompalama yok);
+  GundemVideo, KareVideo ve GunlukOzet (×0,8) `volume` işleviyle kullanır; sesli bölümde müzik susar. Panel Ayarlar → Sesler: "🎵 Arka plan
+  müziği" anahtarı ve seviye kaydırıcısı (-30…-12 dB). Yatağı değiştirmek için betikteki parametreleri değiştir ve `python3
+  scripts/make_music.py [ad …]` çalıştır (≈2,5 dk); dışarıdan dosya ekleme.
 - Haber medyası (tam boy fotoğraf, HD, video): `assemble_script.attach_images()` her haberi başlık benzerliğiyle
   (Jaccard ≥ 0.08) `work/news.json` kaydına eşler, `articleUrl` (haber sayfası) ve varsa `imageUrl` (RSS
   küçük görseli) yazar. `fetch_images.py`: sayfadaki og:image/twitter:image (yayıncının tam boy fotoğrafı)

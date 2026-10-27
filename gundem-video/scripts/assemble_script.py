@@ -45,6 +45,66 @@ INFO_KIND = os.environ.get("INFO_KIND", "").strip()
 INFO_LABEL = os.environ.get("INFO_LABEL", "").strip()
 # Günlük uzun özet (yatay, YouTube): pipeline GUNLUK=1, prompts/gunluk.md, Remotion GunlukOzet
 GUNLUK = os.environ.get("GUNLUK") == "1"
+# Arka plan müziği (kullanıcı isteği, 27 Ekim: "arkalara belgesel, son dakika haber gibileri için çok az duyulacak şekilde müzik
+# ekleyelim"): yataklar scripts/make_music.py (hepsi ~-20,5 LUFS), seviye konuşmaya göre: settings.music.levelDb (varsayılan -20 dB:
+# konuşmanın 20 dB altı, telefonda arkadan hafifçe duyulur), konuşma aralarında duckDb (6) kadar açılır (src/music.ts kare kare kısar).
+# Seslendirme tts.VOICE_MAX sonrası ~-13 LUFS; MUSIC_NARR_LUFS Remotion çıktısında ölçülerek ayarlandı (levelDb -20 → konuşma sırasında
+# müzik konuşmanın ~20 dB altında). Eskiden sabit 0,07 (~-44 LUFS): karışımda ölçülemiyordu, telefonda hiç duyulmuyordu.
+MUSIC_BED_LUFS = -20.5
+MUSIC_NARR_LUFS = -10.5
+
+
+def music_bed() -> str:
+    """İçerik türüne göre yatak: fragman → fragman; mizah → mizah; viral → viral; çizilmiş benzer video → hikaye (BİLGİ/GÜNDEM/DERS
+    etiketinde belgesel); uzun video özeti → belgesel; günün/haftanın özeti → aksam; anlık: deprem/meteoroloji/alarm/düz son dakika →
+    sondakika, maç → ogle, piyasa/takvim → sabah, derleme → aksam, video haberi SON DAKİKA etiketliyse sondakika, değilse (GÖRÜNTÜLÜ
+    HABER, ÖZEL HABER) belgesel; düzenli üretim formatın yatağı (sabah/ogle/aksam)."""
+    ck = os.environ.get("CONTENT_KIND", "").strip()
+    fold = INFO_LABEL.upper().translate(str.maketrans("İŞĞÜÖÇÂÎÛ", "ISGUOCAIU"))
+    if TRAILER:
+        return "fragman"
+    if ck == "mizah":
+        return "mizah"
+    if ck == "trend":
+        return "viral"
+    if RECREATE:
+        return "belgesel" if fold in ("BILGI", "GUNDEM", "DERS") else "hikaye"
+    if os.environ.get("SUMMARY") == "1":
+        return "belgesel"
+    if GUNLUK:
+        return "aksam"
+    if ANLIK:
+        kind = INFO_KIND
+        if kind == "mac":
+            return "ogle"
+        if kind in ("piyasa", "takvim"):
+            return "sabah"
+        if kind == "derleme":
+            return "aksam"
+        if kind == "video" and fold not in ("", "SON DAKIKA"):
+            return "belgesel"
+        return "sondakika"
+    fmt = os.environ.get("FORMAT", "aksam")
+    return fmt if fmt in ("sabah", "ogle", "aksam") else "aksam"
+
+
+def music_choice() -> dict:
+    """Bölüm meta'sı: music (yatak yolu), musicBed, musicVolume (konuşma sırasında), musicGapVolume (konuşma aralarında);
+    settings.music.enabled false → müzik yok. Yatak dosyası yoksa akşam yatağı."""
+    from common import settings
+    m = settings().get("music") or {}
+    if m.get("enabled") is False:
+        return {"music": None, "musicBed": None}
+    bed = music_bed()
+    if not (ROOT / "public" / "music" / f"{bed}.mp3").exists():
+        bed = "aksam"
+    try:
+        level = max(-35.0, min(-10.0, float(m.get("levelDb", -20))))
+        duck = max(0.0, min(12.0, float(m.get("duckDb", 6))))
+    except (TypeError, ValueError):
+        level, duck = -20.0, 6.0
+    v = 10 ** ((MUSIC_NARR_LUFS + level - MUSIC_BED_LUFS) / 20)
+    return {"music": f"music/{bed}.mp3", "musicBed": bed, "musicVolume": round(v, 4), "musicGapVolume": round(min(1.0, v * 10 ** (duck / 20)), 4)}
 OUTRO_GUNLUK = "Bugünün Türkiye gündemi buydu. Her beş saatte bir kısa haberlerle, her akşam günün özetiyle buradayız. Abone olmayı unutma."
 INTRO_GUNLUK = "Günün özeti. Bugün Türkiye'de öne çıkan haberler."
 # Haftanın özeti: GUNLUK=1 + HAFTALIK=1 (aynı yatay kompozisyon), prompts/haftalik.md, scripts/weekly_news.py
@@ -543,7 +603,7 @@ def main(src: str, dst: str):
         "remakeOf": os.environ.get("REMAKE_OF") or None,  # tutan videonun farklı senaryo/görselle yeniden yayını
         "peakHour": int(os.environ["PEAK_HOUR"]) if os.environ.get("PEAK_HOUR", "").isdigit() else None,  # en çok izlenen saat tekrarı
         "formatLabel": os.environ.get("FORMAT_LABEL", "Gündem"),
-        "music": "music/ogle.mp3" if ANLIK else f"music/{os.environ.get('FORMAT', 'aksam') if os.environ.get('FORMAT', 'aksam') in ('sabah', 'ogle', 'aksam') else 'aksam'}.mp3",
+        **music_choice(),
         "segments": segs,
     }
     record_used_news(segs, f"{date}-{ep_n}")  # tekrar engeli özgün başlıklarla

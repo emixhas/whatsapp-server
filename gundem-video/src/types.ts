@@ -56,7 +56,9 @@ export type Episode = {
   format?: string;
   formatLabel?: string;  // "Güne Başlarken"
   music?: string;        // public/ altına göre müzik yatağı
-  musicVolume?: number;
+  musicVolume?: number;   // konuşma sırasında müzik seviyesi (assemble music_choice; konuşmanın ~20 dB altı)
+  musicGapVolume?: number; // konuşma aralarında (src/music.ts kare kare geçer)
+  musicBed?: string | null; // yatağın adı (sondakika, belgesel, hikaye, viral, mizah, fragman, sabah, ogle, aksam)
   titleVariant?: "A" | "B";
   titles?: { A?: string; B?: string; cover?: string };
   dayLabel?: string;     // "9 Ekim Cuma"

@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { AbsoluteFill, Audio, Sequence, staticFile } from "remotion";
 import { styleFor } from "./categories";
 import { Background } from "./scenes/Background";
@@ -10,6 +11,7 @@ import { Outro } from "./scenes/Outro";
 import { Thumb } from "./Thumb";
 import { setCaptionLead } from "./captionGroups";
 import { Episode, FPS } from "./types";
+import { levelAt, musicLevels } from "./music";
 
 const WHOOSH_FRAMES = 17; // 0.55 sn
 
@@ -32,14 +34,15 @@ export const GundemVideo = ({ episode }: { episode: Episode }) => {
       t += s.duration;
     }
     if (start !== null && t > start) runs.push([start, t]); }
+  const lv = useMemo(() => musicLevels(episode, FPS), [episode]);
   let cursor = 0;
   return (
     <AbsoluteFill>
       <Background />
-      {/* müzik yatağı: formatın yatağı, düşük seviyede, döngülü */}
+      {/* müzik yatağı: içerik türünün yatağı, konuşmanın ~20 dB altında, aralarda biraz açılır, döngülü (src/music.ts) */}
       {episode.music ? runs.map(([a, b], k) => (
         <Sequence key={`m${k}`} from={Math.round(a * FPS)} durationInFrames={Math.max(1, Math.round((b - a) * FPS))}>
-          <Audio src={staticFile(episode.music!)} volume={episode.musicVolume ?? 0.07} loop />
+          <Audio src={staticFile(episode.music!)} volume={(f) => levelAt(lv, Math.round(a * FPS) + f)} loop />
         </Sequence>
       )) : null}
       {episode.segments.map((seg, i) => {

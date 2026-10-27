@@ -135,7 +135,10 @@ _DEFAULTS = ({
             "ogle": {"hours": [11, 17], "duration": 30, "label": "Son Dakika", "intro": "Son dakika, Türkiye gündemi.", "tone": "hızlı, net, en yeni gelişmeler öncelikli"},
             "aksam": {"hours": [17, 29], "duration": 90, "label": "Günün Özeti", "intro": "Günün özeti, Türkiye gündemi.", "tone": "toparlayıcı, günün en önemli olaylarını sıralayan"},
         },
-        "musicVolume": 0.07,
+        "musicVolume": 0.07,  # eski sabit müzik seviyesi (27 Ekim'e kadar); artık kullanılmıyor: "music" bloğu
+        # Arka plan müziği (kullanıcı isteği, 27 Ekim; assemble_script.music_choice, src/music.ts): içerik türüne göre yatak, konuşmanın
+        # levelDb altında (varsayılan -20 dB: çok az duyulur), konuşma aralarında duckDb (6) kadar açık
+        "music": {"enabled": True, "levelDb": -20, "duckDb": 6},
         "scheduleHours": 5,
         "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
         # Türkçe doğal ses: Trendyol-TTS (VoxCPM2 tabanlı, MIT) + EMA Lightning (Apache-2.0). Kurulum: scripts/install_turkish_voice.sh

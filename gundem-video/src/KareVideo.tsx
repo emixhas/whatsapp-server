@@ -7,6 +7,8 @@ import { fitFontSize, trUpper } from "./fit";
 import { theme } from "./theme";
 import { setCaptionLead } from "./captionGroups";
 import { Episode, FPS, Segment } from "./types";
+import { levelAt, musicLevels } from "./music";
+import { useMemo } from "react";
 
 /**
  * KARE (1:1) UZUN VİDEO, 1080x1080 (kullanıcı isteği, 23 Ekim: "bazen 10 dakikalık kare video linki gönderebilirim; link kare video yazarsam
@@ -267,12 +269,13 @@ export const KareVideo = ({ episode }: { episode: Episode }) => {
       t += s.duration;
     }
     if (start !== null && t > start) runs.push([start, t]); }
+  const lv = useMemo(() => musicLevels(episode, FPS), [episode]);
   let cursor = 0;
   return (
     <AbsoluteFill style={{ background: theme.bg }}>
       {episode.music ? runs.map(([a, b], k) => (
         <Sequence key={`m${k}`} from={Math.round(a * FPS)} durationInFrames={Math.max(1, Math.round((b - a) * FPS))}>
-          <Audio src={staticFile(episode.music!)} volume={episode.musicVolume ?? 0.07} loop />
+          <Audio src={staticFile(episode.music!)} volume={(f) => levelAt(lv, Math.round(a * FPS) + f)} loop />
         </Sequence>
       )) : null}
       {episode.segments.map((seg, i) => {
