@@ -330,7 +330,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   video izlensin, sonra konuşmaya devam edilsin"): YALNIZ talimat isterse (`wa_video.WANT_SOUND`: orijinal/kendi/videonun sesi, sesi
   kalsın/kullan, sesiyle, konuşması duyulsun, röportajı kullan…). Segment türü `sesli` (`types.ts`): Claude yerleştirir (kanca → giriş
   haberi → sesli → devam haberi; `prompts/montaj.md`), eklemezse konuşması en çok olan videonun tamamı ilk haberden sonra eklenir; istenmeden
-  gelen sesli bölüm atılır. Kesim sesle (`cut(audio=…)`: ses yoksa sessizlik, loudnorm -17 LUFS), 1080x1920; altyazı videodaki konuşmanın
+  gelen sesli bölüm atılır. Kesim sesle (`cut(audio=…)`: ses yoksa sessizlik, loudnorm -14 LUFS; 27 Ekim'e kadar -17), 1080x1920; altyazı videodaki konuşmanın
   kelimeleri (`WORDS`, konuşma tanıma; parçalara göre kaydırılır) → `soundWords`. `assemble` sesli bölümde boş seslendirmeye izin verir
   (`soundDuration` şart); `tts.py` sentezlemez, klip süresinde sessiz wav (zamanlama sesten), `words` = soundWords (yıldızlı), captionSync
   "orijinal ses"; `fetch_images`/`info_card.render` `sound` bayrağını taşır. Remotion: sesli bölümde seslendirme ve sahne efekti yok,
@@ -2953,10 +2953,22 @@ Sabit sahne sesleri: intro → `sfx/sting.wav`, outro → `sfx/chime.wav`, her s
 - Segment sonu sessizliği 0.15 sn + Piper cümle boşluğu 0.12 sn.
 - Seslendirme seviyesi (`tts.add_pause`): her segment POLISH sonrası `loudnorm=I=-18` ile eşit yüksekliğe
   getirilir, sonra kadın sesi `settings.narration.femaleGainDb` (varsayılan +3 dB), erkek sesi `maleGainDb` (0)
-  kadar yükseltilir, `alimiter` bozulmayı önler. Cinsiyeti belirsiz motorlar kadın sayılır (tek erkek ses
-  vox-erkek). Panel Ayarlar → Sesler'de iki kaydırıcı (0-8 dB). Son MP4 loudnorm'u toplamı -14 LUFS'a çeker;
-  bu kazanç seslendirmeyi müziğe ve efektlere göre öne çıkarır.
-- Son MP4 ffmpeg loudnorm ile -14 LUFS'a getirilir (YouTube hedefi). Remotion çıktısı ~-17.6 idi.
+  kadar yükseltilir. Cinsiyeti belirsiz motorlar kadın sayılır (tek erkek ses vox-erkek). Panel Ayarlar → Sesler'de iki
+  kaydırıcı (0-8 dB). Seslendirme yoğunluğu (kullanıcı isteği, 27 Ekim: "kadın ve erkeğin ses seviyesini artıralım";
+  `tts.VOICE_MAX`, `settings.audio.voiceCompress` false eski zincir): kazançtan sonra yayın tipi sıkıştırma (3:1, eşik -21 dB,
+  yumuşak diz 4, +4 dB) ve -1 dBFS tepe sınırı (`alimiter level=false`); eskiden yalnız `alimiter=limit=0.95` (otomatik seviye
+  tepeyi 0 dB'e getiriyordu). Ölçüm (espeak-ng Türkçe konuşma + aynı zincir): konuşmanın tepe/ortalama farkı ~15 dB'den
+  ~11,5 dB'ye iner; segment -14,8 → -12,6 LUFS, tepe 0 → -1 dBFS. Eski zincirle son video -14 hedefine bile ulaşamıyordu
+  (tek geçişli loudnorm tepe sınırı yüzünden -14,8'de kalıyordu; -11 istense de -14,6).
+- Son MP4 ffmpeg loudnorm ile `settings.audio.masterLufs` (varsayılan -12; -16…-9; panel Ayarlar → Sesler "Videonun genel
+  ses yüksekliği") LUFS'a getirilir, tepe -1 dB (pipeline.sh; eskiden sabit -14). YouTube -14'e kendisi kısar, Instagram ve
+  TikTok olduğu gibi çalar: telefonda ~2 dB yüksek. Videonun kendi sesli bölümleri (`wa_video.cut` audio) -17'den -14 LUFS'a
+  çıktı (yoğunlaşan seslendirmeyle aynı seviye). Remotion çıktısı ~-17.6 idi.
+- Ses hızı (kullanıcı isteği, 27 Ekim: "konuşan erkeğin sesini çok az hızlandıralım"; `tts.voice_speed/change_tempo`):
+  `settings.narration.maleSpeed` (varsayılan 1,07 = %7 hızlı) ve `femaleSpeed` (1,0); 0,85-1,25. Perde değişmez: ffmpeg'de
+  rubberband varsa o, yoksa atempo. Sentezden hemen sonra, hizalamadan önce uygulanır (altyazı ve bip zamanları hızlanmış
+  sese göre). Log "⏩ <ses>: konuşma %+7 hızlı". Panel Ayarlar → Sesler'de iki kaydırıcı (0,90-1,20). Sandbox'ta sahte erkek
+  sesiyle: segment süresi ~1/1,07, altyazı ve bip hızlanmış sesin üstünde, kadın sesi ve 1,0 ayarı değişmez.
 
 ## Kurallar
 - Zamanlama sesten gelir: `episode.json` içindeki `duration` değerleri her segmentin gerçek ses

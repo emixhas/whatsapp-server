@@ -181,8 +181,15 @@ if [ -f "$OUT" ]; then echo "!! $OUT zaten var, üzerine yazılmıyor"; N=$(( $(
 COMP="GundemVideo"; [ "$GUNLUK" = "1" ] && COMP="GunlukOzet"  # günlük özet yatay
 [ "$KARE" = "1" ] && COMP="KareVideo"  # kare (1:1) uzun video: videonun tamamı kendi sesiyle
 npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 --log error
-# Ses seviyesini YouTube standardına getir (-14 LUFS, tepe -1 dB); görüntüye dokunmaz
-ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=-14:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
+# Ses seviyesi (settings.audio.masterLufs, varsayılan -12 LUFS, tepe -1 dB; kullanıcı isteği, 27 Ekim: "kadın ve erkeğin ses seviyesini
+# artıralım" — eskiden -14; seslendirme tts.VOICE_MAX ile yoğunlaştırılır). YouTube -14'e kendisi kısar, Instagram/TikTok olduğu gibi çalar.
+# Görüntüye dokunmaz
+LUFS=$($PY -c "import sys; sys.path.insert(0, 'scripts'); from common import settings; v = (settings().get('audio') or {}).get('masterLufs', -12)
+try: v = float(v)
+except (TypeError, ValueError): v = -12.0
+print(max(-16.0, min(-9.0, v)))" 2>/dev/null || echo "-12")
+[ -n "$LUFS" ] || LUFS="-12"
+ffmpeg -y -loglevel error -i work/render.mp4 -c:v copy -af "loudnorm=I=${LUFS}:TP=-1:LRA=7" -c:a aac -b:a 192k "$OUT"
 VIDEO_OK=1  # video var: hafıza kayıtları kalır
 rm -f work/render.mp4
 cp public/episode.json "out/${DATE}-${N}.json"

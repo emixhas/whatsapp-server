@@ -373,7 +373,8 @@ def fit_filter(w: int, h: int, idx: int) -> str:
 
 def cut(clips: list, srcs: list, w: int, h: int, out: Path, audio: list | None = None) -> bool:
     """Parçaları kesip birleştirir. `audio` verilirse (video başına ses var mı) videonun kendi sesi de alınır (sesli bölüm);
-    sesi olmayan parçaya sessizlik konur, toplam ses -17 LUFS'a getirilir (seslendirmeyle aynı seviye)."""
+    sesi olmayan parçaya sessizlik konur, toplam ses -14 LUFS'a getirilir (seslendirmeyle aynı seviye; 27 Ekim'den beri seslendirme
+    yoğunlaştırıldığı için -17'den yükseltildi: tts.VOICE_MAX)."""
     ins, fl, extra = [], [], []
     for i, c in enumerate(clips):
         ins += ["-ss", f"{c['start']:.2f}", "-t", f"{c['end'] - c['start']:.2f}", "-i", str(srcs[c["video"] - 1])]
@@ -387,7 +388,7 @@ def cut(clips: list, srcs: list, w: int, h: int, out: Path, audio: list | None =
                 extra += ["-f", "lavfi", "-t", f"{c['end'] - c['start']:.2f}", "-i", "anullsrc=r=48000:cl=stereo"]
                 fl.append(f"[{j}:a]asetpts=PTS-STARTPTS[a{i}]")
         fl.append("".join(f"[c{i}][a{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=1[out][aout]")
-        fl.append("[aout]loudnorm=I=-17:TP=-1.5:LRA=11[an]")
+        fl.append("[aout]loudnorm=I=-14:TP=-1.5:LRA=11[an]")
         maps = ["-map", "[out]", "-map", "[an]", "-c:a", "aac", "-b:a", "160k"]
     else:
         fl.append("".join(f"[c{i}]" for i in range(len(clips))) + f"concat=n={len(clips)}:v=1:a=0[out]")

@@ -73,10 +73,50 @@ def voice_gain_db(v: dict) -> float:
     return float(n.get(key, 0.0 if key == "maleGainDb" else 3.0))
 
 
+# Ses hızı (kullanıcı isteği, 27 Ekim: "konuşan erkeğin sesini çok az hızlandıralım"): settings.narration.maleSpeed (varsayılan 1,07 =
+# %7 hızlı) ve femaleSpeed (1,0); 0,85-1,25. Perde değişmez: ffmpeg'de rubberband varsa o (daha temiz), yoksa atempo. Sentezden hemen
+# sonra, hizalamadan ÖNCE uygulanır: altyazı ve bip zamanları hızlanmış sese göre çıkar.
+SPEED_DEFAULT = {"erkek": 1.07, "kadin": 1.0}
+_RUBBERBAND = None
+
+
+def voice_speed(v: dict) -> float:
+    n = voices._S.get("narration", {}) or {}
+    g = "erkek" if v.get("gender") == "erkek" else "kadin"
+    try:
+        f = float(n.get("maleSpeed" if g == "erkek" else "femaleSpeed", SPEED_DEFAULT[g]))
+    except (TypeError, ValueError):
+        f = SPEED_DEFAULT[g]
+    return max(0.85, min(1.25, f))
+
+
+def change_tempo(path: Path, factor: float) -> None:
+    """Sesi perdeyi değiştirmeden factor kadar hızlandırır/yavaşlatır (yerinde)."""
+    global _RUBBERBAND
+    if abs(factor - 1.0) < 0.005:
+        return
+    if _RUBBERBAND is None:
+        r = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True)
+        _RUBBERBAND = " rubberband " in (r.stdout or "")
+    af = f"rubberband=tempo={factor:.3f}" if _RUBBERBAND else f"atempo={factor:.3f}"
+    tmp = path.with_name(path.stem + ".tempo.wav")
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-af", af, "-ar", "44100", "-ac", "1", str(tmp)], check=True)
+    tmp.replace(path)
+
+
+# Seslendirme yoğunluğu (kullanıcı isteği, 27 Ekim: "kadın ve erkeğin ses seviyesini artıralım"): eşit yükseklik ve ses kazancından sonra
+# yayın tipi sıkıştırma (3:1, -21 dB, yumuşak diz, +4 dB) ve -1 dBFS tepe sınırı. Konuşmanın tepe/ortalama farkı ~15 dB'den ~11,5 dB'ye
+# iner: aynı tepe seviyesinde ~2-3 dB daha yüksek duyulur, son video -12 LUFS hedefine (pipeline.sh) tepe sınırını aşmadan ulaşabilir.
+# Ölçüm (espeak-ng Türkçe konuşma, kadın +3 dB): eski zincir -14,8 LUFS / tepe 0 dB, yeni -12,6 LUFS / tepe -1 dB.
+# settings.audio.voiceCompress false eski zinciri kullanır.
+VOICE_MAX = "acompressor=threshold=-21dB:ratio=3:attack=5:release=70:knee=4:makeup=4,alimiter=limit=0.89:attack=4:release=60:level=false"
+
+
 def add_pause(path: Path, gain_db: float = 0.0) -> None:
     tmp = path.with_name(path.stem + ".tmp.wav")
-    # eşit yükseklik + ses kazancı; limitleyici bozulmayı (patlamayı) önler
-    level = f"loudnorm=I=-18:TP=-2:LRA=11,volume={gain_db:+.1f}dB,alimiter=limit=0.95"
+    # eşit yükseklik + ses kazancı; sıkıştırıcı + limitleyici seslendirmeyi yoğunlaştırır, bozulmayı (patlamayı) önler
+    dense = (voices._S.get("audio") or {}).get("voiceCompress") is not False
+    level = f"loudnorm=I=-18:TP=-2:LRA=11,volume={gain_db:+.1f}dB," + (VOICE_MAX if dense else "alimiter=limit=0.95")
     af = (POLISH + "," if os.environ.get("TTS_POLISH", "1") != "0" else "") + level + f",apad=pad_dur={PAUSE_SEC}"
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-af", af, "-ar", "44100", "-ac", "1", str(tmp)], check=True)
     tmp.replace(path)
@@ -192,6 +232,15 @@ def main(script_path: str, episode_path: str):
                     chosen[i] = repl
     if pending:
         sys.exit("Seslendirme tamamlanamadı")
+    sped = {}
+    for i in range(len(segs)):  # sese göre hız (erkek sesi biraz hızlı); altyazı ve bip zamanları bundan sonra çıkar
+        if i not in snd:
+            f = voice_speed(chosen[i])
+            if abs(f - 1.0) >= 0.005:
+                change_tempo(outs[i], f)
+                sped[chosen[i]["label"]] = f
+    for label, f in sped.items():
+        print(f"  ⏩ {label}: konuşma %{round((f - 1) * 100):+d} hızlı (perde aynı; ayar: Ayarlar → Sesler)", flush=True)
 
     # hizalama işlenmemiş seste yapılır (sıkıştırıcı gürültüyü yükseltiyor): önce tüm segmentlerin ham kopyası, sonra
     # metin hizalama (MMS) bütün segmentler için TEK seferde (1,2 GB model bir kez yüklenir); hassas kelimeli segment de hizalanır,

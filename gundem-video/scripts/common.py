@@ -113,7 +113,12 @@ _DEFAULTS = ({
         "voice": {"engine": "auto", "name": "Yelda", "rate": 195, "piperLength": 0.85, "piperNoise": 0.5},
         "narrationEngine": "auto",
         # Video anlatım sesi: single → voice; alternate → kanca/1./3. haber voiceA, intro/2./4. haber voiceB (scripts/voices.py)
-        "narration": {"mode": "single", "voice": "auto", "voiceA": "vox-kadin", "voiceB": "vox-erkek", "femaleGainDb": 3, "maleGainDb": 0},
+        "narration": {"mode": "single", "voice": "auto", "voiceA": "vox-kadin", "voiceB": "vox-erkek", "femaleGainDb": 3, "maleGainDb": 0,
+                      "maleSpeed": 1.07, "femaleSpeed": 1.0},
+        # Son videonun ses yüksekliği (LUFS; pipeline.sh loudnorm) ve seslendirme yoğunluğu (tts.VOICE_MAX). Kullanıcı isteği, 27 Ekim
+        # ("kadın ve erkeğin ses seviyesini artıralım"): -14'ten -12'ye; seslendirme sıkıştırılmadan -14'e bile ulaşılamıyordu (tepe sınırı).
+        # YouTube -14'e kendisi kısar; Instagram ve TikTok olduğu gibi çalar. -16…-9 arası.
+        "audio": {"masterLufs": -12, "voiceCompress": True},
         "claudeModel": "opus",
         # Anlık (son dakika) video bitince bağlı tüm hesaplarda onaysız paylaşılsın
         "anlikAutoPublish": True,
