@@ -1709,6 +1709,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     sık tarama" ya da "📅 Beklenen pencere henüz öğrenilmedi (aynı günde en az 2 fragman gerekir)". Testler: scanner (ilk tarama ve yeni fragmanla
     öğrenme, 3 saat sınırı, tek fragmanlı gün pencere değil, en çok 3 pencere, history sınırı), sunucu harness (cfg sınırları, pencere içi/dışı
     aralık, dizi bitti/duraklatılmış kanal sayılmaz, API alanları), panel (anahtar, alan, kart satırı).
+  - Dizi başına oynatma listesi (kullanıcı isteği, 27 Ekim: "aynı dizinin fragman analizleri YouTube'da kendiliğinden bir listede toplansın"):
+    `server.js runVideoNews` fragman işinde dizi/film adını (`plan.film`, yoksa işin `film`i; fragman takibinde `social.film`, sahibin linkinde
+    yalnız başlık fragman diye tanındıysa) `startAnlik(…, {trailer, film})` ile verir → env `FILM` (yalnız TRAILER=1; 80 karakter) → `assemble`
+    meta `film` → `publish.playlist_names`: fragman analizinde kategori listesinin ("· Sinema") yanına `series_name(meta.film)` ("<dizi> ·
+    Fragmanlar"; boşluklar tekleşir, sondaki noktalama atılır) eklenir; ad yoksa yalnız kategori listesi, fragman olmayan videoda `film` alanı
+    hiç liste açmaz. `yt_find_playlist` kanaldaki listeyi Türkçe I/İ dahil büyük/küçük harf farkı gözetmeden ve sayfaları gezerek (dizi
+    listeleri 50'yi geçebilir) bulur, yoksa herkese açık oluşturur ("… — bu dizinin ve filmin fragman analizleri; otomatik güncellenir.");
+    kimlikler yine `data/youtube_playlists.json`. Testler: `playlist_names`/`series_name` (adlı, adsız, fragman olmayan, düzleme, 80 karakter),
+    sahte YouTube ile 2. sayfadaki büyük harfli listenin yeniden kullanılması ve yeni listenin oluşturulup önbelleğe yazılması, assemble meta
+    satırı (TRAILER=1 + FILM, boş, fragman değil), server env/startAnlik satırları.
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/
@@ -2644,7 +2654,8 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   çok 12 (YouTube 15 üstünü yok sayar); açıklamanın sonuna, YouTube `tags` alanına (`caption_tags`) ve TikTok başlığına.
 - YouTube oynatma listeleri (`publish.yt_add_to_playlists`): format listesi ("<kanal> · Son Dakika" / "· Her 5 Saatte
   Gündem" / "· Günün Özeti (uzun)") + ilk haberin kategorisi ("· Ekonomi", "· Asayiş ve Kaza"…); fragman analizi (meta `trailer`)
-  format listesine girmez, yalnız kategori listesi ("· Sinema"; fragman son dakika haberi değil); yoksa herkese açık
+  format listesine girmez, yalnız kategori listesi ("· Sinema"; fragman son dakika haberi değil) + dizi/film adı biliniyorsa "<dizi> ·
+  Fragmanlar" (aşağıda "Dizi başına oynatma listesi"); yoksa herkese açık
   oluşturulur, kimlikler `data/youtube_playlists.json`. "youtube" kapsamı gerekir: eski token (upload+readonly) dosyadaki
   kapsamlarla okunur ve listesiz yükler, `--status` `playlists:false` verir, sistem kontrolü yeniden bağlamayı önerir.
   `--connect youtube` (`yt_connect`) token geçerli olsa da Google onayını YENİDEN açar (prompt=consent, 10 dk bekler),

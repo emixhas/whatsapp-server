@@ -515,6 +515,7 @@ def main(src: str, dst: str):
         "queue": {"no": int(os.environ["VQ_NO"]), "source": os.environ.get("VQ_SRC") or None} if (os.environ.get("VQ_NO") or "").isdigit() and int(os.environ["VQ_NO"]) > 0 else None,
         "trailer": os.environ.get("TRAILER") == "1" or None,  # fragman analizi: açıklama "🎬 FRAGMAN: …", #sondakika yerine #fragman
         "trailerAuto": os.environ.get("TRAILER_AUTO") == "1" or None,  # fragman takibi (kanaldan düşen yeni fragman): post_pipeline bağlı tüm hesaplara, YouTube değer kuralı yok
+        "film": (os.environ.get("FILM") or "").strip()[:80] or None if os.environ.get("TRAILER") == "1" else None,  # fragmanın dizi/film adı: YouTube'da "<dizi> · Fragmanlar" listesi
         "summary": os.environ.get("SUMMARY") == "1" or None,
         "recreated": RECREATE or None,  # benzer video (sıfırdan): açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video: …"
         # kare (1:1) uzun video (KARE=1; wa_video.build_kare): videonun tamamı kendi sesiyle; Shorts değil, yalnız YouTube; açıklamada bölümler

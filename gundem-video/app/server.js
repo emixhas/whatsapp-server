@@ -432,6 +432,7 @@ function startAnlik(topic, duration, opts = {}) {
   if (Number(opts.vqNo) > 0) { env.VQ_NO = String(opts.vqNo); if (opts.vqSrc) env.VQ_SRC = String(opts.vqSrc); }
   if (opts.trailer) env.TRAILER = "1"; // fragman analizi: meta trailer → açıklama "🎬 FRAGMAN: …", #sondakika yok, #fragman
   if (opts.trailerAuto) env.TRAILER_AUTO = "1"; // 🎬 fragman takibi (kanaldan düşen yeni fragman): meta trailerAuto → post_pipeline bağlı tüm hesaplara, YouTube değer kuralına takılmaz
+  if (opts.trailer && opts.film) env.FILM = String(opts.film).trim().slice(0, 80); // dizi/film adı → meta film → YouTube'da "<dizi> · Fragmanlar" listesi (kullanıcı isteği, 27 Ekim)
   if (opts.recreate) env.RECREATE = "1"; // benzer video (sıfırdan): meta recreated → açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video"
   if (opts.kare) env.KARE = "1"; // ⬛ kare (1:1) uzun video: Remotion KareVideo, meta kare → Shorts değil, yalnız YouTube, açıklamada bölümler
   if (opts.revisionOf) { env.REVISION_OF = String(opts.revisionOf); env.REVISION_N = String(Math.max(1, Number(opts.revision) || 1)); } // ✏️ düzeltilmiş sürüm: meta revision/revisionOf
@@ -2598,7 +2599,7 @@ async function runVideoNews0(v) {
   const res = startAnlik(p.titles?.A || p.hook || v.instruction, j.duration, { templateDir: j.job, info,
     source: v.social?.credit || "Türkiye Gündemi", ...(v.social?.url ? { url: v.social.url } : {}), userVideo: !auto || !trailerWatchCfg().autoPublish,
     ...(auto ? { trailerAuto: true, priority: true, urgent: true, ...(trailerWatchCfg().autoPublish ? { auto: true } : {}), ...(v.twId ? { twId: String(v.twId) } : {}) } : {}), // fragman takibi: otomatik + acil (sahibin işlerinden sonra, bütün otomatik haberlerden önce; süren otomatik haberi durdurur); yayın onaylıysa sahibin işi gibi
-    ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
+    ...(v.publishAt ? { publishAt: v.publishAt } : {}), ...(v.trailer ? { trailer: true, ...(String(p.film || v.film || "").trim() ? { film: String(p.film || v.film).trim().slice(0, 80) } : {}) } : {}), ...(p.summary ? { summary: true } : {}), ...(p.contentKind ? { contentKind: p.contentKind } : {}), ...(rc ? { recreate: true } : {}),
     ...(rv ? { revisionOf: rv.of, revision: rv.revision } : {}), ...(kr ? { kare: true } : {}), ...(oj ? { ownerJob: oj } : {}) });
   if (!res.ok) { if (oj) ownerJobEnd(oj); await sendW(`❌ Üretim başlatılamadı: ${res.error}`); }
   else if (res.queued) {

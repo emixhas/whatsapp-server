@@ -629,7 +629,31 @@ def playlist_names(meta: dict) -> list:
     cat = PLAYLIST_BY_CATEGORY.get(first.get("category"))
     if cat:
         names.append(f"{ch} · {cat}")
+    # dizi başına liste (kullanıcı isteği, 27 Ekim: "aynı dizinin fragman analizleri YouTube'da kendiliğinden bir listede toplansın"): fragman
+    # analizinde dizi/film adı (meta film; fragman takibi ve sahibin linki aynı yoldan) varsa "<dizi> · Fragmanlar"; ad yoksa yalnız kategori listesi
+    film = series_name(meta.get("film")) if meta.get("trailer") else ""
+    if film:
+        names.append(f"{film} · Fragmanlar")
     return names
+
+
+def series_name(film) -> str:
+    """Liste adı için dizi/film adı: boşluklar tekleşir, sondaki noktalama atılır, en çok 80 karakter (YouTube liste adı sınırı 150)."""
+    t = re.sub(r"\s+", " ", str(film or "")).strip(" \t-–—·|:;,.!?")
+    return t[:80].strip()
+
+
+def yt_find_playlist(yt, name: str):
+    """Kanalda aynı adlı liste var mı (büyük/küçük harf farkı sayılmaz, Türkçe I/İ dahil; dizi listeleri çoğalınca 50'den fazla liste olur: sayfalar gezilir)."""
+    fold = lambda t: str(t or "").replace("I", "ı").replace("İ", "i").lower()
+    want, token = fold(name), None
+    for _ in range(20):
+        page = yt.playlists().list(part="snippet", mine=True, maxResults=50, **({"pageToken": token} if token else {})).execute()
+        pid = next((x["id"] for x in page.get("items", []) if fold(x["snippet"]["title"]) == want), None)
+        if pid or not page.get("nextPageToken"):
+            return pid
+        token = page["nextPageToken"]
+    return None
 
 
 def yt_add_to_playlists(yt, vid: str, meta: dict) -> list:
@@ -644,11 +668,11 @@ def yt_add_to_playlists(yt, vid: str, meta: dict) -> list:
         try:
             pid = ids.get(name)
             if not pid:  # önce kanalda aynı adla var mı bak, yoksa oluştur
-                page = yt.playlists().list(part="snippet", mine=True, maxResults=50).execute()
-                pid = next((x["id"] for x in page.get("items", []) if x["snippet"]["title"] == name), None)
+                pid = yt_find_playlist(yt, name)
                 if not pid:
+                    desc = f"{name} — bu dizinin ve filmin fragman analizleri; otomatik güncellenir." if name.endswith(" · Fragmanlar") else f"{name} — otomatik güncellenen haber listesi."
                     pid = yt.playlists().insert(part="snippet,status", body={
-                        "snippet": {"title": name, "description": f"{name} — otomatik güncellenen haber listesi.", "defaultLanguage": "tr"},
+                        "snippet": {"title": name, "description": desc, "defaultLanguage": "tr"},
                         "status": {"privacyStatus": "public"}}).execute()["id"]
                 ids[name] = pid
                 save_json(PLAYLIST_FILE, ids)
