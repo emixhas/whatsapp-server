@@ -1677,6 +1677,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     çözülür, çözülemeyen kart hata gösterir ve ✏️ ile düzeltilir (not panelde). Panel: "Kanal ekle" altında grup başlıklı çipler (`#twPresets`,
     `.chips`; listedeki soluk, üstü çizili, tıklanamaz); tıklayınca kanal eklenir ve tarama istenir. Testler: sunucu harness (liste, added
     eşleşmesi), panel (çipler, tıklayınca kayıt ve tarama).
+  - Kartta performans (kullanıcı isteği, 27 Ekim: "o kanaldan üretilen fragman sayısı ve toplam izlenme; hangi dizilerin fragmanı tuttuğunu
+    görüp listeyi budayayım"): `GET /api/trailerwatch` `list[].perf` {produced, views, avg, best {title, video, views}} ya da null —
+    `trailer_watch_done.json`'daki "üretildi" + `video` adlı kayıtlar (son 30 gün; kanal `key`, eski kayıtta kanal adı) × `metrics.json`
+    izlenmeleri (YouTube + Instagram + TikTok toplamı, `viewsOf`). Kartta "📊 N fragman üretildi · 👁 X izlenme (ortalama Y) · en iyi: …" ya da
+    "📊 Henüz üretim yok". Testler: sunucu harness (toplam, ortalama, en iyi, hata kaydı sayılmaz, adsız kayıt sayılmaz, üretim yoksa null), panel.
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/

@@ -2968,11 +2968,17 @@ app.get("/api/trailerwatch", (_req, res) => {
   const st = readJson(TW_STATE, {}) || {}, c = trailerWatchCfg();
   const done = Object.entries(twDone()).map(([videoId, v]) => ({ videoId, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
   const stale = twStaleList(c, st);
-  // kanal kartları (ayar listesi sırasıyla): durum kaydı + son üretim + uyarı
+  // kanal performansı (kullanıcı isteği, 27 Ekim: "kartta o kanaldan üretilen fragman sayısı ve toplam izlenme; hangi dizilerin fragmanı tuttuğunu
+  // görüp listeyi budayayım"): üretildi kayıtları (son 30 gün, trailer_watch_done.json) × metrics.json izlenmeleri (YouTube + Instagram + TikTok)
+  const mv = (readJson(path.join(DATA, "metrics.json"), { videos: {} }) || {}).videos || {};
+  const viewsOf = (name) => { const m = mv[name] || {}; return (m.youtube?.views || 0) + (m.instagram?.views || 0) + (m.tiktok?.views || 0); };
+  const perfOf = (key, name) => { const mine = done.filter((v) => v.state === "üretildi" && v.video && (v.key ? v.key === key : v.channel && v.channel === name));
+    const views = mine.reduce((a, v) => a + viewsOf(v.video), 0); return mine.length ? { produced: mine.length, views, avg: Math.round(views / mine.length), best: mine.map((v) => ({ title: v.title, video: v.video, views: viewsOf(v.video) })).sort((a, b) => b.views - a.views)[0] } : null; };
+  // kanal kartları (ayar listesi sırasıyla): durum kaydı + son üretim + uyarı + performans
   const list = c.channels.map((inp) => { const key = twKey(inp), ch = (st.channels || {})[key] || {}; const sl = stale.find((x) => x.key === key);
     const lp = done.find((v) => (v.key ? v.key === key : v.channel && v.channel === ch.name) && ["üretimde", "üretildi", "hazırlanıyor"].includes(v.state));
     return { input: inp, key, name: ch.name || "", channelId: ch.channelId || "", lastTitle: ch.lastTitle || "", lastUrl: ch.lastUrl || "", lastPublished: ch.lastPublished || "", lastChecked: ch.lastChecked || "", addedAt: ch.addedAt || "",
-      paused: c.paused.some((p) => twKey(p) === key),
+      paused: c.paused.some((p) => twKey(p) === key), perf: perfOf(key, ch.name || ""),
       videos: ch.videos ?? null, trailers: ch.trailers ?? null, error: ch.error || "", first: !!ch.first, stale: !!sl, days: sl?.days ?? null, never: !!sl?.never, lastProduced: lp ? { at: lp.at, title: lp.title, promoLabel: lp.promoLabel || "", state: lp.state } : null }; });
   res.json({ cfg: c, channels: st.channels || {}, list, stale, lastScan: st.lastScan || null, scanning: twBusy, running: twRunning, pending: twPending, today: twToday(),
     presets: TW_PRESETS.map((p) => ({ ...p, added: c.channels.some((x) => twKey(x) === twKey(p.input)) })),
