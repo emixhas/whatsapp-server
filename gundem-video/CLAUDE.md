@@ -1485,9 +1485,15 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     *Sırada bekleyen videolarınız* (N): 1) iş — K dk … / Süren üretim: konu (M dk; aşama) [45 dk'yı aşınca "uzun sürdü; takıldıysa panelin
     bekçisi durdurur"] ya da "Şu an üretim yok; sıradaki video birazdan başlar." / … Vazgeçmek için *kuyruk* yazıp *iptal <numara>*". Sıradayken
     sıradan kaybolan (kuyruk iptali) iş 2 dk içinde unutulur; üretime giren işin aşaması "üretim başladı (senaryo, seslendirme ve kurgu)". Aynı
-    adlı işler kuyruk numarasıyla ayrılır (`ownerJobStart` etikete `vqTag()` ekler: "Video by bpthaber (#7)"). ✔/✖ üretim satırı ya da wa_video
-    hatası kaydı siler; 3 saati geçen kayıt unutulmuş sayılır. Hata ve başarı mesajları eskisi gibi ayrıca gider. Harness (sahte üretim durumu):
-    toplu özet, kademeli sıklık, canlı konum, iptal, üretim yokken, 3 saat.
+    adlı işler kuyruk numarasıyla ayrılır (`ownerJobStart` etikete `vqTag()` ekler: "Video by bpthaber (#7)"). wa_video hatası kaydı siler; 3 saati
+    geçen kayıt unutulmuş sayılır. Hata ve başarı mesajları eskisi gibi ayrıca gider. Üretim bitince kayıt kapanır (kullanıcı şikâyeti, 27 Ekim:
+    "video üretilip Instagram'da paylaşıldığı halde hâlâ üretimi sürüyor diye mesaj geliyor"; neden: üretim sürecinin kapanış işleyicisi
+    `state.running`i "✔ üretim tamamlandı" satırından ÖNCE indiriyordu, `ownerLine` işi bulamıyor, kayıt 3 saat not almaya devam ediyordu):
+    kapanış işleyicisi sahibin işini (`ownerRunningId`) bayrak inmeden okur ve satırlardan sonra `ownerJobEnd` ile kapatır (başarı, hata, kuyruk
+    iptali, bekçi); yayın adımının son satırı (post_pipeline'ın `{"autopublish"…}` JSON'u — video WhatsApp'a bununla gider) de işi bitirir;
+    `ownerTick` kendini onarır: üretimde görülmüş (`seenRunningAt`) iş artık ne üretimde ne sırada ise sessizce silinir. Harness (sahte üretim
+    durumu): toplu özet, kademeli sıklık, canlı konum, iptal, üretim yokken, 3 saat; gerçek kapanış işleyicisiyle başarı/hata kapanışı, yayın
+    satırı, bekçinin indirdiği bayrak, üretim öncesi ve sıradaki iş (önceki kodda 7 denetim düşüyordu).
   - "özet reels" (kullanıcı isteği, 23 Ekim: "link özet reels yazarsam o kare videodan svg özet reels üretmeli"): `reelsAsk` ("özet reels",
     "reels özet", "svg özet", "özet reel/shorts") → benzer video yolu (`recreate`), talimata "Bu uzun videonun ÖZETİ: ana fikri ve en önemli 3-5
     noktayı … çizilmiş sahnelerle anlat; 60 saniye" eklenir (`reelsInstruction`; talimatta "N saniye" varsa o). 10 dakikaya kadar video

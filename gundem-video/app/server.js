@@ -350,7 +350,10 @@ function startPipeline(duration, extraEnv = {}, { auto = false } = {}) {
   pipelineProc = child;
   const onData = (b) => b.toString().split("\n").filter(Boolean).forEach((l) => { push(l); const m = l.match(/== bitti: (out\/\S+\.mp4)/); if (m) { state.lastVideo = path.basename(m[1]); vqProduced(state.lastVideo); twProduced(state.lastVideo); } });
   child.stdout.on("data", onData); child.stderr.on("data", onData);
-  child.on("close", (code) => { pipelineProc = null; twPipelineEnd(code); setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (vq.wasCancelled(child)) push("⏹ üretim durduruldu (video kuyruğundan iptal edildi)"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`); });
+  child.on("close", (code) => { const ownerDone = ownerRunningId(); pipelineProc = null; twPipelineEnd(code); setTimeout(() => finishProduction(code === 0 ? "üretim bitti" : "üretim hata ile bitti"), 3000); state.running = false; state.exitCode = code; if (code === 0) push("✔ üretim tamamlandı"); else if (vq.wasCancelled(child)) push("⏹ üretim durduruldu (video kuyruğundan iptal edildi)"); else if (!state.log.slice(-5).some((l) => /^✖ üretim hata/.test(l))) push(`✖ üretim hata ile bitti (kod ${code})`); push(`__done__:${code}`);
+    // sahibin işi (⏳ "Hâlâ sürüyor" notları) burada biter (kullanıcı şikâyeti, 27 Ekim: video üretilip Instagram'da yayınlandığı halde "üretim
+    // sürüyor" mesajı geliyordu): running bayrağı satırlardan önce indiği için ownerLine "✔ üretim" satırında işi bulamıyordu
+    if (ownerDone) ownerJobEnd(ownerDone); });
   return { ok: true, duration };
 }
 
@@ -2437,7 +2440,7 @@ const ownerJobs = new Map(); let ownerSeq = 0;
 // özet gider (canlı sıra konumu, süren üretim); sıradan iptal edilen iş 2 dk içinde unutulur. Aynı adlı işler kuyruk numarasıyla ayrılır (#7).
 const OWNER_NOTE_MS = 4 * 60000, OWNER_NOTE_SLOW_MS = 10 * 60000, OWNER_WAIT_NOTE_MS = 30 * 60000;
 let ownerWaitNote = 0;
-function ownerJobStart(label) { const id = ++ownerSeq; let tag = ""; try { tag = vqTag(); } catch { /* kuyruk dışı */ } ownerJobs.set(id, { id, label: (String(label || "video").replace(/\s+/g, " ").slice(0, 70) + tag).trim(), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), notes: 0, seenQueuedAt: 0, warn: "" }); return id; }
+function ownerJobStart(label) { const id = ++ownerSeq; let tag = ""; try { tag = vqTag(); } catch { /* kuyruk dışı */ } ownerJobs.set(id, { id, label: (String(label || "video").replace(/\s+/g, " ").slice(0, 70) + tag).trim(), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), notes: 0, seenQueuedAt: 0, seenRunningAt: 0, warn: "" }); return id; }
 function ownerJobStage(id, stage) { const j = ownerJobs.get(id); if (j && stage && stage !== j.stage) { j.stage = stage; j.stageAt = Date.now(); } }
 function ownerJobWarn(id, line) { const j = ownerJobs.get(id); if (j) j.warn = String(line).replace(/^\s*(?:!!|!|⚠️)\s*/, "").slice(0, 160); }
 function ownerJobEnd(id) { ownerJobs.delete(id); }
@@ -2470,7 +2473,7 @@ function ownerLine(line) {
   if (!run || !ownerJobs.has(run)) return;
   const st = ownerStageOf(line, PIPE_STAGES); if (st) ownerJobStage(run, st);
   if (/^(?:  ! |!! |⚠️ |HATA)/.test(line)) ownerJobWarn(run, line);
-  if (/^(?:✔ üretim|✖ üretim)/.test(line)) ownerJobEnd(run); // hazır ya da hata: bildirimi zaten gidiyor
+  if (/^(?:✔ üretim|✖ üretim|\{"autopublish")/.test(line)) ownerJobEnd(run); // hazır, yayın adımı bitti (video WhatsApp'a bu satırla gider) ya da hata
 }
 const ownerRunningId = () => (state.running && anlikNow && anlikNow.at === state.startedAt ? anlikNow.opts?.ownerJob : null) || null;
 const ownerQueuePos = (id) => { const i = anlikQueue.findIndex((q) => q?.opts?.ownerJob === id); return i < 0 ? 0 : i + 1; };
@@ -2483,6 +2486,8 @@ function ownerTick(now = Date.now()) {
       const st = `üretim sırasında (${pos}. sırada; süren üretim bitince başlayacak)`; if (j.stage !== st) j.stage = st;
       j.seenQueuedAt = now; waiting.push({ j, pos }); continue;
     }
+    if (running) j.seenRunningAt = now;
+    else if (j.seenRunningAt) { ownerJobs.delete(j.id); continue; } // üretimdeydi, artık ne üretimde ne sırada: bitti (bekçi durdurdu, iptal, kapanış satırı kaçtı)
     if (!running && j.seenQueuedAt) { if (now - j.seenQueuedAt > 2 * 60000) ownerJobs.delete(j.id); continue; } // sıradaydı, artık ne sırada ne üretimde: iptal edildi (kuyruk iptali) ya da başka yoldan bitti
     if (running && /^üretim sırasında/.test(j.stage)) { j.stage = "üretim başladı (senaryo, seslendirme ve kurgu)"; j.stageAt = now; }
     const every = j.notes < 3 ? OWNER_NOTE_MS : OWNER_NOTE_SLOW_MS;
