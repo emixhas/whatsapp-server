@@ -2431,8 +2431,12 @@ const waBrief = () => settings().whatsapp?.brief !== false;
 // satır (kısa mesaj modunda da): geçen süre, aşama (kaç dakikadır), son uyarı ya da "sorun yok". Video hazır (✔) ya da hata (✖, wa_video
 // hatası) olunca kayıt silinir; 3 saati geçen kayıt unutulmuş sayılır
 const ownerJobs = new Map(); let ownerSeq = 0;
-const OWNER_NOTE_MS = 4 * 60000;
-function ownerJobStart(label) { const id = ++ownerSeq; ownerJobs.set(id, { id, label: String(label || "video").replace(/\s+/g, " ").slice(0, 70), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), warn: "" }); return id; }
+// Bildirim sıklığı (kullanıcı şikâyeti, 27 Ekim: sırada bekleyen 5 iş × 4 dakikada bir "Hâlâ sürüyor" mesaj seli): süren iş (indirme/inceleme ya da
+// üretimde) ilk 3 notu 4 dk'da bir, sonra 10 dk'da bir alır; üretim SIRASINDA bekleyen işler tek tek yazmaz, hepsi için 30 dk'da bir tek toplu
+// özet gider (canlı sıra konumu, süren üretim); sıradan iptal edilen iş 2 dk içinde unutulur. Aynı adlı işler kuyruk numarasıyla ayrılır (#7).
+const OWNER_NOTE_MS = 4 * 60000, OWNER_NOTE_SLOW_MS = 10 * 60000, OWNER_WAIT_NOTE_MS = 30 * 60000;
+let ownerWaitNote = 0;
+function ownerJobStart(label) { const id = ++ownerSeq; let tag = ""; try { tag = vqTag(); } catch { /* kuyruk dışı */ } ownerJobs.set(id, { id, label: (String(label || "video").replace(/\s+/g, " ").slice(0, 70) + tag).trim(), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), notes: 0, seenQueuedAt: 0, warn: "" }); return id; }
 function ownerJobStage(id, stage) { const j = ownerJobs.get(id); if (j && stage && stage !== j.stage) { j.stage = stage; j.stageAt = Date.now(); } }
 function ownerJobWarn(id, line) { const j = ownerJobs.get(id); if (j) j.warn = String(line).replace(/^\s*(?:!!|!|⚠️)\s*/, "").slice(0, 160); }
 function ownerJobEnd(id) { ownerJobs.delete(id); }
@@ -2467,14 +2471,30 @@ function ownerLine(line) {
   if (/^(?:  ! |!! |⚠️ |HATA)/.test(line)) ownerJobWarn(run, line);
   if (/^(?:✔ üretim|✖ üretim)/.test(line)) ownerJobEnd(run); // hazır ya da hata: bildirimi zaten gidiyor
 }
+const ownerRunningId = () => (state.running && anlikNow && anlikNow.at === state.startedAt ? anlikNow.opts?.ownerJob : null) || null;
+const ownerQueuePos = (id) => { const i = anlikQueue.findIndex((q) => q?.opts?.ownerJob === id); return i < 0 ? 0 : i + 1; };
 function ownerTick(now = Date.now()) {
-  const out = [];
+  const out = [], runId = ownerRunningId(), waiting = [];
   for (const j of [...ownerJobs.values()]) {
     if (now - j.startedAt > 3 * 3600000) { ownerJobs.delete(j.id); continue; }
-    if (now - j.startedAt < OWNER_NOTE_MS || now - j.lastNote < OWNER_NOTE_MS) continue;
-    j.lastNote = now;
-    const min = Math.round((now - j.startedAt) / 60000), sMin = Math.round((now - j.stageAt) / 60000);
-    out.push(`⏳ *Hâlâ sürüyor* (${min} dk): ${j.label}\nAşama: ${j.stage}${sMin >= 2 ? ` (${sMin} dk'dır)` : ""}\n${j.warn ? `⚠️ Son uyarı: ${j.warn}` : "Sorun yok; bitince video gelecek."}`);
+    const pos = ownerQueuePos(j.id), running = runId === j.id;
+    if (!running && pos) { // üretim sırasında bekliyor: tek tek mesaj yok, toplu özet; konum canlı (sıra değişir: sizin diğer işleriniz, acil fragman)
+      const st = `üretim sırasında (${pos}. sırada; süren üretim bitince başlayacak)`; if (j.stage !== st) j.stage = st;
+      j.seenQueuedAt = now; waiting.push({ j, pos }); continue;
+    }
+    if (!running && j.seenQueuedAt) { if (now - j.seenQueuedAt > 2 * 60000) ownerJobs.delete(j.id); continue; } // sıradaydı, artık ne sırada ne üretimde: iptal edildi (kuyruk iptali) ya da başka yoldan bitti
+    if (running && /^üretim sırasında/.test(j.stage)) { j.stage = "üretim başladı (senaryo, seslendirme ve kurgu)"; j.stageAt = now; }
+    const every = j.notes < 3 ? OWNER_NOTE_MS : OWNER_NOTE_SLOW_MS;
+    if (now - j.startedAt < OWNER_NOTE_MS || now - j.lastNote < every) continue;
+    j.lastNote = now; j.notes = (j.notes || 0) + 1;
+    const min = Math.round((now - j.startedAt) / 60000), sMin = Math.round((now - j.stageAt) / 60000), runMin = running ? Math.round((now - state.startedAt) / 60000) : null;
+    out.push(`⏳ *Hâlâ sürüyor* (${min} dk${runMin != null && runMin !== min ? `; üretimde ${runMin} dk` : ""}): ${j.label}\nAşama: ${j.stage}${sMin >= 2 ? ` (${sMin} dk'dır)` : ""}\n${j.warn ? `⚠️ Son uyarı: ${j.warn}` : "Sorun yok; bitince video gelecek."}${j.notes === 3 ? "\nBundan sonra 10 dakikada bir yazarım." : ""}`);
+  }
+  if (waiting.length && now - ownerWaitNote >= OWNER_WAIT_NOTE_MS && waiting.some(({ j }) => now - j.startedAt >= OWNER_NOTE_MS)) {
+    ownerWaitNote = now; waiting.sort((a, b) => a.pos - b.pos);
+    const runMin = state.running ? Math.round((now - state.startedAt) / 60000) : null, runJob = runId ? ownerJobs.get(runId) : null;
+    const cur = state.running ? `Süren üretim: ${String(anlikNow?.topic || "video").slice(0, 60)} (${runMin} dk${runJob ? `; ${runJob.stage}` : ""})${runMin >= 45 ? " — uzun sürdü; takıldıysa panelin bekçisi durdurur, sıra devam eder" : ""}` : "Şu an üretim yok; sıradaki video birazdan başlar.";
+    out.push(`⏳ *Sırada bekleyen videolarınız* (${waiting.length}):\n${waiting.map(({ j, pos }) => `${pos}) ${j.label} — ${Math.round((now - j.startedAt) / 60000)} dk`).join("\n")}\n${cur}\nHer video hazır olunca ayrıca gelir; bu özet 30 dakikada bir. Vazgeçmek için *kuyruk* yazıp *iptal <numara>*.`);
   }
   return out;
 }

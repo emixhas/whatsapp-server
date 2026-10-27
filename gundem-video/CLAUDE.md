@@ -1475,9 +1475,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   - Aşama bildirimi (`ownerJobs`, `ownerJobStart/Stage/Warn/End`, `OWNER_STAGES` wa_video satırları — indiriliyor, inceleniyor, Claude yazıyor,
     N sahne çiziliyor, sahne çizildi, kurgu hazır —, `PIPE_STAGES` boru hattı satırları — seslendirme, görseller, altyazı, render, kapaklar,
     bitti —; `ownerLine` yalnız `anlikNow.opts.ownerJob` sahibin işiyken; ⚠️/! satırları son uyarı): `runVideoNews0` işi kaydeder (otomatik
-    trend kuyruğu işi değil), `ownerTick` her dakika: 4 dakikayı geçen işte her 4 dakikada WhatsApp'a "⏳ *Hâlâ sürüyor* (N dk): <iş> / Aşama:
-    … (K dk'dır) / Sorun yok; bitince video gelecek." ya da "⚠️ Son uyarı: …" (kısa mesaj modunda da). ✔/✖ üretim satırı ya da wa_video
-    hatası kaydı siler; 3 saati geçen kayıt unutulmuş sayılır. Hata ve başarı mesajları eskisi gibi ayrıca gider.
+    trend kuyruğu işi değil), `ownerTick` her dakika: 4 dakikayı geçen SÜREN işte (indirme/inceleme ya da üretimde; `ownerRunningId` =
+    anlikNow.opts.ownerJob) WhatsApp'a "⏳ *Hâlâ sürüyor* (N dk; üretimde M dk): <iş> / Aşama: … (K dk'dır) / Sorun yok; bitince video
+    gelecek." ya da "⚠️ Son uyarı: …" (kısa mesaj modunda da) — ilk 3 not 4 dk'da bir, sonra 10 dk'da bir (3. notta "Bundan sonra 10 dakikada
+    bir yazarım"). Üretim SIRASINDA bekleyen işler (anlikQueue'da opts.ownerJob; `ownerQueuePos` canlı konum, aşama metni güncellenir) tek tek
+    yazmaz (kullanıcı şikâyeti, 27 Ekim: sırada 5 iş × 4 dk'da bir mesaj seli): hepsi için 30 dk'da bir (`OWNER_WAIT_NOTE_MS`) TEK toplu özet "⏳
+    *Sırada bekleyen videolarınız* (N): 1) iş — K dk … / Süren üretim: konu (M dk; aşama) [45 dk'yı aşınca "uzun sürdü; takıldıysa panelin
+    bekçisi durdurur"] ya da "Şu an üretim yok; sıradaki video birazdan başlar." / … Vazgeçmek için *kuyruk* yazıp *iptal <numara>*". Sıradayken
+    sıradan kaybolan (kuyruk iptali) iş 2 dk içinde unutulur; üretime giren işin aşaması "üretim başladı (senaryo, seslendirme ve kurgu)". Aynı
+    adlı işler kuyruk numarasıyla ayrılır (`ownerJobStart` etikete `vqTag()` ekler: "Video by bpthaber (#7)"). ✔/✖ üretim satırı ya da wa_video
+    hatası kaydı siler; 3 saati geçen kayıt unutulmuş sayılır. Hata ve başarı mesajları eskisi gibi ayrıca gider. Harness (sahte üretim durumu):
+    toplu özet, kademeli sıklık, canlı konum, iptal, üretim yokken, 3 saat.
   - "özet reels" (kullanıcı isteği, 23 Ekim: "link özet reels yazarsam o kare videodan svg özet reels üretmeli"): `reelsAsk` ("özet reels",
     "reels özet", "svg özet", "özet reel/shorts") → benzer video yolu (`recreate`), talimata "Bu uzun videonun ÖZETİ: ana fikri ve en önemli 3-5
     noktayı … çizilmiş sahnelerle anlat; 60 saniye" eklenir (`reelsInstruction`; talimatta "N saniye" varsa o). 10 dakikaya kadar video
