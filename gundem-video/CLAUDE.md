@@ -1682,6 +1682,21 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     `trailer_watch_done.json`'daki "üretildi" + `video` adlı kayıtlar (son 30 gün; kanal `key`, eski kayıtta kanal adı) × `metrics.json`
     izlenmeleri (YouTube + Instagram + TikTok toplamı, `viewsOf`). Kartta "📊 N fragman üretildi · 👁 X izlenme (ortalama Y) · en iyi: …" ya da
     "📊 Henüz üretim yok". Testler: sunucu harness (toplam, ortalama, en iyi, hata kaydı sayılmaz, adsız kayıt sayılmaz, üretim yoksa null), panel.
+  - Final ve yeni sezon tespiti (kullanıcı isteği, 27 Ekim: "sezon finali gelince kanal kendiliğinden dizi bitti durumuna düşsün, kart gri olsun ve
+    taranmasın; yeni sezon fragmanı gelince yeniden açılsın"): `trailerWatch.autoEnd` (varsayılan açık; panel anahtarı). `trailer_watch.py`:
+    yeni fragmanın `promo.final`i (`promo_info`: "sezon finali", "final bölümü", "(final)") varsa fragman yine üretilir, ardından
+    `single_series(trailers, pinfo)` — akıştaki fragmanların `film_name` adları tek ise (dizinin kendi kanalı) — `ch.ended` {at, title, videoId,
+    film, published} + `endedCheckedTs/At` (`_mark_final`; ilk taramada kanalın son fragmanı finalse de), çok dizili kanalda (Show TV: Yalı Çapkını
+    + Kızılcık Şerbeti) yalnız `ch.finalNote` ve tarama sürer. "Dizi bitti" kanal `ENDED_CHECK_SEC` (24 saat) dolmadan okunmaz; dolunca okunur,
+    yalnız yeni sezon fragmanı (`is_new_season`: "yeni sezon" sözü ya da bölümsüz/1. bölümlü sezon tanıtımı, final değil) kanalı açar ve
+    üretilir (önceki sezon arası videoları `seen`), diğer videolar kaydedilir; sonuç `ended[]`/`reopened[]`. `reopen(key)` / `--reopen KEY` elle
+    açar. `server.js`: `twStaleList` dizi bitti kanalı atlar; taramadan sonra "🏁 fragman takibi: X — dizi bitti (sezon finali: …)" ve "🎬 … yeni
+    sezon fragmanı geldi; kanal yeniden açıldı" logları + WhatsApp'a tek satır (`sendW`, notify ayarından bağımsız); durum yanıtında "🏁 dizi bitti
+    (…)"; API `list[].ended`/`finalNote`; `POST /api/trailerwatch/reopen {input}` (--reopen + tarama). Panel: `.twcard.ended` (gri, soluk), "🏁 Dizi
+    bitti: <fragman> (tarih) — günde bir yeni sezon fragmanına bakılır…", "▶ Yeniden aç"; çok dizili kanalda "🏁 <dizi> final yaptı (…); kanalda
+    başka diziler var, tarama sürüyor"; durum satırında "🏁 N dizi bitti". Testler: scanner (tek/çok dizili, 24 saat kuralı, sezon dışı video,
+    yeni sezon açar, ilk taramada final, reopen, autoEnd kapalı, is_new_season), sunucu harness (cfg, uyarı atlama, API, loglar/WhatsApp, rota),
+    panel (gri kart, yeniden aç, anahtar).
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/

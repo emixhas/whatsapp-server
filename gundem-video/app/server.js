@@ -2829,7 +2829,7 @@ const TW_DONE = path.join(DATA, "trailer_watch_done.json"); // {videoId: {at, st
 // kullanıcı isteği, 26 Ekim ("fragman takibini sıkıştıralım, tanıtımları asla kaçırmayalım, onaysız yayınlayalım"): 3 dakikada bir tarama, günlük sınır yok
 // (0), ilk taramada son 12 saatin fragmanları da üretilir (firstFreshHours), RSS'in yanında kanalın videolar sayfası da okunur (pageScan)
 // kullanıcı isteği, 26 Ekim (ikinci): tarama 2 saatte bir (120 dk), 10 gündür fragman gelmeyen kanalda uyarı (staleDays: dizi bitmiş olabilir, kanal kaldırılır)
-const TW_DEFAULTS = { enabled: true, intervalMin: 120, channels: [], maxAgeHours: 24, maxPerDay: 0, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0, firstFreshHours: 12, pageScan: true, staleDays: 10 };
+const TW_DEFAULTS = { enabled: true, intervalMin: 120, channels: [], maxAgeHours: 24, maxPerDay: 0, autoPublish: true, notify: false, onlyTrailers: true, soundSeconds: 10, duration: 0, firstFreshHours: 12, pageScan: true, staleDays: 10, autoEnd: true };
 const trailerWatchCfg = () => {
   const raw = settings().trailerWatch, c = { ...TW_DEFAULTS, ...(raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) };
   const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
@@ -2843,6 +2843,7 @@ const trailerWatchCfg = () => {
   c.maxPerDay = Number.isFinite(Number(c.maxPerDay)) && Number(c.maxPerDay) >= 0 ? Math.min(50, Math.round(Number(c.maxPerDay))) : TW_DEFAULTS.maxPerDay; // 0 = sınırsız
   c.firstFreshHours = Number.isFinite(Number(c.firstFreshHours)) && Number(c.firstFreshHours) >= 0 ? Math.min(72, Number(c.firstFreshHours)) : TW_DEFAULTS.firstFreshHours;
   c.pageScan = !off(c.pageScan);
+  c.autoEnd = !off(c.autoEnd); // sezon finali gelince "dizi bitti" (kullanıcı isteği, 27 Ekim)
   c.staleDays = Number(c.staleDays) > 0 ? Math.min(90, Math.round(Number(c.staleDays))) : TW_DEFAULTS.staleDays;
   c.soundSeconds = Number(c.soundSeconds) >= 0 && Number.isFinite(Number(c.soundSeconds)) ? Math.min(30, Number(c.soundSeconds)) : TW_DEFAULTS.soundSeconds; // 0 = orijinal ses yok
   c.duration = Number(c.duration) > 0 ? Math.min(60, Math.max(20, Number(c.duration))) : 0;
@@ -2865,8 +2866,9 @@ const TW_PRESETS = [
 ];
 function twStaleList(c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}) {
   const out = [];
-  for (const inp of c.active) { // duraklatılan kanal uyarı almaz
+  for (const inp of c.active) { // duraklatılan ve "dizi bitti" kanal uyarı almaz
     const key = twKey(inp), ch = (st.channels || {})[key] || {};
+    if (ch.ended) continue;
     const last = Number(ch.lastTs) > 0 ? Number(ch.lastTs) * 1000 : Date.parse(ch.addedAt || "") || 0;
     if (!last) continue;
     const days = (Date.now() - last) / 864e5;
@@ -2921,6 +2923,11 @@ async function trailerWatchScan({ manual = false } = {}) {
       twPending.push(item); twMark(n.videoId, "sırada", item);
       push(`🎬 YENİ FRAGMAN: ${item.channel} — ${item.title.slice(0, 80)}${item.promoLabel ? ` (${item.promoLabel}${item.previous.length ? `; aynı bölümün ${item.previous.length} önceki tanıtımı var` : ""})` : ""} → fragman analizi sıraya alındı`);
     }
+    for (const e of r.ended || []) { // sezon finali: tek dizili kanal "dizi bitti" (günde bir yeni sezon için bakılır; yeni sezon düşünce kendiliğinden açılır)
+      push(`🏁 fragman takibi: ${e.channel} — dizi bitti (sezon finali: ${String(e.title).slice(0, 70)}); kanal gri, günde bir yeni sezon fragmanına bakılır; yeni sezon düşünce kendiliğinden açılır`);
+      sendW(`🏁 *${e.channel}*: sezon finali fragmanı geldi, dizi bitti sayıldı (kart gri, günde bir yeni sezon için bakılır). Kaldırmak için: fragman kanalı çıkar ${e.key}`).catch(() => {});
+    }
+    for (const e of r.reopened || []) { push(`🎬 fragman takibi: ${e.channel} — yeni sezon fragmanı geldi (${String(e.title).slice(0, 70)}); kanal yeniden açıldı`); sendW(`🎬 *${e.channel}*: yeni sezon fragmanı geldi, kanal yeniden taranıyor.`).catch(() => {}); }
     sse("trailerwatch", { new: nn });
     twKick().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
     if (r.ok) twStaleCheck().catch(() => {});
@@ -2954,7 +2961,7 @@ function twStatusText() {
   const every = c.intervalMin % 60 === 0 ? `${c.intervalMin / 60} saatte bir` : `${c.intervalMin} dk'da bir`;
   const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal${c.paused.length ? ` (${c.paused.length} duraklatıldı)` : ""} · ${every} · bugün ${twToday()}${c.maxPerDay ? `/${c.maxPerDay}` : ""}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
   const staleBy = new Map(twStaleList(c, st).map((x) => [x.key, x])), staleOf = (x) => staleBy.get(twKey(x.input || ""));
-  const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.paused ? "⏸ duraklatıldı (sezon arası; devam: fragman kanalı devam " + x.input + ")" : x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 16).replace("T", " ")})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}${staleOf(x) ? ` ⚠️ ${staleOf(x).days} gündür fragman yok (dizi bitmiş olabilir: fragman kanalı çıkar ${x.input})` : ""}`);
+  const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.paused ? "⏸ duraklatıldı (sezon arası; devam: fragman kanalı devam " + x.input + ")" : x.ended ? `🏁 dizi bitti (sezon finali: ${String(x.ended.title || "").slice(0, 40)}; günde bir yeni sezon için bakılır)` : x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 16).replace("T", " ")})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}${staleOf(x) ? ` ⚠️ ${staleOf(x).days} gündür fragman yok (dizi bitmiş olabilir: fragman kanalı çıkar ${x.input})` : ""}`);
   const recent = Object.entries(twDone()).map(([id, v]) => ({ id, ...v })).filter((v) => v.state !== "sırada").sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 3)
     .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)}${v.promoLabel ? ` [${v.promoLabel}]` : ""} — ${v.state}${v.error ? ` (${v.error})` : ""}`);
   return head + (lines.length ? `\n${lines.join("\n")}` : "\nKanal ekleyin: fragman kanalı ekle @NetflixTurkiye (ya da panelden)") + (recent.length ? `\nSon fragmanlar:\n${recent.join("\n")}` : "");
@@ -2978,7 +2985,7 @@ app.get("/api/trailerwatch", (_req, res) => {
   const list = c.channels.map((inp) => { const key = twKey(inp), ch = (st.channels || {})[key] || {}; const sl = stale.find((x) => x.key === key);
     const lp = done.find((v) => (v.key ? v.key === key : v.channel && v.channel === ch.name) && ["üretimde", "üretildi", "hazırlanıyor"].includes(v.state));
     return { input: inp, key, name: ch.name || "", channelId: ch.channelId || "", lastTitle: ch.lastTitle || "", lastUrl: ch.lastUrl || "", lastPublished: ch.lastPublished || "", lastChecked: ch.lastChecked || "", addedAt: ch.addedAt || "",
-      paused: c.paused.some((p) => twKey(p) === key), perf: perfOf(key, ch.name || ""),
+      paused: c.paused.some((p) => twKey(p) === key), perf: perfOf(key, ch.name || ""), ended: ch.ended || null, finalNote: ch.finalNote || null,
       videos: ch.videos ?? null, trailers: ch.trailers ?? null, error: ch.error || "", first: !!ch.first, stale: !!sl, days: sl?.days ?? null, never: !!sl?.never, lastProduced: lp ? { at: lp.at, title: lp.title, promoLabel: lp.promoLabel || "", state: lp.state } : null }; });
   res.json({ cfg: c, channels: st.channels || {}, list, stale, lastScan: st.lastScan || null, scanning: twBusy, running: twRunning, pending: twPending, today: twToday(),
     presets: TW_PRESETS.map((p) => ({ ...p, added: c.channels.some((x) => twKey(x) === twKey(p.input)) })),
@@ -2998,6 +3005,13 @@ function twSetPaused(input, paused) {
   return { ok: true, input: inp, paused: !!paused, pausedCount: list.length };
 }
 app.post("/api/trailerwatch/pause", (req, res) => res.json(twSetPaused(req.body?.input, req.body?.paused !== false)));
+// "dizi bitti" durumunu elle kaldır (panel "▶ Yeniden aç"): trailer_watch.py --reopen, ardından tarama
+app.post("/api/trailerwatch/reopen", async (req, res) => {
+  const key = twKey(String(req.body?.input || "")); if (!req.body?.input) return res.json({ ok: false, error: "kanal gerekir" });
+  const r = (await pyJson(["scripts/trailer_watch.py", "--reopen", key], 30000)) || { ok: false, error: "yanıt yok" };
+  if (r.ok) { push(`🎬 fragman takibi: ${key} yeniden açıldı (dizi bitti durumu kaldırıldı); taranıyor`); sse("trailerwatch", {}); trailerWatchScan().catch(() => {}); }
+  res.json(r);
+});
 app.post("/api/igtrends/auto", (req, res) => res.json({ ok: true, reply: trendAuto.setAuto(req.body?.on !== false), auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() } }));
 
 // ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu

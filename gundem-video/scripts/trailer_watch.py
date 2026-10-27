@@ -33,7 +33,8 @@ from common import DATA, load_json, now_iso, save_json, settings  # noqa: E402
 STATE = DATA / "trailer_watch.json"
 DEFAULTS = {"enabled": True, "intervalMin": 120, "channels": [], "maxAgeHours": 24, "maxPerDay": 0, "autoPublish": True, "notify": False,
             "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True, "staleDays": 10,
-            "paused": []}  # paused: duraklatılan kanallar (sezon arası; kart kalır, taranmaz)
+            "paused": [], "autoEnd": True}  # paused: duraklatılan kanallar (sezon arası; kart kalır, taranmaz); autoEnd: sezon finali gelince "dizi bitti"
+ENDED_CHECK_SEC = 24 * 3600  # dizi bitti sayılan kanal günde bir "yeni sezon" için okunur
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015", "media": "http://search.yahoo.com/mrss/"}
 
@@ -51,7 +52,39 @@ def cfg() -> dict:
         except (TypeError, ValueError):
             out[k] = DEFAULTS[k]
     out["pageScan"] = out.get("pageScan") is not False
+    out["autoEnd"] = out.get("autoEnd") is not False
     return out
+
+
+def _promo_keys(p: dict) -> dict:
+    return {k: p.get(k) for k in ("label", "text", "tur", "no", "bolum", "sezon", "yeniSezon", "final", "film")} if p else None
+
+
+def is_new_season(p: dict) -> bool:
+    """Yeni sezon fragmanı: "Yeni Sezon" sözü ya da bölümsüz/1. bölümlü sezon tanıtımı (final değil)."""
+    p = p or {}
+    if p.get("final"):
+        return False
+    return bool(p.get("yeniSezon") or (p.get("sezon") and (p.get("bolum") in (None, 0, 1))))
+
+
+def single_series(trailers: list, pinfo: dict) -> bool:
+    """Kanal tek dizili mi: akıştaki fragmanların dizi adları (film_name) tek ise. Show TV gibi çok dizili kanalda bir dizinin finali kanalı kapatmaz."""
+    films = {((pinfo.get(x["videoId"]) or {}).get("film") or "").casefold().strip() for x in trailers}
+    films.discard("")
+    return len(films) <= 1
+
+
+def reopen(key: str) -> dict:
+    """"Dizi bitti" durumunu elle kaldır (panel "▶ Yeniden aç", --reopen KEY); sonraki taramada normal okunur."""
+    st = load_json(STATE, {}) or {}
+    chans = st.get("channels") if isinstance(st.get("channels"), dict) else {}
+    ch = chans.get(channel_key(key)) or chans.get(key)
+    if not ch:
+        return {"ok": False, "error": "kanal kayıtlı değil"}
+    was = bool(ch.pop("ended", None)); ch.pop("endedCheckedAt", None); ch.pop("endedCheckedTs", None); ch.pop("finalNote", None)
+    save_json(STATE, st)
+    return {"ok": True, "reopened": was, "key": channel_key(key)}
 
 
 _REL = re.compile(r"(\d+)\s*(saniye|dakika|saat|gün|hafta|ay|yıl|second|minute|hour|day|week|month|year)", re.I)
@@ -229,7 +262,7 @@ def scan(now: float | None = None) -> dict:
     chans = st.get("channels") if isinstance(st.get("channels"), dict) else {}
     seen = st.get("seen") if isinstance(st.get("seen"), dict) else {}
     seen = {k: v for k, v in seen.items() if isinstance(v, (int, float)) and now - v < 14 * 86400}
-    new, errors = [], []
+    new, errors, ended, reopened = [], [], [], []
     keys = []
     paused_keys = {channel_key(x) for x in c["paused"]}  # kullanıcı isteği, 27 Ekim: "sezon arası" — kart kalır, taranmaz, tek tıkla geri açılır
     for inp in c["channels"]:
@@ -245,6 +278,13 @@ def scan(now: float | None = None) -> dict:
             chans[key] = ch
             continue
         ch.pop("paused", None)
+        # dizi bitti (kullanıcı isteği, 27 Ekim: "sezon finali gelince kanal kendiliğinden dizi bitti durumuna düşsün, taranmasın; yeni sezon
+        # fragmanı gelince yeniden açılsın"): günde bir okunur, yalnız yeni sezon fragmanı kanalı açar ve üretilir; diğer videolar kaydedilir
+        if ch.get("ended"):
+            if now - float(ch.get("endedCheckedTs") or 0) < ENDED_CHECK_SEC:
+                chans[key] = ch
+                continue
+            ch["endedCheckedAt"] = now_iso(); ch["endedCheckedTs"] = now
         if not ch.get("channelId"):
             r = resolve(inp)
             if r.get("error"):
@@ -271,6 +311,21 @@ def scan(now: float | None = None) -> dict:
             chans[key] = ch
             continue
         latest = trailers[0]
+        if ch.get("ended"):  # dizi bitti: yalnız yeni sezon fragmanı kanalı açar (ve üretilir); diğer yeni videolar kaydedilir, üretilmez
+            last_ts = float(ch.get("lastTs") or 0)
+            cand = [x for x in reversed(trailers) if x["ts"] > last_ts and x["videoId"] not in seen and x["videoId"] != ch.get("lastVideoId")]
+            pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if cand else {}
+            opener = [x for x in cand if is_new_season(pinfo.get(x["videoId"]) or {})]
+            if not opener:
+                for x in cand:
+                    seen[x["videoId"]] = now
+                chans[key] = ch
+                continue
+            ch.pop("ended", None); ch.pop("endedCheckedAt", None); ch.pop("endedCheckedTs", None); ch.pop("finalNote", None)
+            reopened.append({"key": key, "channel": ch.get("name") or inp, "title": opener[-1]["title"]})
+            for x in cand:  # yeni sezon fragmanından önceki (sezon arası) videolar üretilmez
+                if x["ts"] < opener[0]["ts"]:
+                    seen[x["videoId"]] = now
         if not ch.get("lastVideoId"):  # ilk tarama: son fragman kaydedilir; son firstFreshHours saatin fragmanları üretilir (kanal eklenince taze fragman kaçmasın)
             ch.update({"lastVideoId": latest["videoId"], "lastTitle": latest["title"], "lastPublished": latest["published"], "lastTs": latest["ts"],
                        "lastUrl": latest["url"], "first": True})
@@ -278,13 +333,15 @@ def scan(now: float | None = None) -> dict:
             for x in trailers:
                 if x["videoId"] not in {y["videoId"] for y in fresh0}:
                     seen.setdefault(x["videoId"], now)
-            if fresh0:
-                pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers}
-                for x in fresh0:
-                    p = pinfo.get(x["videoId"]) or {}
-                    new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")},
-                                "promo": {k: p.get(k) for k in ("label", "text", "tur", "no", "bolum", "sezon", "final", "film")} if p else None, "previous": [], "first": True})
-                    seen[x["videoId"]] = now
+            pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if (fresh0 or c["autoEnd"]) else {}
+            for x in fresh0:
+                p = pinfo.get(x["videoId"]) or {}
+                new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")},
+                            "promo": _promo_keys(p), "previous": [], "first": True})
+                seen[x["videoId"]] = now
+            lp = pinfo.get(latest["videoId"]) or {}
+            if c["autoEnd"] and lp.get("final"):  # kanalın son fragmanı final: tek dizili kanalda dizi bitti, çok dizili kanalda not
+                _mark_final(ch, latest, lp, single_series(trailers, pinfo), ended, key, inp, now)
             chans[key] = ch
             continue
         ch.pop("first", None)
@@ -292,6 +349,9 @@ def scan(now: float | None = None) -> dict:
         fresh = [x for x in reversed(trailers) if x["ts"] > last_ts and x["videoId"] not in seen and now - x["ts"] <= c["maxAgeHours"] * 3600
                  and x["videoId"] != ch.get("lastVideoId")]
         pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if fresh else {}
+        finals = [x for x in fresh if (pinfo.get(x["videoId"]) or {}).get("final")]
+        if c["autoEnd"] and finals:
+            _mark_final(ch, finals[-1], pinfo.get(finals[-1]["videoId"]) or {}, single_series(trailers, pinfo), ended, key, inp, now)
         for x in fresh:
             p = pinfo.get(x["videoId"]) or {}
             # aynı dizinin aynı bölümünün daha önce yayınlanan tanıtımları (akıştaki eski videolar; kanalın son 15 videosu): kurguda "ilk
@@ -300,7 +360,7 @@ def scan(now: float | None = None) -> dict:
                     for y in sorted(trailers, key=lambda z: z["ts"]) if y["ts"] < x["ts"] and p.get("bolum") and (pinfo.get(y["videoId"]) or {}).get("bolum") == p["bolum"]
                     and ((pinfo.get(y["videoId"]) or {}).get("film") or "").casefold() == (p.get("film") or "").casefold()][-6:]
             new.append({"key": key, "channel": ch.get("name") or inp, "channelId": ch["channelId"], **{k: x[k] for k in ("videoId", "title", "published", "url", "description")},
-                        "promo": {k: p.get(k) for k in ("label", "text", "tur", "no", "bolum", "sezon", "final", "film")} if p else None, "previous": prev})
+                        "promo": _promo_keys(p), "previous": prev})
             seen[x["videoId"]] = now
         if trailers[0]["ts"] > last_ts:
             ch.update({"lastVideoId": latest["videoId"], "lastTitle": latest["title"], "lastPublished": latest["published"], "lastTs": latest["ts"], "lastUrl": latest["url"]})
@@ -308,7 +368,17 @@ def scan(now: float | None = None) -> dict:
     chans = {k: v for k, v in chans.items() if k in keys}  # listeden çıkarılan kanal unutulur
     st = {"channels": chans, "seen": seen, "lastScan": now_iso(), "lastNew": [x["videoId"] for x in new] or st.get("lastNew") or []}
     save_json(STATE, st)
-    return {"ok": True, "channels": chans, "new": new, "errors": errors, "lastScan": st["lastScan"]}
+    return {"ok": True, "channels": chans, "new": new, "errors": errors, "ended": ended, "reopened": reopened, "lastScan": st["lastScan"]}
+
+
+def _mark_final(ch: dict, x: dict, p: dict, single: bool, ended: list, key: str, inp: str, now: float | None = None) -> None:
+    """Sezon finali fragmanı: tek dizili kanalda "dizi bitti" (günde bir yeni sezon için bakılır), çok dizili kanalda yalnız not (tarama sürer)."""
+    rec = {"at": now_iso(), "title": x["title"], "videoId": x["videoId"], "film": p.get("film") or "", "published": x.get("published")}
+    if single:
+        ch["ended"] = rec; ch["endedCheckedAt"] = now_iso(); ch["endedCheckedTs"] = now or time.time(); ch.pop("finalNote", None)
+        ended.append({"key": key, "channel": ch.get("name") or inp, "title": x["title"], "film": rec["film"]})
+    else:
+        ch["finalNote"] = rec
 
 
 if __name__ == "__main__":
@@ -316,6 +386,8 @@ if __name__ == "__main__":
     try:
         if "--resolve" in a:
             res = {"ok": True, **resolve(a[a.index("--resolve") + 1])}
+        elif "--reopen" in a:
+            res = reopen(a[a.index("--reopen") + 1])
         elif "--status" in a:
             st = load_json(STATE, {}) or {}
             res = {"ok": True, "channels": st.get("channels") or {}, "lastScan": st.get("lastScan"), "cfg": cfg()}
