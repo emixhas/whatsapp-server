@@ -125,15 +125,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   karşılaştırılır: "🔤 altyazı denetimi: N kelime, 150 ms içinde olan yüzde X, ortanca kayma Y ms geç/erken". Sorun (150 ms içinde
   < %70 ya da |ortanca| > 120 ms) → "⚠️" + öneri (sabit kayma: kaydırma ayarını şu kadar değiştir; dağınık: metin hizalamayı kur)
   + WhatsApp sağlık uyarısı (12 saatte bir); `data/caption_qa.json`. `teshis.sh` iki aracın kurulu olup olmadığını ve son satırları yazar.
-  Altyazı 3'er kelime, içi siyah dışı sarı, orta boy (kullanıcı kararı, 20 Ekim; 14 Ekim'deki tek büyük kelime + kategori renginde
+  Altyazı 3'er kelime, sarı yazı söylendikçe beyaz, siyah kontür, orta boy (kullanıcı kararı, 20 Ekim; 14 Ekim'deki tek büyük kelime + kategori renginde
   kutu kalktı; `src/captionGroups.ts`, `src/scenes/Captions.tsx`): grup en çok 3 kelime, kelime sonu noktalaması ya da 0,6 sn'den uzun
   duraklama erken kapatır. Kelimeler önceden gelir, yalnız renklenir (kullanıcı kararı, 21 Ekim: "kelimeler önceden gelsin, sadece
   renklensin"): grup BÜTÜN kelimeleriyle ilk kelimesinden en çok 0,5 sn önce gelir (`EARLY`; önceki grup kalkmadan değil: önceki grup
-  0,18 sn'lik kalışındayken yeni grup ancak kendi ilk kelimesi söylenince onu iter), söylenmemiş kelime siyah dolgu + sarı kontürle
-  görünür, her kelime tam söylendiği anda (s − kaydırma; `caption_qa.py` bunu ölçer) renklenir: içi sarı, dışı siyah kontür, 0,09 sn'lik
-  küçük bir büyüme vurgusu (sonra aynı boy, yazı kaymaz) ve grup kalkana kadar sarı kalır; grup son kelimeden 0,18 sn sonra ya da sonraki
-  grup başlayınca kalkar, 0,5 sn'den uzun duraklamada ekran boş. Harf içi siyah, dışa ~0,11 em #FFD400 kontür (arkada kalın kontürlü
-  kopya, önde dolgu; söylenen kelimede renkler yer değiştirir), koyu gölge. Punto `fitText`
+  0,18 sn'lik kalışındayken yeni grup ancak kendi ilk kelimesi söylenince onu iter). RENKLER (kullanıcı kararı, 27 Ekim: "tüm cümle sarı,
+  kelimeler vurgulandıkça beyaz"; 21-26 Ekim'de söylenmemiş kelime siyah dolgu + sarı kontür, söylenen sarı dolgu + siyah kontürdü):
+  grubun bütün kelimeleri SARI dolgu (`CAPTION_FILL` #FFD400) + siyah kontürle (`CAPTION_OUTLINE`) görünür, her kelime tam söylendiği anda
+  (s − kaydırma; `caption_qa.py` bunu ölçer) BEYAZA döner (`CAPTION_SAID` #FFFFFF; kontür yine siyah), 0,09 sn'lik küçük bir büyüme vurgusu
+  (sonra aynı boy, yazı kaymaz) ve grup kalkana kadar beyaz kalır; grup son kelimeden 0,18 sn sonra ya da sonraki grup başlayınca kalkar,
+  0,5 sn'den uzun duraklamada ekran boş. Dışa ~0,11 em siyah kontür (arkada kalın kontürlü kopya, önde dolgu), koyu gölge. Sandbox'ta
+  Remotion still ile doğrulandı (koyu, beyaz, sarı ve karışık zeminde Headline/FullFrame/Hook: söylenmemiş sarı, söylenen beyaz). Punto `fitText`
   (kontür ve kelime arası dahil), gruptan gruba sıçramasın diye en çok 2 satıra sığan en büyüğü (tek satır ancak %5'ten az küçülerek
   sığıyorsa), en az 48 px (yatayda 56); daha uzun grup yükseklik sınırı içinde 3. satıra geçer. İki satıra düşen üç kelimede kırılım
   dengeli (uzun satır en kısa, eşite yakınsa üst satır kısa: TRAFİK / KAZASINDA ÜÇ). Başlığa binmesin diye yerleşime göre yükseklik

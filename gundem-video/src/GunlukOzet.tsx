@@ -17,7 +17,7 @@ export const WIDE_W = 1920;
 export const WIDE_H = 1080;
 const WHOOSH = 17;
 
-/** Geniş altyazı: Shorts ile aynı kural ve görünüm (en çok 3 kelimelik grup, kelimeler söylendikçe görünür; içi siyah, dışı sarı),
+/** Geniş altyazı: Shorts ile aynı kural ve görünüm (en çok 3 kelimelik grup, kelimeler önceden sarı gelir, söylendikçe beyaza döner; dışı siyah kontür),
  *  sağ sütunda sola dayalı, 62 px'ten başlar, 2 satırda en çok 56 px'e kadar küçülür, daha uzun grup 3. satıra geçer (4 satırlık
  *  başlık ve kaynak satırıyla sütunda ~350 px yer kalır, blok en çok 300 px). */
 const WideCaptions = ({ words }: { words?: Word[] }) => {
