@@ -1697,6 +1697,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     başka diziler var, tarama sürüyor"; durum satırında "🏁 N dizi bitti". Testler: scanner (tek/çok dizili, 24 saat kuralı, sezon dışı video,
     yeni sezon açar, ilk taramada final, reopen, autoEnd kapalı, is_new_season), sunucu harness (cfg, uyarı atlama, API, loglar/WhatsApp, rota),
     panel (gri kart, yeniden aç, anahtar).
+  - Uyarlanır tarama (kullanıcı isteği, 27 Ekim: "2 saatte bir yerine her dizinin fragman günü ve saati öğrenilsin, beklenen pencerede 10 dakikada
+    bir taransın"): `trailerWatch.adaptive` (varsayılan açık) + `fastMin` (10; 2-60). `trailer_watch.py`: kanal durumuna `history` (fragman yayın
+    zamanları, en çok `HISTORY_MAX` 24; ilk taramada akıştaki bütün fragmanlar, sonra her yeni fragman) ve `expect` (`learn_windows`: yerel hafta
+    gününe göre kümeler, aynı günde en az 2 fragman ve saatleri birbirine 3 saatten yakınsa pencere {weekday 0 = Pazartesi, from, to (±1 saat pay),
+    n}; en çok 3, çok görülen önce; `window_text` "Perşembe 18:00–21:59"). `server.js`: `twInWindow(ch, now)` (JS `getDay` → Pazartesi 0),
+    `twFastNow(c, st)` (aktif, bitmemiş, penceredeki kanal adları), `twIntervalMin(c, st)` = pencerede kanal varsa fastMin, yoksa intervalMin;
+    60 sn'lik zamanlayıcı ve API `nextScanIn` bunu kullanır; durum yanıtında "⚡ şu an 10 dk'da bir (X beklenen pencerede)"; API `list[].expect`
+    ({…, text}), `inWindow`, `historyCount`, üst düzey `fastNow`, `intervalNow`. Panel: "⚡ Uyarlanır tarama" anahtarı + dakika alanı; durum
+    satırında "⚡ sık tarama (10 dk): X beklenen pencerede"; kartta "📅 Beklenen fragman: Perşembe 18:00–21:59 (K fragmandan öğrenildi) · ⚡ şu an
+    sık tarama" ya da "📅 Beklenen pencere henüz öğrenilmedi (aynı günde en az 2 fragman gerekir)". Testler: scanner (ilk tarama ve yeni fragmanla
+    öğrenme, 3 saat sınırı, tek fragmanlı gün pencere değil, en çok 3 pencere, history sınırı), sunucu harness (cfg sınırları, pencere içi/dışı
+    aralık, dizi bitti/duraklatılmış kanal sayılmaz, API alanları), panel (anahtar, alan, kart satırı).
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/

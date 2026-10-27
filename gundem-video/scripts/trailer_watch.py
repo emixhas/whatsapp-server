@@ -68,6 +68,48 @@ def is_new_season(p: dict) -> bool:
     return bool(p.get("yeniSezon") or (p.get("sezon") and (p.get("bolum") in (None, 0, 1))))
 
 
+HISTORY_MAX = 24
+WEEKDAYS_TR = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+
+
+def learn_windows(history: list) -> list:
+    """Uyarlanır tarama (kullanıcı isteği, 27 Ekim: "her dizinin fragman günü ve saati geçmişten öğrenilsin; beklenen pencerede 10 dakikada bir
+    taransın"): fragman yayın zamanlarından (yerel saat) hafta günü + saat kümeleri. Aynı günde en az 2 fragman ve saatleri birbirine 3 saatten yakın
+    ise pencere {weekday (0 = Pazartesi), from, to (saat; ±1 pay), n}; en çok 3 pencere, çok görülen önce."""
+    from datetime import datetime
+    by_day: dict = {}
+    for ts in history or []:
+        try:
+            d = datetime.fromtimestamp(float(ts))
+        except Exception:
+            continue
+        by_day.setdefault(d.weekday(), []).append(d.hour + d.minute / 60)
+    out = []
+    for wd, hours in by_day.items():
+        if len(hours) < 2:
+            continue
+        lo, hi = min(hours), max(hours)
+        if hi - lo > 3:
+            continue
+        out.append({"weekday": wd, "from": max(0, int(lo) - 1), "to": min(23, int(hi) + 1), "n": len(hours)})
+    out.sort(key=lambda w: (-w["n"], w["weekday"]))
+    return out[:3]
+
+
+def window_text(w: dict) -> str:
+    return f"{WEEKDAYS_TR[int(w['weekday']) % 7]} {int(w['from']):02d}:00–{int(w['to']):02d}:59"
+
+
+def _learn(ch: dict, ts_list: list) -> None:
+    hist = [float(t) for t in (ch.get("history") or []) if isinstance(t, (int, float))]
+    for t in ts_list:
+        if t and float(t) not in hist:
+            hist.append(float(t))
+    hist = sorted(set(hist))[-HISTORY_MAX:]
+    ch["history"] = hist
+    ch["expect"] = learn_windows(hist)
+
+
 def single_series(trailers: list, pinfo: dict) -> bool:
     """Kanal tek dizili mi: akıştaki fragmanların dizi adları (film_name) tek ise. Show TV gibi çok dizili kanalda bir dizinin finali kanalı kapatmaz."""
     films = {((pinfo.get(x["videoId"]) or {}).get("film") or "").casefold().strip() for x in trailers}
@@ -333,6 +375,7 @@ def scan(now: float | None = None) -> dict:
             for x in trailers:
                 if x["videoId"] not in {y["videoId"] for y in fresh0}:
                     seen.setdefault(x["videoId"], now)
+            _learn(ch, [x["ts"] for x in trailers if x.get("ts")])  # ilk taramada akıştaki fragmanların zamanlarından pencere öğrenilir
             pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if (fresh0 or c["autoEnd"]) else {}
             for x in fresh0:
                 p = pinfo.get(x["videoId"]) or {}
@@ -349,6 +392,8 @@ def scan(now: float | None = None) -> dict:
         fresh = [x for x in reversed(trailers) if x["ts"] > last_ts and x["videoId"] not in seen and now - x["ts"] <= c["maxAgeHours"] * 3600
                  and x["videoId"] != ch.get("lastVideoId")]
         pinfo = {x["videoId"]: promo(x["title"], x.get("description", ""), x.get("author") or ch.get("name") or "") for x in trailers} if fresh else {}
+        if fresh:
+            _learn(ch, [x["ts"] for x in fresh if x.get("ts")])
         finals = [x for x in fresh if (pinfo.get(x["videoId"]) or {}).get("final")]
         if c["autoEnd"] and finals:
             _mark_final(ch, finals[-1], pinfo.get(finals[-1]["videoId"]) or {}, single_series(trailers, pinfo), ended, key, inp, now)
