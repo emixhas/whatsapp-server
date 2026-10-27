@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Hassas kelimeleri platform denetimine takılmayacak, ama anlaşılır kalacak şekilde gizler (kullanıcı isteği).
 
-- Seste: kelime kısık sesle okunur ve üstüne "bip" biner (tts.py, `pieces()`); kelime arkadan duyulur, anlaşılır.
+- Seste: cümle bütün okunur, kelimenin sesteki yeri hizalamadan bulunur; orada konuşma kısılır ve üstüne "bip" biner (tts.py
+  `bleep_spans`, kelimeler `token_hits()`); kelime arkadan duyulur, anlaşılır.
 - Yazıda (açıklama, yayın başlığı, ekrandaki başlıklar, yanan altyazı): kelimenin bir harfi yıldızla gizlenir
   (`mask()`): intihar → int*har, silah → s*lah, ölüm → ö*üm, cinayet → c*nayet. Hassas kelime içeren hashtag atılır.
 
@@ -81,26 +82,20 @@ def has(text: str) -> bool:
     return bool(text) and bool(spans(text))
 
 
-def pieces(text: str) -> list:
-    """Seslendirme parçaları: [("text", "..."), ("word", "intihar"), ("text", "...")…]; hassas kelime yoksa tek parça.
-    "word" parçası da seslendirilir; tts.py onu kısık sesle bırakıp üstüne bip bindirir (kelime arkadan duyulur,
-    anlaşılır, ama net söylenmez — kullanıcı isteği: "hem duyulsun hem biplensin")."""
+def audio_on() -> bool:
+    """Seste bip açık mı (settings.censor.enabled ve audio)."""
     c = cfg()
-    if not text or not c.get("enabled") or not c.get("audio"):
-        return [("text", text)]
-    out, last = [], 0
-    for a, b in spans(text):
-        before = text[last:a].strip()
-        if before and re.search(r"[\wçğıöşüÇĞİÖŞÜ]", before):  # yalnız noktalama kalan parça seslendirilmez
-            out.append(("text", before))
-        word = text[a:b]
-        tail = re.match(r"[.,;:!?…]+", text[b:])  # kelimeye bitişik noktalama (tonlama için) kelimeyle okunur
-        out.append(("word", word + (tail.group(0) if tail else "")))
-        last = b + (len(tail.group(0)) if tail else 0)
-    after = text[last:].strip()
-    if after and re.search(r"[\wçğıöşüÇĞİÖŞÜ]", after):
-        out.append(("text", after))
-    return out or [("text", text)]
+    return bool(c.get("enabled")) and bool(c.get("audio"))
+
+
+def token_hits(text: str, words=None) -> list:
+    """Hassas kelime içeren kelimelerin sırası; kelimeler `text.split()` ile aynı bölünür (seslendirme ve altyazı bu sırayı kullanır).
+    tts.py segmenti bütün seslendirir ve bu kelimelerin sesteki yerine bip bindirir (kelime arkadan kısık duyulur — kullanıcı isteği:
+    "hem duyulsun hem biplensin")."""
+    sp = spans(text, words)
+    if not sp:
+        return []
+    return [k for k, m in enumerate(re.finditer(r"\S+", text)) if any(a < m.end() and b > m.start() for a, b in sp)]
 
 
 def clean_tags(tags: list) -> list:
@@ -113,4 +108,4 @@ def clean_tags(tags: list) -> list:
 if __name__ == "__main__":
     t = " ".join(sys.argv[1:]) or "Genç kadın intihar etti; silahla vurulan adam öldü, cesedi bulundu. Ölçü ve Boğaz etkilenmedi."
     print(mask(t))
-    print(pieces(t))
+    print([t.split()[k] for k in token_hits(t)])

@@ -90,10 +90,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   text, words, extra}; panel Ayarlar → Gelişmiş anahtar + "Ek gizlenecek kelimeler"): kökler `DEFAULT_WORDS` (intihar,
   öl+ek kalıbı — ölçü/ölçek değil, silah, cinayet, katil/katle, bıçak, kurşun, tecavüz, istismar, taciz, uyuşturucu, ceset,
   işkence, vahşet, boğ+ek kalıbı — Boğaz değil, tabanca, pompalı, rehin, bomba, terör), Türkçe ekler dahil, `tr_lower`
-  uzunluk korur. SES (kullanıcı: "kesilmesin, kelime arkadan duyulsun"): `tts.py` segmenti `censor.pieces()` ile
-  [text, word, text…] parçalarına böler, hassas kelime de seslendirilir; `bleep_word` kelimeyi -20 LUFS'a getirip yarıya
-  indirir, üstüne aynı uzunlukta yumuşak kenarlı 1 kHz bip (~6 dB üstte) bindirir; `trim_wav` her parçanın baş/son
-  sessizliğini kırpıp 70 ms boşluk bırakır (kesik duyulmaz), `join_wavs` birleştirir (log "🔇 N hassas kelime bipleniyor"). YAZI: `mask()` bir harfi
+  uzunluk korur. SES (kullanıcı: "kesilmesin, kelime arkadan duyulsun"; 27 Ekim şikâyeti: "bip sonrası bir bozuk ses de gelebiliyor"):
+  segment BÜTÜN seslendirilir (eskiden cümle hassas kelimenin önünden/arkasından parçalara bölünüp her parça ayrı okunuyordu; "etti."
+  gibi kısa parçayı VoxCPM/Trendyol bozuk okuyordu, tek okunan kelimenin tonlaması da cümleye uymuyordu). `censor.token_hits()`
+  hassas kelimelerin sırasını (`narration.split()` ile aynı bölünme), altyazı hizalaması (metin hizalama → konuşma tanıma → duraklama
+  çapası; hassas kelimeli segment de MMS'e gider) kelimenin sesteki yerini verir; `tts.bleep_spans` `add_pause`'tan sonra o aralıkta
+  konuşmayı ~10 dB kısar (kelime arkadan duyulur) ve üstüne konuşmanın kendi RMS'inde 1 kHz bip bindirir; kenarlar 15 ms yükseltilmiş
+  kosinüs (tık yok), pay yönteme göre (metin hizalama 30/40 ms, konuşma tanıma 60/70 ms, duraklama çapası 100 ms, tahmin 180 ms + uyarı),
+  0,15 sn'den yakın bipler birleşir; segmentte `bleeps` [[başlangıç, bitiş]]; altyazı zamanları bipten etkilenmez (log "🔇 N hassas
+  kelime bipleniyor"). Sandbox'ta sahte konuşma sesiyle (kelime zamanları bilinen hece tonları) gerçek tts/align/censor ile denendi:
+  duraklama çapası ve kesin hizalamada bip kelimeyi kapsıyor, bip dışında hiçbir örnek değişmiyor, kenarda tık yok, bipsiz segmentler
+  önceki sürümle bayt bayt aynı. YAZI: `mask()` bir harfi
   yıldızlar (int*har, s*lah, ö*üm, c*nayet): `assemble_script` ekrandaki kanca/haber başlıkları, titles A/B/cover ve
   publishTitle; `tts.py` yanan altyazı (`words`); `common.build_caption` başlık + açıklama; hassas hashtag `clean_tags` ile
   atılır (build_caption, caption_tags, meta hashtags). `narration` alanı özgün kalır (seslendirme ve tekrar engeli için).
@@ -106,13 +113,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   söylenişi uzun; 14 Ekim "altyazı sesle eşit gitmiyor" şikâyetinin ana nedeni buydu). Eşik uyarlanır (`noise_floor`: ortalama
   sesin 17 dB altı) ve duraklamalar SIKIŞTIRMA ÖNCESİ ham seste aranır (`seg-XX.align.wav`, sonra silinir); gürültülü
   sentetik testte en büyük kayma 0,10 sn. mlx-whisper Apple Silicon'da yoksa ilk üretimde bir kez kendiliğinden kurulur
-  (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` kelimeyi 0,06 sn önde gösterir; bipli segmentte parçaların
-  kesin yerleri çapadır. Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
+  (`captions.autoInstall: false` kapatır; `work/.align_install.json`). `Captions.tsx` kelimeyi 0,06 sn önde gösterir; bipli segment de aynı
+  yolla hizalanır (bip hizalamadan sonra biner). Yöntem segmentte `captionSync`, log "🔤 altyazı senkronu: …"; hiçbiri olmazsa eski `word_timings`.
   0) Metni sese zorla hizalama (kullanıcı isteği, en isabetlisi; `scripts/mms_align.py`, `align.mms_batch/by_mms`): bilinen metin
   torchaudio MMS_FA (Meta, çok dilli, Türkçe) ile sesin karelerine CTC ile oturtulur; Türkçe harfler a-z'ye çevrilir (ç→c, ı→i…),
   kesme işareti atılır, her ekran kelimesinin söylenen biçimi `prep_text` (skor bağlamı cümle düzeyinde: "4-1" → "dört bir").
   Ayrı ortam `.venv-align` (torch/torchaudio 2.8 sabit — 2.9 forced_align'ı kaldırdı; ses modellerinin torch'una dokunmaz),
-  model ~1,2 GB torch önbelleğine iner; tüm bipsiz segmentler TEK süreçte (model bir kez yüklenir, varsa MPS, hizalama CPU).
+  model ~1,2 GB torch önbelleğine iner; bütün segmentler TEK süreçte (model bir kez yüklenir, varsa MPS, hizalama CPU).
   Kurulum `bash scripts/install_align.sh` (MMS + mlx-whisper, Yelda sesiyle deneme). Yoksa/hata verirse konuşma tanımaya, o da
   yoksa duraklama çapasına düşer; yöntem segmentte `captionSync` ("metin hizalama"). `captions.forcedAlign: false` kapatır.
   Sandbox'ta model inemediği için gerçek ses üzerinde DENENMEDİ; arayüz torchaudio 2.8 kaynağıyla doğrulandı.

@@ -10,11 +10,13 @@ Rakamlar seslendirmeden önce yazıya çevrilir (tr_numbers.py).
 Kullanım: python3 scripts/tts.py work/script.json public/episode.json
 """
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import wave
+from array import array
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -80,40 +82,74 @@ def add_pause(path: Path, gain_db: float = 0.0) -> None:
     tmp.replace(path)
 
 
-TRIM = ("silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.03,areverse,"
-        "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.03,areverse")
+# Hassas kelime bipi (kullanıcı şikâyeti, 27 Ekim: "bip sonrası bir bozuk ses de gelebiliyor"): eskiden cümle hassas kelimenin
+# önünden ve arkasından PARÇALARA bölünüp her parça ayrı seslendiriliyordu; "etti." gibi tek kelimelik parçayı ses modelleri (VoxCPM,
+# Trendyol) bozuk/gevelenmiş okuyordu, tek başına okunan kelimenin tonlaması da cümleye uymuyordu. Şimdi segment BÜTÜN seslendirilir;
+# kelimenin sesteki yeri altyazı hizalamasından (metin hizalama → konuşma tanıma → duraklama çapası) gelir; o aralıkta konuşma ~10 dB
+# kısılır (kelime arkadan duyulur, anlaşılır) ve üstüne aynı yükseklikte 1 kHz bip biner. Kenarlar 15 ms yumuşak (tık sesi yok).
+BLEEP_HZ = 1000.0
+BLEEP_DUCK_DB = -10.0
+BLEEP_RAMP = 0.015
+# yöntemin isabetine göre pay (sn, önce/sonra): metin hizalama kareye oturur; duraklama çapası kelime içi ±0,1 sn kayabilir
+BLEEP_MARGIN = {"metin hizalama": (0.03, 0.04), "konuşma tanıma": (0.06, 0.07), "duraklama çapası": (0.10, 0.10)}
 
 
-def trim_wav(src: Path, dst: Path, gap: float = 0.07) -> None:
-    """Parçanın baş/son sessizliğini kırpar, arkasına kısa doğal boşluk koyar (parçalar arası kesik duyulmasın)."""
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-af", f"{TRIM},apad=pad_dur={gap}",
-                    "-ar", "44100", "-ac", "1", str(dst)], check=True)
-    if wav_duration(dst) < gap + 0.05:  # tamamı sessizdi (ör. sessiz test motoru): özgün kalsın
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-ar", "44100", "-ac", "1", str(dst)], check=True)
+def _rcos(x: float) -> float:
+    """0 → 1 yumuşak geçiş (yükseltilmiş kosinüs)."""
+    x = 0.0 if x <= 0 else 1.0 if x >= 1 else x
+    return 0.5 - 0.5 * math.cos(math.pi * x)
 
 
-def bleep_word(src: Path, dst: Path) -> None:
-    """Kelime kısık kalır, üstüne aynı uzunlukta yumuşak kenarlı 1 kHz bip biner: kelime arkadan duyulur, anlaşılır."""
-    tmp = dst.with_name(dst.stem + ".w.wav")
-    trim_wav(src, tmp, gap=0.0)
-    d = max(0.25, wav_duration(tmp))
-    # kelime -20 LUFS'a getirilip yarıya (~-26) indirilir; bip (lavfi sine 1/8 genlik ≈ -21 dBFS) ~6 dB üstte kalır:
-    # bip baskın ama kelime arkadan seçilir
-    fc = (f"[0:a]loudnorm=I=-20:TP=-2,volume=0.5[w];[1:a]afade=t=in:d=0.025,afade=t=out:st={max(0.0, d - 0.03):.3f}:d=0.03,volume=1.1[b];"
-          f"[w][b]amix=inputs=2:duration=longest:normalize=0,apad=pad_dur=0.07[out]")
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp), "-f", "lavfi", "-i", f"sine=frequency=1000:duration={d:.3f}:sample_rate=44100",
-                    "-filter_complex", fc, "-map", "[out]", "-ar", "44100", "-ac", "1", str(dst)], check=True)
-    tmp.unlink(missing_ok=True)
-
-
-def join_wavs(parts: list, dst: Path) -> None:
-    """Parçaları (farklı örnekleme hızında olabilir) sırayla birleştirir."""
-    args = ["ffmpeg", "-y", "-loglevel", "error"]
-    for p in parts:
-        args += ["-i", str(p)]
-    chain = "".join(f"[{i}:a]aresample=44100,aformat=channel_layouts=mono[a{i}];" for i in range(len(parts)))
-    chain += "".join(f"[a{i}]" for i in range(len(parts))) + f"concat=n={len(parts)}:v=0:a=1[out]"
-    subprocess.run(args + ["-filter_complex", chain, "-map", "[out]", "-ar", "44100", "-ac", "1", str(dst)], check=True)
+def bleep_spans(path: Path, spans: list, how: str) -> list:
+    """Segment sesinde (mono 16 bit wav, yerinde) verilen kelime aralıklarına bip bindirir; birbirine 0,15 sn'den yakın aralıklar tek
+    bip olur. Dönüş: uygulanan aralıklar [(başlangıç, bitiş)], sn. Bip seviyesi konuşmanın kendi RMS'i (seslendirme motoru ve kazançtan
+    bağımsız): bip baskın, kısılmış kelime ~10 dB altta."""
+    pre, post = BLEEP_MARGIN.get(how, (0.18, 0.18))
+    with wave.open(str(path), "rb") as w:
+        ch, sw, sr, n = w.getnchannels(), w.getsampwidth(), w.getframerate(), w.getnframes()
+        frames = w.readframes(n)
+    if ch != 1 or sw != 2:  # add_pause hep mono 16 bit yazar; başka biçim gelirse önce çevrilir
+        tmp = path.with_name(path.stem + ".pcm.wav")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-ac", "1", "-c:a", "pcm_s16le", str(tmp)], check=True)
+        tmp.replace(path)
+        return bleep_spans(path, spans, how)
+    a = array("h")
+    a.frombytes(frames)
+    if sys.byteorder == "big":
+        a.byteswap()
+    dur = n / float(sr)
+    iv = sorted((max(0.0, float(s_) - pre), min(dur, float(e_) + post)) for s_, e_ in spans if float(e_) > float(s_))
+    merged: list = []
+    for s_, e_ in iv:
+        if merged and s_ - merged[-1][1] < 0.15:
+            merged[-1][1] = max(merged[-1][1], e_)
+        else:
+            merged.append([s_, e_])
+    if not merged:
+        return []
+    gate = 0.02 * 32767
+    loud = [x for x in a if x > gate or x < -gate]
+    ref = math.sqrt(sum(x * x for x in loud) / len(loud)) if loud else 3000.0
+    amp = min(0.5 * 32767, ref * math.sqrt(2.0))  # bipin RMS'i konuşmanınkine eşit
+    duck = 10 ** (BLEEP_DUCK_DB / 20.0)
+    w2 = 2.0 * math.pi * BLEEP_HZ
+    for s_, e_ in merged:
+        i0, i1 = max(0, int((s_ - BLEEP_RAMP) * sr)), min(n, int(math.ceil((e_ + BLEEP_RAMP) * sr)))
+        for i in range(i0, i1):
+            t = i / float(sr)
+            wv = _rcos((t - (s_ - BLEEP_RAMP)) / BLEEP_RAMP) if t < s_ else _rcos(((e_ + BLEEP_RAMP) - t) / BLEEP_RAMP) if t > e_ else 1.0
+            v = a[i] * (1.0 - (1.0 - duck) * wv)
+            if s_ <= t <= e_:
+                v += amp * _rcos(min((t - s_) / BLEEP_RAMP, (e_ - t) / BLEEP_RAMP)) * math.sin(w2 * (t - s_))
+            a[i] = 32767 if v > 32767 else -32768 if v < -32768 else int(round(v))
+    if sys.byteorder == "big":
+        a.byteswap()
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes(a.tobytes())
+    return [(round(x, 3), round(y, 3)) for x, y in merged]
 
 
 def main(script_path: str, episode_path: str):
@@ -125,24 +161,20 @@ def main(script_path: str, episode_path: str):
         f.unlink()
     outs = [audio_dir / f"seg-{i:02d}.wav" for i in range(len(segs))]
     chosen = voices.assign(len(segs))
-    # Hassas kelimeler (censor.py): segment parçalara bölünür, kelimenin yerine bip girer; parçalar sonra birleştirilir
     snd = {i for i, seg in enumerate(segs) if seg.get("kind") == "sesli"}  # videonun kendi sesi: seslendirilmez
-    plan = [[("text", "")] if i in snd else censor.pieces(seg["narration"]) for i, seg in enumerate(segs)]
-    part_out = lambda i, k: audio_dir / f"seg-{i:02d}.p{k}.wav"
-    beeped = sum(1 for p in plan for kind, _ in p if kind == "word")
+    # Hassas kelimeler (censor.py): segment bütün seslendirilir, kelimenin sesteki yerine hizalamadan sonra bip biner (bleep_spans)
+    hits = {i: censor.token_hits(seg["narration"]) for i, seg in enumerate(segs) if i not in snd} if censor.audio_on() else {}
+    hits = {i: h for i, h in hits.items() if h}
+    beeped = sum(len(h) for h in hits.values())
     if beeped:
-        print(f"  🔇 {beeped} hassas kelime bipleniyor (kelime arkadan kısık duyulur), yazıda yıldızla gizleniyor", flush=True)
+        print(f"  🔇 {beeped} hassas kelime bipleniyor (cümle bütün okunur, bip kelimenin üstüne biner; kelime arkadan kısık duyulur), "
+              "yazıda yıldızla gizleniyor", flush=True)
     for i in snd:  # süresi klip kadar sessiz ses: sahne zamanlaması sesten geldiği için
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
                         "-t", f"{float(segs[i].get('soundDuration') or 1):.3f}", str(outs[i])], check=True)
     pending = [i for i in range(len(segs)) if i not in snd]
     for attempt in range(6):
-        jobs = []
-        for i in pending:
-            if len(plan[i]) == 1 and plan[i][0][0] == "text":
-                jobs.append({"voice": chosen[i], "text": plan[i][0][1], "out": outs[i]})
-            else:
-                jobs += [{"voice": chosen[i], "text": t, "out": part_out(i, k)} for k, (kind, t) in enumerate(plan[i])]
+        jobs = [{"voice": chosen[i], "text": segs[i]["narration"], "out": outs[i]} for i in pending]
         try:
             voices.synthesize(jobs)
             pending = []
@@ -153,8 +185,7 @@ def main(script_path: str, episode_path: str):
             bad = str(e).split(":")[0]
             print(f"  ! ses '{bad}' başarısız ({str(e)[:240]}); yedek sese geçiliyor", file=sys.stderr)
             voices._disabled.add(bad)
-            done = lambda i: outs[i].exists() if len(plan[i]) == 1 and plan[i][0][0] == "text" else all(part_out(i, k).exists() for k in range(len(plan[i])))
-            pending = [i for i in pending if not done(i) or chosen[i]["id"] == bad]
+            pending = [i for i in pending if not outs[i].exists() or chosen[i]["id"] == bad]
             repl = voices.resolve("auto")
             for i in pending:
                 if chosen[i]["id"] == bad:
@@ -162,31 +193,15 @@ def main(script_path: str, episode_path: str):
     if pending:
         sys.exit("Seslendirme tamamlanamadı")
 
-    piece_spans = {}  # bipli segmentlerde her parçanın sesteki kesin yeri: altyazı bunlara oturur
-    for i, p in enumerate(plan):  # bipli segmentler: parçalar kırpılır, hassas kelimeye bip biner, sırayla birleşir
-        if len(p) == 1 and p[0][0] == "text":
-            continue
-        files, spans, t = [], [], 0.0
-        for k, (kind, val) in enumerate(p):
-            src, dst = part_out(i, k), part_out(i, k).with_name(part_out(i, k).stem + ".x.wav")
-            (bleep_word if kind == "word" else trim_wav)(src, dst)
-            d = wav_duration(dst)
-            spans.append((val, t, t + d))
-            t += d
-            files.append(dst)
-        join_wavs(files, outs[i])
-        piece_spans[i] = spans
-        for f in files + [part_out(i, k) for k in range(len(p))]:
-            f.unlink(missing_ok=True)
-
     # hizalama işlenmemiş seste yapılır (sıkıştırıcı gürültüyü yükseltiyor): önce tüm segmentlerin ham kopyası, sonra
-    # metin hizalama (MMS) tüm bipsiz segmentler için TEK seferde (1,2 GB model bir kez yüklenir)
+    # metin hizalama (MMS) bütün segmentler için TEK seferde (1,2 GB model bir kez yüklenir); hassas kelimeli segment de hizalanır,
+    # bip bu kelime zamanlarına biner
     raws = {}
     for i in range(len(segs)):
         raws[i] = outs[i].with_name(outs[i].stem + ".align.wav")
         shutil.copyfile(outs[i], raws[i])
     try:
-        align.mms_batch([(raws[i], censor.mask(seg["narration"]).split(), seg["narration"].split()) for i, seg in enumerate(segs) if i not in piece_spans and i not in snd])
+        align.mms_batch([(raws[i], censor.mask(seg["narration"]).split(), seg["narration"].split()) for i, seg in enumerate(segs) if i not in snd])
     except Exception as e:
         print(f"  ! metin hizalama atlandı: {str(e)[:160]}", file=sys.stderr)
     segments = []
@@ -205,24 +220,23 @@ def main(script_path: str, episode_path: str):
         seg["audio"] = f"audio/{out.name}"
         seg["voice"] = chosen[i]["id"]
         seg["duration"] = round(wav_duration(out), 3)
-        # yanan altyazı ses ile eş zamanlı (align.py): konuşma tanıma varsa gerçek kelime zamanları, yoksa duraklama
-        # çapaları; bipli segmentte parçaların kesin yerleri çapadır. Hassas kelime yıldızlı (int*har).
+        # yanan altyazı ses ile eş zamanlı (align.py): metin hizalama / konuşma tanıma varsa gerçek kelime zamanları, yoksa duraklama
+        # çapaları. Hassas kelime yıldızlı (int*har); bip bu zamanlara göre kelimenin üstüne biner.
         shown = censor.mask(seg["narration"]).split()
-        words = []
-        if i in piece_spans:
-            for val, a, b in piece_spans[i]:
-                pw = censor.mask(val).split()
-                words += align.spread(pw, a, max(a + 0.05, b - 0.07))
-            if len(words) != len(shown):
-                words = []
-            how = "bip parçaları"
-        if not words:
-            words, how = align.align(shown, raw, 0.0, spoken=seg["narration"].split())
-            if how == "konuşma tanıma" and align.LAST_COVERAGE is not None:
-                seg["captionCoverage"] = round(align.LAST_COVERAGE, 2)
+        words, how = align.align(shown, raw, 0.0, spoken=seg["narration"].split())
+        if how == "konuşma tanıma" and align.LAST_COVERAGE is not None:
+            seg["captionCoverage"] = round(align.LAST_COVERAGE, 2)
         if not words:
             words, how = word_timings(" ".join(shown), seg["duration"], PAUSE_SEC), "tahmin"
         raw.unlink(missing_ok=True)
+        if i in hits:
+            spans = [(words[k]["s"], words[k]["e"]) for k in hits[i] if k < len(words)]
+            try:
+                seg["bleeps"] = [list(x) for x in bleep_spans(out, spans, how)]
+            except Exception as e:  # bozuk ses dosyası: üretim durmasın, kelime bipsiz kalır (yazıda yine yıldızlı)
+                print(f"  ! {i}. segment: bip uygulanamadı ({str(e)[:120]}); hassas kelime bipsiz kaldı", file=sys.stderr)
+            if how not in BLEEP_MARGIN:
+                print(f"  ! {i}. segment: kelime zamanları tahmini ({how}); bip geniş tutuldu (±0,18 sn)", file=sys.stderr)
         seg["words"] = words
         seg["captionSync"] = how
         segments.append(seg)
