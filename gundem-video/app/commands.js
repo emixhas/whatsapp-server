@@ -417,6 +417,9 @@ export function parseCommand(raw) {
       const ch = (String(raw).match(/(https?:\/\/[^\s<>"']*youtube\.com\/[^\s<>"']+|(?:^|\s)@[\w.-]{2,}|(?:^|\s)UC[\w-]{20,})/i) || [""])[0].trim().replace(/[).,;!?]+$/, "");
       if (/(^| )(ekle|eklesene|ekleyin|ekler misin|eklenecek|eklensin)( |$)/.test(tt)) return ch ? { action: "trailer_watch", add: ch, reply: "" } : { action: "none", reply: "Hangi kanalı ekleyeyim? Kanal adını @ ile ya da linkini yazın: fragman kanalı ekle @NetflixTurkiye" };
       if (/(^| )(çıkar|çıkart|çıkarın|sil|silin|kaldır|kaldırın)( |$)/.test(tt)) return ch ? { action: "trailer_watch", remove: ch, reply: "" } : { action: "none", reply: "Hangi kanalı çıkarayım? fragman kanalı çıkar @NetflixTurkiye" };
+      // sezon arası (kullanıcı isteği, 27 Ekim): "fragman kanalı duraklat @X" / "fragman kanalını beklet @X" / "fragman kanalı devam @X" (kanal sözü şart; "fragman takibini aç" ayrı)
+      if (/(^| )(duraklat|duraklatın|beklet|bekletin|sezon arası|sezon arasına al)( |$)/.test(tt)) return ch ? { action: "trailer_watch", pause: ch, reply: "" } : { action: "none", reply: "Hangi kanalı duraklatayım? fragman kanalı duraklat @NetflixTurkiye" };
+      if (twChan && ch && /(^| )(devam|devam et|devam ettir|sürdür|yeniden tara|yeniden aç|aç)( |$)/.test(tt)) return { action: "trailer_watch", resume: ch, reply: "" };
       if (/(^| )(tara|tarasın|tarayın|kontrol et|bak|şimdi)( |$)/.test(tt)) return { action: "trailer_watch", scan: true, reply: "" };
       if (twTrack) { // "fragman kanallarına bayıldım" gibi fiilsiz kanal sözü komut değil (aşağıdaki yollara düşer)
         if (/(^| )(kapat|kapatın|kapa|durdur|durdurun|iptal et|devre dışı bırak)( |$)/.test(tt)) return { action: "trailer_watch", on: false, reply: "" };

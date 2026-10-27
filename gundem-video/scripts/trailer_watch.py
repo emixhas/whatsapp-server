@@ -32,7 +32,8 @@ from common import DATA, load_json, now_iso, save_json, settings  # noqa: E402
 
 STATE = DATA / "trailer_watch.json"
 DEFAULTS = {"enabled": True, "intervalMin": 120, "channels": [], "maxAgeHours": 24, "maxPerDay": 0, "autoPublish": True, "notify": False,
-            "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True, "staleDays": 10}
+            "onlyTrailers": True, "soundSeconds": 10, "firstFreshHours": 12, "pageScan": True, "staleDays": 10,
+            "paused": []}  # paused: duraklatılan kanallar (sezon arası; kart kalır, taranmaz)
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 NS = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015", "media": "http://search.yahoo.com/mrss/"}
 
@@ -42,6 +43,7 @@ def cfg() -> dict:
     s = raw if isinstance(raw, dict) else {}
     out = {**DEFAULTS, **s}
     out["channels"] = [str(x).strip() for x in (out.get("channels") or []) if str(x).strip()] if isinstance(out.get("channels"), list) else []
+    out["paused"] = [str(x).strip() for x in (out.get("paused") or []) if str(x).strip()] if isinstance(out.get("paused"), list) else []
     for k in ("intervalMin", "maxAgeHours", "maxPerDay", "soundSeconds", "firstFreshHours"):
         try:
             v = float(out.get(k))
@@ -229,6 +231,7 @@ def scan(now: float | None = None) -> dict:
     seen = {k: v for k, v in seen.items() if isinstance(v, (int, float)) and now - v < 14 * 86400}
     new, errors = [], []
     keys = []
+    paused_keys = {channel_key(x) for x in c["paused"]}  # kullanıcı isteği, 27 Ekim: "sezon arası" — kart kalır, taranmaz, tek tıkla geri açılır
     for inp in c["channels"]:
         key = channel_key(inp)
         if key in keys:
@@ -237,6 +240,11 @@ def scan(now: float | None = None) -> dict:
         ch = dict(chans.get(key) or {})
         ch["input"] = inp
         ch.setdefault("addedAt", now_iso())  # kanalın eklenme anı (hiç fragman gelmeyen kanalda "N gündür fragman yok" uyarısı buna göre)
+        if key in paused_keys:
+            ch["paused"] = True
+            chans[key] = ch
+            continue
+        ch.pop("paused", None)
         if not ch.get("channelId"):
             r = resolve(inp)
             if r.get("error"):

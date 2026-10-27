@@ -2835,6 +2835,9 @@ const trailerWatchCfg = () => {
   const off = (v) => v === false || v === 0 || ["false", "0"].includes(String(v).trim().toLowerCase());
   c.enabled = !off(c.enabled); c.autoPublish = !off(c.autoPublish); c.notify = c.notify === true || ["true", "1"].includes(String(c.notify)); c.onlyTrailers = !off(c.onlyTrailers);
   c.channels = Array.isArray(c.channels) ? [...new Set(c.channels.map((x) => String(x).trim()).filter(Boolean))] : [];
+  // duraklatılan kanallar (kullanıcı isteği, 27 Ekim: "sezon arası" düğmesi: kart kalır, taranmaz, tek tıkla geri açılır); listede olmayan kayıt düşer
+  c.paused = Array.isArray(c.paused) ? [...new Set(c.paused.map((x) => String(x).trim()).filter((x) => x && c.channels.some((y) => twKey(y) === twKey(x))))] : [];
+  c.active = c.channels.filter((x) => !c.paused.some((p) => twKey(p) === twKey(x)));
   for (const k of ["intervalMin", "maxAgeHours"]) c[k] = Number(c[k]) > 0 ? Number(c[k]) : TW_DEFAULTS[k];
   c.intervalMin = Math.min(1440, Math.max(2, c.intervalMin));
   c.maxPerDay = Number.isFinite(Number(c.maxPerDay)) && Number(c.maxPerDay) >= 0 ? Math.min(50, Math.round(Number(c.maxPerDay))) : TW_DEFAULTS.maxPerDay; // 0 = sınırsız
@@ -2851,7 +2854,7 @@ const trailerWatchCfg = () => {
 const TW_STALE = path.join(DATA, "trailer_watch_stale.json"); // {key: {loggedDay, notifiedAt}}
 function twStaleList(c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}) {
   const out = [];
-  for (const inp of c.channels) {
+  for (const inp of c.active) { // duraklatılan kanal uyarı almaz
     const key = twKey(inp), ch = (st.channels || {})[key] || {};
     const last = Number(ch.lastTs) > 0 ? Number(ch.lastTs) * 1000 : Date.parse(ch.addedAt || "") || 0;
     if (!last) continue;
@@ -2886,6 +2889,7 @@ async function trailerWatchScan({ manual = false } = {}) {
   if (twBusy) return { ok: false, busy: true, error: "Fragman kanalları taraması zaten sürüyor." };
   const c = trailerWatchCfg();
   if (!c.channels.length) { if (manual) push("🎬 fragman takibi: kanal listesi boş (Ayarlar → 🎬 Fragman takibi ya da \"fragman kanalı ekle @kanal\")"); return { ok: false, error: "Kanal listesi boş; önce kanal ekleyin." }; }
+  if (!c.active.length) { if (manual) push("🎬 fragman takibi: bütün kanallar duraklatılmış (sezon arası); taranacak kanal yok"); return { ok: false, error: "Bütün kanallar duraklatılmış (sezon arası)." }; }
   twBusy = true; twLast = Date.now();
   try {
     const r = (await pyJson(["scripts/trailer_watch.py", "--scan"], 4 * 60000)) || { ok: false, error: "yanıt yok" };
@@ -2937,16 +2941,16 @@ function twPipelineEnd(code) { const id = twJobId(); if (id && code !== 0 && cod
 function twStatusText() {
   const c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}, chans = Object.values(st.channels || {});
   const every = c.intervalMin % 60 === 0 ? `${c.intervalMin / 60} saatte bir` : `${c.intervalMin} dk'da bir`;
-  const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal · ${every} · bugün ${twToday()}${c.maxPerDay ? `/${c.maxPerDay}` : ""}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
+  const head = `🎬 Fragman takibi ${c.enabled ? "açık" : "KAPALI"} · ${c.channels.length} kanal${c.paused.length ? ` (${c.paused.length} duraklatıldı)` : ""} · ${every} · bugün ${twToday()}${c.maxPerDay ? `/${c.maxPerDay}` : ""}${twPending.length ? ` · sırada ${twPending.length}` : ""}${twRunning ? ` · hazırlanıyor: ${String(twRunning.title).slice(0, 50)}` : ""}${c.autoPublish ? " · yayın otomatik" : " · yayın onaylı"}`;
   const staleBy = new Map(twStaleList(c, st).map((x) => [x.key, x])), staleOf = (x) => staleBy.get(twKey(x.input || ""));
-  const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 16).replace("T", " ")})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}${staleOf(x) ? ` ⚠️ ${staleOf(x).days} gündür fragman yok (dizi bitmiş olabilir: fragman kanalı çıkar ${x.input})` : ""}`);
+  const lines = chans.slice(0, 10).map((x) => `• ${x.name || x.input}: ${x.paused ? "⏸ duraklatıldı (sezon arası; devam: fragman kanalı devam " + x.input + ")" : x.error ? `⚠️ ${x.error}` : x.lastTitle ? `son fragman "${String(x.lastTitle).slice(0, 50)}"${x.lastPublished ? ` (${String(x.lastPublished).slice(0, 16).replace("T", " ")})` : ""}${x.first ? " — ilk tarama, kaydedildi" : ""}` : "fragman bulunamadı"}${staleOf(x) ? ` ⚠️ ${staleOf(x).days} gündür fragman yok (dizi bitmiş olabilir: fragman kanalı çıkar ${x.input})` : ""}`);
   const recent = Object.entries(twDone()).map(([id, v]) => ({ id, ...v })).filter((v) => v.state !== "sırada").sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 3)
     .map((v) => `• ${v.channel ? `${v.channel}: ` : ""}${String(v.title || v.id).slice(0, 50)}${v.promoLabel ? ` [${v.promoLabel}]` : ""} — ${v.state}${v.error ? ` (${v.error})` : ""}`);
   return head + (lines.length ? `\n${lines.join("\n")}` : "\nKanal ekleyin: fragman kanalı ekle @NetflixTurkiye (ya da panelden)") + (recent.length ? `\nSon fragmanlar:\n${recent.join("\n")}` : "");
 }
 setInterval(() => {
   const c = trailerWatchCfg();
-  if (c.enabled && c.channels.length && !twBusy && Date.now() - twLast >= c.intervalMin * 60000 - 5000) trailerWatchScan().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
+  if (c.enabled && c.active.length && !twBusy && Date.now() - twLast >= c.intervalMin * 60000 - 5000) trailerWatchScan().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
   else if (twPending.length) twKick().catch((e) => push(`🎬 fragman takibi: ${e.message}`));
 }, 60000);
 app.get("/api/trailerwatch", (_req, res) => {
@@ -2957,12 +2961,25 @@ app.get("/api/trailerwatch", (_req, res) => {
   const list = c.channels.map((inp) => { const key = twKey(inp), ch = (st.channels || {})[key] || {}; const sl = stale.find((x) => x.key === key);
     const lp = done.find((v) => (v.key ? v.key === key : v.channel && v.channel === ch.name) && ["üretimde", "üretildi", "hazırlanıyor"].includes(v.state));
     return { input: inp, key, name: ch.name || "", channelId: ch.channelId || "", lastTitle: ch.lastTitle || "", lastUrl: ch.lastUrl || "", lastPublished: ch.lastPublished || "", lastChecked: ch.lastChecked || "", addedAt: ch.addedAt || "",
+      paused: c.paused.some((p) => twKey(p) === key),
       videos: ch.videos ?? null, trailers: ch.trailers ?? null, error: ch.error || "", first: !!ch.first, stale: !!sl, days: sl?.days ?? null, never: !!sl?.never, lastProduced: lp ? { at: lp.at, title: lp.title, promoLabel: lp.promoLabel || "", state: lp.state } : null }; });
   res.json({ cfg: c, channels: st.channels || {}, list, stale, lastScan: st.lastScan || null, scanning: twBusy, running: twRunning, pending: twPending, today: twToday(),
     done: done.slice(0, 20),
-    nextScanIn: c.enabled && c.channels.length ? Math.max(0, twLast + c.intervalMin * 60000 - Date.now()) : null });
+    nextScanIn: c.enabled && c.active.length ? Math.max(0, twLast + c.intervalMin * 60000 - Date.now()) : null });
 });
 app.post("/api/trailerwatch/scan", async (_req, res) => res.json(await trailerWatchScan({ manual: true })));
+// kanalı duraklat / devam ettir (sezon arası): settings.trailerWatch.paused
+function twSetPaused(input, paused) {
+  const c = trailerWatchCfg(), inp = c.channels.find((x) => twKey(x) === twKey(String(input || ""))) || "";
+  if (!inp) return { ok: false, error: "Bu kanal fragman takibinde değil." };
+  const list = c.paused.filter((p) => twKey(p) !== twKey(inp)); if (paused) list.push(inp);
+  patchSettings({ trailerWatch: { paused: list } });
+  push(paused ? `⏸ fragman takibi: ${inp} duraklatıldı (sezon arası; taranmaz, kart kalır)` : `▶ fragman takibi: ${inp} yeniden taranıyor`);
+  sse("trailerwatch", {});
+  if (!paused) trailerWatchScan().catch(() => {});
+  return { ok: true, input: inp, paused: !!paused, pausedCount: list.length };
+}
+app.post("/api/trailerwatch/pause", (req, res) => res.json(twSetPaused(req.body?.input, req.body?.paused !== false)));
 app.post("/api/igtrends/auto", (req, res) => res.json({ ok: true, reply: trendAuto.setAuto(req.body?.on !== false), auto: { ...trendAuto.cfg(), today: trendAuto.todayCount() } }));
 
 // ---------- Planlı yayın (kullanıcı isteği: "linki gönderip bunu şu saatte paylaş diyeyim"): post_pipeline saati gelmemiş videoyu
@@ -4005,6 +4022,11 @@ async function handleCommand(text, opts = {}) {
         reply = cmd.on ? `🎬 Fragman takibi açık: ${c.channels.length} kanal ${c.intervalMin} dakikada bir taranır; yeni fragman düşünce fragman analizi üretilir${c.autoPublish ? " ve bağlı hesaplarda yayınlanır" : ", onayınıza gelir"}.${c.channels.length ? "" : " Kanal ekleyin: fragman kanalı ekle @NetflixTurkiye"}`
           : "⏸ Fragman takibi kapatıldı: kanallar taranmaz, bekleyen fragmanlar üretilmez (kayıtlı son fragmanlar durur).";
         if (cmd.on) twKick().catch(() => {});
+        break;
+      }
+      if (cmd.pause || cmd.resume) { // "fragman kanalı duraklat @X" / "fragman kanalı devam @X" (sezon arası)
+        const r = twSetPaused(String(cmd.pause || cmd.resume), !!cmd.pause);
+        reply = !r.ok ? `🎬 ${r.error} Kanallar: ${c.channels.join(", ") || "—"}` : cmd.pause ? `⏸ ${r.input} duraklatıldı (sezon arası): kart kalır, taranmaz, uyarı almaz. Devam: fragman kanalı devam ${r.input}` : `▶ ${r.input} yeniden taranıyor.`;
         break;
       }
       if (cmd.add || cmd.remove) {

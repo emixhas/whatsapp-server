@@ -1661,6 +1661,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     bağlayıcısı `nav button` seçicisiyle bu düğmelere de bağlanır, sekme kırılırdı). Testler: sunucu harness 59 denetim (staleDays doğrulama,
     eski kanal listesi/log/WhatsApp/sıfırlama, tarama sonrası denetim, durum metni, API kart listesi), trailer_watch.py addedAt, panel
     tarayıcı testi (sol menü, kartlar, ekle/düzenle/kaldır pencereleri, ayar yazımları, seçimin kalıcılığı), gömülü betik sözdizimi.
+  - Kanalı duraklat, "sezon arası" (kullanıcı isteği, 27 Ekim: "silmeden sezon arası düğmesi: kart kalır, taranmaz, tek tıkla geri açılır"):
+    `settings.trailerWatch.paused` (kanal girdileri; `trailerWatchCfg` listede olmayanı düşürür, `c.active` = taranacak kanallar),
+    `trailer_watch.py` duraklatılan kanalı okumaz (kaydı ve `paused: true` işareti kalır), `twStaleList` ve tarama döngüsü yalnız aktif
+    kanallara bakar (hepsi duraklatılmışsa "bütün kanallar duraklatılmış"), durum yanıtında "⏸ duraklatıldı (sezon arası; devam: fragman kanalı
+    devam @X)". `twSetPaused(input, paused)` → `POST /api/trailerwatch/pause {input, paused}`; devam edince hemen taranır. WhatsApp: "fragman
+    kanalı duraklat @X" / "fragman kanalını beklet @X" / "fragman kanalı sezon arasına al @X" ve "fragman kanalı devam @X" / "devam ettir" /
+    "yeniden aç" (`commands.js` pause/resume; kanal sözü şart — "fragman takibini aç" ayrı). Panel kartı: `.twcard.paused` (soluk, kesikli
+    çerçeve, "⏸ Sezon arası: taranmıyor, uyarı almıyor"), düğme "⏸ Sezon arası" ↔ "▶ Devam" (`data-pause`), durum satırında "(N sezon
+    arası)", hatası duraklatılan kanalda sayılmaz. Testler: scanner (duraklatılan okunmaz, kaydı kalır, devam edince taranır), sunucu harness
+    (normalizasyon, uyarı listesi, API, twSetPaused, rota, hepsi duraklatılmışsa), komut derlemi, panel (düğmeler ve istekler).
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/
