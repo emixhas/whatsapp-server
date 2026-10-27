@@ -2762,7 +2762,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   extraKeywords, regularAuto true}): 5 saatlik (düzenli: anlık ve günün özeti olmayan) her video YouTube bağlıysa
   autopublish anahtarı, zamanlayıcı ya da tam otomatik moddan bağımsız olarak onaysız YouTube'a gider (kullanıcı kararı;
   `post_pipeline.targets` "▶ 5 saatlik video" satırı, `whatsapp.js` aynı kuralla "onay" istemez); anlık/Mynet videoları yalnız DEĞERLİYSE
-  ve günde en çok `extraDailyMax` tane (`data/youtube_extra.json`). Instagram/TikTok etkilenmez; elle yayın
+  ve günde en çok `extraDailyMax` tane (`data/youtube_extra.json`); EN değerli haber (`news_value` `top`, haber düzeyi "en değerli" ile üretilen
+  her otomatik haber) bu sınıra SAYILMAZ, her zaman gider (`youtubePolicy.topUnlimited`, varsayılan true; panel Üretim kartında "⭐⭐⭐ EN değerli
+  haberler bu sınıra sayılmaz" anahtarı; kullanıcı, 27 Ekim: "çok değerli haberlerin YouTube'a düşmediğini gördüm" — günde 12'ye kadar en değerli
+  haber üretilirken ek hak 3'te kalıyor, dördüncüsünden itibaren "ek YouTube hakkı doldu" ile atlanıyordu; log "⭐ en değerli haber: YouTube'a da
+  gidiyor (günlük ek hakka sayılmaz; …)"). Instagram/TikTok etkilenmez; elle yayın
   (panel, WhatsApp "onay") kurala takılmaz. Değer `scripts/news_value.py`: anahtar kelime grupları (can kaybı,
   kaza/afet, emekli/memur maaşı + asgari ücret, zam/fiyat/vergi, tatil/bayram/idari izin, kamu duyurusu:
   sınav/yasak, güvenlik, para ve destek: sosyal yardım/evde bakım/KYK burs/TOKİ/kredi kartı/dolar-altın rekoru/borsa

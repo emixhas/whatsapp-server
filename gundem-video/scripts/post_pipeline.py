@@ -64,13 +64,19 @@ def youtube_allowed(video: str, meta: dict, s: dict) -> bool:
     if not v.get("valuable"):
         print("📤 youtube: atlandı — sıradan haber" + (f" ({v.get('reason')})" if v.get("reasons") or v.get("importance") else "") + "; YouTube'a yalnız otomatik üretimler ve değerli haberler gider (günlük yükleme sınırı)")
         return False
+    # EN değerli haber (news_value top: haber düzeyi "en değerli" ile üretilenlerin hepsi): günlük ek hakka sayılmaz, her zaman gider (kullanıcı,
+    # 27 Ekim: "çok değerli haberlerin YouTube'a düşmediğini gördüm" — günde 12'ye kadar en değerli haber üretilirken ek hak 3'te kalıyor, dördüncüsünden
+    # itibaren atlanıyordu). youtubePolicy.topUnlimited false yapılırsa eski davranış (hepsi ek hakka sayılır).
+    if v.get("top") and pol.get("topUnlimited", True) is not False:
+        print(f"⭐ en değerli haber: YouTube'a da gidiyor (günlük ek hakka sayılmaz; {v.get('topReason') or v.get('reason')})")
+        return True
     day = time.strftime("%Y-%m-%d")
     used = load_json(YT_EXTRA, {})
     today = used.get(day, [])
     name = Path(video).name
     limit = int(pol.get("extraDailyMax", 3))
     if name not in today and len(today) >= limit:
-        print(f"📤 youtube: atlandı — değerli haber ama bugünkü ek YouTube hakkı ({limit}) doldu ({v.get('reason')})")
+        print(f"📤 youtube: atlandı — değerli haber ama bugünkü ek YouTube hakkı ({limit}) doldu ({v.get('reason')}; en değerli haberler sınıra sayılmaz)")
         return False
     if name not in today:
         today.append(name)
