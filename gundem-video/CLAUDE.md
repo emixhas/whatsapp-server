@@ -1671,6 +1671,12 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     çerçeve, "⏸ Sezon arası: taranmıyor, uyarı almıyor"), düğme "⏸ Sezon arası" ↔ "▶ Devam" (`data-pause`), durum satırında "(N sezon
     arası)", hatası duraklatılan kanalda sayılmaz. Testler: scanner (duraklatılan okunmaz, kaydı kalır, devam edince taranır), sunucu harness
     (normalizasyon, uyarı listesi, API, twSetPaused, rota, hepsi duraklatılmışsa), komut derlemi, panel (düğmeler ve istekler).
+  - Hazır kanal listesi (kullanıcı isteği, 27 Ekim: "Show TV, ATV, Kanal D, Star, NOW, TRT, Netflix Türkiye, Disney+, Exxen, Gain, BluTV gibi
+    yayıncıları tek tıkla ekleme"): `server.js TW_PRESETS` [{name, input (@tanıtıcı), group yayıncı|platform|yapım}] → `GET /api/trailerwatch`
+    `presets[]` (+ `added`: anahtar eşleşmesiyle listede mi). Tanıtıcılar sandbox'tan YouTube'a erişilemediği için DOĞRULANMADI: kanal ilk taramada
+    çözülür, çözülemeyen kart hata gösterir ve ✏️ ile düzeltilir (not panelde). Panel: "Kanal ekle" altında grup başlıklı çipler (`#twPresets`,
+    `.chips`; listedeki soluk, üstü çizili, tıklanamaz); tıklayınca kanal eklenir ve tarama istenir. Testler: sunucu harness (liste, added
+    eşleşmesi), panel (çipler, tıklayınca kayıt ve tarama).
   - Dizi tanıtım düzeni (kullanıcı isteği, 24 Ekim: "bazı filmlerin 2. ve 3. fragmanları çıkabiliyor; 16. bölüm tanıtımı, 16. bölüm fragmanı,
     16. bölüm 1. fragman, 2. fragman, 16. bölüm ön tanıtım, ön gösterim"): bir bölümün tanıtımı (önceki bölümün hemen ardından), 1./2. fragmanı,
     ön tanıtımı ve ön gösterimi (bölümün ilk sahneleri) AYRI videolardır; filmlerin 2./3. fragmanı da. Tanıma (`social_video.is_trailer`): bölüm/

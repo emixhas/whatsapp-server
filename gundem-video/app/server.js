@@ -2852,6 +2852,17 @@ const trailerWatchCfg = () => {
 // kaldırayım"): kayıtlı son fragmanın yayın zamanından (hiç fragman yoksa kanalın eklenme anından) staleDays geçtiyse; panel kartında rozet,
 // logda günde bir satır, WhatsApp'a kanal başına bir kez (data/trailer_watch_stale.json)
 const TW_STALE = path.join(DATA, "trailer_watch_stale.json"); // {key: {loggedDay, notifiedAt}}
+// Hazır kanal listesi (kullanıcı isteği, 27 Ekim: "Show TV, ATV, Kanal D, Star, NOW, TRT, Netflix Türkiye, Disney+, Exxen, Gain, BluTV gibi
+// yayıncıları tek tıkla ekleme"): YouTube tanıtıcıları (@handle) buradan doğrulanamadı; kanal ilk taramada çözülür, çözülemeyen kart hata
+// gösterir ve ✏️ ile düzenlenir. Grup: yayıncı / platform / yapım şirketi (dizi fragmanları çoğu zaman yapımcının kanalına da düşer)
+const TW_PRESETS = [
+  { name: "Show TV", input: "@showtv", group: "yayıncı" }, { name: "Kanal D", input: "@kanald", group: "yayıncı" }, { name: "ATV", input: "@atv", group: "yayıncı" },
+  { name: "Star TV", input: "@startv", group: "yayıncı" }, { name: "NOW (eski FOX)", input: "@nowtv", group: "yayıncı" }, { name: "TRT 1", input: "@trt1", group: "yayıncı" },
+  { name: "Netflix Türkiye", input: "@NetflixTurkiye", group: "platform" }, { name: "Disney+ Türkiye", input: "@DisneyPlusTR", group: "platform" },
+  { name: "Exxen", input: "@exxen", group: "platform" }, { name: "Gain", input: "@gain", group: "platform" }, { name: "BluTV", input: "@blutv", group: "platform" },
+  { name: "Ay Yapım", input: "@ayyapim", group: "yapım" }, { name: "OGM Pictures", input: "@ogmpictures", group: "yapım" }, { name: "Tims&B", input: "@timsb", group: "yapım" },
+  { name: "MF Yapım", input: "@mfyapim", group: "yapım" }, { name: "Gold Film", input: "@goldfilm", group: "yapım" }, { name: "Medyapım", input: "@medyapim", group: "yapım" },
+];
 function twStaleList(c = trailerWatchCfg(), st = readJson(TW_STATE, {}) || {}) {
   const out = [];
   for (const inp of c.active) { // duraklatılan kanal uyarı almaz
@@ -2964,6 +2975,7 @@ app.get("/api/trailerwatch", (_req, res) => {
       paused: c.paused.some((p) => twKey(p) === key),
       videos: ch.videos ?? null, trailers: ch.trailers ?? null, error: ch.error || "", first: !!ch.first, stale: !!sl, days: sl?.days ?? null, never: !!sl?.never, lastProduced: lp ? { at: lp.at, title: lp.title, promoLabel: lp.promoLabel || "", state: lp.state } : null }; });
   res.json({ cfg: c, channels: st.channels || {}, list, stale, lastScan: st.lastScan || null, scanning: twBusy, running: twRunning, pending: twPending, today: twToday(),
+    presets: TW_PRESETS.map((p) => ({ ...p, added: c.channels.some((x) => twKey(x) === twKey(p.input)) })),
     done: done.slice(0, 20),
     nextScanIn: c.enabled && c.active.length ? Math.max(0, twLast + c.intervalMin * 60000 - Date.now()) : null });
 });
