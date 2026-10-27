@@ -543,21 +543,37 @@ export function parseCommand(raw) {
   if (/kapak(ları|lari)? (yeniden|tekrar) (yükle|gönder)/.test(t)) return { action: "yt_thumbs", reply: "" };
   // Yükleme sırasından çıkarma / silme (kullanıcı isteği, 26 Ekim: "haberin değeri geçmişse silebilmeliyim, sıradan çıkartmalıyım"): "sıradan çıkar 2",
   // "instagram sırasından 2'yi çıkar", "2 numarayı sıradan çıkar", "2. sıradakini sil", "sıradan sil 3" (video Mac'ten de silinir), "sıradan çıkar
-  // 2026-10-24-3". norm() nokta ve kesmeyi boşluğa çevirir ("2'yi" → "2 yi", "2." → "2"); \b Türkçe harfte çalışmaz, kelime sınırı boşlukla aranır.
-  // "sıradan" (= alelade) başka cümlelerde de geçer: fiil YALNIZ emir/kibar biçimiyle ve ya numara/video adı var ya da fiil "sıradan/sırasından"a
-  // (aralarında en çok numara/sıra sözleri) bitişik ("sıradan haberleri sil", "sıradan haberlerden 5 tane kaldıralım mı" komut değil).
+  // 2026-10-24-3". norm() nokta ve kesmeyi boşluğa çevirir ("2'yi" → "2 yi", "2." → "2"); akıllı kesme (’) ve iki nokta burada atılır; \b Türkçe harfte
+  // çalışmaz, kelime sınırı boşlukla aranır. "sıradan" (= alelade) başka cümlelerde de geçer: fiil YALNIZ emir/kibar biçimiyle, soru ("çıkar mı") ve
+  // aktarma ("çıkar dedi") değil; numara ancak sıra sözüne / fiile / "numaralı, nolu, videoyu" sözüne bitişikse ve ardından süre/tarih sözü
+  // (saat, gün, dakika, tane…) gelmiyorsa sayılır ("sıradan 6 saati geçen haberleri sil", "Sıradan vatandaş 2 polisi yaraladı" komut değil);
+  // numarasız/adsız ise fiil "sıradan/sırasından"a bitişik olmalı ("sıradan haberleri sil" komut değil). Birden çok numara ya da hem çıkar hem sil
+  // (inceleme, 27 Ekim) sunucuda reddedilir (nums, mixed).
   {
-    const VERB = /(?:^|\s)(?:çıkar(?:t)?(?:sana|ın)?|kaldır(?:sana|ın)?|sil(?:sene|in)?|çıkar(?:t)?ır mısın|siler misin|kaldırır mısın)(?=\s|$)/;
-    const hasQ = /(?:^|\s)sıra(?:dan|sından|daki\S*)(?=\s|$)/.test(t);
-    if (hasQ && VERB.test(t) && !/sıraya al/.test(t)) {
-      const name = (t.match(/(?:^|\s)(\d{4}-\d{2}-\d{2}-\d+)(?:\s+mp4)?(?=\s|$)/) || [])[1] || "";
-      const toks = t.split(" "), isV = (w) => VERB.test(" " + w), near = (i) => toks.slice(Math.max(0, i - 3), i + 4).some((w) => /^sıra/.test(w) || isV(w));
-      let num = ""; // "2", "2 yi"/"2yi", "2 numara…", "2 nolu", "3 sıradaki": sıra sözüne ya da fiile en çok üç kelime uzaklıkta
-      if (!name) toks.forEach((w, i) => { const m = w.match(/^(\d{1,2})(?:yi|yı)?$/); if (m && !num && near(i)) num = m[1]; });
-      const adjacent = /(?:^|\s)sıra(?:dan|sından)(?:\s+(?:\d{1,2}(?:yi|yı)?|yi|yı|numara\S*|nolu|no lu|videoyu|videosunu|haberi|olanı|\d{4}-\d{2}-\d{2}-\d+|mp4))*\s+(?:çıkar|çıkart|kaldır|sil)/.test(t);
-      if (name || num || adjacent) {
-        const pm = t.match(/(?:^|\s)(instagram|insta|youtube|tiktok)(?=\s|$)/);
-        return { action: "queue_drop", n: num ? Number(num) : 0, name, platform: pm ? (pm[1] === "insta" ? "instagram" : pm[1]) : "", del: /(?:^|\s)sil(?:sene|in|er misin)?(?=\s|$)/.test(t), reply: "" };
+    const tq = t.replace(/[’‘`´:;]/g, " ").replace(/\s+/g, " ").trim();
+    const VERB = /(?:^|\s)(?:çıkar(?:t)?(?:sana|ın|alım|ıver|abilir misin|ır mısın|ılsın)?|çıkartalım|kaldır(?:sana|ın|alım|abilir misin|ır mısın|ılsın)?|sil(?:sene|in|elim|iver|ebilir misin|er misin|insin)?)(?=\s|$)/;
+    const hasQ = /(?:^|\s)sıra(?:dan|sından|daki\S*)(?=\s|$)/.test(tq);
+    if (hasQ && VERB.test(tq) && !/sıraya al/.test(tq) && !/(?:çıkar|çıkart|kaldır|sil)\S*\s+(?:m[ıiuü]|dedi\S*|diye|demiş\S*|diyor\S*)(?=\s|$)/.test(tq)) {
+      const toks = tq.split(" ");
+      const SIRA = (w) => /^sıra(?:dan|sından|daki\S*)$/.test(w), isV = (w) => VERB.test(" " + w), SUF = (w) => /^(?:y?[ıiuü]|y?[ıiuü]n[ıiuü]|y?[ea]|[dt][ea]n)$/.test(w);
+      const NUMW = (w) => /^(?:numara\S*|nolu|no|videoyu|videosunu|haberi|sıradaki\S*)$/.test(w);
+      const UNIT = /^(?:saat\S*|gün\S*|dakika\S*|dk|hafta\S*|ay|ayd\S*|ayl\S*|yıl\S*|kere|kez|defa|tane|adet|kişi\S*|ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)$/;
+      const name = (tq.match(/(?:^|\s)(\d{4}-\d{2}-\d{2}-\d+)(?:\s+mp4)?(?=\s|$)/) || [])[1] || "";
+      const nums = [];
+      if (!name) toks.forEach((w, i) => {
+        const m = w.match(/^(\d{1,2})(?:y?[ıiuü]|y?[ıiuü]n[ıiuü])?$/); if (!m) return;
+        let j = i + 1; if (j < toks.length && SUF(toks[j])) j++;
+        const nxt = toks[j] || "", prv = toks[i - 1] || "";
+        if (UNIT.test(nxt)) return;
+        const isNum = (w) => /^\d{1,2}(?:y?[ıiuü]|y?[ıiuü]n[ıiuü])?$/.test(w);
+        if (SIRA(prv) || isV(prv) || SIRA(nxt) || isV(nxt) || NUMW(nxt) || isNum(prv) || isNum(nxt) || (prv === "ve" && isNum(toks[i - 2] || ""))) nums.push(Number(m[1]));
+      });
+      const adjacent = /(?:^|\s)sıra(?:dan|sından)(?:\s+(?:\d{1,2}(?:y?[ıiuü])?|y?[ıiuü]|numara\S*|nolu|no|videoyu|videosunu|haberi|olanı|\d{4}-\d{2}-\d{2}-\d+|mp4))*\s+(?:çıkar|çıkart|kaldır|sil)/.test(tq);
+      if (name || nums.length || adjacent) {
+        const pm = tq.match(/(?:^|\s)(instagram|insta|youtube|tiktok)\S{0,4}(?=\s|$)/);
+        const del = /(?:^|\s)sil\S*(?=\s|$)/.test(tq), keep = /(?:^|\s)(?:çıkar|çıkart|kaldır)\S*(?=\s|$)/.test(tq);
+        const uniq = [...new Set(nums)];
+        return { action: "queue_drop", n: uniq.length === 1 ? uniq[0] : 0, nums: uniq, name, platform: pm ? (pm[1] === "insta" ? "instagram" : pm[1]) : "", del: del && !keep, mixed: del && keep, reply: "" };
       }
     }
   }

@@ -619,7 +619,7 @@ export async function makeWhatsApp({ handleVideo = null, videoInstruction = null
     const last = {}; const notes = [];
     for (const l of summary || []) {
       const m = l.match(/^📤 (youtube|instagram|tiktok): (.*)$/);
-      if (m) { if (!/hesap bağlı değil/.test(m[2])) last[m[1]] = m[2]; continue; }
+      if (m) { if (!/hesap bağlı değil/.test(m[2]) && !/\(sıradan(?:,[^)]*)?\)$|^sırada\b|^fragmanlar/.test(m[2])) last[m[1]] = m[2]; continue; } // sıradaki başka videoların (fragman ön yüklemesi) satırları bu videonun sonucu değil
       if (/^📤 otomatik yayın yapılmadı/.test(l)) notes.push("ℹ️ " + l.replace(/^📤 /, "").replace(/\.? WhatsApp'tan "onay".*$/, ""));
     }
     const out = Object.entries(last).map(([pl, r]) => {

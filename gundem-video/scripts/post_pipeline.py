@@ -11,6 +11,7 @@ otomatik 5 saatlik üretimler her zaman gider. Instagram/TikTok bu kuraldan etki
 Hiçbir yere yayınlanmıyorsa nedeni loga açıkça yazılır.
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -189,6 +190,7 @@ FLUSH_TIMEOUT = 40 * 60    # sıradaki videoların yüklenmesi (yalnız otomatik
 
 def publish(plat: str) -> bool:
     print(f"📤 {plat}: yükleniyor", flush=True)  # sahibin uzun iş bildirimi aşamayı buradan okur (server.js PIPE_STAGES)
+    touch_lock()  # yükleme adımının kendi zaman aşımı var; takılma bekçisi canlı adımı öldürmesin
     try:
         r = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--file", video, "--platform", plat], capture_output=True, text=True, timeout=PUBLISH_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -214,7 +216,18 @@ def publish(plat: str) -> bool:
     return bool(j.get("ok"))
 
 
-PREFLUSH_TIMEOUT = 15 * 60  # otomatik haberden önce sıradaki fragmanların yüklenmesi en çok 15 dk
+PREFLUSH_BUDGET = 12 * 60  # otomatik haberden önce sıradaki fragmanların yüklenmesi: bütün platformlar için TOPLAM en çok 12 dk (50 dk'lık takılma bekçisi aşılmasın)
+PREFLUSH_PLATS = ("instagram", "tiktok")  # YouTube'da sıradaki fragman günlük kotayı harcamasın: 5 saatlik düzenli video YouTube'a her zaman gitmeli
+LOCK_DIR = ROOT / "work" / "pipeline.lock"
+
+
+def touch_lock() -> None:
+    """Takılma bekçisi (server.js: kilit dizini 50 dk eskiyse üretimi öldürür) kilit dizininin mtime'ına bakar; süresi sınırlı yükleme adımlarından
+    önce tazelenir ki uzun ama canlı bir yayın adımı takılmış sanılmasın (her adımın kendi zaman aşımı var)."""
+    try:
+        os.utime(LOCK_DIR, None)
+    except Exception:
+        pass
 
 
 def _held(plat: str) -> bool:
@@ -227,21 +240,30 @@ def _held(plat: str) -> bool:
         return False
 
 
+def _pre_lines(text) -> list:
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", "replace")
+    return [l for l in str(text or "").strip().splitlines() if l.startswith("📤") and " sırası: " not in l and not l.startswith("{")]
+
+
 def preflush_trailers(plats: list, meta: dict) -> list:
     """Fragmanlar haberlerden önce (kullanıcı isteği, 26 Ekim: "Instagram yükleme sırasında önce fragmanlar olsun, fragmanlar yüklendikten sonra
-    haberlere geçilsin"): otomatik haber videosu bir platforma yüklenmeden önce o platformun sırasında bekleyen fragmanlar yüklenir
-    (`publish.py --flush --only-trailers --platform X`; haberler sırada kalır). Sahibin videosu (beklemesin) ve fragmanın kendisi atlar;
-    platform duraklatılmışsa fragmanlar beklemenin bitişinde zaten önce yüklenir. Dönüş: fragmanları yüklenen platformlar."""
+    haberlere geçilsin"): otomatik haber videosu Instagram'a/TikTok'a yüklenmeden önce o platformun sırasında bekleyen fragmanlar yüklenir
+    (`publish.py --flush --only-trailers --platform X`; haberler sırada kalır). Sahibin videosu (beklemesin) ve fragmanın kendisi atlar; platform
+    duraklatılmışsa yalnız not (bekleme bitince flush zaten fragmanları önce yükler). Toplam süre PREFLUSH_BUDGET; zaman aşımında ya da hatada haber
+    yine yüklenir (yüklenen fragmanlar sıradan anında düşer: publish._queue_remove_now). Dönüş: fragmanları yüklenen platformlar."""
     if not plats or meta.get("userVideo") or (meta.get("queue") or {}).get("no") or meta.get("trailer") or meta.get("trailerAuto"):
         return []
     q = load_json(DATA / "publish_queue.json", []) or []
     if not isinstance(q, list) or not q:
         return []
-    out = []
+    out, t0 = [], time.time()
     for plat in plats:
+        if plat not in PREFLUSH_PLATS:
+            continue
         trailers = []
         for x in q:
-            if x.get("platform") != plat:
+            if not isinstance(x, dict) or x.get("platform") != plat:
                 continue
             m = episode_meta(Path(str(x.get("video") or "")).name) or {}
             if m.get("trailerAuto") or m.get("trailer"):
@@ -251,18 +273,27 @@ def preflush_trailers(plats: list, meta: dict) -> list:
         if _held(plat):
             print(f"📤 {plat}: sırada {len(trailers)} fragman bekliyor ama platform duraklatılmış; bekleme bitince önce onlar yüklenecek", flush=True)
             continue
-        print(f"📤 {plat}: sırada bekleyen {len(trailers)} fragman bu haberden önce yükleniyor (fragmanlar haberlerden önce)", flush=True)
-        try:
-            fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush", "--only-trailers", "--platform", plat], capture_output=True, text=True, timeout=PREFLUSH_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            print(f"📤 {plat}: fragmanların yüklenmesi {PREFLUSH_TIMEOUT // 60} dakikada bitmedi, kesildi; haber yükleniyor", flush=True)
+        left = int(PREFLUSH_BUDGET - (time.time() - t0))
+        if left < 60:
+            print(f"📤 {plat}: sırada {len(trailers)} fragman bekliyor ama ön yükleme süresi doldu; sonraki sıra boşaltmasında önce onlar yüklenir", flush=True)
             continue
-        for line in fl.stdout.strip().splitlines()[:-1]:
-            if line.startswith("📤") and " sırası: " not in line:
+        print(f"📤 {plat}: sırada bekleyen {len(trailers)} fragman bu haberden önce yükleniyor (fragmanlar haberlerden önce; en çok {left // 60} dk)", flush=True)
+        touch_lock()
+        try:
+            fl = subprocess.run([sys.executable, str(ROOT / "scripts/publish.py"), "--flush", "--only-trailers", "--platform", plat], capture_output=True, text=True, timeout=left)
+        except subprocess.TimeoutExpired as e:
+            for line in _pre_lines(e.stdout):
                 print(line, flush=True)
+            print(f"📤 {plat}: fragmanların yüklenmesi {left // 60} dakikada bitmedi, kesildi; haber yükleniyor (yüklenmiş olanlar sıradan düştü)", flush=True)
+            continue
+        for line in _pre_lines(fl.stdout):
+            print(line, flush=True)
+        tail = (fl.stdout or "").strip().splitlines()[-1:] or [""]
+        if fl.returncode != 0 or not tail[0].startswith("{"):
+            print(f"📤 {plat}: fragmanlar yüklenemedi: {(fl.stderr or '').strip()[-200:] or 'yanıt yok'}", flush=True)
+            continue
         out.append(plat)
     return out
-
 
 preflush_trailers(plats, _meta)
 failed = [p for p in plats if not publish(p)]

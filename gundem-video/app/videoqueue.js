@@ -152,7 +152,7 @@ const Q_LIST = /^(?:video\s+)?kuyru(?:k|ğu)(?:\s+(?:göster|durumu|ne\s+durumda
 // sıradaki YER ("2. sıra", "kuyruktaki 2. video"): tutamak değil, liste gösterilip numara sorulur
 const Q_CANCEL_POS = [
   new RegExp(String.raw`^(?:video\s+)?kuyruk(?:tan|taki|ta)?\s+\d{1,2}\.\s*(?:(?:videoyu|sırayı|linki|işi|sıradakini)\s+)?${CANCEL_V}$`, "u"),
-  new RegExp(String.raw`^\d{1,2}\.\s*sıra(?:yı|daki(?:ni|\s+videoyu)?)\s+${CANCEL_V}$`, "u"),
+  new RegExp(String.raw`^\d{1,2}\.\s*sıra(?:yı\s+${CANCEL_V}|daki(?:ni|\s+videoyu)?\s+iptal(?:\s+et(?:in)?)?)$`, "u"), // "2. sıradakini sil/çıkar" yükleme sırası komutudur (commands.js queue_drop)
   new RegExp(String.raw`^(?:(?:video\s+)?kuyruk(?:taki|tan|ta)\s+)?(?:sıradaki|sonraki|ilk|son|sonuncu|ikinci|üçüncü|dördüncü|beşinci)\s+(?:videoyu|linki|işi)\s+${CANCEL_V}$`, "u"),
 ];
 const Q_CANCEL_CUR = new RegExp(String.raw`^(?:şu\s*an(?:ki(?:ni)?|kini)|şimdiki(?:ni)?|hazırlanan(?:ı)?|indirilen(?:i)?)(?:\s+(?:videoyu|video|linki|işi))?\s+(?:iptal(?:\s+et)?|durdur|kes|sil)$`, "u");
@@ -264,7 +264,7 @@ export function strictCommand(text) {
 // altındakileri sil", "18:30'daki planlı yayını iptal et", "3 dakika sonra sistemi durdur") eski yolundan geçer ("#" geçmiyorsa)
 const G_HASH = /[#＃]\s?[\p{Nd}\p{No}]/u;
 const G_WORD = /(?:^|[^\p{L}])(?:onay\p{L}*|yay[ıi]nla\p{L}*|yay[ıi]mla\p{L}*|payla[şs]\p{L}*|y[üu]kle\p{L}*|iptal\p{L}*|vazge[çc]\p{L}*|sil(?:in\p{L}*|me\p{L}*|di\p{L}*|ey[ıi]m|el[ıi]m|sene|s[ıi]n)?|kald[ıi]r\p{L}*|[çc][ıi]kar(?:\p{L}{0,4})|durdur\p{L}*|hay[ıi]r)(?![\p{L}])/u;
-const G_PASS = new Set(["ig_cleanup", "scheduled", "stopall", "ig_autoclean", "expire"]);
+const G_PASS = new Set(["ig_cleanup", "scheduled", "stopall", "ig_autoclean", "expire", "queue_drop"]); // queue_drop: yükleme sırasından çıkarma/silme ("sıradan çıkar 2"; inceleme, 27 Ekim: numara koruması yutuyordu)
 // sıra sayısı sözü de numaradır ("üçüncü videoyu instagramda yayınla": inceleme, 20 Ekim: tek bekleyen başka videoyu yayınlıyordu); "ilk"/"son" değil
 const G_ORD = /(?:^|[^\p{L}])(?:birinci|ikinci|üçüncü|ucuncu|dördüncü|dorduncu|beşinci|besinci|altıncı|altinci|yedinci|sekizinci|dokuzuncu|onuncu)(?:si|sı|sü|su)?(?:yi|yı|yü|yu|ni|nı|nü|nu|ye|ya|de|da|den|dan|nin|nın|nün|nun)?(?![\p{L}])/u; // ekli sıra sayısı da: "ikinciyi", "üçüncüsünü"
 // platform adı + gönderme fiili de yayın isteğidir ("181 reelse at", "3'ü youtube'a yolla"); platform adı tek başına değil ("Instagram için 30 saniyelik video üret")

@@ -143,7 +143,7 @@ const push = (line) => { if (NOISE.test(line)) return; state.log.push(line); if 
   if (/^📤 sırada \d+ video bekliyor; .*panel/.test(line)) flushAsap = true; // sahibin videosu sırayı beklemedi: sıradakiler üretim bitince (dakikalık kontrol)
   // Instagram geçici engeli ("too many actions"): bekleme başlayınca ve sıradaki videolar yüklenince WhatsApp'a (kullanıcı isteği, 22 Ekim)
   if (/^📤 instagram: sınır doldu|^📤 instagram sırası: .*duraklatıldı/.test(line)) setTimeout(() => { try { igHoldNotify(); } catch { /* yok */ } }, 1500);
-  if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan\)$|^📤 instagram: hata .*\(sıradan, .*\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
+  if (/^📤 instagram: (tamam|zaten yayında) .*\(sıradan(?:, fragman)?\)$|^📤 instagram: hata .*\(sıradan, .*\)$|^📤 sıradan çıkarıldı .*→ instagram$/.test(line)) { try { igFlushNote(line); } catch { /* yok */ } }
   if (ownerJobs.size) { try { ownerLine(line); } catch { /* yok */ } } // sahibin uzun işi: aşama ve uyarı (aşağıda ownerJobs)
   if (/^✖ üretim hata/.test(line) && digestPending) digestPending = null; }; // hata uyarısı ayrı gider; yarım özet kalmasın
 // Instagram geçici engeli (publish.py IG_THROTTLE_RE → publish_hold.json reason instagram_rate_limit): her yeni bekleme bir kez bildirilir
@@ -168,7 +168,7 @@ function igFlushNote(line) {
   clearTimeout(igFlushTimer);
   igFlushTimer = setTimeout(async () => {
     const ls = igFlushLines.splice(0); if (!ls.length) return;
-    const ok = ls.filter((l) => /^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 instagram: (tamam|zaten yayında) ?/, "").replace(/ \(sıradan\)$/, "").trim());
+    const ok = ls.filter((l) => /^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 instagram: (tamam|zaten yayında) ?/, "").replace(/ \(sıradan(?:, fragman)?\)$/, "").trim());
     const bad = ls.filter((l) => !/^📤 instagram: (tamam|zaten yayında)/.test(l)).map((l) => "• " + l.replace(/^📤 (instagram: hata )?/, "").replace(/ → instagram$/, "").replace(/ \(sıradan, (.*)\)$/, " ($1)").trim());
     const head = ok.length ? `✅ *Instagram engeli kalktı*, sıradaki ${ok.length > 1 ? ok.length + " video" : "video"} yüklendi:` : "⚠️ *Instagram sırası*: sıradaki video yüklenemedi:";
     const text = [head, ...ok, ...(bad.length ? [(ok.length ? "Yüklenemeyen:" : ""), ...bad].filter(Boolean) : [])].join("\n");
@@ -4080,13 +4080,27 @@ async function handleCommand(text, opts = {}) {
     case "yt_thumbs": { const r = await ytThumbs(); reply = r.ok ? `YouTube kapakları güncellendi: ${r.done} video.` : `Kapaklar yüklenemedi: ${r.error}`; break; }
     case "queue": { const q = await queueState(); reply = queueReport(q) || "Sıra bilgisi alınamadı."; break; }
     case "queue_drop": { // "sıradan çıkar 2" (yalnız o platformun sırasından; video Mac'te kalır), "sıradan çıkar 2026-10-24-3" (her platformdan), "sıradan sil 2" (video da Mac'ten silinir; platformlarda yayınlanmış kopyalar durur)
-      const q = await queueState(), list = queueList(q);
+      const q = await queueState();
+      if (!q.instagram && !q.youtube && !q.tiktok) { reply = "Sıra bilgisi alınamadı (publish.py yanıt vermedi); hiçbir şey çıkarılmadı."; break; }
+      if (cmd.mixed) { reply = "Çıkarmak mı, silmek mi? Tek fiil yazın: *sıradan çıkar 2* (video Mac'te kalır) ya da *sıradan sil 2*."; break; }
+      if ((cmd.nums || []).length > 1) { reply = `Tek seferde tek video: *sıradan ${cmd.del ? "sil" : "çıkar"} ${cmd.nums[0]}* yazın, sonra diğerini.`; break; }
+      const list = queueList(q);
       if (!list.length) { reply = "Yükleme sırası boş; çıkarılacak video yok."; break; }
-      const nm = String(cmd.name || "").replace(/\.mp4$/, "");
-      let hits = cmd.n ? list.filter((x) => x.n === Number(cmd.n)) : nm ? list.filter((x) => String(x.video).replace(/\.mp4$/, "") === nm) : [];
-      if (cmd.platform) hits = hits.filter((x) => x.platform === cmd.platform);
-      if (!hits.length) { reply = `Sırada ${cmd.n ? `${cmd.n} numaralı` : nm ? `"${nm}" adlı` : "böyle bir"} video yok${cmd.platform ? ` (${PLAT_TR[cmd.platform]})` : ""}. Liste için *yükleme sırası* yazın.`; break; }
-      const it = hits[0], label = it.title ? `${it.title.slice(0, 60)} (${String(it.video).replace(/\.mp4$/, "")})` : String(it.video).replace(/\.mp4$/, "");
+      const nm = String(cmd.name || "").replace(/\.mp4$/, ""), platOk = (x) => !cmd.platform || x.platform === cmd.platform;
+      let it = null;
+      if (cmd.n) {
+        // numara son listeden: sıra kendiliğinden değişebildiğinden (yükleme, yeni haber en yeni önce) listede görülen numara esastır
+        const rep = lastQueueReport && Date.now() - lastQueueReport.at < QREPORT_TTL ? lastQueueReport.map[cmd.n] : null;
+        if (rep) {
+          const live = list.find((x) => x.video === rep.video && x.platform === rep.platform) || null, repName = rep.title ? rep.title.slice(0, 60) : String(rep.video).replace(/\.mp4$/, "");
+          if (!live) { reply = `${cmd.n} numaradaki video (${repName}) artık sırada değil (yüklendi ya da çıkarıldı); hiçbir şey yapılmadı. Güncel liste için *yükleme sırası* yazın.`; break; }
+          if (!platOk(live)) { reply = `${cmd.n} numaradaki video (${repName}) ${PLAT_TR[cmd.platform]} sırasında değil, ${PLAT_TR[live.platform]} sırasında; hiçbir şey yapılmadı.`; break; }
+          it = live;
+        } else if (cmd.del) { reply = "Silmek için önce *yükleme sırası* yazıp numarayı görün (liste 30 dakika geçerli) ya da adıyla silin: *sıradan sil 2026-10-24-3*."; break; }
+        else it = list.find((x) => x.n === Number(cmd.n) && platOk(x)) || null;
+      } else if (nm) it = list.find((x) => String(x.video).replace(/\.mp4$/, "") === nm && platOk(x)) || null;
+      if (!it) { reply = `Sırada ${cmd.n ? `${cmd.n} numaralı` : nm ? `"${nm}" adlı` : "böyle bir"} video yok${cmd.platform ? ` (${PLAT_TR[cmd.platform]})` : ""}. Liste için *yükleme sırası* yazın.`; break; }
+      const label = it.title ? `${it.title.slice(0, 60)} (${String(it.video).replace(/\.mp4$/, "")})` : String(it.video).replace(/\.mp4$/, "");
       if (cmd.del) {
         const r = await deleteVideo(it.video, { local: true });
         const ps = (r.unqueued || []).map((p) => PLAT_TR[p] || p);
@@ -4448,8 +4462,13 @@ function queueList(q) {
   for (const p of Object.keys(PLAT_TR)) for (const it of (q[p]?.items || [])) out.push({ ...it, n: out.length + 1, platform: p });
   return out;
 }
+// son "yükleme sırası" listesi (inceleme, 27 Ekim: sıra kendiliğinden değişir — yükleme, yeni haber en yeni önce —, "sıradan sil 2" listede görülen
+// 2'yi silmeli): numara → video; 30 dk geçerli, silme için şart (yoksa ad istenir)
+let lastQueueReport = null;
+const QREPORT_TTL = 30 * 60000;
 function queueReport(q) {
   const out = [], name = (v) => String(v || "").replace(/\.mp4$/, ""), list = queueList(q);
+  lastQueueReport = { at: Date.now(), map: Object.fromEntries(list.map((x) => [x.n, { video: x.video, platform: x.platform, title: x.title || "" }])) };
   for (const p of Object.keys(PLAT_TR)) {
     const i = q[p]; if (!i) continue;
     const hold = Date.parse(i.holdUntil || "") > Date.now();

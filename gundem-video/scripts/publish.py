@@ -234,6 +234,9 @@ def queue_title(meta) -> str:
     if not t:
         h = (m.get("headlines") or [{}])[0] if isinstance(m.get("headlines"), list) and m.get("headlines") else {}
         t = (h.get("title") if isinstance(h, dict) else "") or m.get("title") or ""
+    if not t:  # gerçek bölüm meta'sı: ilk haber bölümünün başlığı (common.build_caption gibi)
+        segs = [x for x in (m.get("segments") or []) if isinstance(x, dict) and x.get("kind") == "haber" and x.get("title")]
+        t = segs[0]["title"] if segs else ""
     return str(t or "").strip()[:110]
 
 
@@ -261,7 +264,7 @@ def queue_info(plat: str) -> dict:
         items.append({"pos": i, "video": name, "kind": kind, "title": queue_title(meta), "at": x.get("at"), "ageHours": age_h,
                       "staleHint": bool(kind == "haber" and age_h is not None and age_h >= QUEUE_STALE_HINT_HOURS), "dropAfterHours": queue_max_hours(kind),
                       "value": ({"valuable": bool(v.get("valuable")), "top": bool(v.get("top")), "reason": str(v.get("reason") or "")[:80]} if v else None),
-                      "label": str(meta.get("infoLabel") or meta.get("label") or "")[:30],
+                      "label": str(meta.get("slotLabel") or meta.get("infoLabel") or meta.get("label") or "")[:30],  # assemble_script: slotLabel (YENİ FRAGMAN, ANLIK HABER…)
                       "tries": int(x.get("tries") or 0), "lastTry": x.get("lastTry"), "lastError": x.get("lastError") or ""})
     return {"count": len(q), "videos": [x.get("video") for x in q], "items": items,
             "order": "önce fragmanlar, sonra sizin videolarınız, sonra haberler (en yeni önce)", "staleHintHours": QUEUE_STALE_HINT_HOURS,
@@ -274,7 +277,7 @@ def queue_line(plat: str) -> str:
     qi = queue_info(plat)
     if not qi["count"] and not qi["holdUntil"]:
         return f"📤 {plat} sırası: boş"
-    names = ", ".join(Path(v).stem for v in qi["videos"][-4:]) + (" …" if qi["count"] > 4 else "")
+    names = ", ".join(Path(v).stem for v in qi["videos"][:4]) + (" …" if qi["count"] > 4 else "")  # yüklenecek sırayla ilk dördü
     why = (TT_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "tiktok" else (IG_LIMIT_TR.get(qi["reason"]) or qi["reason"]) if plat == "instagram" else qi["reason"]
     hold = f" · gönderim {local_hhmm(_parse(qi['holdUntil']))}'e kadar duraklatıldı ({str(why).split(" (")[0][:80]})" if qi["holdUntil"] else " · duraklatma yok, sıradaki gönderimde yüklenecek"
     return f"📤 {plat} sırası: {qi['count']} video bekliyor" + (f" ({names})" if qi["count"] else "") + hold
@@ -2120,6 +2123,12 @@ def flush_order(q: list) -> list:
     return out
 
 
+def _queue_remove_now(name: str, plat: str) -> None:
+    """Yüklenen ya da düşen kaydı HEMEN diskten çıkarır (inceleme, 27 Ekim: flush süreci zaman aşımında öldürülürse yüklenmiş video sırada kalıyordu)."""
+    cur = load_json(QUEUE_FILE, []) or []
+    save_json(QUEUE_FILE, [x for x in cur if not (isinstance(x, dict) and x.get("video") == name and x.get("platform") == plat)])
+
+
 def flush(only: str | None = None, plat_only: str | None = None) -> dict:
     """Sıradaki (sınır yüzünden bekleyen) videoları yükler: önce fragmanlar, sonra sahibin videoları, sonra en yeni haber önce (flush_order).
     only="fragman": yalnız fragmanlar yüklenir, diğerleri sırada kalır (post_pipeline otomatik haberden önce çağırır); plat_only: yalnız o platform."""
@@ -2139,14 +2148,14 @@ def flush(only: str | None = None, plat_only: str | None = None) -> dict:
         if not path.exists() or now - at > timedelta(hours=max_h):
             why = "silinmiş" if not path.exists() else f"{max_h} saatten eski, bayat"
             print(f"📤 sıradan çıkarıldı (eski ya da silinmiş): {name} → {plat}", flush=True)
-            qlog("dropped", name, plat, why)
+            qlog("dropped", name, plat, why); _queue_remove_now(name, plat)
             continue
         if hold_until(plat):
             keep.append(it); continue
         res = upload(path, plat)
         tries = int(it.get("tries") or 0) + 1
         if res.get("ok"):
-            done.append(f"{plat}:{name}")
+            done.append(f"{plat}:{name}"); _queue_remove_now(name, plat)
             print(f"📤 {plat}: " + ("zaten yayında " if res.get("skipped") else "tamam ") + f"{res.get('url') or ''} (sıradan{', fragman' if kind == 'fragman' else ''})", flush=True)
             qlog("uploaded", name, plat, "sıradan yüklendi" + (f" ({tries}. denemede)" if tries > 1 else ""), res.get("url") or "")
         elif res.get("limit"):  # bekleme yeniden başladı (engel sürüyor): video sırada kalır
@@ -2154,18 +2163,22 @@ def flush(only: str | None = None, plat_only: str | None = None) -> dict:
             qlog("held", name, plat, res.get("error") or "")
         elif tries >= QUEUE_MAX_TRIES:  # sınır dışı hata (bozuk dosya, API hatası): birkaç denemeden sonra çıkarılır
             print(f"📤 {plat}: hata {res.get('error')} (sıradan, {tries}. denemede çıkarıldı)", flush=True)
-            qlog("dropped", name, plat, f"{tries} deneme başarısız: {res.get('error') or ''}")
+            qlog("dropped", name, plat, f"{tries} deneme başarısız: {res.get('error') or ''}"); _queue_remove_now(name, plat)
         else:
             print(f"📤 {plat}: hata {res.get('error')} (sıradan, {tries}. deneme; yeniden denenecek)", flush=True)
             keep.append({**it, "tries": tries, "lastTry": now_iso(), "lastError": res.get("error") or ""})
             qlog("failed", name, plat, res.get("error") or "")
-    # bu arada başka bir üretimin sıraya eklediklerini koru
+    # diskteki güncel sıra esastır: bu arada başka bir üretimin eklediklerini koru, sahibin çıkardıklarını (panel ✖, "sıradan çıkar", silme)
+    # geri yazma (inceleme, 27 Ekim: fragmanlar yüklenirken çıkarılan haber sıraya geri geliyordu); bizim kayıtlarımız yalnız tries/lastError günceller
+    cur = [x for x in (load_json(QUEUE_FILE, []) or []) if isinstance(x, dict)]
+    cur_keys = {(x.get("video"), x.get("platform")) for x in cur}
     seen = {(x.get("video"), x.get("platform")) for x in q}
-    added = [x for x in (load_json(QUEUE_FILE, []) or []) if (x.get("video"), x.get("platform")) not in seen]
-    save_json(QUEUE_FILE, keep + added)
-    for plat in sorted({x.get("platform") for x in keep + added if x.get("platform")}):
+    kept = [x for x in keep if (x.get("video"), x.get("platform")) in cur_keys]
+    added = [x for x in cur if (x.get("video"), x.get("platform")) not in seen]
+    save_json(QUEUE_FILE, kept + added)
+    for plat in sorted({x.get("platform") for x in kept + added if x.get("platform")}):
         print(queue_line(plat), flush=True)
-    return {"ok": True, "uploaded": done, "queued": len(keep)}
+    return {"ok": True, "uploaded": done, "queued": len(kept)}
 
 
 if __name__ == "__main__":

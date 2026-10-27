@@ -2372,26 +2372,47 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   `ageHours`, `staleHint` (haber ≥ `QUEUE_STALE_HINT_HOURS` 6 saat: "değeri geçmiş olabilir"; karar sahibin, kendiliğinden çıkarılmaz), `dropAfterHours`,
   `value` {valuable, top, reason}, `label`; `order`, `staleHintHours`; `unqueue_all(video, plat=None)` platform verilmezse her platformdan (olay
   platform başına), `unqueue` onun üstüne; komut satırı `--flush [--only-trailers] [--platform X]`, `--unqueue --file V [--platform X]`.
-  `post_pipeline.preflush_trailers(plats, meta)`: OTOMATİK haber videosu bir platforma yüklenmeden önce o platformun sırasında fragman bekliyorsa
-  `publish.py --flush --only-trailers --platform X` (en çok `PREFLUSH_TIMEOUT` 15 dk; 📤 satırları loga, "sırası:" özeti ve JSON hariç); sahibin
-  videosu/kuyruk videosu ve fragmanın kendisi atlar (beklemesin), platform duraklatılmışsa (`_held`, publish_hold.json) yalnız not düşer (bekleme
-  bitince flush zaten fragmanları önce yükler); zaman aşımında haber yine yüklenir. `server.js queueList(q)` platform sırasıyla (Instagram, YouTube,
-  TikTok) tek numara dizisi (her çağrıda güncel sıradan), `queueReport` numaralı satırlar "1. 🎬 Başlık (ad) — 30 dakikadır sırada · ⭐ en değerli ·
-  ⚠️ değeri geçmiş olabilir" (`QKIND_ICON`, `sinceText`) + açıklama satırı ("önce fragmanlar…; sıradan çıkar 2 / sıradan sil 2"); komut `queue_drop`
-  (`commands.js`: "sıradan çıkar 2", "instagram sırasından 2'yi çıkar", "2 numarayı sıradan çıkar", "2. sıradakini sil", "sıradan sil 3", "sıradan
-  çıkar 2026-10-24-3"; `norm()` nokta/kesmeyi boşluk yapar, Türkçe harfte `\b` çalışmadığından sınırlar boşlukla; "sıradan" (= alelade) başka cümlede
-  komut olmasın diye fiil yalnız emir/kibar biçimiyle ve ya numara/ad var ya da fiil "sıradan/sırasından"a bitişik — "sıradan haberleri sil" komut
-  değil): numara → yalnız o platform kaydı, ad → her platform, `platform` süzgeci, `del` → `deleteVideo(video, {local: true})` (Mac'ten + bütün
-  sıralardan; platformlarda yayınlanmış kopya durur, yanıt söyler). `deleteVideo(name, {local})` (eski `DELETE /api/videos/:name` gövdesi; uç nokta
-  onu çağırır) silerken `--unqueue --file` ile sıradan da çıkarır, `{ok, remote, unqueued}` döner; `POST /api/queue/drop` platformsuz → hepsinden.
-  Panel: kart Ayarlar'dan Videolar sekmesine taşındı (🎞 Video kuyruğu kartının altında "📤 YÜKLEME SIRASI (N)"; ayarlar grubunda tek satır not):
-  platform başlığı (bekliyor / ⏸ duraklatıldı (neden) / akıyor), numaralı satırlar `.pqrow` (fragman turkuaz, uyarılı haber sarı çerçeve: 🎬/📲/📰
-  simge, başlık, ad · tür · etiket, "⏳ N saattir sırada", ⭐ değer (neden), deneme, son hata, "24 saati geçince kendiliğinden düşer", ⚠️ uyarı
-  satırı), "✖ Çıkar" (`ask()` → `/api/queue/drop {video, platform}`) ve "🗑 Sil" (`ask()` yayınlandığı platformları sayar → `DELETE /api/videos/:name`,
-  video listesi yenilenir), son 5 olay, sonraki deneme, "▶ Sırayı şimdi yükle"; video kartlarında "📤 sırada: Instagram 2." rozeti (`pqTag` şablonda +
-  `renderPubQ` DOM yaması; `pubQMap`). Testler: publish sıra harness (tür, sıra, queue_info alanları, yalnız fragman boşaltma, duraklatma, bayatlama
-  eşikleri, unqueue), post_pipeline ön-boşaltma harness (çağrılar, atlamalar, duraklatma, zaman aşımı), komut derlemi (23 + yanlış tetik), sunucu
-  rapor/komut harness, Playwright kart testi (sıra, rozet, çıkar/sil pencereleri, istekler).
+  `post_pipeline.preflush_trailers(plats, meta)`: OTOMATİK haber videosu Instagram'a/TikTok'a (`PREFLUSH_PLATS`; YouTube'da sıradaki fragman günlük
+  kotayı harcayıp düzenli videoyu sıraya düşürmesin) yüklenmeden önce o platformun sırasında fragman bekliyorsa `publish.py --flush --only-trailers
+  --platform X` (bütün platformlar için TOPLAM en çok `PREFLUSH_BUDGET` 12 dk, kalan süre sonraki platforma; 📤 satırları loga, "sırası:" özeti ve
+  JSON hariç); sahibin videosu/kuyruk videosu ve fragmanın kendisi atlar (beklemesin), platform duraklatılmışsa (`_held`, publish_hold.json) yalnız
+  not düşer (bekleme bitince flush zaten fragmanları önce yükler); zaman aşımında çocuğun çıktısındaki 📤 satırları yazılır ve haber yine yüklenir
+  (yüklenen fragmanlar `publish._queue_remove_now` ile anında sıradan düşmüştür), çıkış kodu ≠ 0 ya da son satır JSON değilse "📤 X: fragmanlar
+  yüklenemedi: …". `touch_lock()` (work/pipeline.lock mtime) ön yüklemeden ve her platform yüklemesinden önce: takılma bekçisi (server.js, 50 dk)
+  canlı ama uzun yayın adımını öldürmesin (adımların kendi zaman aşımı var). `flush()` yüklenen/düşen kaydı HEMEN diskten çıkarır ve bitişte diskteki
+  güncel sıra esastır (inceleme, 27 Ekim: fragmanlar yüklenirken panelden ✖ ile çıkarılan haber sıraya geri yazılıyordu; süreç öldürülünce yüklenmiş
+  video sırada kalıyordu). `queue_line` yüklenecek ilk dördü sayar. `server.js queueList(q)` platform sırasıyla (Instagram, YouTube, TikTok) tek
+  numara dizisi, `queueReport` numaralı satırlar "1. 🎬 Başlık (ad) — 30 dakikadır sırada · ⭐ en değerli · ⚠️ değeri geçmiş olabilir" (`QKIND_ICON`,
+  `sinceText`) + açıklama satırı ("önce fragmanlar…; sıradan çıkar 2 / sıradan sil 2") ve SON LİSTEYİ saklar (`lastQueueReport` {at, map numara →
+  {video, platform, title}}, `QREPORT_TTL` 30 dk): sıra kendiliğinden değişir (yükleme, yeni haber en yeni önce), bu yüzden `queue_drop` numarayı
+  listede görülen videoya çözer — video artık sırada değilse "artık sırada değil; hiçbir şey yapılmadı", başka platformdaysa "Instagram sırasında
+  değil, YouTube sırasında", liste yok/eskiyse çıkarma canlı numarayla, SİLME reddedilir ("önce yükleme sırası yazın ya da adıyla: sıradan sil
+  2026-10-24-3"); okunamayan sıra (publish.py yanıtsız) "Sıra bilgisi alınamadı", hem çıkar hem sil (`mixed`) ya da birden çok numara (`nums`)
+  reddedilir. Komut `queue_drop` (`commands.js`: "sıradan çıkar 2", "instagram sırasından 2'yi çıkar", "2 numarayı sıradan çıkar", "2. sıradakini
+  sil", "sıradan sil 3", "sıradan çıkar 2026-10-24-3", "sıradan 2'yi çıkarabilir misin", "2'yi sıradan çıkaralım", "sıradan 2 silinsin",
+  "instagramdan"; `norm()` nokta/kesmeyi boşluk yapar, akıllı kesme ’ ve iki nokta kuralda atılır, Türkçe harfte `\b` çalışmadığından sınırlar
+  boşlukla; "sıradan" (= alelade) başka cümlede komut olmasın diye fiil yalnız emir/kibar biçimiyle — soru "çıkar mı" ve aktarma "çıkar dedi" değil —,
+  numara ancak sıra sözüne / fiile / "numaralı, nolu, videoyu" sözüne ya da başka bir numaraya bitişikse ve ardından süre/tarih sözü gelmiyorsa
+  ("sıradan 6 saati geçen haberleri sil", "Sıradan vatandaş 2 polisi yaraladı" komut değil), numarasız/adsız ise fiil "sıradan/sırasından"a bitişik —
+  "sıradan haberleri sil" komut değil; platform eki "instagramdan"): numara → yalnız o platform kaydı, ad → her platform, `platform` süzgeci, `del`
+  → `deleteVideo(video, {local: true})` (Mac'ten + bütün sıralardan; platformlarda yayınlanmış kopya durur, yanıt söyler). `videoqueue.js`: `G_PASS`
+  "queue_drop" (sayı koruması "sıradan sil 2"yi yutuyordu), `Q_CANCEL_POS` "2. sıradakini sil/çıkar/kaldır"ı artık almaz (yalnız "2. sırayı …" ve
+  "2. sıradakini iptal" video kuyruğunun); `whatsapp.js publishLines` "(sıradan…)" ile biten ve "sırada …"/"fragmanlar…" ile başlayan 📤 satırlarını
+  (ön yüklemenin başka videoları) bu videonun sonucu saymaz; server.js Instagram sıra bildirimi (`igFlushNote`) "(sıradan, fragman)" satırını da alır.
+  `deleteVideo(name, {local})` (eski `DELETE /api/videos/:name` gövdesi; uç nokta onu çağırır) silerken `--unqueue --file` ile sıradan da çıkarır,
+  `{ok, remote, unqueued}` döner; `POST /api/queue/drop` platformsuz → hepsinden. Panel: kart Ayarlar'dan soldaki sütuna taşındı (🎞 Video kuyruğu
+  kartının altında "📤 YÜKLEME SIRASI (N)", her sekmede görünür; ayarlar grubunda tek satır not): platform başlığı (bekliyor / ⏸ duraklatıldı (neden)
+  / akıyor), numaralı satırlar `.pqrow` (fragman turkuaz, uyarılı haber sarı çerçeve; `overflow-wrap:anywhere`: 🎬/📲/📰 simge, başlık, ad · tür ·
+  etiket (`slotLabel`), "⏳ N saattir sırada", ⭐ değer (neden), deneme, son hata, "24 saati geçince kendiliğinden düşer", ⚠️ uyarı satırı), "✖ Çıkar"
+  (`ask()` → `/api/queue/drop {video, platform}`; video Mac'te kalır) ve "🗑 Sil" (`ask()` yayınlandığı platformları sayar → `DELETE
+  /api/videos/:name`: Mac'ten VE platformlardan; WhatsApp "sıradan sil" yalnız Mac'ten — kart metni ikisini de söyler), son 5 olay, sonraki deneme,
+  "▶ Sırayı şimdi yükle"; `/api/queue` okunamazsa ilk yüklemede "Sıra bilgisi alınamadı; 🔄 Yenile…", çizilmiş kart bozulmaz; video kartlarında
+  "📤 sırada: 2. (Instagram)" rozeti — numara kartın ve WhatsApp'ın numarasıyla aynı (`pqTag` şablonda etiketlerin sonunda + `renderPubQ` DOM yaması
+  aynı yere; `pubQMap`). Testler: publish sıra harness (tür, sıra, queue_info alanları, yalnız fragman boşaltma, duraklatma, bayatlama eşikleri,
+  unqueue, yarış: çıkarılan geri gelmez, anında kalıcılık, queue_line, slotLabel/segments), post_pipeline ön-boşaltma harness (platformlar, bütçe,
+  kilit tazeleme, zaman aşımı çıktısı, çöken/JSON'suz flush, atlamalar, duraklatma), komut derlemi (47 + 17 yanlış tetik), kuyruk koruması/sıra-yeri
+  ve publishLines harness, sunucu rapor/komut harness (son liste, kaymış sıra, platform uyuşmazlığı, listesiz silme reddi, karışık/çoklu, okunamayan
+  sıra), Playwright kart testi (sıra, rozet numarası ve yeri, çıkar/sil pencereleri, istekler, düşen /api/queue).
 - TikTok sınırı: gelen kutusu modunda paylaşılmamış taslak birikince `spam_risk_too_many_pending_share` (doğrudan yayında
   `spam_risk_too_many_posts`) → `TT_LIMIT_REASONS` LimitReached gibi: 3 saat bekleme, video sıraya, Türkçe açıklama
   `TT_LIMIT_TR` ("taslakları paylaşın ya da silin"), log "📤 tiktok: sınır doldu" + sesli uyarı.
