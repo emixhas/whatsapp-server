@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -25,12 +26,20 @@ import threading
 import time
 from pathlib import Path
 
+try:
+    import fcntl
+except ImportError:  # Windows: kilit yok (motor zaten yalnız Mac'te)
+    fcntl = None
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import ROOT, settings  # noqa: E402
 
 VENV_PY = ROOT / ".venv-image" / "bin" / "python"
 READY = ROOT / "models" / "image" / "READY.json"
 CACHE = ROOT / "work" / "image_cache"
+LOCK = CACHE / ".uretim.lock"  # aynı anda tek üretim (iki iş iki modeli birden yükleyip 16 GB belleği taşırmasın)
+WAIT_MAX = 30 * 60  # başka bir videonun üretimi en çok bu kadar beklenir (sn; server.js recreateTimeoutMin bunu sayar); sonra sahneler çizime düşer
+_TQDM = re.compile(r"\d+%\||it/s\]|s/it\]")
 DEFAULTS = {"enabled": True, "model": "filipstrand/Z-Image-Turbo-mflux-4bit", "width": 720, "height": 1280, "steps": 9, "perImageSec": 240,
             "maxImages": 16, "maxMinutes": 15, "badge": "Yapay zekâ ile canlandırıldı"}
 STYLE_DEFAULT = ("photorealistic cinematic documentary photograph, natural light, 35mm lens, shallow depth of field, realistic skin texture, "
@@ -38,7 +47,10 @@ STYLE_DEFAULT = ("photorealistic cinematic documentary photograph, natural light
 
 
 def cfg() -> dict:
-    c = {**DEFAULTS, **(settings().get("image") or {})}
+    # settings.image nesne değilse (ör. "image": false ya da "kapalı") anahtar sayılır; liste/sayı bütün benzer video işlerini çökertmesin
+    # (inceleme, 28 Ekim; server.js imageCfg aynı kural)
+    v = settings().get("image")
+    c = {**DEFAULTS, **(v if isinstance(v, dict) else {} if v is None or isinstance(v, (list, tuple)) else {"enabled": v})}
     for k, lo, hi in (("width", 256, 1440), ("height", 256, 2048), ("steps", 2, 50), ("perImageSec", 30, 1800), ("maxImages", 3, 40),
                       ("maxMinutes", 3, 60)):
         try:
@@ -139,6 +151,29 @@ def _to_frame(src: Path, dst: Path) -> bool:
     return r.returncode == 0 and dst.exists() and dst.stat().st_size > 5000
 
 
+def _lock(log):
+    """Üretim kilidi (fcntl.flock; süreç ölürse kendiliğinden bırakılır): (dosya, beklenen sn) ya da (None, sn) süre dolduysa. İnceleme, 28 Ekim:
+    WhatsApp videosu, link ve düzeltme işleri aynı anda çalışabiliyor; iki Z-Image-Turbo süreci 16 GB Mac'te belleği taşırıp ikisini de bozuyordu."""
+    if fcntl is None:
+        return True, 0.0
+    f = open(LOCK, "a+")
+    t0, said = time.time(), False
+    while True:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if said:
+                log(f"🎨 sıra geldi ({max(1, round((time.time() - t0) / 60))} dk beklendi)")
+            return f, time.time() - t0
+        except OSError:
+            if not said:
+                log("🎨 başka bir videonun gerçekçi görselleri üretiliyor; o bitince başlanacak")
+                said = True
+            if time.time() - t0 > WAIT_MAX:
+                f.close()
+                return None, time.time() - t0
+            time.sleep(3)
+
+
 def generate(shots: list, out_dir: Path, log=print) -> tuple:
     """Görselleri üretir (önbellekte olanlar hemen gelir). Dönüş ({key: Path | None}, {"made", "cached", "failed", "error", "sec"})."""
     c = cfg()
@@ -160,13 +195,29 @@ def generate(shots: list, out_dir: Path, log=print) -> tuple:
             res[s["key"]] = None
         info.update(failed=len(todo), error=why)
         return res, info
+    lk, waited = _lock(log)
+    if lk is None:
+        for s, _ in todo:
+            res[s["key"]] = None
+        info.update(failed=len(todo), error=f"başka bir videonun görselleri {round(waited / 60)} dakikada bitmedi")
+        return res, info
+    try:
+        return _generate(c, todo, res, info, out_dir, log)
+    finally:
+        if lk is not True:
+            lk.close()
+
+
+def _generate(c: dict, todo: list, res: dict, info: dict, out_dir: Path, log) -> tuple:
     tmp = out_dir / "_uret"
     tmp.mkdir(exist_ok=True)
     spec = {"model": c["model"], "steps": c["steps"],
             "jobs": [{"prompt": s["prompt"], "seed": int(s["seed"]), "w": c["width"], "h": c["height"], "out": str(tmp / f"{i}.png")} for i, (s, _) in enumerate(todo)]}
     sp = tmp / "spec.json"
     sp.write_text(json.dumps(spec, ensure_ascii=False), encoding="utf-8")
-    cmd = (_runner() or [str(VENV_PY), str(ROOT / "scripts" / "zimage_run.py")]) + [str(sp)]
+    # Rosetta altında çalışan panelden (x86_64 Node/Python) MLX açılmaz: üretici her zaman Apple Silicon olarak başlar (inceleme, 28 Ekim)
+    native = ["arch", "-arm64"] if platform.system() == "Darwin" and platform.machine() != "arm64" and shutil.which("arch") else []
+    cmd = (_runner() or [*native, str(VENV_PY), str(ROOT / "scripts" / "zimage_run.py")]) + [str(sp)]
     # süre sınırı: görsel başına perImageSec, ama bütün iş en çok bütçe süresinin 1,6 katı + 4 dk (panelin iş sınırı aşılmasın; bitmiş görseller
     # yine kullanılır, kalanlar komşu sahneden)
     limit = min(240 + c["perImageSec"] * len(todo), 240 + int(c["maxMinutes"] * 60 * 1.6))
@@ -177,10 +228,10 @@ def generate(shots: list, out_dir: Path, log=print) -> tuple:
     if not Path(env.get("SSL_CERT_FILE") or "/yok").exists() and Path("/etc/ssl/cert.pem").exists():
         env["SSL_CERT_FILE"] = "/etc/ssl/cert.pem"
     env.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-    out_text, err_tail, done_i = "", [], set()
+    out_text, err_tail, done_i, hit = "", [], set(), []
     try:
         p = subprocess.Popen(cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        killer = threading.Timer(limit, lambda: p.kill())
+        killer = threading.Timer(limit, lambda: (hit.append(1), p.kill()))
         killer.start()
         try:
             for line in p.stderr:
@@ -188,15 +239,21 @@ def generate(shots: list, out_dir: Path, log=print) -> tuple:
                 try:
                     ev = json.loads(line)
                 except ValueError:
-                    if line:
+                    ev = None
+                if not isinstance(ev, dict):  # düz satır (ilerleme çubuğu satırları hata özetine girmez)
+                    if line and not _TQDM.search(line):
                         err_tail = (err_tail + [line])[-6:]
                     continue
                 if "load" in ev:
-                    log(f"🎨 görsel modeli yüklendi ({ev['load']} sn)")
+                    log(f"🎨 görsel modeli yüklendi ({ev.get('load')} sn)")
                 elif "i" in ev:
-                    log(f"🎨 görsel {ev['i']}/{ev['n']} {'hazır' if ev.get('ok') else 'üretilemedi'} ({ev.get('sec')} sn)")
+                    try:
+                        k = int(ev["i"])
+                    except (TypeError, ValueError):
+                        continue
+                    log(f"🎨 görsel {k}/{ev.get('n', len(todo))} {'hazır' if ev.get('ok') else 'üretilemedi'} ({ev.get('sec')} sn)")
                     if ev.get("ok"):
-                        done_i.add(int(ev["i"]) - 1)
+                        done_i.add(k - 1)
             out_text = p.stdout.read()
             p.wait()
         finally:
@@ -207,7 +264,9 @@ def generate(shots: list, out_dir: Path, log=print) -> tuple:
     try:
         out = json.loads((out_text or "").strip().splitlines()[-1])
     except (ValueError, IndexError):
-        if not info["error"]:
+        if hit:
+            info["error"] = f"üretici {limit} sn süre sınırında durduruldu"
+        elif not info["error"]:
             info["error"] = (" | ".join(err_tail) or f"üretici {round(time.time() - t0)} sn içinde sonuç vermedi")[-300:]
     if out and not out.get("ok"):
         info["error"] = str(out.get("error") or "bilinmeyen hata")[:300]

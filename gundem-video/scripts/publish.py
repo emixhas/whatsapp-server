@@ -1580,11 +1580,16 @@ def tt_upload(path: Path):
         raise RuntimeError(f"TikTok işleme hatası: {st.get('fail_reason')}")
     print(f"  ♪ TikTok durumu: {status} — {TT_STATUS_TR.get(status, status)}", file=sys.stderr)
     post_ids = st.get("publicaly_available_post_id") or []
+    note = None
+    if mode != "direct":
+        note = TT_STATUS_TR.get(status) or f"TikTok hâlâ işliyor (durum: {status}); panelden 'Son gönderimleri kontrol et'"
+        # gelen kutusu taslağı etiketsiz gider (API yalnız doğrudan yayında is_aigc alır): yapay zekâ görselli videoda sahibe hatırlatma
+        # (inceleme, 28 Ekim: mesaj "TikTok'ta etiket açılır" diyordu, gelen kutusundan etiketsiz yayınlanıyordu)
+        if (episode_meta(path.name) or {}).get("aiVisuals"):
+            note += " · 🤖 yayınlarken Diğer seçenekler → \"Yapay zekâ ile oluşturulan içerik\" anahtarını açın"
     return {"id": post_ids[0] if post_ids else publish_id, "publish_id": publish_id, "mode": mode, "privacy": privacy,
             "status": status, "url": f"https://www.tiktok.com/@me/video/{post_ids[0]}" if post_ids else None,
-            "publishedAt": now_iso(), "title": title,
-            "note": (TT_STATUS_TR.get(status) or f"TikTok hâlâ işliyor (durum: {status}); panelden 'Son gönderimleri kontrol et'")
-                    if mode != "direct" else None}
+            "publishedAt": now_iso(), "title": title, "note": note}
 
 
 # TikTok gönderim durumları (post/publish/status/fetch)

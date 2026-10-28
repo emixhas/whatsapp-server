@@ -11,10 +11,23 @@ cd "$(dirname "$0")/.."
 MFLUX_VERSION="${MFLUX_VERSION:-0.24.0}"
 MODEL="${IMAGE_MODEL:-filipstrand/Z-Image-Turbo-mflux-4bit}"
 
-if [ "$(uname -s)" != "Darwin" ] || [ "$(uname -m)" != "arm64" ]; then
+if [ "$(uname -s)" != "Darwin" ] || [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" != "1" ]; then
   echo "✖ Bu motor yalnız Apple Silicon (M1/M2/M3/M4) Mac'te çalışır; benzer videolar çizimle üretilmeye devam eder."
   exit 1
 fi
+# panel Rosetta altında (x86_64) çalışıyorsa betik de öyle başlar: Apple Silicon olarak yeniden başlat (MLX yalnız arm64; inceleme, 28 Ekim)
+if [ "$(uname -m)" != "arm64" ]; then
+  exec arch -arm64 /bin/bash "$0" "$@"
+fi
+# kurulum kilidi: panel yeniden başlasa da "kuruluyor" görünsün, ikinci kurulum açılmasın (server.js imageInstalling)
+mkdir -p models/image
+LOCKF=models/image/.kuruluyor
+if [ -f "$LOCKF" ] && kill -0 "$(cat "$LOCKF" 2>/dev/null)" 2>/dev/null; then
+  echo "✖ Kurulum zaten sürüyor (süreç $(cat "$LOCKF")); bitmesini bekleyin."
+  exit 1
+fi
+echo $$ > "$LOCKF"
+trap 'rm -f "$LOCKF"' EXIT
 echo "▶ 1/3 Python ortamı (.venv-image)"
 PYX=""
 for c in "${PY_IMAGE:-}" python3.13 python3.12 python3.11 /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do

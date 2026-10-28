@@ -28,6 +28,8 @@ bölüm başlıkları (`chapters`, sesli bölümün altında ve YouTube açıkla
                                                 # düzeltme (çizilmiş benzer video): {"revise": {"job": "work/jobs/video-…", "instruction": "2. sahnede …", "of": "2026-10-23-3.mp4", "revision": 2}}
                                                 # fragman: {..., "trailer": true, "film": "Dune: Part Three", "social": {...}}
                                                 # iletilen WhatsApp videosu: {..., "caption": "açıklaması (talimat değil, bilgi)"}
+  python3 scripts/wa_video.py --visual-mode '{"instruction": "...", "revise": "work/jobs/video-…"}'
+                                                # benzer videonun görsel modu (panel mesajları ve iş süresi aynı kararla konuşsun): {mode, why, note}
 Son satır JSON: {ok, job, plan: {label, hook, titles, cuts, segments: [{kind, title, clips}]}, duration}
 """
 import json
@@ -1015,11 +1017,31 @@ def render_scenes(jobs: list, tmp: Path, tag: str, public: Path | None = None) -
 # geçişlerle oynatır). Motor kurulu ve panel anahtarı açıksa varsayılan budur; talimatta çizgi film/animasyon/çizim istenirse ya da motor
 # hazır değilse SVG çizimi. Bütün fotoğraflar üretilemezse plan bir kez çizimle yeniden yazılır (video yine çıkar).
 RECREATE_TALIMAT_FOTO = "Bu videonun hikâyesini ve mesajını koruyarak benzerini kendi cümlelerimizle ve sıfırdan üretilmiş gerçekçi fotoğraflarla anlat."
-PHOTO_ASK = re.compile(r"gerçekçi\w*|foto(?:ğraf)?\s*gerçekçi\w*|fotogerçekçi\w*|gerçek\s+(?:fotoğraf|görüntü|görsel|resim)\w*\s+gibi|fotoğraf\w*\s+gibi|"
-                       r"fotoğraflarla|fotoğraflı|sinematik\w*|realisti\w*|photo\s*-?\s*real\w*|yapay\s+zek[aâ]\s+(?:ile\s+)?(?:görsel|resim|fotoğraf)\w*")
-DRAW_ASK = re.compile(r"çizgi\s*film\w*|animasyon\w*|karikatür\w*|ill[üu]strasyon\w*|el\s+çizim\w*|elle\s+çiz\w*|kalem\s+çizim\w*|sulu\s*boya\w*|"
-                      r"çizim(?:le|li|ler|lerle)(?!\w)|çizim\s+(?:tarz\w*|gibi|olsun|şeklinde)|çizerek|cartoon\w*|anime(?!\w)")
-STYLE_NEG = re.compile(r"\s*(?:da|de)?\s*(?:değil|degil|olmasın|olmasin|olmayacak|istemiyorum|istemem|yok|kullanma\w*)(?!\w)")
+# Talimattaki görsel tarz isteği (inceleme, 28 Ekim: Türkçe harfsiz/büyük harfli yazım — "cizgi film", "ANIMASYON" — tanınmıyor, "seslendirme
+# daha gerçekçi olsun" ya da "çocuk tablette çizgi film izlesin" düzeltmesi bütün videonun tarzını değiştiriyor, "gerçekçi olmasın" fotoğrafa
+# gidiyordu). Metin kind_fold'lu (ı→i, ç→c…; kalıplar bu yazımda). Tarz sözü yalnız açık istekse sayılır: kendi içinde istek (çizimle,
+# animasyonla, fotoğraflarla, fotoğraf gibi, çizerek…), ardından en çok üç dolgu sözüyle istek ("çizgi film olarak yap", "gerçekçi bir benzerini
+# yap", "çizgi filme çevir", "gerçekçi olsun") ya da yan cümlenin sonu ("…, çizgi film"); önünde ses/hikâye/metin sözü varsa ("seslendirme daha
+# gerçekçi olsun", "diyalog gerçekçi olsun") görsel isteği değildir. Olumsuzlanan istek ("gerçekçi olmasın", "gerçekçi fotoğraf istemiyorum",
+# "çizgi film gibi olmasın", "çizgi filme benzemesin") öbür tarzı ister; "gerçekçi değil", "fotoğraf gibi durmuyor" yakınmadır (aynı tarzda
+# daha iyisi istenir), tarzı değiştirmez.
+_ST_PHOTO = re.compile(r"(?<!\w)(?:(?:foto\s*)?gercekci\w*|fotogercekci\w*|realisti\w*|photo\s*-?\s*real\w*|gercek\s+(?:fotograf|goruntu|gorsel|resim)\w*\s+gibi|"
+                       r"fotograf\w*\s+gibi|fotograflarla|fotografli|yapay\s+zeka\s+(?:ile\s+)?(?:gorsel|resim|fotograf)\w*)")
+_ST_DRAW = re.compile(r"(?<!\w)(?:cizgi\s*film\w*|animasyon\w*|karikatur(?!ist)\w*|il+ustrasyon\w*|el\s+cizim\w*|elle\s+ciz\w*|kalem\s+cizim\w*|"
+                      r"sulu\s*boya\w*|cizim(?:le|li|ler|lerle)(?!\w)|cizim\s+(?:tarz\w*|gibi|olsun|seklinde)|cizerek|cartoon\w*|anime(?!\w))")
+_ST_FILL = (r"(?:daha|bir|bi|cok|tamamen|tam|hic|gibi|tarz\w*|seklinde|sekilde|turunde|bicim\w*|stil\w*|versiyon\w*|hal\w*|benzer\w*|video\w*|"
+            r"gorsel\w*|fotograf\w*|foto|goruntu\w*|resim\w*|sahne\w*|kare\w*|cizim\w*|ile|olarak|da|de|sey|kullanarak)")
+_ST_NEG_V = r"olmasin\w*|olmayacak|olmamali|istemiyorum|istemem|istemiyoruz|kullanma\w*|benzemesin|durmasin|gorunmesin|yapma(?:yin|yiniz)?|cevirme(?:yin)?|donusturme(?:yin)?|yerine"
+_ST_NEG = {"gercekci": re.compile(rf"\s*(?:{_ST_FILL}\s+){{0,3}}(?:{_ST_NEG_V})(?!\w)"),
+           "cizim": re.compile(rf"\s*(?:{_ST_FILL}\s+){{0,3}}(?:{_ST_NEG_V}|degil|yok)(?!\w)")}
+_ST_REQ = re.compile(rf"\s*(?:{_ST_FILL}\s+){{0,3}}(?:olsun\w*|olarak|olacak|gorunsun|dursun|istiyorum|isterim|istiyoruz|lazim|gerek|"
+                     r"(?:yap|cevir|donustur|hazirla|anlat|uret|canlandir|ciz|kullan|getir)(?:in|iniz|sana|ar\s+mi\w*|abilir\w*|alim|man\w*|ilsin)?)(?!\w)")
+_ST_CMPL = re.compile(rf"\s*(?:{_ST_FILL}\s+){{0,3}}(?:durmuyor|gorunmuyor|degil|degildi|olmamis|olmuyor|olmadi)(?!\w)")  # yakınma: "fotoğraf gibi durmuyor"
+_ST_END = re.compile(rf"\s*(?:{_ST_FILL}\s*){{0,3}}(?:[.,;:!?…\n)\]]|$)")
+_ST_SELF = re.compile(r"(?:la|le|li|lu|larla|lerle|erek|arak|gibi)$|^yapay\s")
+_ST_NONVIS = re.compile(r"(?:seslendirme|ses|diyalog|konusma|hikaye|muzik|anlatim|anlatici|metin|cumle|kapanis|giris|kanca|baslik|replik|ton|dil|yorum|"
+                        r"senaryo|olay|altyazi|yazi|soz|espri|mesaj|anlatis)\w{0,6}$")
+_ST_VIS = re.compile(r"(?:gorsel|fotograf|foto|goruntu|resim|sahne|kare|video|cizim)\w*$")
 NO_FRAMES = {"cizim": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan çıkar, görüntüyü tarif etme, tarzı sade elle "
                       "çizilmiş seç. Görebilseydin bakacağın şeyler",
              "gercekci": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan çıkar, referansın görüntüsünü görmüş gibi "
@@ -1028,14 +1050,26 @@ PHOTO_COMPOSE = "vertical 9:16 composition, main subject in the upper two thirds
 
 
 def visual_style(text: str) -> str | None:
-    """Talimattaki açık görsel isteği: "cizim" (çizgi film, animasyon, karikatür, çizimle…), "gercekci" (gerçekçi, fotoğraf gibi,
-    sinematik…) ya da None. Olumsuzlanan istek ("çizgi film değil", "gerçekçi olmasın") sayılmaz; ikisi de varsa sondaki geçer."""
-    t = str(text or "").replace("I", "ı").replace("İ", "i").lower()
+    """Talimattaki açık görsel isteği: "cizim" (çizgi film, animasyon, karikatür, çizimle…), "gercekci" (gerçekçi, fotoğraf gibi…) ya da None.
+    Olumsuzlanan istek öbür tarzı ister ("gerçekçi olmasın" → cizim, "çizgi film gibi olmasın" → gercekci); ikisi de varsa sondaki geçer."""
+    t = kind_fold(str(text or ""))
     best = None
-    for rx, mode in ((PHOTO_ASK, "gercekci"), (DRAW_ASK, "cizim")):
+    for rx, mode, other in ((_ST_PHOTO, "gercekci", "cizim"), (_ST_DRAW, "cizim", "gercekci")):
         for m in rx.finditer(t):
-            if not STYLE_NEG.match(t, m.end()) and (best is None or m.start() > best[0]):
-                best = (m.start(), mode)
+            near = re.split(r"[.,;:!?…\n]", t[:m.start()])[-1].split()[-3:]
+            gov = next((w for w in reversed(near) if _ST_VIS.match(w) or _ST_NONVIS.match(w)), "")
+            if gov and not _ST_VIS.match(gov):
+                continue  # "seslendirme daha gerçekçi olsun": görsel isteği değil
+            if _ST_NEG[mode].match(t, m.end()):
+                got = other
+            elif _ST_CMPL.match(t, m.end()):
+                continue  # "fotoğraf gibi durmuyor", "hiç gerçekçi değil": yakınma (aynı tarzda daha iyisi istenir)
+            elif _ST_SELF.search(m.group(0)) or _ST_REQ.match(t, m.end()) or _ST_END.match(t, m.end()):
+                got = mode
+            else:
+                continue  # "çocuk tablette çizgi film izlesin", "karikatür çizsin": içerik, tarz isteği değil
+            if best is None or m.start() > best[0]:
+                best = (m.start(), got)
     return best[1] if best else None
 
 
@@ -1062,6 +1096,21 @@ def visual_mode(instruction: str, prev: str | None = None) -> tuple:
     if not image_gen.enabled():
         return "cizim", "gerçekçi görseller panelde kapalı", ""
     return ("gercekci", "", "") if ok else ("cizim", f"görsel motoru hazır değil: {why}", hint)
+
+
+def visual_mode_cli(q: dict) -> dict:
+    """Panelin sorusu (server.js visualModeOf): işin başında, WhatsApp'a "fotoğraflarla canlandıracağım" ya da "çizeceğim" denmeden ve iş süresi
+    seçilmeden önce aynı karar (inceleme, 28 Ekim: panel yalnız anahtara ve motora bakıyordu; "çizgi film olarak yap" talimatına "gerçekçi
+    fotoğraflarla" diyor, anahtar kapalıyken "gerçekçi olsun" işini 50 dakikada kesiyordu). Düzeltmede önceki sürümün modu plan.json'dan."""
+    q = q if isinstance(q, dict) else {}
+    prev = None
+    if q.get("revise"):
+        try:
+            prev = json.loads((ROOT / str(q["revise"]) / "plan.json").read_text(encoding="utf-8")).get("mode") or "cizim"
+        except (OSError, ValueError, AttributeError):
+            prev = "cizim"
+    mode, why, note = visual_mode(str(q.get("instruction") or ""), prev)
+    return {"ok": True, "mode": mode, "why": why, "note": note}
 
 
 def mode_text(text: str, mode: str) -> str:
@@ -1156,6 +1205,14 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
     full = [[photo_expand(x, chars, style) for x in r] for r in raw]
     secs_l = [round(max(4.0 if k == 0 else 0.0, len(s["narration"].split()) / 2.4 + 0.8 + 1.5), 2) for k, s in enumerate(segs)]
     holds = [round(max(1.5, x * 0.3), 2) for x in secs_l]
+    # tohum: aynı tarif önceki sürümde hangi tohumla üretildiyse o (ilk tohumda üretilemeyip +7919 ile üretilmiş olabilir; inceleme, 28 Ekim:
+    # seslendirmesi değişen sahnenin birebir aynı tarifli fotoğrafı yeniden ve farklı üretiliyor, plan.json yanlış tohum yazıyordu)
+    prev_seed = {}
+    if prev is not None and prev.get("mode") == "gercekci":
+        for ps in (prev.get("plan") or {}).get("segments") or []:
+            for x in (ps.get("shots") or []) if isinstance(ps, dict) else []:
+                if isinstance(x, dict) and x.get("file") and isinstance(x.get("prompt"), str) and isinstance(x.get("seed"), int):
+                    prev_seed.setdefault(x["prompt"], x["seed"])
     reused, done = {}, {}
     if prev is not None and prev_dir is not None and prev.get("mode") == "gercekci":
         pool = [(i, ps) for i, ps in enumerate((prev.get("plan") or {}).get("segments") or []) if isinstance(ps, dict) and isinstance(ps.get("shots"), list)]
@@ -1169,13 +1226,16 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
                     for a, b in parts + fotos:
                         shutil.copyfile(a, b)
                     reused[k] = i
+                    for n, x in enumerate(sh):  # plan.json önceki sürümün tohumunu yazsın
+                        if isinstance(x.get("seed"), int):
+                            prev_seed[full[k][n]] = x["seed"]
                     done[str(d / f"sahne-{k}.mp4")] = True
                     pool = [x for x in pool if x[0] != i]
                     break
     if prev is not None and prev_dir is not None:
         log(f"♻️ {len(reused)} sahne önceki sürümden alındı (fotoğraf tarifleri ve süresi değişmedi: {', '.join('kanca' if i == 0 else f'{i}. sahne' for i in sorted(reused.values()))}), "
             f"{len(segs) - len(reused)} sahne yeniden üretiliyor" if reused else f"🎨 düzeltmede bütün sahneler yeniden üretiliyor ({len(segs)} sahne)")
-    seeds = {(k, n): photo_seed(fp) for k, fl in enumerate(full) for n, fp in enumerate(fl)}
+    seeds = {(k, n): prev_seed.get(fp, photo_seed(fp)) for k, fl in enumerate(full) for n, fp in enumerate(fl)}
     shots = [{"key": f"s{k}-{n}", "prompt": fp, "seed": seeds[(k, n)]} for k, fl in enumerate(full) if k not in reused for n, fp in enumerate(fl)]
     info = {"made": 0, "cached": 0, "failed": 0, "error": "", "sec": 0.0}
     got = {}
@@ -1215,12 +1275,20 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
     own_n = sum(1 for x in imgs if x)
     if own_n * 2 < len(segs):  # sahnelerin yarısından fazlası fotoğrafsız: aynı fotoğraf sahne sahne tekrarlanmasın, çizime dönülür
         return {"ok": False, "error": f"yalnız {own_n}/{len(segs)} sahnenin fotoğrafı üretilebildi" + (f" ({info['error'][:160]})" if info["error"] else "")}
-    borrowed = []
+    borrowed, lent = [], set()
     for k in range(len(segs)):
         if imgs[k]:
             continue
-        j = min((abs(j - k), 0 if j < k else 1, j) for j in range(len(segs)) if j != k and imgs[j] and j not in borrowed)[2]
-        imgs[k] = [imgs[j][-1] if j < k else imgs[j][0]]
+        # en yakın sahnenin henüz ödünç verilmemiş fotoğrafı (öncekiden sonuncusu, sonrakinden ilki); hepsi verildiyse en yakınınki tekrar
+        # (inceleme, 28 Ekim: art arda iki fotoğrafsız sahne aynı fotoğrafı alıyordu)
+        donors = sorted((abs(j - k), 0 if j < k else 1, j) for j in range(len(segs)) if j != k and imgs[j] and j not in borrowed)
+        pick = next(((j, x) for _, _, j in donors for x in (imgs[j][::-1] if j < k else imgs[j]) if str(x) not in lent), None)
+        if pick is None:
+            j = donors[0][2]
+            pick = (j, imgs[j][-1] if j < k else imgs[j][0])
+        j = pick[0]
+        lent.add(str(pick[1]))
+        imgs[k] = [pick[1]]
         borrowed.append(k)
         log(f"  ! {'kancanın' if k == 0 else f'{k}. sahnenin'} fotoğrafı üretilemedi: {'kancanın' if j == 0 else f'{j}. sahnenin'} fotoğrafı kullanılıyor")
     # çizicinin paketleyeceği ayrı public klasörü (işin analiz klasöründe; iş bitince ya da panel durdurunca onunla silinir)
@@ -1243,6 +1311,26 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
                  for k, fl in enumerate(full)]
     return {"ok": True, "jobs": jobs, "scenes_out": scenes_out, "reused": reused, "done": done, "imgs": imgs, "borrowed": borrowed, "raw": raw,
             "shots": shots_out, "chars": chars, "style": style, "info": info, "public": public, "own": own}
+
+
+BADGE_FONTS = ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/Library/Fonts/Arial Bold.ttf", "/System/Library/Fonts/Supplemental/Arial.ttf",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf")
+
+
+def still_badge(tmp: Path) -> str:
+    """Hareketsiz yedek klibin yapay zekâ etiketi (ffmpeg drawtext; PhotoScene'deki gibi sağda, y 1232, 28 px, yarı saydam koyu zemin): ",drawtext=…"
+    ya da "" (etiket kapalıysa ya da yazı tipi yoksa). İnceleme, 28 Ekim: Remotion düşünce yayınlanan sahnelerde etiket yoktu. Yazı dosyadan
+    okunur (ayardaki etikette ':' ya da tırnak filtreyi bozmasın)."""
+    text = image_gen.cfg()["badge"]
+    font = next((f for f in BADGE_FONTS if Path(f).is_file()), None)
+    if not text or not font:
+        return ""
+    tf = tmp / "etiket.txt"
+    tf.write_text(text, encoding="utf-8")
+    if any(c in f"{font}{tf}" for c in "':\\"):  # filtre dizgesinde tırnaklı yolu bozacak karakter (Mac'te yollarda olmaz)
+        return ""
+    return (f",drawtext=fontfile='{font}':textfile='{tf}':fontsize=28:fontcolor=white@0.92:x=w-tw-50:y=1244:"
+            "box=1:boxcolor=black@0.45:boxborderw=14")
 
 
 def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes_out: list, ekran: list, history: list | None = None, hook: dict | None = None) -> str:
@@ -1559,9 +1647,10 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     elif photo:
         shutil.rmtree(ph["public"], ignore_errors=True)
     miss = [k for k, j in enumerate(jobs) if not done.get(j["out"])]
-    for k in miss if photo else []:  # canlandırılamayan gerçekçi sahne: ilk fotoğrafı hareketsiz (video yine çıkar)
+    badge_vf = still_badge(tmp) if photo and miss else ""
+    for k in miss if photo else []:  # canlandırılamayan gerçekçi sahne: ilk fotoğrafı hareketsiz (video yine çıkar), etiketi yine üstünde
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(ph["imgs"][k][0]), "-t", f"{scenes_out[k]['seconds']}", "-r", "30",
-                        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p", "-c:v", "libx264",
+                        "-vf", f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920{badge_vf},format=yuv420p", "-c:v", "libx264",
                         "-preset", "veryfast", jobs[k]["out"]], capture_output=True)
         log(f"  ! {'kanca' if k == 0 else f'{k}. sahne'} canlandırılamadı: fotoğrafı hareketsiz kondu")
     if photo:
@@ -2531,6 +2620,8 @@ if __name__ == "__main__":
         try:
             if "--job" in sys.argv:
                 res = build(json.loads(Path(sys.argv[sys.argv.index("--job") + 1]).read_text(encoding="utf-8")))
+            elif "--visual-mode" in sys.argv:
+                res = visual_mode_cli(json.loads(sys.argv[sys.argv.index("--visual-mode") + 1]))
             else:
                 res = {"ok": False, "error": "kullanım: --job IS.json"}
         except Exception as ex:

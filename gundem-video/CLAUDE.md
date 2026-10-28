@@ -1498,14 +1498,28 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (`work/image_deneme.png`), `models/image/READY.json` {model, mflux, testSec (tek fotoğraf), loadSec}. Durum `/api/status` → `image`
   {supported, installed, ready, enabled, testSec, installing, installOk, lines}; Rosetta altındaki Node/Python da Apple Silicon sayılır
   (`os.cpus` "Apple", `sysctl hw.optional.arm64`).
-  Mod (`wa_video.visual_mode` → mod, log nedeni, sahibe not): talimatta açık çizim isteği (`DRAW_ASK`: çizgi film, animasyon, karikatür,
-  illüstrasyon, el çizimi, elle çiz…, çizimle/çizimli, çizim tarzında, çizerek, sulu boya, cartoon, anime; "sıfırdan çiz" fiili DEĞİL) → çizim;
-  açık gerçekçi isteği (`PHOTO_ASK`: gerçekçi, fotoğraf gibi, fotoğraflarla, foto gerçekçi, sinematik, realistic, yapay zekâ ile görsel…) →
-  fotoğraf (motor hazırsa; panel anahtarı kapalı olsa da); olumsuzlanan istek ("çizgi film değil", "gerçekçi olmasın") sayılmaz, ikisi de varsa
-  sondaki; düzeltmede önceki sürümün modu (`plan.json` "mode"; bu özellikten önceki çizilmiş videolar çizim kalır); yoksa `settings.image.enabled`
+  Mod (`wa_video.visual_mode` → mod, log nedeni, sahibe not): talimatta açık çizim isteği (`_ST_DRAW`: çizgi film, animasyon, karikatür —
+  karikatürist değil —, illüstrasyon, el çizimi, elle çiz…, çizimle/çizimli, çizim tarzında, çizerek, sulu boya, cartoon, anime; "sıfırdan çiz"
+  fiili DEĞİL) → çizim; açık gerçekçi isteği (`_ST_PHOTO`: gerçekçi, fotoğraf gibi, fotoğraflarla, foto gerçekçi, realistic, yapay zekâ ile
+  görsel…; "sinematik" 28 Ekim'den beri sayılmaz) → fotoğraf (motor hazırsa; panel anahtarı kapalı olsa da). İSTEK BİÇİMİ (`visual_style`,
+  inceleme, 28 Ekim): metin `kind_fold`lu (Türkçe harfsiz ve büyük harfli yazım da: "cizgi film olarak yap", "BUNUN BENZERINI ANIMASYON OLARAK
+  YAP"); tarz sözü yalnız açık istekse sayılır — kendi içinde istek (çizimle, animasyonla, fotoğraflarla, fotoğraf gibi, çizerek), ardından en
+  çok üç dolgu sözüyle (daha, bir, gibi, tarzında, olarak, benzerini, görsel…) istek (olsun, olarak, yap/çevir/hazırla/anlat/kullan…'ın emir ve
+  istek biçimleri, istiyorum) ya da yan cümlenin sonu ("…, çizgi film") —; önündeki en yakın ad ses/hikâye/metin sözüyse (seslendirme, ses,
+  diyalog, konuşma, hikâye, müzik, anlatım, cümle, kapanış, giriş, kanca, başlık…) görsel isteği değildir ("seslendirme daha gerçekçi olsun",
+  "3. sahnedeki diyalog daha gerçekçi olsun"); içerik sözü de değil ("çocuk tablette çizgi film izlesin", "karikatür çizsin"). Olumsuzlanan istek
+  ÖBÜR tarzı ister ("gerçekçi olmasın", "gerçekçi fotoğraf istemiyorum", "gerçekçi görsel kullanma" → çizim; "çizgi film gibi olmasın", "çizgi
+  filme benzemesin", "çizgi film değil", "çizgi film yerine" → fotoğraf); yakınma tarzı değiştirmez ("fotoğraflar hiç gerçekçi değil",
+  "fotoğraf gibi durmuyor"); ikisi de varsa sondaki; düzeltmede önceki sürümün modu (`plan.json` "mode"; bu özellikten önceki çizilmiş videolar çizim kalır); yoksa `settings.image.enabled`
   (varsayılan açık; panel 📡 "📷 …sahneler gerçekçi fotoğraflarla") ve motor hazırsa fotoğraf, değilse çizim. Log "🎨 görsel modu: …". Sahibe
   not (`plan.visualNote`; WhatsApp'ta "ℹ️", kısa mesaj modunda günde bir) yalnız istediği gerçekçi fotoğraf yapılamadıysa ya da motor bu Mac'te
-  kurulabilir ama kurulu değilse. "özet reels"/"svg özet" de bu kurala uyar (`reelsInstruction` artık "sıfırdan üretilmiş sahnelerle").
+  kurulabilir ama kurulu değilse (kısa mesaj modundaki tek satır günde bir, `data/image_hint.json`: panel yeniden başlasa da). "özet reels"/"svg
+  özet" de bu kurala uyar (`reelsInstruction` fotoğraf modunda "sıfırdan üretilmiş sahnelerle", çizimde eskisi gibi "çizilmiş sahnelerle").
+  Panel aynı kararla konuşur (inceleme, 28 Ekim: yalnız anahtara ve motora bakıyordu; "çizgi film olarak yap" talimatına "gerçekçi
+  fotoğraflarla canlandıracağım" diyor, anahtar kapalıyken "gerçekçi olsun" işini çizim işinin süresinde kesiyordu): `server.js visualModeOf`
+  → `python3 scripts/wa_video.py --visual-mode '{"instruction", "revise": <önceki iş>}'` → {mode, why, note} (Python açılamazsa eski tahmin);
+  başlangıç mesajları, link yanıtı, özet reels satırı ve iş süresi (`recreateTimeoutMin`: çizim 50 dk, fotoğraf 60 + 30 (sıra) + ⌈maxMinutes ×
+  1,6⌉ + 4 dk, varsayılan 118) bu moddan.
   İstem: `prompts/benzer.md` ve `prompts/benzer_duzelt.md` iki modlu: "[[çizim]] … [[/çizim]]" ve "[[gerçekçi]] … [[/gerçekçi]]" satırları
   arası yalnız o modda kalır (`mode_text`; çizim modunda istem bu özellikten önceki istemle bayt bayt aynı). Gerçekçi modda Claude "görüntü
   yönetmeni": her sahnede "gorseller" (1-3 İngilizce fotoğraf tarifi, kancada 1-2; her biri ayrı çekim: geniş plan, orta plan, yakın plan,
@@ -1521,11 +1535,17 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   aşarsa en çok fotoğraflı sahnenin sonuncusu atılır (her sahnede en az bir; log "🎨 fotoğraf sayısı bütçeye indirildi: 13 → 9"). Tohum
   tarifin crc32'si (aynı tarif aynı fotoğraf). `image_gen.generate` önbelleği `work/image_cache/` (model, boyut, adım, tohum, tarif; en çok
   400 dosya); üretici model bir kez yüklenir, ilerleme stderr'e JSON → log "🎨 görsel modeli yüklendi", "🎨 görsel 3/9 hazır (21 sn)"; süre
-  sınırı 240 + 240 × fotoğraf sn ama en çok 240 + maxMinutes × 96 sn (15 dk bütçede ~28 dk; panelin iş sınırı gerçekçi modda 75 dk); süre
-  dolarsa ya da üretici yarıda düşerse ilerleme satırında "hazır" denen fotoğraflar yine kullanılır ("  ! görsel üretimi yarıda kaldı …;
-  biten 5 görsel kullanılıyor"). Üretici çalıştıysa üretilemeyen fotoğraf bir kez başka tohumla (+7919; kullanılan tohum plan.json'a);
-  fotoğrafı hiç olmayan sahne en yakın sahnenin fotoğrafını alır (önce öncekinin sonuncusu; "  ! 3. sahnenin fotoğrafı üretilemedi: 2.
-  sahnenin fotoğrafı kullanılıyor"; `fallback`); HİÇ fotoğraf yoksa (model açılmadı, bellek, çökme) ya da sahnelerin yarısından fazlası
+  sınırı 240 + 240 × fotoğraf sn ama en çok 240 + maxMinutes × 96 sn (15 dk bütçede ~28 dk); süre dolunca hata "üretici N sn süre sınırında
+  durduruldu" (ilerleme çubuğu satırları hata özetine girmez; JSON olmayan ya da eksik alanlı ilerleme satırı atlanır); süre dolarsa ya da
+  üretici yarıda düşerse ilerleme satırında "hazır" denen fotoğraflar yine kullanılır ("  ! görsel üretimi yarıda kaldı …;
+  biten 5 görsel kullanılıyor"). AYNI ANDA TEK ÜRETİM (inceleme, 28 Ekim: WhatsApp videosu, link ve düzeltme işleri aynı anda
+  çalışabiliyor, iki Z-Image-Turbo süreci 16 GB Mac'te belleği taşırıyordu): `image_gen` üretim öncesi `work/image_cache/.uretim.lock` kilidini
+  alır (fcntl.flock; süreç ölünce kendiliğinden bırakılır), alamazsa "🎨 başka bir videonun gerçekçi görselleri üretiliyor; o bitince
+  başlanacak" der ve bekler (en çok `WAIT_MAX` 30 dk; sonra bu videonun sahneleri çizime düşer); süre sınırı kilitten sonra başlar. Rosetta
+  altındaki panelden üretici `arch -arm64` ile başlar. Üretici çalıştıysa üretilemeyen fotoğraf bir kez başka tohumla (+7919; kullanılan tohum plan.json'a);
+  fotoğrafı hiç olmayan sahne en yakın sahnenin henüz ödünç verilmemiş fotoğrafını alır (önce öncekinin sonuncusu; art arda iki fotoğrafsız
+  sahne aynı fotoğrafı almaz, hepsi verildiyse en yakınınki tekrar; "  ! 3. sahnenin fotoğrafı üretilemedi: 2. sahnenin fotoğrafı
+  kullanılıyor"; `fallback`); HİÇ fotoğraf yoksa (model açılmadı, bellek, çökme) ya da sahnelerin yarısından fazlası
   fotoğrafsızsa (aynı fotoğraf sahne sahne tekrarlanmasın; "yalnız 2/5 sahnenin fotoğrafı üretilebildi") plan BİR KEZ çizimle yeniden yazılır
   (ikinci Claude çağrısı; "⚠️ gerçekçi fotoğraflar üretilemedi (…): sahneler çizimle yeniden planlanıyor"; `plan.photoFallback` → WhatsApp
   "⚠️ Gerçekçi fotoğraflar üretilemedi (…); sahneler çizimle yapıldı."). Sahneler Remotion `PhotoScene` (`src/PhotoScene.tsx`;
@@ -1534,21 +1554,31 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   düzeltmesi, gezinen sıcak ışık, vinyet, film greni; sağda altyazının hemen üstünde (top 1232) "🤖 Yapay zekâ ile canlandırıldı" etiketi
   (`settings.image.badge`; "" etiketsiz). Fotoğraflar projenin public/'ine DEĞİL işin analiz klasöründeki ayrı public klasörüne kopyalanır,
   çizici onu paketler (`SCENES_PUBLIC_DIR`; aynı anda çalışan üretimin public/'ine dokunulmaz, paketleme küçük kalır); Remotion iki denemede de
-  çizemezse sahnenin ilk fotoğrafı hareketsiz klip olur. Kapak ve yedek kare sahnenin temiz ilk fotoğrafından. İş klasörüne
+  çizemezse sahnenin ilk fotoğrafı hareketsiz klip olur, etiket ffmpeg drawtext ile yine üstünde (`still_badge`: aynı yer, Arial Bold/DejaVu
+  Sans Bold; yazı tipi yoksa etiketsiz). Kapak ve yedek kare sahnenin temiz ilk fotoğrafından. İş klasörüne
   `foto-<sahne>-<sıra>.jpg`; plan.json "mode": "gercekci", plan "karakterler", "gorsel_stil", sahnelerde "gorseller" (Claude'un tarifi) ve
   "shots" [{prompt (tam metin), seed, file}]; `benzer_dokum.txt`'de her sahnenin "Görsel:" satırı ve fotoğraf tarifleri (📷). Düzeltme turunda
   (gerçekçi modda `benzer_duzelt.md`'nin fotoğraf kuralları; önceki planın sahnelerinde svg yerine "gorseller") tam tarifi ve süresi değişmeyen
-  sahnenin klibi, kareleri ve fotoğrafları önceki sürümden kopyalanır (♻️), değişen tarif yeniden üretilir; karakter ya da stil değişince
+  sahnenin klibi, kareleri ve fotoğrafları önceki sürümden kopyalanır (♻️), değişen tarif yeniden üretilir; tohum, aynı tarif önceki
+  sürümde hangi tohumla üretildiyse o (yeniden denemede +7919 almış olabilir: süresi değişen sahnenin birebir aynı tarifli fotoğrafı
+  önbellekten gelir, plan.json doğru tohumu yazar); karakter ya da stil değişince
   hepsi; düzeltmede "çizgi film olsun" denirse çizime geçer (bütün sahneler çizilir); önceki sürüm gerçekçi ama motor artık hazır değilse
   düzeltme çizimle (not). Sonuç `aiVisuals`, `plan.visualMode`, `photos`, `photoMade`, `photoCached`, `photoSec`, `borrowedScenes`; senaryoya
   `aiVisuals: true` → assemble meta `aiVisuals` (yalnız RECREATE'de) → açıklamanın ikinci satırı `common.AI_NOTE` ("🤖 Görseller yapay zekâ
   ile üretilmiş temsili canlandırmalardır, gerçek görüntü değildir."), YouTube `status.containsSyntheticMedia: true` ("değiştirilmiş ya da
-  yapay içerik" beyanı; API alanı reddederse beyansız bir kez daha, log "  ! YouTube yapay içerik beyanını kabul etmedi"), TikTok doğrudan
-  yayında `post_info.is_aigc: true` (reddedilirse etiketsiz; gelen kutusu modunda uygulamada elle). Panel: başlangıç mesajları motor hazırsa
+  yapay içerik" beyanı; API alanı reddederse beyansız bir kez daha, log "  ! YouTube yapay içerik beyanını kabul etmedi"; süresi geçen videoyu
+  liste dışı yapan ve geri açan `expire_videos.set_privacy` önce mevcut durumu okur, yalnız gizliliği değiştirir — part=status güncellemesi
+  yazılmayan alanları siliyordu, beyan kayboluyordu; inceleme, 28 Ekim), TikTok doğrudan yayında `post_info.is_aigc: true` (reddedilirse
+  etiketsiz); gelen kutusu modunda API etiket almaz: yükleme notuna "🤖 yayınlarken Diğer seçenekler → "Yapay zekâ ile oluşturulan içerik"
+  anahtarını açın" eklenir (WhatsApp/panel sonucu; mesaj ve panel metni artık "TikTok'ta etiket açılır" demez). Panel: başlangıç mesajları motor hazırsa
   "gerçekçi fotoğraflarla yeniden canlandıracağım (… 10-25 dk; talimata "çizgi film" ya da "çizimle" yazarsanız çizerim)", "*Sıfırdan
   üretildi*: 5 sahne, 9 gerçekçi fotoğraf (yapay zekâ, bu Mac'te; fotoğraflar N dk)", sahne satırlarında fotoğraf sayısı; sahibin işi aşamaları
   "gerçekçi fotoğraflar üretiliyor (3/9 tamam)", "sahneler canlandırılıyor"; düzeltme mesajı "N sahne yeniden üretildi". Ayar `image`
-  {enabled true, maxImages 16, maxMinutes 15, badge; model, width 720, height 1280, steps 9, perImageSec 240}. Test kancası: `IMAGE_RUNNER`
+  {enabled true, maxImages 16, maxMinutes 15, badge; model, width 720, height 1280, steps 9, perImageSec 240}; nesne değilse anahtar sayılır
+  ("image": false ya da "kapalı" → kapalı; liste/sayı işleri çökertmez; `image_gen.cfg` = `server.js imageCfg`). Kurulum kilidi:
+  `install_image.sh` `models/image/.kuruluyor`'a PID yazar (çıkışta silinir; canlı kilitte ikinci kurulum "zaten sürüyor" der), panel bunu
+  da "kuruluyor" sayar ve kurulum sürerken kendini güncellemez/yeniden başlamaz (`imageInstalling`, `updateBusy`); Apple Silicon denetimi
+  `sysctl hw.optional.arm64` ile, Rosetta altında başlatılırsa betik `arch -arm64` ile yeniden başlar. Test kancası: `IMAGE_RUNNER`
   ("<python> <betik>") gerçek üretici yerine verilen betiği çalıştırır ve motoru hazır sayar.
   Sandbox'ta denendi (sahte Claude — gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi —, ffmpeg ile renkli fotoğraf üreten
   sahte üretici, sahte referans video): gerçek Remotion ile 5 sahne 9 fotoğraf (kareler: yaklaşma ve kayma, 14 karelik çapraz geçiş, etiket)
@@ -1560,6 +1590,20 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   yalnız "mode": "cizim", logda "🎨 görsel modu" satırı); assemble meta, açıklama, YouTube ve TikTok gövdeleri (sahte servis, alan reddi),
   panel işlevleri (24 denetim) ve paneldeki satır (başsız Chromium, 6 durum). Gerçek Z-Image-Turbo üretimi ve fotoğraf kalitesi Mac'te
   DENENMEDİ (sandbox'ta Apple Silicon ve Hugging Face yok).
+  İnceleme düzeltmeleri (28 Ekim; üç bağımsız inceleme: Python, entegrasyon, istem) sandbox'ta denendi: 52 tarz isteği örneği (Türkçe harfsiz
+  ve büyük harfli yazım, olumsuz istek, yakınma, ses/hikâye/diyalog sözü, içerik sözü) beklenenle aynı; HEAD ile yan yana 29 senaryo (sahte
+  Claude — gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi —, sahte üretici ve çizici): çizim modunda istemler yalnız
+  yerleşim değişikliğinin satırıyla (altyazı 1350, başlık 1550) farklı, Claude argümanları aynı; bilerek değişenler: "cizgi film olarak
+  benzerini sifirdan yap", "BUNUN BENZERINI ANIMASYON OLARAK YAP", "gerçekçi olmasın" → çizim (HEAD fotoğraf), "çizgi film gibi olmasın" →
+  fotoğraf (HEAD çizim), çizilmiş videoda "seslendirme daha gerçekçi olsun" düzeltmesi çizim kalır ve 5 sahne korunur (HEAD bütün sahneleri
+  fotoğrafla yeniden üretiyordu), "image": true / "kapalı" ayarında iş çökmez (HEAD "'bool' object is not a mapping"), üretici 6.
+  fotoğraftan sonra düşünce iki fotoğrafsız sahne farklı fotoğraf alır (HEAD aynısını), +7919 tohumuyla üretilmiş fotoğrafın tohumu
+  düzeltmede korunur (yalnız seslendirmesi değişen sahnede HEAD aynı tarifi iki kez üretiyordu, yenisi bir kez doğru tohumla), Remotion düşünce
+  hareketsiz sahnede etiket var; `image_gen` birim denemeleri (ayar biçimleri, bozuk ilerleme satırları, süre sınırı mesajı, iki iş arasında
+  kilit ve bekleme sınırı; 18 denetim), `set_privacy` (durum alanları korunur, okunamazsa meta'dan beyan) ve TikTok gelen kutusu notu (5
+  denetim), kurulum betiği (sahte uname/sysctl/arch: kilit yok/canlı/ölü, Rosetta'da `arch -arm64` ile yeniden başlama), panel işlevleri (44
+  denetim: mesajlar ve iş süresi wa_video'nun moduyla, düzeltmede önceki iş, Python yanıt vermezse eski tahmin, TikTok satırı, ipucunun
+  kalıcılığı, kurulum kilidi).
 - WhatsApp'a yalnız sahibin gönderdiği videolar (kullanıcı isteği, 23 Ekim: "kendi ürettiği haberleri vs bana göndermesin WhatsApp'tan; sadece
   benim gönderdiğim link veya videodaki ürettiklerini bana göndersin ve onayımı beklesin"): `settings.whatsapp.onlyUserVideos` (varsayılan açık;
   panel Ayarlar → WhatsApp → 📨 anahtarı). `whatsapp.js notifyVideo0` en başta: `force` yoksa ve anahtar açıksa `videoInfo(name).userVideo`

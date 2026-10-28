@@ -86,8 +86,18 @@ def _playlists_remove(yt, vid: str) -> int:
     return n
 
 
-def set_privacy(yt, vid: str, status: str) -> None:
-    yt.videos().update(part="status", body={"id": vid, "status": {"privacyStatus": status, "selfDeclaredMadeForKids": False}}).execute()
+def set_privacy(yt, vid: str, status: str, name: str = "") -> None:
+    """Gizlilik değişir, gerisi kalır: part=status güncellemesi bu bölümün bütün değiştirilebilir alanlarını yazar (yazılmayan silinir), bu
+    yüzden önce videonun mevcut durumu okunur (inceleme, 28 Ekim: liste dışı yapılan ya da geri açılan yapay zekâ görselli videonun
+    "değiştirilmiş ya da yapay içerik" beyanı — containsSyntheticMedia — siliniyordu). Okunamazsa meta'daki aiVisuals'tan."""
+    cur = {}
+    try:
+        items = yt.videos().list(part="status", id=vid).execute().get("items") or []
+        cur = (items[0].get("status") or {}) if items else {}
+    except Exception:  # okunamadı: eski davranış + yapay içerik beyanı meta'dan
+        cur = {"containsSyntheticMedia": True} if (episode_meta(name) or {}).get("aiVisuals") else {}
+    keep = {k: cur[k] for k in ("embeddable", "license", "publicStatsViewable", "containsSyntheticMedia") if k in cur}
+    yt.videos().update(part="status", body={"id": vid, "status": {**keep, "privacyStatus": status, "selfDeclaredMadeForKids": False}}).execute()
 
 
 def check(dry: bool = False) -> dict:
@@ -103,7 +113,7 @@ def check(dry: bool = False) -> dict:
     done, failed = [], []
     for it in todo[:20]:  # kota: video başına ~50-150 birim
         try:
-            set_privacy(yt, it["id"], "unlisted")
+            set_privacy(yt, it["id"], "unlisted", it["name"])
             pl = _playlists_remove(yt, it["id"])
             m = metrics()
             m["videos"][it["name"]]["youtube"].update({"unlistedAt": now_iso(), "unlistReason": it["why"]})
@@ -132,7 +142,7 @@ def restore(which: str) -> dict:
     for n in names:
         y = m["videos"][n]["youtube"]
         try:
-            set_privacy(yt, y["id"], "public")
+            set_privacy(yt, y["id"], "public", n)
             yt_add_to_playlists(yt, y["id"], episode_meta(n) or {})
             y.pop("unlistedAt", None)
             y.pop("unlistReason", None)
