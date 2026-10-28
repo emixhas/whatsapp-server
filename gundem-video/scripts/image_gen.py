@@ -270,6 +270,19 @@ def _to_frame(src: Path, dst: Path, c: dict) -> bool:
     return r.returncode == 0 and dst.exists() and dst.stat().st_size > 5000
 
 
+def _installing() -> bool:
+    """Kurulum betiği çalışıyor mu (models/image/.kuruluyor içinde canlı süreç; server.js imageInstalling ile aynı): kilidi o tutuyorsa
+    bekleme satırı "başka bir video" demesin (inceleme, 28 Ekim)."""
+    try:
+        pid = int((ROOT / "models" / "image" / ".kuruluyor").read_text().strip())
+        os.kill(pid, 0)
+        return pid > 0
+    except PermissionError:
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def _lock(log):
     """Üretim kilidi (fcntl.flock; süreç ölürse kendiliğinden bırakılır): (dosya, beklenen sn) ya da (None, sn) süre dolduysa. İnceleme, 28 Ekim:
     WhatsApp videosu, link ve düzeltme işleri aynı anda çalışabiliyor; iki Z-Image-Turbo süreci 16 GB Mac'te belleği taşırıp ikisini de bozuyordu.
@@ -286,7 +299,8 @@ def _lock(log):
             return f, time.time() - t0
         except OSError:
             if not said:
-                log("🎨 başka bir videonun gerçekçi görselleri üretiliyor; o bitince başlanacak")
+                log("🎨 görsel motoru kuruluyor (deneme görseli üretiliyor); bitince başlanacak" if _installing() else
+                    "🎨 başka bir videonun gerçekçi görselleri üretiliyor; o bitince başlanacak")
                 said = True
             if time.time() - t0 > wait_max:
                 f.close()

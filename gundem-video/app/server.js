@@ -2489,6 +2489,7 @@ const OWNER_STAGES = [
   [/^🎨 Claude videoyu inceliyor|^🎬 Claude|^✏️ Claude|kurgu planı/, () => "Claude senaryoyu ve sahneleri yazıyor (1-4 dk)"],
   [/^🎨 (\d+) sahne çiziliyor/, (m) => `sahneler çiziliyor (${m[1]} sahne, Remotion; sahne başına 1-3 dk)`],
   [/^🎨 başka bir videonun gerçekçi görselleri üretiliyor/, () => "sırada: başka bir videonun gerçekçi fotoğrafları bitince bu videonunkiler üretilecek"],
+  [/^🎨 görsel motoru kuruluyor/, () => "sırada: görsel motoru kuruluyor (deneme görseli); bitince bu videonun fotoğrafları üretilecek"],
   [/^🎨 sıra geldi/, () => "sıra geldi; gerçekçi fotoğraflar üretilmeye başlıyor"],
   [/^🎨 (\d+) gerçekçi görsel üretiliyor(?:.*toplam ~(.+?)(?:, \d+ tanesi önceki üretimden)?\))?/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]} fotoğraf, bu Mac'te${m[2] ? `; toplam ~${m[2]}` : ""})`],
   [/^🎨 görsel (\d+)\/(\d+) (?:.*kalan ~([^;)]+))?/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]}/${m[2]} tamam${m[3] ? `, kalan ~${m[3]}` : ""})`],
@@ -3760,7 +3761,7 @@ app.post("/api/image/install", (_req, res) => {
     const why = String(imageInstall.lines.filter((x) => x.startsWith("✖")).pop() || String(r.stderr || "").trim().split("\n").pop() || "bilinmeyen hata").slice(0, 240);
     const st = imageStatus(), what = st.version >= 2 ? ` (${st.tier}, ${st.size}${st.testSec ? `; fotoğraf başına ~${Math.max(1, Math.round(st.testSec / 60))} dk` : ""})` : "";
     const fb = { disk: " En yüksek kalite için boş disk yetmedi (8 bit için ~47 GB boş gerekir): yer açıp panelden ⬆ Yükselt'e basın.", indirme: " Asıl model indirilemedi: panelden ⬆ Yükselt ile yeniden deneyin (inen dosyalar yeniden inmez).", bellek: " Asıl model bu Mac'in belleğinde açılamadı; hazır 4 bit kullanılıyor." }[st.fallback] || "";
-    push(imageInstall.ok ? `📷 ✔ gerçekçi görsel motoru hazır${what}: benzer videolar artık ${fb ? "bu düzeyde" : "en yüksek gerçekçilikte"} fotoğraflarla üretilecek${fb}` : `📷 ✖ gerçekçi görsel motoru kurulamadı: ${why}`);
+    push(imageInstall.ok ? `📷 ✔ gerçekçi görsel motoru hazır${what}: benzer videolar artık ${fb ? "bu düzeyde" : "en yüksek gerçekçilikte"} fotoğraflarla üretilecek${fb ? `.${fb}` : ""}` : `📷 ✖ gerçekçi görsel motoru kurulamadı: ${why}`);
     try { await sendW(imageInstall.ok ? `📷 Gerçekçi görsel motoru ${up ? "yükseltildi" : "kuruldu"}${what}.${fb || " Benzer videolar artık en yüksek gerçekçilikte üretilecek."}` : `📷 Gerçekçi görsel motoru ${up ? "yükseltilemedi (eski motor çalışmaya devam ediyor)" : "kurulamadı"}: ${why}`); } catch { /* WhatsApp kapalı */ }
   });
   res.json({ ok: true, upgrade: up });

@@ -61,6 +61,9 @@ HUB_4BIT = "filipstrand/Z-Image-Turbo-mflux-4bit"  # eski kurulumun deposu: meti
 
 
 _NET_MODS = ("huggingface_hub", "hf_xet", "requests", "urllib3", "httpx", "httpcore", "ssl", "socket", "http")
+# yer kalmadığını errno'suz bildirenler (inceleme, 28 Ekim): MLX'in safetensors yazıcısı "[write] Unable to write N bytes to file.", hf_xet ve
+# tokenizers (Rust) "No space left on device (os error 28)"
+_DISK_TEXT = ("unable to write", "no space left on device", "os error 28")
 
 
 def _stage(e: BaseException) -> str:
@@ -70,7 +73,7 @@ def _stage(e: BaseException) -> str:
     while x is not None and x not in chain and len(chain) < 10:
         chain.append(x)
         x = x.__cause__ or x.__context__
-    if any(isinstance(x, OSError) and x.errno == errno.ENOSPC for x in chain):
+    if any((isinstance(x, OSError) and x.errno == errno.ENOSPC) or any(t in str(x).lower() for t in _DISK_TEXT) for x in chain):
         return "disk"
     for x in chain:
         if isinstance(x, (ConnectionError, TimeoutError)) or (type(x).__module__ or "").split(".")[0] in _NET_MODS:
@@ -92,8 +95,12 @@ def save(tier: str, dest: str) -> dict:
         out.parent.mkdir(parents=True, exist_ok=True)
         model.save_model(str(out))
     except Exception as e:
+        try:  # disk dolmuşsa (yarım kopya silinmeden önce bakılır) hata metni ne derse desin "disk"
+            full = shutil.disk_usage(ROOT).free < 2e9
+        except OSError:
+            full = False
         shutil.rmtree(out, ignore_errors=True)
-        return {"ok": False, "stage": _stage(e), "error": f"{type(e).__name__}: {str(e)[:300]}"}
+        return {"ok": False, "stage": "disk" if full else _stage(e), "error": f"{type(e).__name__}: {str(e)[:300]}"}
     size = sum(p.stat().st_size for p in out.rglob("*") if p.is_file()) / 1e9
     return {"ok": True, "path": str(out), "gb": round(size, 1), "sec": round(time.time() - t0, 1)}
 
@@ -195,7 +202,7 @@ def finalize(tier: str, new: str, ver: str, ram: str, gen: str, load: str, w: st
              "testH": int(h), "testSec": num(gen), "tests": {f"{w}x{h}": num(gen), **({"1152x2048": num(big)} if big else {})},
              **({"fallback": fallback} if fallback else {}), "at": int(time.time())}
         (img / "READY.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-        freed = cleanup(keep_main=fallback in ("disk", "indirme"))["freed"]
+        freed = cleanup(keep_main=fallback in ("disk", "indirme") and tier == "q4hazir")["freed"]
         for t in BITS:
             if t != tier:
                 shutil.rmtree(img / f"zimage-{t}", ignore_errors=True)

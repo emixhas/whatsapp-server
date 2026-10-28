@@ -376,7 +376,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
   resting, restInfo, restEnd, restRecheck, waEnabled, onTrend = () => {}, approvals = () => [], openUrl = null, dropApproval = () => null, onCancelVideo = () => null,
   lockPid = () => null, findProduced = () => null, onRecovered = () => {}, heldNos = () => [], notify = () => {} }) {
   const FILE = path.join(DATA, "video_queue.json");
-  let items = [], current = null, handed = [], seq = Date.now() % 1e6, kickT = null, noSeq = 0, noAt = 0, busyAt = 0, lists = [], runAt = 0;
+  let items = [], current = null, handed = [], seq = Date.now() % 1e6, kickT = null, noSeq = 0, noAt = 0, busyAt = 0, lists = [], runAt = 0, runSaved = 0;
   // üretilmiş işler (24 saat): numara → {video, at, label, url}. Kuyruk numarası videonun yayın onayı numarasıdır (5. tur, inceleme, 20 Ekim:
   // "#3" ile "onay 3" iki ayrı sayaçtan farklı videoları gösteriyor, "onay 3" kuyruğun 4. videosunu yayınlıyordu): onay numarası da bu sayaçtan
   // (numberFor), kuyruk videosunun onayı kendi numarasını alır; "#3 iptal" üretilmiş videonun onayını ya da planlı yayınını da kaldırır
@@ -413,7 +413,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     noSeq = n; noAt = busyAt = now; return n;
   };
   const save = () => {
-    try { const tmp = FILE + ".tmp"; writeFileSync(tmp, JSON.stringify({ seq: noSeq, seqAt: noAt, busyAt, lists, items, active: [...(current ? [current] : []), ...handed], done }, (k, v) => (k === "ctx" ? undefined : v), 1)); renameSync(tmp, FILE); } catch { /* yazılamadı: bellekte kalır */ }
+    try { const tmp = FILE + ".tmp"; writeFileSync(tmp, JSON.stringify({ seq: noSeq, seqAt: noAt, busyAt, runAt, lists, items, active: [...(current ? [current] : []), ...handed], done }, (k, v) => (k === "ctx" ? undefined : v), 1)); renameSync(tmp, FILE); runSaved = runAt; } catch { /* yazılamadı: bellekte kalır */ }
   };
   const label = (it) => it.account ? `@${it.account}${it.caption ? ` "${oneLine(it.caption, 50)}"` : ""}` : it.caption ? `"${oneLine(it.caption, 60)}"` : shortUrl(it.url);
   const tag = (it) => `#${it.no}`;
@@ -448,6 +448,8 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
   try {
     const d = JSON.parse(readFileSync(FILE, "utf8"));
     noSeq = Number(d?.seq) > 0 ? Math.min(NO_MAX, Number(d.seq)) : 0; noAt = Number(d?.seqAt) > 0 ? Number(d.seqAt) : 0; busyAt = Number(d?.busyAt) > 0 ? Number(d.busyAt) : noAt;
+    // panelin son açık görüldüğü an: kuyruğun son meşgul anı ya da kayıttaki busyAt (eski kayıtta runAt yok); prune() da bundan sayar
+    runAt = runSaved = Math.max(Number(d?.runAt) > 0 ? Number(d.runAt) : 0, busyAt || 0);
     lists = Array.isArray(d?.lists) ? d.lists.filter((l) => l && Array.isArray(l.nos)).slice(-3) : [];
     if (d?.done && typeof d.done === "object" && !Array.isArray(d.done)) for (const [k, v] of Object.entries(d.done)) if (Number(k) > 0 && v?.video) done[Number(k)] = v;
     pruneDone();
@@ -467,16 +469,21 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     }
     // yarım kalanlar başladıkları sırayla (7. tur, inceleme, 21 Ekim: dosyada hazırlanan iş üretimdekinden önce yazıldığı için üretimdeki iş
     // yeniden başlayınca hazırlanan işin arkasına düşüyordu)
-    restart.sort((a, b) => a.t0 - b.t0); for (const x of restart) delete x.t0;
+    restart.sort((a, b) => a.t0 - b.t0);
     // yarım kalan baştan (en önde), bekleyenler kaydedildikleri sırayla (elle değiştirilmiş sıra korunur)
     const now = Date.now(), all = [...restart, ...waiting.map((x) => ({ ...x, state: "sırada", step: null, waited: true }))];
     const seenNo = new Set();
-    items = all.filter((x) => { if (now - Number(x.at || 0) > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı${x.no ? ` (#${x.no})` : ""}: ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); if (owner(x)) setTimeout(() => staleNote(x), 30000); return false; } return true; })
+    // bayatlama prune() ile aynı kural: sahibin bekleyen işi ve yarım kalan (panel kapanırken hazırlanan/üretilen) iş panelin son açık
+    // görüldüğü andan (runAt; yarım kalan işte başladığı an da) sayılır, yani yalnız panel 6 saatten uzun kapalı kaldıysa atılır (inceleme,
+    // 28 Ekim: yeniden başlamada yalnız sıraya giriş anı sayılıyor, üretimdeki iş de atılıyordu)
+    items = all.filter((x) => { if (now - (owner(x) || x.restarted ? Math.max(Number(x.at || 0), runAt, Number(x.t0 || 0)) : Number(x.at || 0)) > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı${x.no ? ` (#${x.no})` : ""}: ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); if (owner(x)) setTimeout(() => staleNote(x), 30000); return false; } return true; })
       .slice(0, OWNER_MAX + AUTO_MAX + 2);
+    for (const x of items) delete x.t0;
     for (const x of items) { if (!(Number(x.no) > 0) || seenNo.has(Number(x.no))) x.no = 0; else { x.no = Number(x.no); seenNo.add(x.no); } }
     for (const x of items) if (!x.no) x.no = nextNo();
     if (items.length) {
-      push(`🎞 video kuyruğu geri yüklendi: ${items.length} video sırada (${items.map(tag).join(", ")})${restart.length ? ` (yarım kalan ${restart.length} video baştan başlayacak)` : ""}`);
+      const nRe = items.filter((x) => x.restarted).length;
+      push(`🎞 video kuyruğu geri yüklendi: ${items.length} video sırada (${items.map(tag).join(", ")})${nRe ? ` (yarım kalan ${nRe} video baştan başlayacak)` : ""}`);
       for (const x of items) onTrend(x, "sırada");
     }
     save();
@@ -486,7 +493,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
 
   // bayatlama: otomatik trend işi sıraya girdiği andan 6 saat; SAHİBİN işi kuyruğun son meşgul anından (inceleme, 28 Ekim: fotoğraflı benzer
   // video saatler sürer; arkasında bekleyen, sahibe "sırada" denmiş link 6 saatte habersiz atılıyordu). Atılan sahip işi WhatsApp'a yazılır.
-  function staleNote(x) { try { notify(`⏹ ${x.no ? `#${x.no} ` : ""}6 saatten uzun sırada bekledi, atlandı: ${shortUrl(x.url)} — yeniden istiyorsanız linki tekrar gönderin.`); } catch { /* bildirilemedi */ } }
+  function staleNote(x) { try { notify(`⏹ ${x.no ? `#${x.no} ` : ""}${x.restarted ? "panel 6 saatten uzun kapalı kaldı, yarım kalan video" : "6 saatten uzun sırada bekledi,"} atlandı: ${shortUrl(x.url)} — yeniden istiyorsanız linki tekrar gönderin.`); } catch { /* bildirilemedi */ } }
   function prune() {
     const now = Date.now(), keep = [];
     for (const x of items) {
@@ -512,7 +519,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     if (keep.length !== handed.length) { handed = keep; save(); if (!current && !items.length) { try { restRecheck(); } catch { /* yok */ } } } // son video da üretildi: ertelenen dinlenme
     else if (dirty) save();
   }
-  setInterval(() => { try { if (current || socialBusy()) runAt = Date.now(); prune(); emit(); if (liveNos().size) busyAt = Date.now(); } catch { /* yok */ } }, 3000);
+  setInterval(() => { try { if (current || socialBusy()) { runAt = Date.now(); if (runAt - runSaved > 5 * 60000) save(); } prune(); emit(); if (liveNos().size) busyAt = Date.now(); } catch { /* yok */ } }, 3000);
   // işin üretimi: anlık sırasındaki kaydı çıkarılır, üretimi sürüyorsa yalnız o durdurulur (⏹'nin yöntemi; sıradaki işler sürer)
   function dropProduction(id) {
     let n = 0;

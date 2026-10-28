@@ -91,26 +91,52 @@ CG="${CACHED%.*}"; FREE=$((FREE + ${CG:-0}))  # yarıda kalmış kurulumun indir
 echo "  Bellek: ${RAM} GB; boş disk: ${FREE} GB; denenecek kalite düzeyleri: ${TIERS}"
 # disk: asıl depo (~31 GB) + yerel kopya + pay; tam hassasiyete yetmiyorsa 8 bitten, asıl depoya hiç yetmiyorsa hazır 4 bit depodan başlanır
 need() { case "$1" in bf16) echo 57 ;; q8) echo 47 ;; q6) echo 45 ;; q4) echo 42 ;; *) echo 16 ;; esac; }
+rank() { case "$1" in bf16) echo 0 ;; q8) echo 1 ;; q6) echo 2 ;; q4) echo 3 ;; *) echo 4 ;; esac; }
+tname() { case "$1" in bf16) echo "tam hassasiyet" ;; q8) echo "8 bit" ;; q6) echo "6 bit" ;; *) echo "4 bit" ;; esac; }
+# şu anki boş disk + indirme önbelleğindeki asıl depo (inen kısım yeniden inmez)
+free_now() { local f c; f="$(df -k . | awk 'NR==2 {print int($4 / 1000000)}')"; c="$(.venv-image/bin/python scripts/image_setup.py plan | jget cached)"; c="${c%.*}"; echo $(( ${f:-0} + ${c:-0} )); }
+# en yüksek düzey disk ya da indirme yüzünden kurulamamış sürüm 2 (yeniden deneme): yalnız ondan İYİ düzeyler denenir, olmazsa şimdiki kurulum
+# olduğu gibi kalır (inceleme, 28 Ekim: her denemede aynı 4 bit model yeniden indirilip kuruluyor, "yükseltildi" deniyordu)
+CUR="$(.venv-image/bin/python - <<'PY' 2>/dev/null || true
+import json
+from pathlib import Path
+try:
+    d = json.loads(Path("models/image/READY.json").read_text(encoding="utf-8"))
+    if int(d.get("version") or 1) >= 2 and Path(str(d.get("model") or "/yok")).is_dir() and d.get("fallback") in ("disk", "indirme"):
+        print(d.get("tier") or "")
+except Exception:
+    pass
+PY
+)"
 # tepe bellek (GB) belleğin %80'i içinde mi (ölçülemediyse kabul)
 roomy() { .venv-image/bin/python -c 'import sys; p, r = sys.argv[1], float(sys.argv[2] or 0); sys.exit(0 if p in ("", "None") or r <= 0 or float(p) <= 0.8 * r else 1)' "$1" "$RAM"; }
 OK_TIERS=""
-for T in $TIERS; do [ "$FREE" -ge "$(need "$T")" ] && OK_TIERS="$OK_TIERS $T"; done
+for T in $TIERS; do
+  if [ -n "$CUR" ] && [ "$(rank "$T")" -ge "$(rank "$CUR")" ]; then continue; fi  # şimdikinden iyi değil
+  [ "$FREE" -ge "$(need "$T")" ] && OK_TIERS="$OK_TIERS $T"
+done
+MAIN_OK=""; for T in $OK_TIERS; do [ "$T" = "q4hazir" ] || MAIN_OK="$MAIN_OK $T"; done
+if [ -n "$CUR" ] && [ -z "$MAIN_OK" ]; then
+  echo "✖ Boş disk en yüksek kaliteye hâlâ yetmiyor (8 bit için ~$(need q8) GB boş gerekir, ${FREE} GB boş): şimdiki $(tname "$CUR") motor çalışmaya devam ediyor; yer açıp yeniden deneyin."
+  exit 1
+fi
 if [ -z "$OK_TIERS" ]; then
   echo "✖ Yeterli boş disk yok: kurulum sırasında en az $(need q4hazir) GB gerekiyor (en yüksek kalite için $(need q8) GB), ${FREE} GB boş. Yer açıp yeniden çalıştırın."
   exit 1
 fi
-case "$OK_TIERS" in *q8*|*bf16*) ;; *) echo "  ! Boş disk en yüksek kaliteye yetmiyor (8 bit için $(need q8) GB gerekir): daha düşük düzey kurulacak" ;; esac
-case "$TIERS" in *bf16*) case "$OK_TIERS" in *bf16*) ;; *) echo "  ! Boş disk tam hassasiyete yetmiyor ($(need bf16) GB gerekir, ${FREE} GB boş): 8 bit kurulacak" ;; esac ;; esac
+case "$TIERS" in *q8*) case "$OK_TIERS" in *q8*|*bf16*) ;; *) echo "  ! Boş disk en yüksek kaliteye yetmiyor (8 bit için $(need q8) GB gerekir, ${FREE} GB boş): daha düşük düzey kurulacak" ;; esac ;; esac
+case "$TIERS" in *bf16*) case "$OK_TIERS" in *bf16*) ;; *q8*) echo "  ! Boş disk tam hassasiyete yetmiyor ($(need bf16) GB gerekir, ${FREE} GB boş): 8 bit kurulacak" ;; esac ;; esac
 mkdir -p work
 echo "▶ 3/4 Z-Image-Turbo indiriliyor (asıl depo ~31 GB, yalnız ilk sefer; internet hızına göre 15-90 dk), yerel kopya kaydediliyor ve deneniyor…"
 CHOSEN=""; W=1152; H=2048; TEST=""; HUBFAIL=""
 for T in $OK_TIERS; do
-  if [ "$T" != "q4hazir" ] && [ -n "$HUBFAIL" ]; then continue; fi  # asıl depo açılamadıysa (bellek, indirme) diğer düzeyler de açılamaz
+  # asıl depo açılamadıysa (bellek, indirme) diğer düzeyler de açılamaz; disk dolduysa daha küçük kopya sığabilir (şimdiki boş diskle bakılır)
+  if [ "$T" != "q4hazir" ] && [ -n "$HUBFAIL" ] && { [ "$HUBFAIL" != "disk" ] || [ "$(free_now)" -lt "$(need "$T")" ]; }; then continue; fi
   NEW="$PWD/models/image/zimage-$T.yeni"
   echo "  ▷ düzey $T: yerel kopya kaydediliyor…"
   if ! OUT="$(.venv-image/bin/python scripts/image_setup.py save "$T" "$NEW")"; then
     echo "  ! $T kaydedilemedi: $(echo "$OUT" | jget error)"; rm -rf "$NEW"
-    if [ "$T" != "q4hazir" ]; then HUBFAIL="$(echo "$OUT" | jget stage)"; HUBFAIL="${HUBFAIL:-yukleme}"; fi
+    if [ "$T" != "q4hazir" ] || [ -z "$HUBFAIL" ]; then HUBFAIL="$(echo "$OUT" | jget stage)"; HUBFAIL="${HUBFAIL:-yukleme}"; fi
     continue
   fi
   echo "  ✔ $T kopyası: $(echo "$OUT" | jget gb) GB, $(echo "$OUT" | jget sec) sn"
@@ -130,9 +156,10 @@ for T in $OK_TIERS; do
   rm -rf "$NEW"
 done
 if [ -z "$CHOSEN" ]; then
+  KEEP="benzer videolar eskisi gibi üretilmeye devam eder"; [ -n "$CUR" ] && KEEP="şimdiki $(tname "$CUR") motor çalışmaya devam ediyor"
   case "$HUBFAIL" in
-    indirme) echo "✖ Model indirilemedi (internet bağlantısını denetleyip yeniden çalıştırın; inen dosyalar yeniden inmez); benzer videolar eskisi gibi üretilmeye devam eder." ;;
-    disk) echo "✖ İndirme sırasında disk doldu: yer açıp yeniden çalıştırın (inen dosyalar yeniden inmez); benzer videolar eskisi gibi üretilmeye devam eder." ;;
+    indirme) echo "✖ Model indirilemedi (internet bağlantısını denetleyip yeniden çalıştırın; inen dosyalar yeniden inmez); $KEEP." ;;
+    disk) echo "✖ Kurulum sırasında disk doldu: yer açıp yeniden çalıştırın (inen dosyalar yeniden inmez); $KEEP." ;;
     *) echo "✖ Hiçbir kalite düzeyinde deneme görseli üretilemedi (yukarıdaki satırları gönderin); benzer videolar eskisi gibi üretilmeye devam eder." ;;
   esac
   exit 1
@@ -150,14 +177,19 @@ echo "  ✔ Z-Image-Turbo $CHOSEN: model ${LOAD} sn'de açıldı, ${W}x${H} gör
 # en yüksek düzey kurulamadı ve hazır 4 bit depoya düşüldüyse nedeni (inceleme, 28 Ekim: yarıda kalan 31 GB indirme ya da yetmeyen disk eski
 # 4 bit modeli kalıcı kılıyor, yarım indirme siliniyor, yeniden kurulum "zaten kurulu" diyordu): disk ve indirmede yarım indirme kalır, panel
 # "⬆ Yükselt" göstermeye devam eder, yeniden çalıştırınca kaldığı yerden sürer; bellekte (deneme görseli sığmadı) karar kalıcıdır
+# 6 ya da 4 bit de, boş disk 8 biti dışarıda bıraktıysa geri düşüştür (inceleme, 28 Ekim: kalıcı sayılıyordu); tam hassasiyet yerine 8 bit değil
+# (8 bit tam hassasiyete çok yakın)
 FALLBACK=""
+case "$TIERS" in *q8*) case "$OK_TIERS" in *q8*|*bf16*) ;; *) [ "$(rank "$CHOSEN")" -ge 2 ] && FALLBACK="disk" ;; esac ;; esac
+if [ "$HUBFAIL" = "disk" ] && [ "$(rank "$CHOSEN")" -ge 2 ]; then FALLBACK="disk"; fi
 if [ "$CHOSEN" = "q4hazir" ] && [ "$TIERS" != "q4hazir" ]; then
-  MAIN_OK=""; for T in $OK_TIERS; do [ "$T" = "q4hazir" ] || MAIN_OK="$MAIN_OK $T"; done
-  if [ -z "$MAIN_OK" ]; then FALLBACK="disk"
-  elif [ "$HUBFAIL" = "indirme" ] || [ "$HUBFAIL" = "disk" ]; then FALLBACK="$HUBFAIL"
+  if [ -n "$FALLBACK" ]; then :
+  elif [ "$HUBFAIL" = "indirme" ]; then FALLBACK="indirme"
   else FALLBACK="bellek"; fi
+fi
+if [ -n "$FALLBACK" ]; then
   case "$FALLBACK" in
-    disk) echo "  ! En yüksek kalite için boş disk yetmedi: şimdilik hazır 4 bit kuruldu. Yer açıp (8 bit için ~$(need q8) GB boş) panelden ⬆ Yükselt ya da bu betiği yeniden çalıştırın." ;;
+    disk) echo "  ! En yüksek kalite için boş disk yetmedi: şimdilik $(tname "$CHOSEN") kuruldu. Yer açıp (8 bit için ~$(need q8) GB boş) panelden ⬆ Yükselt ya da bu betiği yeniden çalıştırın." ;;
     indirme) echo "  ! Asıl model indirilemedi (internet kesildi ya da sunucu yanıt vermedi): şimdilik hazır 4 bit kuruldu. Panelden ⬆ Yükselt ya da bu betiği yeniden çalıştırın; inen dosyalar yeniden inmez." ;;
     *) echo "  ! Asıl model bu Mac'in belleğinde açılamadı: hazır 4 bit kuruldu." ;;
   esac

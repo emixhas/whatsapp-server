@@ -1634,7 +1634,16 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     disk doldu) ve "indirme"de yarım indirme silinmez, panel "⬆ Yükselt" göstermeye devam eder ("⚠️ en yüksek kalite için boş disk yetmedi …
     yer açıp yükseltin" / "asıl model indirilemedi: yeniden deneyin"), yeniden çalıştırma kaldığı yerden sürer; "bellek"te (asıl model ya da
     deneme görseli bu Mac'te sığmadı) karar kalıcıdır ("asıl model bu Mac'in belleğinde açılamadı, hazır 4 bit kullanılıyor"). 14 GB altı
-    bellekte hazır 4 bit zaten tek seçenek (geri düşüş sayılmaz). `image_setup.py` stdout'a yalnız sonuç satırını yazar (mflux "Downloading
+    bellekte hazır 4 bit zaten tek seçenek (geri düşüş sayılmaz). İkinci inceleme (28 Ekim): disk yerel kopya yazılırken dolarsa da "disk"
+    (MLX'in yazıcısı errno'suz "[write] Unable to write …", hf_xet ve tokenizers "No space left on device (os error 28)" der; hata anında
+    2 GB'tan az boş yer de "disk"), disk dolduysa daha küçük asıl düzeyler şimdiki boş diskle yeniden denenir (bellek ve indirme hatasında
+    denenmez); boş disk 8 biti dışarıda bıraktığı için 6 ya da 4 bit kurulduysa o da "disk" geri düşüşüdür (tam hassasiyet yerine 8 bit
+    sayılmaz: 8 bit tam hassasiyete çok yakın); asıl depo yalnız hazır 4 bitte tutulur (asıl düzey kurulduysa ondan yapılmış kopya var).
+    Yeniden deneme yalnız şimdikinden İYİ düzeyleri dener (aynı 4 bit yeniden indirilip kurulmaz); hiçbiri olmazsa şimdiki kurulum olduğu
+    gibi kalır: "✖ Boş disk en yüksek kaliteye hâlâ yetmiyor (… GB boş): şimdiki 4 bit motor çalışmaya devam ediyor; yer açıp yeniden
+    deneyin" ya da "✖ Model indirilemedi (…); şimdiki 4 bit motor çalışmaya devam ediyor" (panel "yükseltilemedi (eski motor çalışmaya
+    devam ediyor)"). Yalnız hazır 4 bit indirilemezse de doğru neden ("✖ Model indirilemedi"); "8 bit için disk yetmiyor" uyarısı 8 bit
+    planlanmamış (14 GB altı) Mac'te çıkmaz. `image_setup.py` stdout'a yalnız sonuç satırını yazar (mflux "Downloading
     model…" satırı stderr'e), kurulumun `jget`'i son satırı okur ve hiç hata vermez. sysctl macOS'ta yalnız /usr/sbin'de, panel launchd
     servisi olarak çalışırken PATH'te yok (inceleme, 28 Ekim: panelden kurulum "yalnız Apple Silicon" deyip duruyordu): kurulum betiği
     PATH'in sonuna /usr/sbin:/sbin ekler, `server.js` ENV de; `image_gen.supported` ve `image_setup.ram_gb` yoksa /usr/sbin/sysctl.
@@ -1660,7 +1669,13 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
     (`ownerJobStart(label, limitMin)`: en az 3 saat, uzun işte sınır + 90 dk; eskiden 3 saatte kesiliyordu). Video kuyruğunda sahibin
     linki süren üretimin arkasında beklerken bayatlamaz (`videoqueue.js`: yaş, sıraya girişten ya da kuyruğun son meşgul anından hangisi
     sonraysa; otomatik trend işleri eskisi gibi sıraya girişten 6 saat), atılan sahip işi WhatsApp'a yazılır ("⏹ #5 6 saatten uzun sırada
-    bekledi, atlandı: … — yeniden istiyorsanız linki tekrar gönderin"; panel kapalıyken bayatlayanlar açılıştan 30 sn sonra). Panel iş süresi `recreateTimeoutMin(photo, jobMinutes)` = 60 + `image_gen.job_minutes()` (2 ×
+    bekledi, atlandı: … — yeniden istiyorsanız linki tekrar gönderin"; panel kapalıyken bayatlayanlar açılıştan 30 sn sonra). Kuyruğun son
+    meşgul anı (`runAt`) dosyaya yazılır (uzun işte 5 dk'da bir); panel yeniden başlayınca sahibin bekleyen işi ve yarım kalan (hazırlanan ya
+    da üretilen) iş panelin son açık görüldüğü andan (runAt, eski kayıtta busyAt; yarım kalanda başladığı an da) sayılır: yalnız panel 6
+    saatten uzun kapalı kaldıysa atılır ("⏹ #2 panel 6 saatten uzun kapalı kaldı, yarım kalan video atlandı: …"; ikinci inceleme, 28 Ekim:
+    yeniden başlamada yalnız sıraya giriş anı sayılıyor, üretimdeki iş de atılıyordu); "yarım kalan N video" sayısı süzgeçten sonra. Kilidi
+    kurulum tutuyorsa (deneme görseli, son adım) bekleme satırı "🎨 görsel motoru kuruluyor (deneme görseli üretiliyor); bitince başlanacak",
+    sahibin işi aşaması "sırada: görsel motoru kuruluyor (deneme görseli); …" (eskiden "başka bir videonun" diyordu). Panel iş süresi `recreateTimeoutMin(photo, jobMinutes)` = 60 + `image_gen.job_minutes()` (2 ×
     sınır; `wa_video.py --visual-mode` yanıtında `eta`, `jobMinutes`; Python yanıt vermezse ayardan, fotoğraf başına 5 dk ve 28 fotoğrafla
     516 dk). Log "🎨 19 gerçekçi görsel üretiliyor (Z-Image-Turbo 8 bit, 1152x2048, Mac'te yerel; görsel başına ~4 dk, toplam ~1,3 saat)",
     "🎨 görsel 3/19 hazır (4 dk 5 sn; kalan ~1,1 saat)" (ilk görselde "; bellek 9,8 GB"); sahibin işi aşaması "gerçekçi fotoğraflar
@@ -1700,10 +1715,14 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   - Sandbox'ta denendi (gerçek mflux 0.24.0 kodu CPU'da çalışan MLX ortamında, ağırlıklar yerine sahte model ve üretici; sahte Claude —
     gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi —): `zimage_run` 27 denetim (sigma düğümleri Z-Image'ın kendi
     zamanlamasıyla aynı, aşamalı kodlamada kodlayıcı serbest kalıyor; model açılmadı, görsel hatası, stdout gürültüsü, 512 belirteç kesilmesi),
-    `image_gen` 57 denetim (sürüm 1 davranışı HEAD ile aynı: tahmin, önbellek anahtarı, kare boyutu; sürüm 2 boyutları, önbellek, internetsiz
-    ortam, bekçiler, kilit), kurulum betiği 19 senaryo (28 denetim: bellek düzeyleri, disk, kaydetme ve üretim hatası, tepe bellek, yavaşlık
-    seçeneği, yükseltme, --force, kilit, Mac olmayan), panel işlevleri 67 denetim (mesajlar, süre tahmini, iş süresi, aşama satırları,
-    kurulum ve yükseltme), HEAD ile yan yana 29 sahte iş (çizim modunda istemler ve sonuçlar aynı; fotoğraf modunda yalnız bilerek
+    `image_gen` 66 denetim (sürüm 1 davranışı HEAD ile aynı: tahmin, önbellek anahtarı, kare boyutu; sürüm 2 boyutları, önbellek, internetsiz
+    ortam, bekçiler, kilit, kilit beklerken yükseltilen motor, geri düşüş durumu, kurulum bekleme satırı), kurulum betiği 32 senaryo (51
+    denetim: bellek düzeyleri, disk, kaydetme ve üretim hatası, tepe bellek, yavaşlık seçeneği, yükseltme, --force, kilit, Mac olmayan,
+    indirme ve disk geri düşüşleri ve yeniden denemeleri, kopya yazılırken dolan disk, hf_xet disk hatası, kilit altında son adım, stdout'a
+    yazan kütüphane), launchd PATH benzetimi, panel işlevleri 77 denetim (mesajlar, süre tahmini, iş süresi, aşama satırları, kurulum ve
+    yükseltme, geri düşüş metinleri), sahip notları 5 denetim, video kuyruğu benzetimleri (uzun işlerin arkasındaki sahip linkleri, otomatik
+    trendin bayatlaması, yeniden başlamada yarım kalan ve bekleyen işler, sahibe not), fotoğraf tarifi süzgeci 11 örnek, HEAD'in ürettiği
+    gerçekçi videonun yeni kodla düzeltilmesi (aynı → 5/5 sahne korundu, bir sahnenin seslendirmesi → 4/5), HEAD ile yan yana 29 sahte iş (çizim modunda istemler ve sonuçlar aynı; fotoğraf modunda yalnız bilerek
     değişenler), Remotion `PhotoScene` kareleri (8 tohum × 6 en kötü an: kenar açılmıyor). Gerçek Apple Silicon üretimi, indirme ve
     fotoğraf kalitesi DENENMEDİ (sandbox'ta Mac ve model yok).
 - WhatsApp'a yalnız sahibin gönderdiği videolar (kullanıcı isteği, 23 Ekim: "kendi ürettiği haberleri vs bana göndermesin WhatsApp'tan; sadece
