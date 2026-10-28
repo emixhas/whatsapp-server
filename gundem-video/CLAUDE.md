@@ -90,7 +90,26 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   text, words, extra}; panel Ayarlar → Gelişmiş anahtar + "Ek gizlenecek kelimeler"): kökler `DEFAULT_WORDS` (intihar,
   öl+ek kalıbı — ölçü/ölçek değil, silah, cinayet, katil/katle, bıçak, kurşun, tecavüz, istismar, taciz, uyuşturucu, ceset,
   işkence, vahşet, boğ+ek kalıbı — Boğaz değil, tabanca, pompalı, rehin, bomba, terör), Türkçe ekler dahil, `tr_lower`
-  uzunluk korur. SES (kullanıcı: "kesilmesin, kelime arkadan duyulsun"; 27 Ekim şikâyeti: "bip sonrası bir bozuk ses de gelebiliyor"):
+  uzunluk korur. GEREKSİZ BİP YOK (kullanıcı şikâyeti, 27 Ekim: "bazen gereksiz kelimelerin biplendiğini görüyorum"): eşleşme büyük-küçük harf DUYARLI (metin
+  zaten `tr_lower`lı; `_rx_lower` kalıbı ters bölülü kaçışlara dokunmadan küçültür): Python'un duyarsız eşleşmesi i ile ı'yı aynı sayıyordu,
+  "törene katıldı", "AK Parti'ye katıldı", "katılım payı", "Piyasa Katılımcıları" katil diye biplenirdi (sandbox'taki gerçek haber
+  metinlerinde bütün biplerin kaynağı buydu). `EXEMPT` (92 kalıp): hassas kelime bir istisna eşleşmesinin TAMAMEN içindeyse gizlenmez, aynı
+  cümledeki başka hassas kelime gizlenir: kurum/süreç (Türk Silahlı Kuvvetleri, silahsızlanma, silah bırakma süreci/töreni, örgütün silah
+  bırakması — olumsuz "bırakmayacak" değil —, NPT, OPCW, Terörsüz Türkiye, terörün finansmanı, İşkencenin Önlenmesi Komitesi), mecazi "X-e
+  boğuldu/boğdu" (gözyaşı, alkış, gol, fark, borç, sis, yas…; kana, sele, suya, dumana DEĞİL), bomba argosu (soru bombardımanı, kalori/
+  vitamin bombası, zam bombası, bomba gibi düştü, eksiz "bomba itiraf/açıklama/karar/iddia" — "bomba açıklaması/kararı", "bomba iddia
+  edilen", "bomba transferi" DEĞİL —, saatli bombaya dönüştü), öl- (gülmekten öldük, ölümsüz, ölüm kalım maçı, ölüm grubu, ölü sezon/
+  toprağı/nokta, öldürücü pas, ölüm riski/oranı, anma: "ölüm yıl dönümü", "ölümünün 13. yılında", Atatürk'ün ölüm yıl dönümü), bıçak
+  (bıçak kemiğe dayandı, bıçak altına yattı, bıçak sırtı, çatal bıçak), kurşun (kalem, kurşunsuz benzin, metal, kurşuni), "trafik/sıcak
+  işkencesi", din/duygu istismarı, rehinli araç, siyasi/siyasal/politik intihar ("intihar saldırısı" değil), marka hakkına/hava sahasına
+  tecavüz, masaj/silikon tabancası, hukuk cinayeti, sessiz katil, katil balina/arı, ısı pompalı; yer, kişi ve eser adları (Ölüdeniz,
+  Ölü Deniz, Kurşunlu, Silahtarağa, Bıçakçı, Bombay, Bombardier, Ölümlü Dünya, Bıçaklar Çekildi, Üç Silahşörler, Tacizer…). Kaynak: 27
+  Ekim taraması (sözlük, deyim, özel ad ve eşleştirici açılarından 151 aday, her biri ayrıca çürütülmeye çalışıldı); gerçek şiddeti de
+  anlatabilen geniş adaylar alınmadı (silah bırakıp kaçtı, saatli bomba gibi düzenek, bomba kararı, silahsızlandırıldı, denizde boğuldu).
+  Sandbox'ta denendi: taramanın 548 "biplenmemeli" örneğinin 545'inde bip kalktı (kalan 3'ü bilerek: bomba transferi, bomba faiz kararı,
+  silahsızlandırılması); 510 "biplenmeli" örnekten yalnız iki suikast anması ("Hrant Dink ölümünün 19. yılında anıldı") bipsiz kaldı
+  (anma dili, bilerek); 63.345 kelimelik sıklık listesinde 80 kelimenin bipi kalktı (73'ü katıl-), yeni biplenen yok; 50.000 karakterlik
+  kötü girdide en çok ~0,5 sn. SES (kullanıcı: "kesilmesin, kelime arkadan duyulsun"; 27 Ekim şikâyeti: "bip sonrası bir bozuk ses de gelebiliyor"):
   segment BÜTÜN seslendirilir (eskiden cümle hassas kelimenin önünden/arkasından parçalara bölünüp her parça ayrı okunuyordu; "etti."
   gibi kısa parçayı VoxCPM/Trendyol bozuk okuyordu, tek okunan kelimenin tonlaması da cümleye uymuyordu). `censor.token_hits()`
   hassas kelimelerin sırasını (`narration.split()` ile aynı bölünme), altyazı hizalaması (metin hizalama → konuşma tanıma → duraklama
