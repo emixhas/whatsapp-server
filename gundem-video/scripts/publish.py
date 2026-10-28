@@ -583,6 +583,8 @@ def yt_thumb_hint(e) -> str:
 
 def yt_set_thumb(yt, vid: str, path: Path):
     """Videoya kendi kapağımızı (-kapakYT.jpg, yoksa dikey) koyar; hata varsa Türkçe nedeni döner (yayın yine tamam)."""
+    # içe aktarma burada: 13 Ekim'de yt_upload'dan ayrılırken unutulmuştu, her kapak "name 'MediaFileUpload' is not defined" ile düşüyordu
+    from googleapiclient.http import MediaFileUpload
     thumb = path.with_name(path.stem + "-kapakYT.jpg")  # 16:9 YouTube kapağı; yoksa dikey
     if not thumb.exists():
         thumb = path.with_name(path.stem + "-kapak.jpg")

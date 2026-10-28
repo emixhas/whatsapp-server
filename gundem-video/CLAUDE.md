@@ -64,7 +64,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   videolarda görülen buydu). `publish.yt_set_thumb` hatayı Türkçe nedenle loga ("  ! YouTube kapağı yüklenemedi: kanal
   özel kapak iznine sahip değil: youtube.com/verify…") ve metrics `youtube.thumbError`a yazar; başarılı yüklemeden sonra
   `yt_retry_thumbs` reddedilmiş/denenmemiş en çok 3 eski videoyu düzeltir; `publish.py --yt-thumbs`, `POST /api/youtube/thumbs`,
-  komut "kapakları yeniden yükle", YouTube kartında "🖼 Kapakları yeniden yükle".
+  komut "kapakları yeniden yükle", YouTube kartında "🖼 Kapakları yeniden yükle". 13-28 Ekim arası özel kapak HİÇ yüklenmedi: `yt_set_thumb`
+  yt_upload'dan ayrılırken `MediaFileUpload` içe aktarması unutulmuştu (her denemede NameError, `thumbError` "name 'MediaFileUpload' is not
+  defined"; 28 Ekim'de pyflakes taramasıyla bulundu, düzeltildi). Sonraki başarılı kapaktan sonra `yt_retry_thumbs` eskileri üçer üçer
+  tamamlar; hepsi için panel "🖼 Kapakları yeniden yükle".
 - Dikey kapak (`TallThumb`): haber fotoğrafı tam ekran (dikeyde `imageTall`, canlı renk), yoksa kategori ışıltısı +
   büyük illüstrasyon; ışık huzmeleri, vinyet, kategori renginde kalın çerçeve; eğik SON DAKİKA/kategori bandı,
   gün, "N. 5 SAAT" + sarı saat aralığı; dev başlık siyah kontürlü, anahtar kelime (rakamlı ya da en uzun) sarı
