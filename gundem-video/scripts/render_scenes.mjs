@@ -2,6 +2,9 @@
 // sessiz h264 mp4 olur (1080x1920, 30 kare/sn, süre props.seconds).
 // Kullanım: node scripts/render_scenes.mjs <jobs.json>
 //   jobs: [{ "out": "/mutlak/yol/sahne-1.mp4", "props": { "svg", "count", "seconds", "hold", "palette", "seed" } }] (klip = seconds + hold)
+//   gerçekçi sahne: { "comp": "PhotoScene", "props": { "images": ["recreate/<iş>/s1-0.jpg", …], "seconds", "hold", "seed", "badge" } }
+//   (fotoğraflar paketlenen public klasöründe olmalı: SCENES_PUBLIC_DIR verilirse o klasör — wa_video işin kendi klasörünü verir —,
+//   yoksa projenin public/'i)
 // Her sahne en çok 3 kez denenir (2 tekrar); çıktı yoksa ya da çok küçükse başarısız sayılır. Her sahnenin kendi süre sınırı var
 // (max(120 sn, kare × 0,5 sn), denemeler dahil; aşılınca çizim iptal edilir, tekrar denenmez, sıradaki sahneye geçilir; inceleme, 19
 // Ekim: iç içe <use>'lu tek bir yavaş sahne bütün işin 20 dakikasını bitirip sonraki sahneleri de yedeğe düşürüyordu). stdout'a yalnız sonuç JSON'u
@@ -33,7 +36,7 @@ const budgetMs = (props) => Math.max(120, Math.ceil(((Number(props.seconds) || 4
 const results = {};
 let serveUrl;
 try {
-  serveUrl = await bundle({ entryPoint: path.join(ROOT, "src/index.ts"), publicDir: path.join(ROOT, "public") });
+  serveUrl = await bundle({ entryPoint: path.join(ROOT, "src/index.ts"), publicDir: process.env.SCENES_PUBLIC_DIR || path.join(ROOT, "public") });
 } catch (e) {
   console.log(JSON.stringify({ ok: false, error: "paketleme: " + e.message }));
   process.exit(1);
@@ -44,6 +47,7 @@ const getBrowser = async () => (browser ||= await openBrowser("chrome", { ...ext
 for (const [k, j] of jobs.entries()) {
   const out = path.resolve(ROOT, String(j.out || ""));
   const props = { ...j.props, seconds: Number(j.props?.seconds) || 4 };
+  const comp = j.comp === "PhotoScene" ? "PhotoScene" : "SvgScene"; // gerçekçi sahne: yapay zekâ fotoğrafları (public/ altında)
   let err = "", prep = "";
   const t0 = Date.now(), budget = budgetMs(props);
   try {
@@ -62,7 +66,7 @@ for (const [k, j] of jobs.entries()) {
     try {
       await Promise.race([guard, (async () => {
         const puppeteerInstance = await getBrowser();
-        const composition = await selectComposition({ serveUrl, id: "SvgScene", inputProps: props, puppeteerInstance, ...extra });
+        const composition = await selectComposition({ serveUrl, id: comp, inputProps: props, puppeteerInstance, ...extra });
         if (late) throw new Error("süre doldu");
         await renderMedia({ composition, serveUrl, codec: "h264", outputLocation: out, inputProps: props, muted: true, crf: 18, x264Preset: "veryfast",
           imageFormat: "jpeg", jpegQuality: 92, concurrency, overwrite: true, puppeteerInstance, cancelSignal, ...extra });

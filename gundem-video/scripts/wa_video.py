@@ -39,6 +39,7 @@ import signal
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -47,6 +48,7 @@ from info_card import new_job  # noqa: E402
 import social_video as sv  # noqa: E402
 import frame_crop as fc  # noqa: E402
 import scene_svg  # noqa: E402
+import image_gen  # noqa: E402
 
 SPEECH_OFF = False  # konuşma tanıma kurulamadı/kapalı: plan yalnız kareler ve sahne geçişleriyle
 WORDS: dict = {}  # video yolu → [(kelime, başlangıç, bitiş)] (orijinal sesli bölümün altyazısı)
@@ -975,16 +977,19 @@ def scene_budget(props: dict) -> float:
     return max(120.0, frames * 0.5)
 
 
-def render_scenes(jobs: list, tmp: Path, tag: str) -> tuple:
+def render_scenes(jobs: list, tmp: Path, tag: str, public: Path | None = None) -> tuple:
     """Sahneleri `scripts/render_scenes.mjs` ile çizer (proje bir kez paketlenir). Dönüş ({çıktı yolu: True}, hata metni); başarı dosyaya
     bakılarak denetlenir (çıktı var ve oynatılabilir). Her sahnenin kendi süre sınırı var (`scene_budget`, çizici uygular: yavaş sahne
-    tek başına düşer); bütün işin sınırı sahne sınırlarının toplamı + 5 dk (paketleme, tarayıcı), en az 20 dk."""
+    tek başına düşer); bütün işin sınırı sahne sınırlarının toplamı + 5 dk (paketleme, tarayıcı), en az 20 dk. `public`: projenin public/
+    klasörü yerine paketlenecek klasör (gerçekçi sahnelerin fotoğrafları işin kendi klasöründe: aynı anda çalışan üretimin public/'ine
+    dokunulmaz, paketleme de küçük kalır)."""
     jf = tmp / f"sahneler-{tag}.json"
     jf.write_text(json.dumps(jobs, ensure_ascii=False), encoding="utf-8")
     err, res = "", {}
     limit = max(1200, int(300 + sum(scene_budget(j["props"]) for j in jobs)))
     try:
-        r = subprocess.run(["node", str(ROOT / "scripts" / "render_scenes.mjs"), str(jf)], cwd=ROOT, capture_output=True, text=True, timeout=limit)
+        env = {**os.environ, "SCENES_PUBLIC_DIR": str(public)} if public else None
+        r = subprocess.run(["node", str(ROOT / "scripts" / "render_scenes.mjs"), str(jf)], cwd=ROOT, capture_output=True, text=True, timeout=limit, env=env)
         try:
             out = json.loads((r.stdout or "").strip().splitlines()[-1])
             res, err = out.get("results") or {}, str(out.get("error") or "")
@@ -1002,6 +1007,242 @@ def render_scenes(jobs: list, tmp: Path, tag: str) -> tuple:
         elif not err and str(res.get(j["out"]) or "").startswith("hata"):
             err = str(res[j["out"]])[:200]
     return done, err
+
+
+# ---------- Gerçekçi görseller (kullanıcı isteği, 27 Ekim: "ürettiğimiz benzerini sıfırdan yap gönderilerimiz çok basit çizimler ile oluyor;
+# rakip üreticileri görüyorum, harika üretimler yapıyorlar, çok gerçekçi duruyor"): benzer videonun sahneleri yapay zekâ ile üretilen gerçekçi
+# fotoğraflarla anlatılır (scripts/image_gen.py: Mac'te yerel Z-Image-Turbo; Remotion PhotoScene fotoğrafları yavaş kamera hareketi ve
+# geçişlerle oynatır). Motor kurulu ve panel anahtarı açıksa varsayılan budur; talimatta çizgi film/animasyon/çizim istenirse ya da motor
+# hazır değilse SVG çizimi. Bütün fotoğraflar üretilemezse plan bir kez çizimle yeniden yazılır (video yine çıkar).
+RECREATE_TALIMAT_FOTO = "Bu videonun hikâyesini ve mesajını koruyarak benzerini kendi cümlelerimizle ve sıfırdan üretilmiş gerçekçi fotoğraflarla anlat."
+PHOTO_ASK = re.compile(r"gerçekçi\w*|foto(?:ğraf)?\s*gerçekçi\w*|fotogerçekçi\w*|gerçek\s+(?:fotoğraf|görüntü|görsel|resim)\w*\s+gibi|fotoğraf\w*\s+gibi|"
+                       r"fotoğraflarla|fotoğraflı|sinematik\w*|realisti\w*|photo\s*-?\s*real\w*|yapay\s+zek[aâ]\s+(?:ile\s+)?(?:görsel|resim|fotoğraf)\w*")
+DRAW_ASK = re.compile(r"çizgi\s*film\w*|animasyon\w*|karikatür\w*|ill[üu]strasyon\w*|el\s+çizim\w*|elle\s+çiz\w*|kalem\s+çizim\w*|sulu\s*boya\w*|"
+                      r"çizim(?:le|li|ler|lerle)(?!\w)|çizim\s+(?:tarz\w*|gibi|olsun|şeklinde)|çizerek|cartoon\w*|anime(?!\w)")
+STYLE_NEG = re.compile(r"\s*(?:da|de)?\s*(?:değil|degil|olmasın|olmasin|olmayacak|istemiyorum|istemem|yok|kullanma\w*)(?!\w)")
+NO_FRAMES = {"cizim": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan çıkar, görüntüyü tarif etme, tarzı sade elle "
+                      "çizilmiş seç. Görebilseydin bakacağın şeyler",
+             "gercekci": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan çıkar, referansın görüntüsünü görmüş gibi "
+                         "anlatma, fotoğrafları hikâyeye göre sen kur. Görebilseydin bakacağın şeyler"}
+PHOTO_COMPOSE = "vertical 9:16 composition, main subject in the upper two thirds of the frame, simple uncluttered lower third"
+
+
+def visual_style(text: str) -> str | None:
+    """Talimattaki açık görsel isteği: "cizim" (çizgi film, animasyon, karikatür, çizimle…), "gercekci" (gerçekçi, fotoğraf gibi,
+    sinematik…) ya da None. Olumsuzlanan istek ("çizgi film değil", "gerçekçi olmasın") sayılmaz; ikisi de varsa sondaki geçer."""
+    t = str(text or "").replace("I", "ı").replace("İ", "i").lower()
+    best = None
+    for rx, mode in ((PHOTO_ASK, "gercekci"), (DRAW_ASK, "cizim")):
+        for m in rx.finditer(t):
+            if not STYLE_NEG.match(t, m.end()) and (best is None or m.start() > best[0]):
+                best = (m.start(), mode)
+    return best[1] if best else None
+
+
+def visual_mode(instruction: str, prev: str | None = None) -> tuple:
+    """Benzer videonun görsel modu: ("gercekci" | "cizim", log nedeni, sahibe not). Sıra: talimattaki açık istek (çizim → çizim; gerçekçi →
+    fotoğraf, motor hazırsa) → düzeltmede önceki sürümün modu → panel anahtarı (settings.image.enabled) ve motorun hazır olması. Not yalnız
+    sahibin bilmesi gereken durumda: istediği gerçekçi fotoğraf yapılamadı ya da motor bu Mac'te kurulabilir ama kurulu değil."""
+    want = visual_style(instruction)
+    ok, why = image_gen.ready()
+    hint = "" if ok or not image_gen.supported() else ("Gerçekçi fotoğraflar için görsel motorunu bir kez kurun: panel → Ayarlar → 📡 → "
+                                                        "📷 Gerçekçi görseller → Kur (~6 GB) ya da Mac'te: bash scripts/install_image.sh")
+    if want == "cizim":
+        return "cizim", "talimatta çizim istendi", ""
+    if want == "gercekci":
+        return (("gercekci", "talimatta gerçekçi istendi", "") if ok else
+                ("cizim", f"gerçekçi fotoğraf istendi ama görsel motoru hazır değil: {why}",
+                 f"Gerçekçi fotoğraf istediniz ama görsel motoru hazır değil ({why}); sahneler çizildi.{' ' + hint if hint else ''}"))
+    if prev == "cizim":
+        return "cizim", "önceki sürüm çizimle", ""
+    if prev == "gercekci":
+        return (("gercekci", "önceki sürüm gerçekçi", "") if ok else
+                ("cizim", f"önceki sürüm gerçekçiydi ama görsel motoru hazır değil: {why}",
+                 f"Önceki sürüm gerçekçi fotoğraflıydı ama görsel motoru şu an hazır değil ({why}); düzeltme çizimle yapıldı."))
+    if not image_gen.enabled():
+        return "cizim", "gerçekçi görseller panelde kapalı", ""
+    return ("gercekci", "", "") if ok else ("cizim", f"görsel motoru hazır değil: {why}", hint)
+
+
+def mode_text(text: str, mode: str) -> str:
+    """İstem dosyasının moda göre metni: "[[çizim]]" … "[[/çizim]]" ve "[[gerçekçi]]" … "[[/gerçekçi]]" satırları arasındaki bölümlerden
+    yalnız `mode`unki kalır (işaret satırları atılır; çizim modunda metin bu özellikten önceki istemle birebir aynıdır)."""
+    keep = "gerçekçi" if mode == "gercekci" else "çizim"
+    return re.sub(r"^\[\[(çizim|gerçekçi)\]\]\n(.*?)^\[\[/\1\]\]\n", lambda m: m.group(2) if m.group(1) == keep else "", text, flags=re.S | re.M)
+
+
+def _clean(t) -> str:
+    """Fotoğraf tarifi düz metin: adres, denetim karakteri ve fazla boşluk atılır (süslü ayraçlı {Ad} kalır)."""
+    t = re.sub(r"(?:https?://|www\.)\S+", " ", str(t or ""))
+    return re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", t)).strip()
+
+
+def _name_key(t) -> str:
+    return re.sub(r"\s+", " ", str(t or "").replace("I", "ı").replace("İ", "i").lower()).strip()
+
+
+def photo_chars(plan: dict) -> list:
+    """Planın "karakterler" alanı düzlenmiş: [(ad, İngilizce tarif)] (en çok 10; [{"ad", "tarif"}] listesi ya da {ad: tarif} sözlüğü)."""
+    raw = plan.get("karakterler")
+    items = ([(x.get("ad") or x.get("name"), x.get("tarif") or x.get("description")) for x in raw if isinstance(x, dict)] if isinstance(raw, list)
+             else list(raw.items()) if isinstance(raw, dict) else [])
+    out, seen = [], set()
+    for ad, tarif in items:
+        if isinstance(ad, str) and isinstance(tarif, str) and _name_key(ad) and len(_clean(tarif)) >= 3 and _name_key(ad) not in seen:
+            seen.add(_name_key(ad))
+            out.append((re.sub(r"\s+", " ", ad).strip()[:30], _clean(tarif).replace("{", " ").replace("}", " ")[:400]))
+    return out[:10]
+
+
+def photo_style(plan: dict) -> str:
+    st = _clean(plan.get("gorsel_stil"))[:300] if isinstance(plan.get("gorsel_stil"), str) else ""
+    return st if len(st) >= 8 else image_gen.STYLE_DEFAULT
+
+
+def photo_expand(prompt: str, chars: list, style: str) -> str:
+    """Tarif → modele giden tam metin: {Ad} karakterin tarifiyle değişir (bilinmeyen ad ayraçsız kalır), stil ve kompozisyon eklenir."""
+    table = {_name_key(a): t for a, t in chars}
+    body = re.sub(r"\{([^{}]{1,40})\}", lambda m: table.get(_name_key(m.group(1)), m.group(1)), prompt)
+    body = re.sub(r"\s+", " ", re.sub(r"[{}\[\]<>]", " ", body)).strip().rstrip(" .,;:")
+    return f"{body}. {style.strip().rstrip(' .')}. {PHOTO_COMPOSE}."
+
+
+def seg_photos(s: dict, k: int) -> tuple:
+    """Sahnenin fotoğraf tarifleri (kanca en çok 2, sahne en çok 3; tekrarlanan atılır) ve tarifsiz sahnede sahnenin kendi tarifinin
+    kullanıldığı (model Türkçeyi de anlar)."""
+    g = s.get("gorseller")
+    out = []
+    for x in g if isinstance(g, list) else [g] if isinstance(g, str) else []:
+        if isinstance(x, dict):
+            x = x.get("tarif") or x.get("prompt") or x.get("en") or ""
+        x = _clean(x)[:1200] if isinstance(x, str) else ""
+        if len(x) >= 12 and x not in out:
+            out.append(x)
+    if out:
+        return out[:2 if k == 0 else 3], False
+    return [f"Photorealistic scene: {_clean(s.get('sahne') or s.get('title') or s.get('narration'))[:400]}"], True
+
+
+def photo_trim(lists: list, cap: int) -> list:
+    """Toplam fotoğraf `cap`i aşarsa en çok fotoğraflı sahnenin (eşitse sonrakinin) son fotoğrafı atılır; her sahnede en az bir fotoğraf."""
+    lists = [list(x) for x in lists]
+    while sum(len(x) for x in lists) > max(cap, len(lists)):
+        k = max(range(len(lists)), key=lambda i: (len(lists[i]), i))
+        if len(lists[k]) <= 1:
+            break
+        lists[k].pop()
+    return lists
+
+
+def photo_seed(prompt: str) -> int:
+    """Tarife bağlı sabit tohum: aynı tarif aynı fotoğraf (düzeltme turunda image_gen önbelleğinden gelir)."""
+    return zlib.crc32(prompt.encode("utf-8")) & 0x7FFFFFFF
+
+
+def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: dict | None, prev_dir: Path | None) -> dict:
+    """Gerçekçi sahnelerin hazırlığı: tarifler (karakterler, stil, kompozisyon) → fotoğraflar (image_gen; üretilemeyen bir kez başka tohumla;
+    fotoğrafı hiç olmayan sahne en yakın sahnenin fotoğrafını alır) → PhotoScene işleri (fotoğraflar işin kendi public klasörüne
+    kopyalanır, çizimden sonra silinir). Düzeltmede tam tarifi ve süresi değişmeyen sahnenin klibi ve fotoğrafları önceki sürümden kopyalanır. Hiç fotoğraf
+    yoksa ya da sahnelerin yarısından fazlası fotoğrafsızsa {"ok": False, "error"} (çağıran çizime döner)."""
+    chars, style = photo_chars(plan), photo_style(plan)
+    pairs = [seg_photos(s, k) for k, s in enumerate(segs)]
+    nfb = sum(1 for _, f in pairs if f)
+    if nfb:
+        log(f"  ! {nfb} sahnede fotoğraf tarifi yoktu: sahnenin kendi tarifinden üretilecek")
+    cap = image_gen.budget(target)
+    raw = photo_trim([r for r, _ in pairs], cap)
+    if sum(len(r) for r, _ in pairs) > sum(len(r) for r in raw):
+        log(f"🎨 fotoğraf sayısı bütçeye indirildi: {sum(len(r) for r, _ in pairs)} → {sum(len(r) for r in raw)} (en çok {cap})")
+    full = [[photo_expand(x, chars, style) for x in r] for r in raw]
+    secs_l = [round(max(4.0 if k == 0 else 0.0, len(s["narration"].split()) / 2.4 + 0.8 + 1.5), 2) for k, s in enumerate(segs)]
+    holds = [round(max(1.5, x * 0.3), 2) for x in secs_l]
+    reused, done = {}, {}
+    if prev is not None and prev_dir is not None and prev.get("mode") == "gercekci":
+        pool = [(i, ps) for i, ps in enumerate((prev.get("plan") or {}).get("segments") or []) if isinstance(ps, dict) and isinstance(ps.get("shots"), list)]
+        for k in range(len(segs)):
+            for i, ps in pool:
+                sh = [x for x in ps["shots"] if isinstance(x, dict)]
+                parts = [(prev_dir / f"part-{i}{suf}", d / f"sahne-{k}{suf}") for suf in (".mp4", ".jpg", "-tall.jpg")]
+                fotos = [(prev_dir / str(x.get("file") or "-"), d / f"foto-{k}-{n}.jpg") for n, x in enumerate(sh)]
+                if (ps.get("secs") == secs_l[k] and [str(x.get("prompt") or "") for x in sh] == full[k] and all(x.get("file") for x in sh)
+                        and all(a.is_file() for a, _ in parts + fotos)):
+                    for a, b in parts + fotos:
+                        shutil.copyfile(a, b)
+                    reused[k] = i
+                    done[str(d / f"sahne-{k}.mp4")] = True
+                    pool = [x for x in pool if x[0] != i]
+                    break
+    if prev is not None and prev_dir is not None:
+        log(f"♻️ {len(reused)} sahne önceki sürümden alındı (fotoğraf tarifleri ve süresi değişmedi: {', '.join('kanca' if i == 0 else f'{i}. sahne' for i in sorted(reused.values()))}), "
+            f"{len(segs) - len(reused)} sahne yeniden üretiliyor" if reused else f"🎨 düzeltmede bütün sahneler yeniden üretiliyor ({len(segs)} sahne)")
+    seeds = {(k, n): photo_seed(fp) for k, fl in enumerate(full) for n, fp in enumerate(fl)}
+    shots = [{"key": f"s{k}-{n}", "prompt": fp, "seed": seeds[(k, n)]} for k, fl in enumerate(full) if k not in reused for n, fp in enumerate(fl)]
+    info = {"made": 0, "cached": 0, "failed": 0, "error": "", "sec": 0.0}
+    got = {}
+    if shots:
+        got, info = image_gen.generate(shots, d / "foto", log)
+        miss = [x for x in shots if not got.get(x["key"])]
+        if miss and not info["error"]:  # üretici çalıştı (model açıldı): üretilemeyen fotoğraflar başka tohumla bir kez daha
+            log(f"  ! {len(miss)} fotoğraf üretilemedi; başka tohumla yeniden deneniyor")
+            again, i2 = image_gen.generate([{**x, "seed": x["seed"] + 7919} for x in miss], d / "foto", log)
+            for x in miss:
+                if again.get(x["key"]):
+                    got[x["key"]] = again[x["key"]]
+                    k, n = (int(v) for v in x["key"][1:].split("-"))
+                    seeds[(k, n)] = x["seed"] + 7919
+            info = {**info, "made": info["made"] + i2["made"], "cached": info["cached"] + i2["cached"], "failed": i2["failed"],
+                    "sec": round(info["sec"] + i2["sec"], 1), "error": i2["error"] or info["error"]}
+    imgs, own = [], []
+    for k in range(len(segs)):
+        if k in reused:
+            imgs.append([d / f"foto-{k}-{n}.jpg" for n in range(len(full[k]))])
+            own.append([True] * len(full[k]))
+            continue
+        lst, mine = [], []
+        for n in range(len(full[k])):
+            src = got.get(f"s{k}-{n}")
+            if src and Path(src).is_file():
+                dst = d / f"foto-{k}-{n}.jpg"
+                shutil.copyfile(src, dst)
+                lst.append(dst)
+                mine.append(True)
+            else:
+                mine.append(False)
+        imgs.append(lst)
+        own.append(mine)
+    if not any(imgs):
+        return {"ok": False, "error": info["error"] or "fotoğraflar üretilemedi"}
+    own_n = sum(1 for x in imgs if x)
+    if own_n * 2 < len(segs):  # sahnelerin yarısından fazlası fotoğrafsız: aynı fotoğraf sahne sahne tekrarlanmasın, çizime dönülür
+        return {"ok": False, "error": f"yalnız {own_n}/{len(segs)} sahnenin fotoğrafı üretilebildi" + (f" ({info['error'][:160]})" if info["error"] else "")}
+    borrowed = []
+    for k in range(len(segs)):
+        if imgs[k]:
+            continue
+        j = min((abs(j - k), 0 if j < k else 1, j) for j in range(len(segs)) if j != k and imgs[j] and j not in borrowed)[2]
+        imgs[k] = [imgs[j][-1] if j < k else imgs[j][0]]
+        borrowed.append(k)
+        log(f"  ! {'kancanın' if k == 0 else f'{k}. sahnenin'} fotoğrafı üretilemedi: {'kancanın' if j == 0 else f'{j}. sahnenin'} fotoğrafı kullanılıyor")
+    # çizicinin paketleyeceği ayrı public klasörü (işin analiz klasöründe; iş bitince ya da panel durdurunca onunla silinir)
+    public = d.parent / "public"
+    pub = public / "recreate" / name
+    shutil.rmtree(public, ignore_errors=True)
+    pub.mkdir(parents=True, exist_ok=True)
+    badge = image_gen.cfg()["badge"]
+    jobs, scenes_out = [], []
+    for k in range(len(segs)):
+        rel = []
+        for n, src in enumerate(imgs[k]):
+            shutil.copyfile(src, pub / f"s{k}-{n}.jpg")
+            rel.append(f"recreate/{name}/s{k}-{n}.jpg")
+        jobs.append({"out": str(d / f"sahne-{k}.mp4"), "comp": "PhotoScene",
+                     "props": {"images": rel, "seconds": secs_l[k], "hold": holds[k], "seed": k + 1, "badge": badge}})
+        scenes_out.append({"groups": len(rel), "seconds": round(secs_l[k] + holds[k], 2), "fallback": k in borrowed, "photos": len(rel),
+                           "prompts": raw[k]})
+    shots_out = [[{"prompt": fp, "seed": seeds[(k, n)], "file": f"foto-{k}-{n}.jpg" if own[k][n] else None} for n, fp in enumerate(fl)]
+                 for k, fl in enumerate(full)]
+    return {"ok": True, "jobs": jobs, "scenes_out": scenes_out, "reused": reused, "done": done, "imgs": imgs, "borrowed": borrowed, "raw": raw,
+            "shots": shots_out, "chars": chars, "style": style, "info": info, "public": public, "own": own}
 
 
 def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes_out: list, ekran: list, history: list | None = None, hook: dict | None = None) -> str:
@@ -1035,7 +1276,12 @@ def benzer_text(infos: list, social: dict | None, plan: dict, segs: list, scenes
     lines.append("Yeni seslendirme (kendi cümlelerimizle) ve sahneler:")
     for k, (s, sc) in enumerate(zip(segs, scenes_out)):
         lines.append(f"• {'Kanca' if k == 0 else f'{k}. sahne'} — {s.get('title') or ''}: {s['narration']}")
-        lines.append(f"  Çizim: {str(s.get('sahne') or '').strip() or '?'} ({sc['groups']} adım, {sc['seconds']} sn{', sade yedek çizim' if sc['fallback'] else ''})")
+        if sc.get("prompts") is not None:  # gerçekçi sahne: fotoğrafların İngilizce tarifleri
+            lines.append(f"  Görsel: {str(s.get('sahne') or '').strip() or '?'} ({sc['photos']} fotoğraf, {sc['seconds']} sn"
+                         f"{', komşu sahnenin fotoğrafı' if sc['fallback'] else ''})")
+            lines += [f"    📷 {str(x)[:300]}" for x in sc["prompts"]]
+        else:
+            lines.append(f"  Çizim: {str(s.get('sahne') or '').strip() or '?'} ({sc['groups']} adım, {sc['seconds']} sn{', sade yedek çizim' if sc['fallback'] else ''})")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1048,7 +1294,10 @@ def build_recreate(job: dict, srcs: list, instruction: str) -> dict:
     tmp.mkdir(parents=True, exist_ok=True)
     TMPDIRS.append(tmp)
     vcfg = settings().get("waVideo") or {}
+    mode, why, note = visual_mode(instruction)
     log(f"🎨 benzer video (sıfırdan): {len(srcs)} referans video izleniyor — kareler, sahne geçişleri, konuşma ve yazılar")
+    shown = "gerçekçi fotoğraflar (yapay zekâ, bu Mac'te üretilir)" if mode == "gercekci" else "çizim"
+    log(f"🎨 görsel modu: {shown}{f' — {why}' if why else ''}")
     infos, blocks = [], []
     for i, p in enumerate(srcs, 1):
         info = probe(p)
@@ -1092,7 +1341,9 @@ def build_recreate(job: dict, srcs: list, instruction: str) -> dict:
     ref = sum(x["duration"] for x in infos)
     target = max(20, min(90, int(job["duration"]))) if job.get("duration") else recreate_secs(instruction, ref)
     asked = bool(job.get("duration")) or trailer_secs(instruction) > 0  # süre istendiyse seslendirme ona sığar; yoksa en çok 90 sn
-    inp = {"talimat": instruction or RECREATE_TALIMAT, "hedef_sure": target, "referans_videolar": blocks}
+    inp = {"talimat": instruction or (RECREATE_TALIMAT_FOTO if mode == "gercekci" else RECREATE_TALIMAT), "hedef_sure": target, "referans_videolar": blocks}
+    if mode == "gercekci":  # fotoğraf sayısının üst sınırı (süre, ayar ve bu Mac'in üretim hızı)
+        inp["gorsel_butcesi"] = {"en_fazla_gorsel": image_gen.budget(target)}
     if hook_history():  # kanca çeşitliliği ve kalıp performansı (prompts/kanca.md)
         inp["kanca_gecmisi"] = hook_history()
     if forwarded_caption(job):
@@ -1100,28 +1351,49 @@ def build_recreate(job: dict, srcs: list, instruction: str) -> dict:
     if social:
         inp["kaynak_paylasim"] = {"platform": so.get("platform"), "baslik": so.get("title"), "aciklama": str(so.get("caption") or "")[:1500],
                                   "hesap": so.get("uploader") or so.get("handle"), "tarih": so.get("date"), "izlenme": so.get("views")}
-    prompt = recreate_prompt(target) + json.dumps(inp, ensure_ascii=False, indent=1)
-    log(f"🎨 Claude videoyu inceliyor: hikâyeyi kendi cümleleriyle yeniden yazıp sahneleri çiziyor (hedef {target} sn)")
-    rc, text = claude(prompt, tmp, images=any(b["kareler_dosyasi"] or b.get("yazi_kareleri") for b in blocks), kind="benzer")
+    imgs_on = any(b["kareler_dosyasi"] or b.get("yazi_kareleri") for b in blocks)
+    refs = [ref_info(x, p) for x, p in zip(infos, srcs)]
+    plan, err = recreate_plan(inp, target, mode, tmp, imgs_on)
+    if err:
+        return err
+    res = recreate_finish(name, tmp, plan, target, asked, instruction, social, refs, [str(p) for p in srcs], ref, mode=mode, note=note)
+    if res.get("photoFailed"):  # hiçbir fotoğraf üretilemedi (model açılmadı, bellek…): plan bir kez çizimle yeniden yazılır
+        reason = str(res.get("error") or "fotoğraflar üretilemedi")
+        log(f"⚠️ gerçekçi fotoğraflar üretilemedi ({reason[:160]}): sahneler çizimle yeniden planlanıyor")
+        inp = {**inp, "talimat": instruction or RECREATE_TALIMAT}
+        inp.pop("gorsel_butcesi", None)
+        plan, err = recreate_plan(inp, target, "cizim", tmp, imgs_on)
+        if err:
+            return err
+        res = recreate_finish(name, tmp, plan, target, asked, instruction, social, refs, [str(p) for p in srcs], ref, mode="cizim")
+        if res.get("ok"):
+            res["plan"]["photoFallback"] = reason[:200]
+    return res
+
+
+def recreate_plan(inp: dict, target: int, mode: str, tmp: Path, images: bool) -> tuple:
+    """Benzer video planı (tek Claude çağrısı; olmazsa kare resimleri olmadan bir kez daha). Dönüş (plan, None) ya da (None, hata sonucu)."""
+    prompt = recreate_prompt(target, mode) + json.dumps(inp, ensure_ascii=False, indent=1)
+    log(f"🎨 Claude videoyu inceliyor: hikâyeyi kendi cümleleriyle yeniden yazıp sahneleri {'fotoğraflarla kuruyor' if mode == 'gercekci' else 'çiziyor'} (hedef {target} sn)")
+    rc, text = claude(prompt, tmp, images=images, kind="benzer")
     if rc not in (0, 2):
         log(f"  ! ilk deneme olmadı ({text[:120]}); kare resimleri olmadan yeniden deneniyor")
-        rc, text = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan "
-                                         "çıkar, görüntüyü tarif etme, tarzı sade elle çizilmiş seç. Görebilseydin bakacağın şeyler")
+        rc, text = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", NO_FRAMES[mode])
                           + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="benzer")
     if rc:
-        return {"ok": False, "error": f"benzer video planı yazılamadı: {text[:200]}", "limit": rc == 2}
+        return None, {"ok": False, "error": f"benzer video planı yazılamadı: {text[:200]}", "limit": rc == 2}
     try:
-        plan = parse_plan(text)
+        return parse_plan(text), None
     except Exception as e:
-        return {"ok": False, "error": f"benzer video planı okunamadı: {e}"}
-    return recreate_finish(name, tmp, plan, target, asked, instruction, social, [ref_info(x, p) for x, p in zip(infos, srcs)], [str(p) for p in srcs], ref)
+        return None, {"ok": False, "error": f"benzer video planı okunamadı: {e}"}
 
 
-def recreate_prompt(target: int) -> str:
-    """prompts/benzer.md, yer tutucuları dolu (sonu "GİRDİ:" satırı; JSON girdisi ardına eklenir); __KANCA__ yerine prompts/kanca.md
-    (kanca taktiği: sekiz kalıp, vaat/cevap, trend açılış sözleri; kullanıcı isteği, 23 Ekim)."""
+def recreate_prompt(target: int, mode: str = "cizim") -> str:
+    """prompts/benzer.md, moda göre bölümleri (`mode_text`: çizim ya da gerçekçi fotoğraf) ve yer tutucuları dolu (sonu "GİRDİ:" satırı; JSON
+    girdisi ardına eklenir); __KANCA__ yerine prompts/kanca.md (kanca taktiği: sekiz kalıp, vaat/cevap, trend açılış sözleri; kullanıcı
+    isteği, 23 Ekim)."""
     kanca = (ROOT / "prompts" / "kanca.md").read_text(encoding="utf-8").strip() if (ROOT / "prompts" / "kanca.md").exists() else ""
-    return ((ROOT / "prompts" / "benzer.md").read_text(encoding="utf-8").replace("__KANCA__", kanca)
+    return (mode_text((ROOT / "prompts" / "benzer.md").read_text(encoding="utf-8"), mode).replace("__KANCA__", kanca)
             .replace("__SURE__", str(target)).replace("__KELIME__", str(int(target * 2.4) - 6)))
 
 
@@ -1183,10 +1455,12 @@ def svg_key(svg: str) -> str:
 
 
 def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, instruction: str, social, infos: list, videos: list, ref: float,
-                    prev: dict | None = None, rv: dict | None = None, prev_dir: Path | None = None) -> dict:
-    """Claude'un planından video: sahneler düzlenir ve çizilir, iş klasörü (claude_out.json, cards.json, meta.json, plan.json, benzer_dokum.txt)
-    yazılır. Düzeltmede (`prev`: önceki sürümün plan.json'u, `prev_dir` iş klasörü, `rv` job.revise) çizimi, süresi ve paleti değişmeyen sahne
-    yeniden çizilmez: önceki sürümün part dosyaları kopyalanır (♻️); yalnız değişen sahneler Remotion'a gider."""
+                    prev: dict | None = None, rv: dict | None = None, prev_dir: Path | None = None, mode: str = "cizim", note: str = "") -> dict:
+    """Claude'un planından video: sahneler düzlenir ve çizilir (mode "gercekci": fotoğraflar üretilip canlandırılır, `photo_render`), iş
+    klasörü (claude_out.json, cards.json, meta.json, plan.json, benzer_dokum.txt) yazılır. Düzeltmede (`prev`: önceki sürümün plan.json'u,
+    `prev_dir` iş klasörü, `rv` job.revise) çizimi (fotoğraf tarifleri), süresi ve paleti değişmeyen sahne yeniden çizilmez: önceki sürümün
+    part dosyaları kopyalanır (♻️); yalnız değişen sahneler Remotion'a gider. Gerçekçi modda hiç fotoğraf üretilemezse {"ok": False,
+    "photoFailed": True} (çağıran çizimle yeniden planlar). `note`: görsel modunun notu (kurulum ipucu) WhatsApp mesajına."""
     so = social or {}
     raw = [s for s in plan.get("segments") or [] if isinstance(s, dict) and s.get("kind") in ("hook", "haber") and str(s.get("narration") or "").strip()]
     if not any(s["kind"] == "haber" for s in raw):
@@ -1220,11 +1494,15 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     pal = scene_svg.palette(plan.get("palet"))
     d = tmp / "sahneler"
     d.mkdir(exist_ok=True)
-    jobs, scenes_out = [], []
+    photo = mode == "gercekci"
+    ph = photo_render(name, segs, plan, d, target, prev, prev_dir) if photo else None
+    if ph is not None and not ph["ok"]:
+        return {"ok": False, "photoFailed": True, "error": ph["error"]}
+    jobs, scenes_out = (ph["jobs"], ph["scenes_out"]) if photo else ([], [])
     # sahne süresi: seslendirme (kelime / 2,4) + nefes payı, kancada en az 4 sn; gruplar bu sürede belirir. Klibin sonuna %30 (en az
     # 1,5 sn) bekleme (`hold`): gerçek ses 2,4 kelime/sn tahmininden yavaş çıkarsa (ölçülen eski bölüm ~1,8; Chatterbox, "say") FullFrame/
     # MediaBg kısa klibi baştan döndürüp çizimi boş kâğıttan yeniden başlatıyordu (sessiz sesle bile 11,95 sn bölüm, 11,88 sn klip)
-    for k, s in enumerate(segs):
+    for k, s in enumerate([] if photo else segs):
         secs = round(max(4.0 if k == 0 else 0.0, len(s["narration"].split()) / 2.4 + 0.8 + 1.5), 2)
         hold = round(max(1.5, secs * 0.3), 2)
         svg, n = scene_svg.sanitize(s.get("svg"))
@@ -1235,9 +1513,9 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
         jobs.append({"out": str(d / f"sahne-{k}.mp4"), "props": {"svg": svg, "count": n, "seconds": secs, "hold": hold, "palette": pal, "seed": k + 1}})
         scenes_out.append({"groups": n, "seconds": round(secs + hold, 2), "fallback": fb})
     # düzeltme: çizimi (aynı SVG), süresi ve paleti değişmeyen sahne önceki sürümden kopyalanır; sıra değişse de içerikle eşlenir
-    reused, done = {}, {}
+    reused, done = (dict(ph["reused"]), dict(ph["done"])) if photo else ({}, {})
     same_pal = True
-    if prev is not None and prev_dir is not None:
+    if not photo and prev is not None and prev_dir is not None:  # gerçekçi modda photo_render söyler (fotoğraf üretiminden önce)
         same_pal = [str(x).lower() for x in (prev.get("palette") or [])] == [str(x).lower() for x in pal]
         pool = [(i, s) for i, s in enumerate((prev.get("plan") or {}).get("segments") or []) if isinstance(s, dict) and s.get("svg") and not s.get("fallback")]
         for k, (j, sc) in enumerate(zip(jobs, scenes_out)):
@@ -1260,12 +1538,36 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
             f"🎨 düzeltmede bütün sahneler yeniden çiziliyor ({len(jobs)} sahne{'; palet değişti' if not same_pal else ''})")
     todo = [j for k, j in enumerate(jobs) if k not in reused]
     err = ""
-    if todo:
+    if todo and photo:
+        log(f"🎨 {len(todo)} sahne canlandırılıyor (Remotion; {sum(x['seconds'] for k, x in enumerate(scenes_out) if k not in reused):.0f} sn, "
+            f"{sum(x['photos'] for k, x in enumerate(scenes_out) if k not in reused)} fotoğraf)")
+        try:
+            got, err = render_scenes(todo, tmp, "1", ph["public"])
+            done.update(got)
+            miss = [k for k, j in enumerate(jobs) if not done.get(j["out"])]
+            if miss:  # tarayıcı düşmüş olabilir: bir kez daha
+                log(f"  ! {len(miss)} sahne canlandırılamadı ({err[:160] or 'çıktı yok'}); yeniden deneniyor")
+                got, err = render_scenes([jobs[k] for k in miss], tmp, "2", ph["public"])
+                done.update(got)
+        finally:
+            shutil.rmtree(ph["public"], ignore_errors=True)
+    elif todo:
         log(f"🎨 {len(todo)} sahne çiziliyor (Remotion; {sum(x['seconds'] for k, x in enumerate(scenes_out) if k not in reused):.0f} sn, "
             f"{sum(x['groups'] for k, x in enumerate(scenes_out) if k not in reused)} çizim adımı)")
         got, err = render_scenes(todo, tmp, "1")
         done.update(got)
+    elif photo:
+        shutil.rmtree(ph["public"], ignore_errors=True)
     miss = [k for k, j in enumerate(jobs) if not done.get(j["out"])]
+    for k in miss if photo else []:  # canlandırılamayan gerçekçi sahne: ilk fotoğrafı hareketsiz (video yine çıkar)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(ph["imgs"][k][0]), "-t", f"{scenes_out[k]['seconds']}", "-r", "30",
+                        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,format=yuv420p", "-c:v", "libx264",
+                        "-preset", "veryfast", jobs[k]["out"]], capture_output=True)
+        log(f"  ! {'kanca' if k == 0 else f'{k}. sahne'} canlandırılamadı: fotoğrafı hareketsiz kondu")
+    if photo:
+        miss = [k for k in miss if not Path(jobs[k]["out"]).is_file()]
+        if miss:
+            return {"ok": False, "error": f"sahneler hazırlanamadı: {err or 'Remotion ve ffmpeg çıktı vermedi'}"}
     if miss:  # çizilemeyen sahne sade yedek çizimle bir kez daha (bozuk çizim tarayıcıyı düşürmüş olabilir)
         log(f"  ! {len(miss)} sahne çizilemedi ({err[:160] or 'çıktı yok'}); sade yedek çizimle yeniden deneniyor")
         for k in miss:
@@ -1286,7 +1588,10 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     for k, (s, j, sc) in enumerate(zip(segs, jobs, scenes_out)):
         vid, secs = Path(j["out"]), sc["seconds"]  # klibin tamamı (çizim + bekleme)
         img, tall = d / f"sahne-{k}.jpg", d / f"sahne-{k}-tall.jpg"
-        if k not in reused:  # önceki sürümden alınan sahnenin kareleri de kopyalandı
+        if k not in reused and photo:  # gerçekçi sahne: kapak ve yedek kare sahnenin ilk fotoğrafından (köşe etiketi ve gren yok)
+            still(ph["imgs"][k][0], 0.0, 1840, 1120, img)
+            shutil.copyfile(ph["imgs"][k][0], tall)
+        elif k not in reused:  # önceki sürümden alınan sahnenin kareleri de kopyalandı
             t = max(0.0, secs - 0.2)  # bekleme sırasında: çizimin tamamı (kapak ve yedek)
             still(vid, t, 1840, 1120, img)
             still(vid, t, 1080, 1920, tall)
@@ -1295,12 +1600,17 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
         cards.append({"video": vid, "image": img if img.exists() else tall, "tall": tall if tall.exists() else img, "videoDuration": secs,
                       **({"fullFrame": True} if k else {})})
         plan_out.append({"kind": s["kind"], "title": s["title"], "sahne": str(s.get("sahne") or "")[:200], "seconds": secs, "groups": sc["groups"],
-                         "fallback": sc["fallback"], "narrationSeconds": round(len(s["narration"].split()) / 2.4 + 0.5, 1), **({"reused": True} if k in reused else {})})
-        log(f"🎨 {'kanca' if k == 0 else f'{k}. sahne'}: {s['title']} — {sc['groups']} çizim adımı, {secs} sn"
-            f"{' (önceki sürümden)' if k in reused else ' (sade yedek çizim)' if sc['fallback'] else ''}")
+                         "fallback": sc["fallback"], "narrationSeconds": round(len(s["narration"].split()) / 2.4 + 0.5, 1), **({"reused": True} if k in reused else {}),
+                         **({"photos": sc["photos"]} if photo else {})})
+        if photo:
+            log(f"🎨 {'kanca' if k == 0 else f'{k}. sahne'}: {s['title']} — {sc['photos']} fotoğraf, {secs} sn"
+                f"{' (önceki sürümden)' if k in reused else ' (komşu sahnenin fotoğrafı)' if sc['fallback'] else ''}")
+        else:
+            log(f"🎨 {'kanca' if k == 0 else f'{k}. sahne'}: {s['title']} — {sc['groups']} çizim adımı, {secs} sn"
+                f"{' (önceki sürümden)' if k in reused else ' (sade yedek çizim)' if sc['fallback'] else ''}")
     # son dakika değil: breaking yok, kaynak kartta yazmaz (sosyal medyada açıklamanın altında)
     script = {"titles": titles, "hashtags": tags, "importance": importance,
-              "importanceReason": "Benzer video (sıfırdan)", "firstComment": first,
+              "importanceReason": "Benzer video (sıfırdan)", "firstComment": first, **({"aiVisuals": True} if photo else {}),
               **({"hookType": hook["type"], "hookPromise": hook["promise"], "hookAnswer": hook["answer"]} if hook else {}),
               "segments": [{"kind": "hook", "title": segs[0]["title"], "narration": segs[0]["narration"], "source": "", "category": cat},
                            {"kind": "intro", "narration": intro}]
@@ -1315,7 +1625,8 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     history = [h for h in ((prev or {}).get("history") or []) if isinstance(h, dict)] + ([{"revision": revision, "text": revise, "changes": changes}] if rv else [])
     job_dir = new_job(name, script, [], {"instruction": instruction, "cuts": plan.get("cuts"), "plan": plan_out, "videos": videos,
                                          "recreate": {"sourceSeconds": round(ref, 1), "scenes": len(segs), "palette": pal, **an,
-                                                      "fallback": [k for k, x in enumerate(scenes_out) if x["fallback"]]},
+                                                      "fallback": [k for k, x in enumerate(scenes_out) if x["fallback"]],
+                                                      **({"mode": "gercekci", "photos": sum(x["photos"] for x in scenes_out)} if photo else {})},
                                          **({"social": so_mem} if so_mem else {}),
                                          **({"revision": revision, "revisionOf": rv.get("of"), "revise": revise, "changes": changes,
                                              "previousJob": str(rv.get("job") or ""), "reused": sorted(reused)} if rv else {})})
@@ -1325,18 +1636,25 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
             dst = jd / f"part-{i}{suf}"
             shutil.copyfile(c[key], dst)
             c[key] = str(dst.relative_to(ROOT))
+    if photo:
+        for k, fl in enumerate(ph["shots"]):
+            for n, x in enumerate(fl):
+                if x["file"] and (d / x["file"]).is_file():
+                    shutil.copyfile(d / x["file"], jd / x["file"])
     (jd / "cards.json").write_text(json.dumps(cards, ensure_ascii=False, indent=2), encoding="utf-8")
     # plan.json: düzeltme turunun girdisi (kullanıcı isteği, 23 Ekim: "önce ben izleyecektim, düzeltmemiz gereken yerler varsa yazacaktım,
     # düzenleyecektik"): temizlenmiş plan, her sahnenin çizimi (yedek çizime düşen sahnede boş) ve süresi, referansın dökümü, kaynak video yolları
     (jd / "plan.json").write_text(json.dumps({
         "revision": revision, "target": target, "asked": asked, "instruction": instruction, "revise": revise or None, "changes": changes or None,
-        "history": history, "palette": pal, "label": label,
+        "history": history, "palette": pal, "label": label, "mode": mode,
         "plan": {**an, "palet": pal, "label": label, "category": cat, "titles": titles, "hashtags": tags, "importance": importance,
+                 **({"karakterler": [{"ad": a, "tarif": t} for a, t in ph["chars"]], "gorsel_stil": ph["style"]} if photo else {}),
                  "importanceReason": str(plan.get("importanceReason") or "")[:200], "firstComment": first, "cuts": str(plan.get("cuts") or "")[:600],
                  "ekran_yazilari": ekran, **({"kanca": {"tur": hook["type"], "vaat": hook["promise"], "cevap": hook["answer"]}} if hook else {}),
                  "segments": [{"kind": s["kind"], "title": s["title"], "narration": s["narration"], "sahne": str(s.get("sahne") or "")[:200],
-                               "svg": "" if sc["fallback"] else j["props"]["svg"], "fallback": sc["fallback"], "secs": j["props"]["seconds"]}
-                              for s, j, sc in zip(segs, jobs, scenes_out)]},
+                               "svg": "" if sc["fallback"] or photo else j["props"]["svg"], "fallback": sc["fallback"], "secs": j["props"]["seconds"],
+                               **({"gorseller": ph["raw"][k], "shots": ph["shots"][k]} if photo else {})}
+                              for k, (s, j, sc) in enumerate(zip(segs, jobs, scenes_out))]},
         "ref": {"infos": infos, "social": {k: v for k, v in so.items() if k not in ("captions", "captionsFile")} if social else None, "seconds": round(ref, 1)},
         "videos": videos}, ensure_ascii=False, indent=1), encoding="utf-8")
     (jd / "benzer_dokum.txt").write_text(benzer_text(infos, social, plan, segs, scenes_out, ekran, history, hook), encoding="utf-8")
@@ -1347,13 +1665,16 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
     nf = sum(1 for x in scenes_out if x["fallback"])
     caps_used = any(x.get("captions") for x in infos)
     res = {"ok": True, "job": str(job_dir), "duration": max(target, min(90, int(words / 2.4) + 3)), "vertical": True, "soundSeconds": 0.0,
-           "soundFull": False, "sourceSeconds": round(ref, 1), "recreate": True,
+           "soundFull": False, "sourceSeconds": round(ref, 1), "recreate": True, "aiVisuals": photo,
            "plan": {"recreate": True, "label": label, "intro": intro, "outro": outro, "hook": segs[0]["title"],
                     "titles": script["titles"], "cuts": str(plan.get("cuts") or "")[:600], "segments": plan_out, "scenes": len(segs), "fallbackScenes": nf,
                     "narration": " ".join(s["narration"] for s in segs)[:900], "speech": bool(rv) or not SPEECH_OFF or caps_used,
                     "speechLang": next((x["lang"] for x in infos if x.get("lang")), None), **an,
                     **({"hookType": hook["type"], "hookLabel": hook["label"], "hookPromise": hook["promise"], "hookAnswer": hook["answer"]} if hook else {}),
-                    "transcriptFile": str(job_dir / "benzer_dokum.txt"), "refText": re.sub(r"\s+", " ", ref_text)[:300]}}
+                    "transcriptFile": str(job_dir / "benzer_dokum.txt"), "refText": re.sub(r"\s+", " ", ref_text)[:300],
+                    "visualMode": mode, **({"visualNote": note[:300]} if note else {}),
+                    **({"photos": sum(x["photos"] for x in scenes_out), "photoMade": ph["info"]["made"], "photoCached": ph["info"]["cached"],
+                        "photoSec": ph["info"]["sec"], "borrowedScenes": len(ph["borrowed"])} if photo else {})}}
     if rv:  # düzeltme: kaç sahne korundu, kaç sahne yeniden çizildi, Claude'un değişiklik özeti
         res.update({"revision": revision, "reused": sorted(reused), "changed": [k for k in range(len(jobs)) if k not in reused], "changes": changes})
         res["plan"].update({"revision": revision, "reusedScenes": len(reused), "changedScenes": len(jobs) - len(reused), "changes": changes, "paletteChanged": not same_pal})
@@ -1420,44 +1741,65 @@ def revise_recreate(job: dict) -> dict:
         if frames:
             blocks.append({"video": i, "sure": round(dur, 1), "boyut": f"{info.get('width')}x{info.get('height')}", "kareler_dosyasi": sheet.name, "kareler": frames})
     pp = prev["plan"]
-    segs_prev = [{"kind": s.get("kind"), "title": s.get("title"), "narration": s.get("narration"), "sahne": s.get("sahne"),
-                  "svg": "" if s.get("fallback") else str(s.get("svg") or ""), **({"fallback": True} if s.get("fallback") else {})}
-                 for s in (pp.get("segments") or []) if isinstance(s, dict)]
-    onceki = {k: pp.get(k) for k in ("konu", "mesaj", "tarz", "palet", "label", "category", "titles", "hashtags", "importance", "importanceReason",
-                                     "firstComment", "cuts", "kanca", "ekran_yazilari") if pp.get(k) is not None}
-    onceki["segments"] = segs_prev
+    # görsel modu: düzeltme metninde açık istek ("çizgi film olsun", "gerçekçi yap") yoksa önceki sürümünki (eski çizilmiş videolar çizim kalır)
+    mode, why, note = visual_mode(text, prev.get("mode") or "cizim")
+    if why:
+        log(f"🎨 görsel modu: {'gerçekçi fotoğraflar' if mode == 'gercekci' else 'çizim'} — {why}")
     so = social or {}
-    inp = {"duzeltme": text, "onceki_plan": onceki, "talimat": base_instr or RECREATE_TALIMAT, "hedef_sure": target,
-           "referans_ozeti": {"konusma": [f"[{a}-{b}] {t}" for x in infos for a, b, t in (x.get("speech") or [])][:80],
-                              "ekran_yazilari": pp.get("ekran_yazilari") or [],
-                              **({"kaynak_paylasim": {"platform": so.get("platform"), "baslik": so.get("title"), "aciklama": str(so.get("caption") or "")[:600],
-                                                     "hesap": so.get("uploader") or so.get("handle")}} if social else {})}}
-    hist = [h for h in (prev.get("history") or []) if isinstance(h, dict) and h.get("text")]
-    if hist:  # önceki düzeltmeler geri alınmasın
-        inp["onceki_duzeltmeler"] = [f"{h.get('revision')}. sürüm: {str(h.get('text'))[:200]}" + (f" → {str(h.get('changes'))[:200]}" if h.get("changes") else "") for h in hist[-5:]]
-    if blocks:
-        inp["referans_videolar"] = blocks
-    base = recreate_prompt(target)
-    head, sep, _ = base.rpartition("GİRDİ:")
-    extra = (ROOT / "prompts" / "benzer_duzelt.md").read_text(encoding="utf-8").replace("__SURE__", str(target)).replace("__KELIME__", str(int(target * 2.4) - 6))
-    prompt = ((head.rstrip() + "\n" + extra.rstrip() + "\n\nGİRDİ:\n") if sep else (base.rstrip() + "\n" + extra.rstrip() + "\n\nGİRDİ:\n")) + json.dumps(inp, ensure_ascii=False, indent=1)
-    log(f"✏️ Claude yalnız istenen yerleri değiştiriyor (önceki plan + düzeltme; hedef {target} sn{'; kareler hatırlatma için' if blocks else ''})")
-    rc, out = claude(prompt, tmp, images=bool(blocks), kind="benzer")
-    if rc not in (0, 2) and blocks:
-        log(f"  ! ilk deneme olmadı ({out[:120]}); kare resimleri olmadan yeniden deneniyor")
-        rc, out = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", "Kareleri GÖREMİYORSUN (Read aracı kapalı): önceki plana ve dökümlere göre çalış. Görebilseydin bakacağın şeyler")
-                         + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="benzer")
-    elif rc not in (0, 2):
-        log(f"  ! ilk deneme olmadı ({out[:120]}); yeniden deneniyor")
-        rc, out = claude(prompt + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="benzer")
-    if rc:
-        return {"ok": False, "error": f"düzeltme planı yazılamadı: {out[:200]}", "limit": rc == 2}
-    try:
-        plan = parse_plan(out)
-    except Exception as e:
-        return {"ok": False, "error": f"düzeltme planı okunamadı: {e}"}
-    return recreate_finish(name, tmp, plan, target, asked, base_instr, social, infos, videos, ref, prev=prev,
-                           rv={**rv, "instruction": text, "revision": revision}, prev_dir=prev_dir)
+
+    def attempt(mode: str) -> dict:
+        photo = mode == "gercekci"
+        # önceki sahneler moda göre: çizimde svg, gerçekçide fotoğraf tarifleri (öbür modun alanı gitmez: sahne yeni modda baştan kurulur)
+        segs_prev = [{"kind": s.get("kind"), "title": s.get("title"), "narration": s.get("narration"), "sahne": s.get("sahne"),
+                      **({"gorseller": [str(x) for x in (s.get("gorseller") or []) if isinstance(x, str)]} if photo else
+                         {"svg": "" if s.get("fallback") else str(s.get("svg") or ""), **({"fallback": True} if s.get("fallback") else {})})}
+                     for s in (pp.get("segments") or []) if isinstance(s, dict)]
+        keys = (("konu", "mesaj", "tarz", "karakterler", "gorsel_stil") if photo else ("konu", "mesaj", "tarz", "palet")) + (
+            "label", "category", "titles", "hashtags", "importance", "importanceReason", "firstComment", "cuts", "kanca", "ekran_yazilari")
+        onceki = {k: pp.get(k) for k in keys if pp.get(k) is not None}
+        onceki["segments"] = segs_prev
+        inp = {"duzeltme": text, "onceki_plan": onceki, "talimat": base_instr or (RECREATE_TALIMAT_FOTO if photo else RECREATE_TALIMAT), "hedef_sure": target,
+               "referans_ozeti": {"konusma": [f"[{a}-{b}] {t}" for x in infos for a, b, t in (x.get("speech") or [])][:80],
+                                  "ekran_yazilari": pp.get("ekran_yazilari") or [],
+                                  **({"kaynak_paylasim": {"platform": so.get("platform"), "baslik": so.get("title"), "aciklama": str(so.get("caption") or "")[:600],
+                                                         "hesap": so.get("uploader") or so.get("handle")}} if social else {})}}
+        hist = [h for h in (prev.get("history") or []) if isinstance(h, dict) and h.get("text")]
+        if hist:  # önceki düzeltmeler geri alınmasın
+            inp["onceki_duzeltmeler"] = [f"{h.get('revision')}. sürüm: {str(h.get('text'))[:200]}" + (f" → {str(h.get('changes'))[:200]}" if h.get("changes") else "") for h in hist[-5:]]
+        if blocks:
+            inp["referans_videolar"] = blocks
+        if photo:
+            inp["gorsel_butcesi"] = {"en_fazla_gorsel": image_gen.budget(target)}
+        base = recreate_prompt(target, mode)
+        head, sep, _ = base.rpartition("GİRDİ:")
+        extra = mode_text((ROOT / "prompts" / "benzer_duzelt.md").read_text(encoding="utf-8"), mode).replace("__SURE__", str(target)).replace("__KELIME__", str(int(target * 2.4) - 6))
+        prompt = ((head.rstrip() + "\n" + extra.rstrip() + "\n\nGİRDİ:\n") if sep else (base.rstrip() + "\n" + extra.rstrip() + "\n\nGİRDİ:\n")) + json.dumps(inp, ensure_ascii=False, indent=1)
+        log(f"✏️ Claude yalnız istenen yerleri değiştiriyor (önceki plan + düzeltme; hedef {target} sn{'; kareler hatırlatma için' if blocks else ''})")
+        rc, out = claude(prompt, tmp, images=bool(blocks), kind="benzer")
+        if rc not in (0, 2) and blocks:
+            log(f"  ! ilk deneme olmadı ({out[:120]}); kare resimleri olmadan yeniden deneniyor")
+            rc, out = claude(prompt.replace("Resmi Read aracıyla aç ve İNCELE", "Kareleri GÖREMİYORSUN (Read aracı kapalı): önceki plana ve dökümlere göre çalış. Görebilseydin bakacağın şeyler")
+                             + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="benzer")
+        elif rc not in (0, 2):
+            log(f"  ! ilk deneme olmadı ({out[:120]}); yeniden deneniyor")
+            rc, out = claude(prompt + "\n\nÖNEMLİ: Yanıtın YALNIZCA şemadaki JSON nesnesi olsun.", tmp, images=False, kind="benzer")
+        if rc:
+            return {"ok": False, "error": f"düzeltme planı yazılamadı: {out[:200]}", "limit": rc == 2}
+        try:
+            plan = parse_plan(out)
+        except Exception as e:
+            return {"ok": False, "error": f"düzeltme planı okunamadı: {e}"}
+        return recreate_finish(name, tmp, plan, target, asked, base_instr, social, infos, videos, ref, prev=prev,
+                               rv={**rv, "instruction": text, "revision": revision}, prev_dir=prev_dir, mode=mode, note=note)
+
+    res = attempt(mode)
+    if res.get("photoFailed"):  # hiçbir fotoğraf üretilemedi: düzeltme çizimle (bütün sahneler çizilir)
+        reason = str(res.get("error") or "fotoğraflar üretilemedi")
+        log(f"⚠️ gerçekçi fotoğraflar üretilemedi ({reason[:160]}): düzeltme çizimle yapılıyor")
+        res = attempt("cizim")
+        if res.get("ok"):
+            res["plan"]["photoFallback"] = reason[:200]
+    return res
 
 
 # Açıklaması boş paylaşımda haber araması konuşmadaki ANLAMLI kelimelerle (inceleme, 19 Ekim: dökümün ilk 10 kelimesi "Arkadaşlar anda

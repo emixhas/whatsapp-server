@@ -366,21 +366,34 @@ def yt_upload(path: Path):
     yt = yt_service()
     title, desc = build_caption(path.name, max_len=4900)
     from hashtags import youtube_tags
+    meta = episode_meta(path.name) or {}
     body = {"snippet": {"title": title, "description": desc, "categoryId": "25", "defaultLanguage": "tr",
                         "tags": youtube_tags(caption_tags(path.name))},
             "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}}
-    req = yt.videos().insert(part="snippet,status", body=body, media_body=MediaFileUpload(str(path), chunksize=-1, resumable=True))
-    resp = None
-    try:
+    if meta.get("aiVisuals"):  # gerçekçi yapay zekâ fotoğrafları: YouTube'un "değiştirilmiş ya da yapay içerik" beyanı (izleyiciye etiket)
+        body["status"]["containsSyntheticMedia"] = True
+
+    def send(b):
+        req = yt.videos().insert(part="snippet,status", body=b, media_body=MediaFileUpload(str(path), chunksize=-1, resumable=True))
+        resp = None
         while resp is None:
             _, resp = req.next_chunk()
+        return resp
+    try:
+        try:
+            resp = send(body)
+        except Exception as e:  # alanı tanımayan eski API sürümü: beyan olmadan bir kez (açıklamadaki satır yine durur)
+            if "containsSyntheticMedia" not in body["status"] or not any(x in str(e) for x in ("containsSyntheticMedia", "Unknown name", "invalidArgument")):
+                raise
+            print(f"  ! YouTube yapay içerik beyanını kabul etmedi ({str(e)[:120]}); beyansız yükleniyor (açıklamada yine yazıyor)", file=sys.stderr, flush=True)
+            body["status"].pop("containsSyntheticMedia", None)
+            resp = send(body)
     except Exception as e:  # günlük sınır: okunur mesaj, kısa aralıkla yeniden deneme yok
         reason = next((r for r in LIMIT_REASONS if r in str(e)), None)
         if reason:
             raise LimitReached(reason) from e
         raise
     vid = resp["id"]
-    meta = episode_meta(path.name) or {}
     url = f"https://youtube.com/watch?v={vid}" if meta.get("format") in ("gunluk", "haftalik") or meta.get("kare") else f"https://youtube.com/shorts/{vid}"  # kare uzun video Shorts değil
     rec = {"id": vid, "url": url, "publishedAt": now_iso(), "title": title, "titleVariant": meta.get("titleVariant"), "playlists": []}
     try:  # video yüklendi: kapak, oynatma listesi ve ilk yorum adımındaki hata yeniden yüklemeye (ikinci kopya) yol açmasın
@@ -1518,10 +1531,21 @@ def tt_upload(path: Path):
         info = tt_http("POST", f"{TT_API}/post/publish/creator_info/query/", {}, H).get("data", {})
         opts = info.get("privacy_level_options") or ["SELF_ONLY"]
         privacy = "PUBLIC_TO_EVERYONE" if "PUBLIC_TO_EVERYONE" in opts else opts[0]
-        init = tt_http("POST", f"{TT_API}/post/publish/video/init/",
-                       {"post_info": {"title": title[:150], "privacy_level": privacy, "disable_duet": False, "disable_comment": False, "disable_stitch": False,
-                                      "video_cover_timestamp_ms": 0},  # videonun ilk karesi = kapak
-                        "source_info": source}, H)
+        post = {"title": title[:150], "privacy_level": privacy, "disable_duet": False, "disable_comment": False, "disable_stitch": False,
+                "video_cover_timestamp_ms": 0}  # videonun ilk karesi = kapak
+        if (episode_meta(path.name) or {}).get("aiVisuals"):  # gerçekçi yapay zekâ fotoğrafları: TikTok'un "yapay zekâ ile üretildi" etiketi
+            post["is_aigc"] = True
+        try:
+            init = tt_http("POST", f"{TT_API}/post/publish/video/init/", {"post_info": post, "source_info": source}, H)
+        except RuntimeError as e:  # alanı tanımayan uygulama sürümü: etiketsiz bir kez (açıklamadaki satır yine durur)
+            if not post.pop("is_aigc", None) or "invalid_param" not in str(e):
+                raise
+            print(f"  ! TikTok yapay zekâ etiketini kabul etmedi ({str(e)[:120]}); etiketsiz yükleniyor", file=sys.stderr, flush=True)
+            init = tt_http("POST", f"{TT_API}/post/publish/video/init/", {"post_info": post, "source_info": source}, H)
+        if post.get("is_aigc") and init.get("error", {}).get("code") in ("invalid_params", "invalid_param"):
+            print(f"  ! TikTok yapay zekâ etiketini kabul etmedi ({init['error']}); etiketsiz yükleniyor", file=sys.stderr, flush=True)
+            post.pop("is_aigc", None)
+            init = tt_http("POST", f"{TT_API}/post/publish/video/init/", {"post_info": post, "source_info": source}, H)
     else:
         privacy = None
         try:

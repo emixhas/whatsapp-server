@@ -5,6 +5,7 @@ import { KareVideo, KARE } from "./KareVideo";
 import { Thumb } from "./Thumb";
 import { InfoCard } from "./InfoCard";
 import { SvgScene, calculateSvgSceneMetadata } from "./SvgScene";
+import { PhotoScene, calculatePhotoSceneMetadata } from "./PhotoScene";
 import { sampleScene } from "./sampleScene";
 import { Still } from "remotion";
 import { Episode, FPS, HEIGHT, WIDTH } from "./types";
@@ -54,6 +55,17 @@ export const Root = () => (
     durationInFrames={6 * FPS}
     defaultProps={sampleScene}
     calculateMetadata={calculateSvgSceneMetadata}
+  />
+  {/* benzer videonun gerçekçi sahnesi: yapay zekâ fotoğrafları sinematik hareketle (scripts/image_gen.py + render_scenes.mjs comp "PhotoScene") */}
+  <Composition
+    id="PhotoScene"
+    component={PhotoScene}
+    fps={FPS}
+    width={WIDTH}
+    height={HEIGHT}
+    durationInFrames={6 * FPS}
+    defaultProps={{ images: [], seconds: 6, hold: 0, seed: 1 }}
+    calculateMetadata={calculatePhotoSceneMetadata}
   />
   {/* kare (1:1) uzun video: videonun tamamı kendi sesiyle, bölüm başlıklı (pipeline KARE=1; wa_video.build_kare) */}
   <Composition

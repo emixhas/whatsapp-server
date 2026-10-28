@@ -74,7 +74,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 20, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0, maleSpeed: 1.07, femaleSpeed: 1.0 }, audio: { masterLufs: -12, voiceCompress: true }, music: { enabled: true, levelDb: -20, duckDb: 6 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, newsLevel: "top", autoNews: { maxPerDay: 12 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0, maleSpeed: 1.07, femaleSpeed: 1.0 }, audio: { masterLufs: -12, voiceCompress: true }, music: { enabled: true, levelDb: -20, duckDb: 6 }, image: { enabled: true, maxImages: 16, maxMinutes: 15 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, newsLevel: "top", autoNews: { maxPerDay: 12 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 }, muted: false,
@@ -1830,6 +1830,21 @@ app.post("/api/comments/reply", async (_req, res) => res.json(await replyCheck({
 // (albüm) 8 sn beklenip TEK haberde birleştirilir. wa_video.py çözümler (konuşma, sahneler, kareler), Claude kurgu planını yazar,
 // parçalar kesilir → şablon iş klasörü → startAnlik({templateDir, userVideo}). Yayın varsayılan ONAYLA (waVideo.autoPublish false).
 const waVideoCfg = () => ({ enabled: true, autoPublish: true, duration: 30, waitMin: 30, recreate: true, ...(settings().waVideo || {}) }); // autoPublish varsayılan açık (kullanıcı isteği, 26 Ekim)
+// 📷 gerçekçi görseller (benzer video; kullanıcı isteği, 27 Ekim: "benzerini sıfırdan yap gönderilerimiz çok basit çizimlerle oluyor, rakipler çok
+// gerçekçi"): scripts/image_gen.py ready() ile aynı denetim — Apple Silicon Mac + .venv-image + models/image/READY.json — ve panel anahtarı
+// (settings.image.enabled). Mesajlar bununla konuşur; asıl karar wa_video.py visual_mode'da (talimatta "çizgi film/animasyon/çizim" → çizim)
+const imageCfg = () => { const v = settings().image; return { enabled: true, ...(v && typeof v === "object" && !Array.isArray(v) ? v : {}) }; };
+const imageOn = () => { const v = imageCfg().enabled; return !(v === false || v === 0 || ["false", "0", "kapalı"].includes(String(v).trim().toLowerCase())); };
+const imageSupported = () => process.platform === "darwin" && (process.arch === "arm64" || /apple/i.test(cpus()[0]?.model || ""));
+const IMAGE_VENV = path.join(ROOT, ".venv-image", "bin", "python"), IMAGE_READY = path.join(ROOT, "models", "image", "READY.json");
+const imageReady = () => imageSupported() && existsSync(IMAGE_VENV) && existsSync(IMAGE_READY);
+const photoLikely = () => imageOn() && imageReady();
+let imageInstall = null; // panelden kurulum: {startedAt, lines, done, ok}
+function imageStatus() {
+  const info = readJson(IMAGE_READY, {});
+  return { supported: imageSupported(), installed: existsSync(IMAGE_VENV), ready: imageReady(), enabled: imageOn(), testSec: Number(info.testSec) || null,
+    installing: !!imageInstall && !imageInstall.done, installOk: imageInstall?.done ? imageInstall.ok : null, lines: imageInstall ? imageInstall.lines.slice(-4) : [] };
+}
 // Fragman analizi (kullanıcı isteği, 18 Ekim: "youtube videosunun linkini göndersem analiz edip kelimelere döküp çarpıcı bir kancalı
 // giriş ile fragmanda ne anlatıldı gibi 40 saniyelik video"): talimat açıkça haber istemiyorsa ve talimatta fragman/trailer/teaser
 // geçerse ya da (autoDetect) YouTube başlığı fragmansa wa_video.py fragman modunda çalışır (prompts/fragman.md). Açık haber isteği
@@ -2313,7 +2328,7 @@ const kareOn = () => kareCfg().enabled;
 // çizilmiş sahnelerle özeti = benzer video yolu (build_recreate: döküm + kareler → Claude özet planı → SVG sahneler), hedef 60 sn (talimatta
 // "N saniye" varsa o). Biçimler: "özet reels", "reels özet", "svg özet", "özet reel", "özet shorts"
 const reelsAsk = (t) => /(?:^|[^\p{L}])(?:özet|ozet)\s*(?:reels?|rils|shorts?)(?![\p{L}])|(?:^|[^\p{L}])(?:reels?|rils)\s*(?:özet|ozet)(?![\p{L}])|(?:^|[^\p{L}])svg\s*(?:özet|ozet|reels?)(?![\p{L}])/iu.test(String(t || ""));
-const reelsInstruction = (t) => `${String(t || "").trim()}. Bu uzun videonun ÖZETİ: ana fikri ve en önemli 3-5 noktayı sırayla, çizilmiş sahnelerle anlat${trailerSecs(String(t || "")) ? "" : "; 60 saniye"}.`;
+const reelsInstruction = (t) => `${String(t || "").trim()}. Bu uzun videonun ÖZETİ: ana fikri ve en önemli 3-5 noktayı sırayla, sıfırdan üretilmiş sahnelerle anlat${trailerSecs(String(t || "")) ? "" : "; 60 saniye"}.`;
 // linkte açma istisnası (commands.js openAsk E1) bu tanıyıcılarla üretim isteğine bakar
 useDetectors({ newsRequest, recreateAsk, trailerAsk, kindAsk });
 // fragman süresi (wa_video.py SURE_RE/trailer_secs ile aynı kural, 20-60): talimattaki "N saniye/sn" ya da "N dakika/dk" (× 60); yoksa
@@ -2452,7 +2467,10 @@ const OWNER_STAGES = [
   [/^⬛ videonun tamamı/, () => "videonun tamamı kare (1080x1080) kesiliyor (ffmpeg; uzun videoda birkaç dakika)"],
   [/^🎨 Claude videoyu inceliyor|^🎬 Claude|^✏️ Claude|kurgu planı/, () => "Claude senaryoyu ve sahneleri yazıyor (1-4 dk)"],
   [/^🎨 (\d+) sahne çiziliyor/, (m) => `sahneler çiziliyor (${m[1]} sahne, Remotion; sahne başına 1-3 dk)`],
-  [/^🎨 (kanca|\d+\. sahne): (.{0,40})/, (m) => `sahne çizildi: ${m[1]} — ${m[2].split(" — ")[0]}`],
+  [/^🎨 (\d+) gerçekçi görsel üretiliyor/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]} fotoğraf, bu Mac'te; fotoğraf başına 15-60 sn)`],
+  [/^🎨 görsel (\d+)\/(\d+) /, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]}/${m[2]} tamam)`],
+  [/^🎨 (\d+) sahne canlandırılıyor/, (m) => `sahneler canlandırılıyor (${m[1]} sahne, Remotion; sahne başına 1-2 dk)`],
+  [/^🎨 (kanca|\d+\. sahne): (.{0,40})/, (m) => `sahne hazır: ${m[1]} — ${m[2].split(" — ")[0]}`],
   [/^♻️ /, () => "değişmeyen sahneler önceki sürümden alındı, değişenler çiziliyor"],
   [/^(?:✂️ kurgu|🎨 neler korundu|🎨 sıfırdan üretildi|✏️ düzeltildi)/, () => "kurgu hazır; seslendirme ve video üretimine geçiliyor"],
 ];
@@ -2505,6 +2523,15 @@ function ownerTick(now = Date.now()) {
   return out;
 }
 setInterval(() => { for (const t of ownerTick()) { try { wa.send(t).catch(() => {}); } catch { /* WhatsApp henüz kurulmadı */ } } }, 60000);
+// benzer videonun sorunlu durumları kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir): gerçekçi fotoğraflar hiç üretilemedi
+// (sahneler çizildi), bazı sahnelerin fotoğrafı/çizimi yerine yedek kondu; motor kurulu değil ipucu günde bir kez
+let imageHintAt = 0;
+async function recreateWarn(p) {
+  const ph = p.visualMode === "gercekci";
+  if (p.photoFallback) await sendW(`⚠️ Gerçekçi fotoğraflar üretilemedi (${String(p.photoFallback).slice(0, 140)}); sahneler çizimle yapıldı.`);
+  if (p.fallbackScenes) await sendW(ph ? `⚠️ ${p.fallbackScenes} sahnenin fotoğrafı üretilemedi; komşu sahnenin fotoğrafı kullanıldı (video yine hazırlanıyor).` : `⚠️ ${p.fallbackScenes} sahnenin çizimi kullanılamadı; yerine sade bir sahne kondu (video yine hazırlanıyor).`);
+  if (!ph && p.visualNote && waBrief() && Date.now() - imageHintAt > 24 * 3600000) { imageHintAt = Date.now(); await sendW(`ℹ️ ${String(p.visualNote).slice(0, 220)}`); }
+}
 // Ortak montaj adımı: WhatsApp videosu ya da sosyal medya linkinden indirilen video {files, instruction, social?, related?}
 async function runVideoNews(v) { videoNewsN++; try { return await runVideoNews0(v); } finally { videoNewsN--; } } // güncelleme beklesin
 async function runVideoNews0(v) {
@@ -2525,11 +2552,11 @@ async function runVideoNews0(v) {
   push(`${rv ? "✏️" : kr ? "⬛" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : kr ? `kare uzun video (${v.social?.duration ? `${Math.round(Number(v.social.duration) / 60)} dk, ` : ""}videonun tamamı kendi sesiyle)` : v.trailer ? (auto ? "fragman analizi (fragman takibi: kanalda yeni fragman)" : "fragman analizi") : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
   if (rv) { if (v.src === "panel") await sendW(`✏️ Panelden düzeltme (${rv.revision}. sürüm): "${String(rv.instruction).slice(0, 120)}" — değişen sahneler yeniden çiziliyor, kalanlar korunuyor. Bitince video gelecek; eski sürüm yayınlanmayacak.`); }
   else if (!waBrief()) await sendW((kr ? `⬛ Videoyu inceliyorum: konuşmasını kelimelere döküyor, karelerine bakıyorum; sonra çarpıcı bir kanca, kısa giriş, bölüm başlıkları ve kapanış yazıp videonun TAMAMINI kendi sesiyle kare (1:1) uzun video yapacağım${v.social?.duration ? ` (kaynak ${Math.round(Number(v.social.duration) / 60)} dk; hazırlık 5-20 dk)` : " (hazırlık 5-20 dk)"}.`
-    : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk).`
+    : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp ${photoLikely() ? "sahneleri yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te üretilir, 10-25 dk; talimata \"çizgi film\" ya da \"çizimle\" yazarsanız çizerim)" : "sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk)"}.`
     : v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`) + tl);
-  else if (!v.social) await sendW((kr ? "⬛ Başladı: videonuz kare (1:1) uzun video olarak hazırlanıyor (tamamı kendi sesiyle). Bitince video gelecek." : rc ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek." : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
+  else if (!v.social) await sendW((kr ? "⬛ Başladı: videonuz kare (1:1) uzun video olarak hazırlanıyor (tamamı kendi sesiyle). Bitince video gelecek." : rc ? (photoLikely() ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri gerçekçi fotoğraflarla sıfırdan üretiliyor. Bitince video gelecek." : "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek.") : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
   // sahibin uzun işi (ownerJobs): otomatik trend kuyruğu işi (quiet) değil
   const oj = vqCtx()?.quiet || auto ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
@@ -2538,11 +2565,12 @@ async function runVideoNews0(v) {
     ...(["haber", "trend", "mizah"].includes(v.kind) ? { kind: v.kind } : {}),
     ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(kr ? { kare: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
     ...(rv ? { revise: { job: rv.job, instruction: rv.instruction, of: rv.of, revision: rv.revision } } : {}) });
-  // özet: videonun tamamının analizi + iki Claude çağrısı + HD anlar (en çok 60 dk); benzer video: Claude + sahnelerin çizimi (en çok 50 dk);
+  // özet: videonun tamamının analizi + iki Claude çağrısı + HD anlar (en çok 60 dk); benzer video: Claude + sahnelerin çizimi (en çok 50 dk;
+  // gerçekçi fotoğraflarla 75 dk: fotoğraflar en çok ~28 dk, hiç üretilemezse çizimle ikinci plan);
   // satırlar anında loga (çerçeve 🖼, ekrandaki yazılar 📝, açıklamasız paylaşımın haber araması 🔎 dahil; inceleme, 19 Ekim: yanlış
   // kırpma logda hiç görünmüyordu)
   // kare: 10 dakikalık videonun dökümü (konuşma tanıma) + tamamının 1080x1080 kesimi uzun sürer (en çok 45 dk)
-  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? 50 : kr ? 45 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|⬛|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
+  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? (photoLikely() ? 75 : 50) : kr ? 45 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|⬛|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
   rmSync(jobFile, { force: true });
   let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
   if (!j?.ok) {
@@ -2560,16 +2588,19 @@ async function runVideoNews0(v) {
   push(`${rc ? "🎨 neler korundu, neler değişti" : "✂️ kurgu"}: ${String(p.cuts || "").slice(0, 200)}`);
   if (rv) {
     // düzeltme: kaç sahne korundu (önceki sürümden kopyalandı), kaç sahne yeniden çizildi, Claude'un değişiklik özeti; yedek çizime düşen sahne tek satır
-    push(`✏️ düzeltildi (${j.revision}. sürüm): ${p.changedScenes} sahne yeniden çizildi, ${p.reusedScenes} sahne korundu${p.paletteChanged ? " (palet değişti: hepsi yeniden)" : ""}${p.changes ? ` — ${String(p.changes).slice(0, 200)}` : ""}`);
-    if (p.fallbackScenes) await sendW(`⚠️ ${p.fallbackScenes} sahnenin çizimi kullanılamadı; yerine sade bir sahne kondu (video yine hazırlanıyor).`);
-    await sendW(`✏️ *Düzeltme uygulandı* (${j.revision}. sürüm): ${p.changedScenes} sahne yeniden çizildi, ${p.reusedScenes} sahne korundu.${p.changes ? `\n${String(p.changes).slice(0, 300)}` : ""}\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek, yayın için *onay* isteyeceğim. Eski sürüm (${rv.of}) yayınlanmayacak.`);
+    const ph = p.visualMode === "gercekci", redo = ph ? "yeniden üretildi" : "yeniden çizildi";
+    push(`✏️ düzeltildi (${j.revision}. sürüm): ${p.changedScenes} sahne ${redo}, ${p.reusedScenes} sahne korundu${p.paletteChanged ? " (palet değişti: hepsi yeniden)" : ""}${p.changes ? ` — ${String(p.changes).slice(0, 200)}` : ""}`);
+    await recreateWarn(p);
+    await sendW(`✏️ *Düzeltme uygulandı* (${j.revision}. sürüm): ${p.changedScenes} sahne ${redo}, ${p.reusedScenes} sahne korundu.${p.changes ? `\n${String(p.changes).slice(0, 300)}` : ""}\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek, yayın için *onay* isteyeceğim. Eski sürüm (${rv.of}) yayınlanmayacak.`);
   } else if (rc) {
     // benzer video: kaç sahne çizildi, videodan çıkarılan kelimeler (ilk 200 karakter); yedek çizime düşen sahne kısa modda da tek satır (sorun)
-    push(`🎨 sıfırdan üretildi: ${p.scenes} sahne çizildi${p.fallbackScenes ? ` (${p.fallbackScenes} sahne sade yedek çizimle)` : ""}${p.konu ? ` · konu: ${String(p.konu).slice(0, 120)}` : ""}`);
+    const ph = p.visualMode === "gercekci";
+    const made = ph ? `${p.scenes} sahne, ${p.photos} gerçekçi fotoğraf (yapay zekâ, bu Mac'te${p.photoSec ? `; fotoğraflar ${Math.max(1, Math.round(p.photoSec / 60))} dk` : ""})` : `${p.scenes} sahne çizildi`;
+    push(`🎨 sıfırdan üretildi: ${made}${p.fallbackScenes ? (ph ? ` (${p.fallbackScenes} sahnede komşu sahnenin fotoğrafı)` : ` (${p.fallbackScenes} sahne sade yedek çizimle)`) : ""}${p.konu ? ` · konu: ${String(p.konu).slice(0, 120)}` : ""}`);
     if (p.hookType) push(`🎣 kanca kalıbı: ${p.hookLabel || p.hookType}${p.hookPromise ? ` — ${String(p.hookPromise).slice(0, 120)}` : ""}${p.hookAnswer ? ` (cevap: ${p.hookAnswer})` : ""}`);
-    if (p.fallbackScenes) await sendW(`⚠️ ${p.fallbackScenes} sahnenin çizimi kullanılamadı; yerine sade bir sahne kondu (video yine hazırlanıyor).`);
+    await recreateWarn(p);
     const ref = String(p.refText || "").trim();
-    if (!waBrief()) await sendW(`🎨 *Sıfırdan üretildi*: ${p.scenes} sahne çizildi — ${p.titles?.A || p.hook}${p.konu ? `\n🔎 Konu: ${String(p.konu).slice(0, 160)}` : ""}${p.mesaj ? `\n💡 Mesaj: ${String(p.mesaj).slice(0, 160)}` : ""}${p.hookType ? `\n🎣 Kanca: ${p.hookLabel || p.hookType}${p.hookPromise ? ` — ${String(p.hookPromise).slice(0, 120)}` : ""}` : ""}\n📝 Videodan çıkarılan: ${ref ? `"${ref.slice(0, 200)}${ref.length > 200 ? "…" : ""}"` : "konuşma ya da yazı bulunamadı; hikâye görüntüden çıkarıldı"}${p.speech === false ? " (konuşma tanıma Mac'te kurulu değil: bash scripts/install_align.sh)" : ""}\n\n${p.cuts ? `Neler korundu, neler değişti: ${p.cuts}\n\n` : ""}Sahneler:\n${(p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.sahne || "çizim"}${s.fallback ? " (sade yedek çizim)" : ""}`).join("\n")}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
+    if (!waBrief()) await sendW(`🎨 *Sıfırdan üretildi*: ${made} — ${p.titles?.A || p.hook}${p.konu ? `\n🔎 Konu: ${String(p.konu).slice(0, 160)}` : ""}${p.mesaj ? `\n💡 Mesaj: ${String(p.mesaj).slice(0, 160)}` : ""}${p.hookType ? `\n🎣 Kanca: ${p.hookLabel || p.hookType}${p.hookPromise ? ` — ${String(p.hookPromise).slice(0, 120)}` : ""}` : ""}\n📝 Videodan çıkarılan: ${ref ? `"${ref.slice(0, 200)}${ref.length > 200 ? "…" : ""}"` : "konuşma ya da yazı bulunamadı; hikâye görüntüden çıkarıldı"}${p.speech === false ? " (konuşma tanıma Mac'te kurulu değil: bash scripts/install_align.sh)" : ""}\n\n${p.cuts ? `Neler korundu, neler değişti: ${p.cuts}\n\n` : ""}Sahneler:\n${(p.segments || []).map((s) => `• ${s.kind === "hook" ? "Kanca" : s.title}: ${s.sahne || (ph ? "fotoğraf" : "çizim")}${ph && s.photos ? ` (${s.photos} fotoğraf)` : ""}${s.fallback ? (ph ? " (komşu sahnenin fotoğrafı)" : " (sade yedek çizim)") : ""}`).join("\n")}${ph ? "\n🤖 Videoda ve açıklamada \"yapay zekâ ile canlandırıldı\" yazar; YouTube ve TikTok'ta yapay içerik etiketi açılır." : p.visualNote ? `\nℹ️ ${String(p.visualNote).slice(0, 220)}` : ""}\n\n🎙 ${String(p.narration || "").slice(0, 600)}\n\nVideo üretiliyor (${j.duration} sn); bitince buraya gelecek${v.publishAt ? ` ve ⏰ ${atLabel(whenLabel(new Date(v.publishAt)))} bağlı hesaplarda yayınlanacak (iptal: planlı yayını iptal et)` : waVideoCfg().autoPublish ? " ve bağlı hesaplarda yayınlanacak" : ", yayın için *onay* isteyeceğim"}.`);
   }
   // özette sorun olabilecek iki durum kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir)
   if (kr) {
@@ -2625,7 +2656,7 @@ function reviseCheck(name) {
   name = path.basename(String(name || "")).replace(/\.json$/, "").replace(/\.mp4$/, "") + ".mp4";
   const meta = readJson(path.join(OUT, name.replace(/\.mp4$/, ".json")), null);
   if (!meta?.segments?.length) return { ok: false, error: "Videonun bilgileri bulunamadı." };
-  if (!meta.recreated) return { ok: false, error: "Bu video sıfırdan çizilmiş (benzer) video değil; düzeltme yalnız çizilmiş videolarda çalışır. Diğer videolar için \"🔁 yeniden yayınla\" ya da yeni talimatla yeniden gönderme var." };
+  if (!meta.recreated) return { ok: false, error: "Bu video sıfırdan üretilmiş (benzer) video değil; düzeltme yalnız benzer videolarda çalışır. Diğer videolar için \"🔁 yeniden yayınla\" ya da yeni talimatla yeniden gönderme var." };
   const jd = String(meta.jobDir || "");
   if (!jd || !existsSync(path.join(ROOT, jd, "plan.json"))) return { ok: false, error: "Bu videonun çizim planı bulunamadı (iş klasörü disk temizliğinde silinmiş olabilir: 2 günden eski videolar düzeltilemez). Videoyu ya da linki \"benzerini yap\" ile yeniden gönderin." };
   return { ok: true, name, meta, jobDir: jd, revision: (Number(meta.revision) || 0) + 1 };
@@ -2657,7 +2688,7 @@ function reviseTarget(no, pend, vids) {
   if (no) {
     const p = pend.find((x) => Number(x.id) === Number(no));
     if (!p) return { ok: false, error: `#${no}: onay bekleyen video yok. Düzeltme için videonun onay mesajındaki numarayı yazın (*düzelt N: ne değişsin*).${pend.length ? `\nOnay bekleyenler: ${pend.map((x) => `#${x.id} ${String(x.title || x.label || x.video).slice(0, 50)}${isRc(x.video) ? " ✏️" : ""}`).join(" · ")}` : ""}` };
-    if (!isRc(p.video)) return { ok: false, error: `#${no} (${String(p.title || p.label || p.video).slice(0, 60)}) sıfırdan çizilmiş (benzer) video değil; düzeltme yalnız çizilmiş videolarda çalışır.` };
+    if (!isRc(p.video)) return { ok: false, error: `#${no} (${String(p.title || p.label || p.video).slice(0, 60)}) sıfırdan üretilmiş (benzer) video değil; düzeltme yalnız benzer videolarda çalışır.` };
     return { ok: true, name: p.video, no: Number(no) };
   }
   const cands = pend.filter((x) => isRc(x.video));
@@ -2665,7 +2696,7 @@ function reviseTarget(no, pend, vids) {
   if (cands.length > 1) return { ok: false, error: `Hangisi? Onay bekleyen ${cands.length} çizilmiş video var; numarasıyla yazın (*düzelt N: ne değişsin*):\n${cands.map((x) => `#${x.id} ${String(x.title || x.label || x.video).slice(0, 60)}`).join("\n")}` };
   const v = vids.find((x) => x.recreated && !x.archived && Date.now() - Number(x.mtime || 0) < 24 * 3600000);
   if (v) return { ok: true, name: v.name, no: 0 };
-  return { ok: false, error: "Düzeltilecek çizilmiş (benzer) video bulunamadı: onay bekleyen yok, son 24 saatte sıfırdan çizilmiş video üretilmedi." };
+  return { ok: false, error: "Düzeltilecek benzer (sıfırdan üretilmiş) video bulunamadı: onay bekleyen yok, son 24 saatte benzer video üretilmedi." };
 }
 async function reviseCommand(sc, opts = {}) {
   const pend = (() => { try { return wa.status().pendingList || []; } catch { return []; } })();
@@ -2706,7 +2737,7 @@ async function socialVideoNews({ url, instruction = "", publishAt = null, kind =
     // benzer video (sıfırdan): fragman ve özet kararından ÖNCE (referans fragman ya da uzun video olsa da benzeri çizilir); haber aranmaz
     const reels = recreateOn() && reelsAsk(instruction);
     const rc = recreateOn() && (recreateAsk(instruction) || reels);
-    if (reels) { instruction = reelsInstruction(instruction); push(`🎨 özet reels: ${Math.round((Number(s.duration) || 0) / 60)} dakikalık video çizilmiş sahnelerle özetlenecek (hedef ${trailerSecs(instruction) || 60} sn)`); }
+    if (reels) { instruction = reelsInstruction(instruction); push(`🎨 özet reels: ${Math.round((Number(s.duration) || 0) / 60)} dakikalık video ${photoLikely() ? "gerçekçi fotoğraflı" : "çizilmiş"} sahnelerle özetlenecek (hedef ${trailerSecs(instruction) || 60} sn)`); }
     push(`🔗 indirildi: ${s.credit}${s.views ? ` · ${n(s.views)} izlenme` : ""}${s.likes ? ` · ${n(s.likes)} beğeni` : ""} · ${rc ? "benzer video (sıfırdan): haber sitelerinde aranmadı" : kind === "mizah" ? "mizah videosu: haber sitelerinde aranmadı" : `haber sitelerinde ${j.related?.length ? `${j.related.length} ilgili haber bulundu` : "ilgili haber bulunamadı (açıklama iddia olarak aktarılacak)"}`}`);
     // canlı yayın / uzun videonun yalnız bir bölümü alındıysa kullanıcı bilsin (kısa mesaj modunda da tek satır; bölümü değiştirme yolu)
     const note = String(s.note || ""), Note = note.charAt(0).toLocaleUpperCase("tr-TR") + note.slice(1);
@@ -3499,7 +3530,7 @@ try { watch(OUT, (ev, file) => { if (!file || !file.endsWith(".json")) return; c
   const r = await wa.notifyVideo(mp4, { ask: true }); if (!r.ok) push(`💬 WhatsApp bildirimi gönderilemedi: ${r.error}`); } }, 1500); }); } catch { /* yok */ }
 
 // ---------- API: durum
-app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status(), rest: restInfo(), watch: { lastAt: watchLast || null, nextAt: (mynetCfg().enabled || breakingCfg().enabled) ? (watchLast || Date.now()) + watchMin() * 60000 : null, everyMin: watchMin(), scanning: watchScanning } }));
+app.get("/api/status", async (_req, r) => r.json({ ...state, log: state.log.slice(-60), lanUrl: `http://${lanIp()}:${PORT}`, isMac, schedule: await getSchedule(), settings: settings(), connections: await brain.connections(), tunnel: tunnelStatus(), tts: ttsStatus(), turkishVoice: turkishVoiceStatus(), image: imageStatus(), resources: sampleResources(), usage: brain.usageToday(), whatsapp: wa.status(), rest: restInfo(), watch: { lastAt: watchLast || null, nextAt: (mynetCfg().enabled || breakingCfg().enabled) ? (watchLast || Date.now()) + watchMin() * 60000 : null, everyMin: watchMin(), scanning: watchScanning } }));
 app.get("/api/log", (req, res) => { res.setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.flushHeaders(); for (const l of state.log.slice(-60)) res.write(`data: ${JSON.stringify(l)}\n\n`); clients.add(res); req.on("close", () => clients.delete(res)); });
 
 // ---------- Telefon için izleme sayfası (kısa link; WhatsApp'tan tıklanır)
@@ -3665,6 +3696,25 @@ app.post("/api/schedule", async (req, res) => {
 // Ses kataloğu: kurulu sesler ve ön dinleme (scripts/voices.py). Liste 30 sn önbellekli.
 let voiceCache = { t: 0, rows: [] };
 const runPy = (args, timeoutMs) => new Promise((resolve) => execFile(PY, args, { cwd: ROOT, env: ENV, timeout: timeoutMs, maxBuffer: 4e6 }, (err, stdout, stderr) => resolve({ err, stdout: String(stdout || ""), stderr: String(stderr || "") })));
+// 📷 gerçekçi görsel motoru kurulumu (panel Ayarlar → 📡 → Kur): scripts/install_image.sh arka planda (mflux + Z-Image-Turbo ~6 GB, 10-40 dk);
+// adım satırları loga, bitince WhatsApp'a tek satır. Durum /api/status image alanında
+app.post("/api/image/install", (_req, res) => {
+  if (imageInstall && !imageInstall.done) return res.json({ ok: true, already: true });
+  if (!imageSupported()) return res.json({ ok: false, error: "Gerçekçi görsel motoru yalnız Apple Silicon (M1 ve üstü) Mac'te çalışır; benzer videolar çizimle üretilmeye devam eder." });
+  imageInstall = { startedAt: Date.now(), lines: [], done: false, ok: false };
+  push("📷 gerçekçi görsel motoru kuruluyor (mflux + Z-Image-Turbo, ~6 GB indirir; internet hızına göre 10-40 dk)");
+  runLines("bash", ["scripts/install_image.sh"], { timeout: 90 * 60000, onLine: (l) => {
+    const t = String(l).replace(/\r/g, " ").trim(); if (!t) return;
+    imageInstall.lines.push(t.slice(0, 300)); if (imageInstall.lines.length > 200) imageInstall.lines.shift();
+    if (/^(?:▶|✔|✖|\s*✔)/.test(t)) push(`📷 ${t.slice(0, 300)}`);
+  } }).then(async (r) => {
+    imageInstall.done = true; imageInstall.ok = !!r.ok && imageReady();
+    const why = String(imageInstall.lines.filter((x) => x.startsWith("✖")).pop() || String(r.stderr || "").trim().split("\n").pop() || "bilinmeyen hata").slice(0, 240);
+    push(imageInstall.ok ? "📷 ✔ gerçekçi görsel motoru hazır: benzer videolar artık gerçekçi fotoğraflarla üretilecek" : `📷 ✖ gerçekçi görsel motoru kurulamadı: ${why}`);
+    try { await sendW(imageInstall.ok ? "📷 Gerçekçi görsel motoru kuruldu. Benzer videolar artık yapay zekâ ile gerçekçi fotoğraflarla üretilecek." : `📷 Gerçekçi görsel motoru kurulamadı: ${why}`); } catch { /* WhatsApp kapalı */ }
+  });
+  res.json({ ok: true });
+});
 app.get("/api/voices", async (req, res) => {
   if (req.query.fresh || Date.now() - voiceCache.t > 30000) {
     const r = await runPy(["scripts/voices.py", "--list"], 60000);
@@ -4241,7 +4291,8 @@ async function handleCommand(text, opts = {}) {
       const frSecs = trailerSecs(cmd.instruction);
       // benzer video (sıfırdan) fragman ve türden önce (socialVideoNews ile aynı öncelik)
       const rcAsk = recreateOn() && recreateAsk(cmd.instruction || "");
-      reply = (rcAsk ? (waBrief() ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek."
+      reply = (rcAsk ? (waBrief() ? (photoLikely() ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri gerçekçi fotoğraflarla sıfırdan üretiliyor. Bitince video gelecek." : "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek.")
+        : photoLikely() ? "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te üretilir). Her adımda haber vereceğim."
         : "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini sıfırdan çizeceğim (orijinal görüntü kullanılmaz). Her adımda haber vereceğim.")
         : fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
         : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[kindOf(cmd)] || "video"} hazırlanıyor. Bitince video gelecek.`

@@ -578,6 +578,9 @@ def main(src: str, dst: str):
         "film": (os.environ.get("FILM") or "").strip()[:80] or None if os.environ.get("TRAILER") == "1" else None,  # fragmanın dizi/film adı: YouTube'da "<dizi> · Fragmanlar" listesi
         "summary": os.environ.get("SUMMARY") == "1" or None,
         "recreated": RECREATE or None,  # benzer video (sıfırdan): açıklama "🎨 HİKÂYE: …", #sondakika yok, "İlham alınan video: …"
+        # benzer videonun sahneleri yapay zekâ ile üretilmiş gerçekçi fotoğraflar (wa_video photo_render): açıklamada açıklama satırı,
+        # YouTube'da "değiştirilmiş ya da yapay içerik" (status.containsSyntheticMedia), TikTok'ta yapay zekâ içeriği etiketi (is_aigc)
+        "aiVisuals": True if RECREATE and data.get("aiVisuals") is True else None,
         # kare (1:1) uzun video (KARE=1; wa_video.build_kare): videonun tamamı kendi sesiyle; Shorts değil, yalnız YouTube; açıklamada bölümler
         "kare": os.environ.get("KARE") == "1" or None,
         "jobDir": os.environ.get("TEMPLATE_DIR") or None,  # şablon/video işinin klasörü (benzer videoda düzeltme turu plan.json'u buradan okur)

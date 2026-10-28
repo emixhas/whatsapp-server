@@ -139,6 +139,9 @@ _DEFAULTS = ({
         # Arka plan müziği (kullanıcı isteği, 27 Ekim; assemble_script.music_choice, src/music.ts): içerik türüne göre yatak, konuşmanın
         # levelDb altında (varsayılan -20 dB: çok az duyulur), konuşma aralarında duckDb (6) kadar açık
         "music": {"enabled": True, "levelDb": -20, "duckDb": 6},
+        # Benzer videonun gerçekçi fotoğrafları (kullanıcı isteği, 27 Ekim; scripts/image_gen.py, Mac'te yerel Z-Image-Turbo): motor kuruluysa
+        # ve enabled açıksa benzer video çizim yerine fotoğraflarla; maxImages/maxMinutes video başına sınır, badge videodaki köşe etiketi
+        "image": {"enabled": True, "maxImages": 16, "maxMinutes": 15, "badge": "Yapay zekâ ile canlandırıldı"},
         "scheduleHours": 5,
         "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
         # Türkçe doğal ses: Trendyol-TTS (VoxCPM2 tabanlı, MIT) + EMA Lightning (Apache-2.0). Kurulum: scripts/install_turkish_voice.sh
@@ -946,6 +949,8 @@ def build_caption(video_name: str, max_len: int = 2000):
         # kare uzun video Shorts değildir (YouTube "#Shorts" etiketiyle 3 dk üstü videoyu Shorts saymaz; yanıltmasın)
         title = f"{head}: {first} | {s['channelName']}" + ("" if meta.get("kare") else " #Shorts")
         lines = [f"{head} · {s['channelName']} · {day} · {rng}", ""]
+        if meta.get("aiVisuals"):  # gerçekçi yapay zekâ fotoğrafları: gerçek görüntü sanılmasın (açıklamanın başında, kesilmez)
+            lines[1:1] = [AI_NOTE]
         if meta.get("kare"):  # YouTube bölümleri: 00:00 giriş + orijinal sesli bölümdeki bölüm başlıkları (wa_video.build_kare)
             t, chapters = 0.0, []
             for seg in meta.get("segments", []):
@@ -1011,6 +1016,10 @@ def build_caption(video_name: str, max_len: int = 2000):
     # benzer video: referans kaynak değil, ilham (görüntüsü kullanılmadı; kullanıcı isteği, 19 Ekim: "o videodaki gibi sıfırdan")
     tail = "\n" + " ".join(tags) + (f"\n\n{'İlham alınan video' if meta.get('recreated') else 'Kaynak'}: {social_src}" if social_src else "")
     return title[:100], "\n".join(lines)[:max(0, max_len - len(tail))] + tail
+
+
+# benzer videonun gerçekçi sahneleri (meta aiVisuals): açıklamanın ikinci satırı; videoda da sağ altta "yapay zekâ ile canlandırıldı" etiketi
+AI_NOTE = "🤖 Görseller yapay zekâ ile üretilmiş temsili canlandırmalardır, gerçek görüntü değildir."
 
 
 def caption_tags(video_name: str) -> list:
