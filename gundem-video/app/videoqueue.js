@@ -374,9 +374,9 @@ const questionHow = (r) => r.kind === "cancelCurrent" ? "şu ankini iptal et" : 
 
 export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews, socialBusy, anlikQueue, anlikRunning, pipelineAlive, pipelineProc, killTree,
   resting, restInfo, restEnd, restRecheck, waEnabled, onTrend = () => {}, approvals = () => [], openUrl = null, dropApproval = () => null, onCancelVideo = () => null,
-  lockPid = () => null, findProduced = () => null, onRecovered = () => {}, heldNos = () => [] }) {
+  lockPid = () => null, findProduced = () => null, onRecovered = () => {}, heldNos = () => [], notify = () => {} }) {
   const FILE = path.join(DATA, "video_queue.json");
-  let items = [], current = null, handed = [], seq = Date.now() % 1e6, kickT = null, noSeq = 0, noAt = 0, busyAt = 0, lists = [];
+  let items = [], current = null, handed = [], seq = Date.now() % 1e6, kickT = null, noSeq = 0, noAt = 0, busyAt = 0, lists = [], runAt = 0;
   // üretilmiş işler (24 saat): numara → {video, at, label, url}. Kuyruk numarası videonun yayın onayı numarasıdır (5. tur, inceleme, 20 Ekim:
   // "#3" ile "onay 3" iki ayrı sayaçtan farklı videoları gösteriyor, "onay 3" kuyruğun 4. videosunu yayınlıyordu): onay numarası da bu sayaçtan
   // (numberFor), kuyruk videosunun onayı kendi numarasını alır; "#3 iptal" üretilmiş videonun onayını ya da planlı yayınını da kaldırır
@@ -471,7 +471,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     // yarım kalan baştan (en önde), bekleyenler kaydedildikleri sırayla (elle değiştirilmiş sıra korunur)
     const now = Date.now(), all = [...restart, ...waiting.map((x) => ({ ...x, state: "sırada", step: null, waited: true }))];
     const seenNo = new Set();
-    items = all.filter((x) => { if (now - Number(x.at || 0) > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı${x.no ? ` (#${x.no})` : ""}: ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); return false; } return true; })
+    items = all.filter((x) => { if (now - Number(x.at || 0) > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı${x.no ? ` (#${x.no})` : ""}: ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); if (owner(x)) setTimeout(() => staleNote(x), 30000); return false; } return true; })
       .slice(0, OWNER_MAX + AUTO_MAX + 2);
     for (const x of items) { if (!(Number(x.no) > 0) || seenNo.has(Number(x.no))) x.no = 0; else { x.no = Number(x.no); seenNo.add(x.no); } }
     for (const x of items) if (!x.no) x.no = nextNo();
@@ -484,9 +484,15 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
   setTimeout(() => kick(), 15000);
   if (recovered.length) setTimeout(() => { for (const r of recovered) { try { onRecovered(r.vid, pub(r.x)); } catch (e) { push(`🎞 video kuyruğu: #${r.x.no} onay mesajı gönderilemedi: ${e.message}`); } } }, 20000);
 
+  // bayatlama: otomatik trend işi sıraya girdiği andan 6 saat; SAHİBİN işi kuyruğun son meşgul anından (inceleme, 28 Ekim: fotoğraflı benzer
+  // video saatler sürer; arkasında bekleyen, sahibe "sırada" denmiş link 6 saatte habersiz atılıyordu). Atılan sahip işi WhatsApp'a yazılır.
+  function staleNote(x) { try { notify(`⏹ ${x.no ? `#${x.no} ` : ""}6 saatten uzun sırada bekledi, atlandı: ${shortUrl(x.url)} — yeniden istiyorsanız linki tekrar gönderin.`); } catch { /* bildirilemedi */ } }
   function prune() {
     const now = Date.now(), keep = [];
-    for (const x of items) { if (now - Number(x.at || 0) > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı (${tag(x)}): ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); } else keep.push(x); }
+    for (const x of items) {
+      const from = owner(x) ? Math.max(Number(x.at || 0), runAt) : Number(x.at || 0);
+      if (now - from > STALE_MS) { push(`🔗 sıradaki video bayatladı (6 saattir bekliyordu), atlandı (${tag(x)}): ${shortUrl(x.url)}`); onTrend(x, "iptal", "bayatladı (6 saat sırada bekledi)"); if (owner(x)) staleNote(x); } else keep.push(x);
+    }
     if (keep.length !== items.length) { items = keep; changed(); }
   }
   // üretime geçmiş işlerin adımı: anlık sırasında mı, üretiliyor mu; ikisi de değilse üretim bitti (ya da başlatılamadı) → listeden çıkar
@@ -506,7 +512,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     if (keep.length !== handed.length) { handed = keep; save(); if (!current && !items.length) { try { restRecheck(); } catch { /* yok */ } } } // son video da üretildi: ertelenen dinlenme
     else if (dirty) save();
   }
-  setInterval(() => { try { prune(); emit(); if (liveNos().size) busyAt = Date.now(); } catch { /* yok */ } }, 3000);
+  setInterval(() => { try { if (current || socialBusy()) runAt = Date.now(); prune(); emit(); if (liveNos().size) busyAt = Date.now(); } catch { /* yok */ } }, 3000);
   // işin üretimi: anlık sırasındaki kaydı çıkarılır, üretimi sürüyorsa yalnız o durdurulur (⏹'nin yöntemi; sıradaki işler sürer)
   function dropProduction(id) {
     let n = 0;
@@ -548,7 +554,7 @@ export function makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews
     Promise.resolve(p).then((r) => finish(it, ctx, r), (e) => { push(`🔗 paylaşımdan haber hatası (${tag(it)}): ${e.message}`); finish(it, ctx, { ok: false, error: e.message }); });
   }
   function finish(it, ctx, r) {
-    ctx.live = false; delete it.ctx;
+    ctx.live = false; delete it.ctx; runAt = Date.now(); // work() ardından prune eder: biten iş "meşgul" sayılsın
     if (current === it) current = null;
     if (ctx.cancelled) {
       // iptal, iş startAnlik'e geçerken geldiyse (ör. "N. sırada" bildirimi beklenirken; inceleme, 20 Ekim) iş anlık sırasında ya da

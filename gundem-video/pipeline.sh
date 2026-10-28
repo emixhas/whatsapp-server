@@ -180,7 +180,9 @@ OUT="out/${DATE}-${N}.mp4"
 if [ -f "$OUT" ]; then echo "!! $OUT zaten var, üzerine yazılmıyor"; N=$(( $(ls out/${DATE}-*.mp4 2>/dev/null | wc -l) + 1 )); OUT="out/${DATE}-${N}.mp4"; $PY -c "import json;p='public/episode.json';d=json.load(open(p));d['episodeOfDay']=$N;json.dump(d,open(p,'w'),ensure_ascii=False,indent=2)"; fi
 COMP="GundemVideo"; [ "$GUNLUK" = "1" ] && COMP="GunlukOzet"  # günlük özet yatay
 [ "$KARE" = "1" ] && COMP="KareVideo"  # kare (1:1) uzun video: videonun tamamı kendi sesiyle
-npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 --log error
+# benzer video (sıfırdan): kareler kayıpsız PNG (Remotion varsayılanı jpg 80; gerçekçi fotoğrafların ince dokusu son kodlamada silinmesin)
+RQ=""; [ "${RECREATE:-0}" = "1" ] && RQ="--image-format=png"  # set -u: RECREATE yalnız benzer videoda verilir
+npx remotion render src/index.ts "$COMP" "work/render.mp4" --codec h264 --crf 18 $RQ --log error
 # Ses seviyesi (settings.audio.masterLufs, varsayılan -12 LUFS, tepe -1 dB; kullanıcı isteği, 27 Ekim: "kadın ve erkeğin ses seviyesini
 # artıralım" — eskiden -14; seslendirme tts.VOICE_MAX ile yoğunlaştırılır). YouTube -14'e kendisi kısar, Instagram/TikTok olduğu gibi çalar.
 # Görüntüye dokunmaz

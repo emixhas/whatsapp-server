@@ -10,7 +10,8 @@
 // Ekim: iç içe <use>'lu tek bir yavaş sahne bütün işin 20 dakikasını bitirip sonraki sahneleri de yedeğe düşürüyordu). stdout'a yalnız sonuç JSON'u
 // {ok, results: {out: "ok" | "hata: …"}}; ilerleme satırları stderr'e. Tarayıcı: PUPPETEER_EXECUTABLE_PATH (sandbox), yoksa Remotion'unki.
 // Eşzamanlılık SCENE_CONCURRENCY (varsayılan çekirdeklerin yarısı, en çok 4). Ara dosya (GundemVideo yeniden kodlar): crf 18,
-// x264 "veryfast" (medium'un üçte biri işlemci, dosya daha da küçük).
+// x264 "veryfast" (medium'un üçte biri işlemci, dosya daha da küçük). Gerçekçi sahnede kareler PNG, crf 14, "fast" (28 Ekim, "görseller çok
+// çok gerçekçi olsun" isteği; araştırma: fotoğrafın ince dokusu — cilt, kumaş, gren — jpg karelerde ve iki kez crf 18 sıkıştırmada siliniyordu).
 import { bundle } from "@remotion/bundler";
 import { makeCancelSignal, openBrowser, renderMedia, selectComposition } from "@remotion/renderer";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -68,8 +69,9 @@ for (const [k, j] of jobs.entries()) {
         const puppeteerInstance = await getBrowser();
         const composition = await selectComposition({ serveUrl, id: comp, inputProps: props, puppeteerInstance, ...extra });
         if (late) throw new Error("süre doldu");
-        await renderMedia({ composition, serveUrl, codec: "h264", outputLocation: out, inputProps: props, muted: true, crf: 18, x264Preset: "veryfast",
-          imageFormat: "jpeg", jpegQuality: 92, concurrency, overwrite: true, puppeteerInstance, cancelSignal, ...extra });
+        const enc = comp === "PhotoScene" ? { crf: 14, x264Preset: "fast", imageFormat: "png" } : { crf: 18, x264Preset: "veryfast", imageFormat: "jpeg", jpegQuality: 92 };
+        await renderMedia({ composition, serveUrl, codec: "h264", outputLocation: out, inputProps: props, muted: true, ...enc,
+          concurrency, overwrite: true, puppeteerInstance, cancelSignal, ...extra });
       })()]);
     } catch (e) {
       err = late ? `sahne ${Math.round(budget / 1000)} sn'de çizilemedi (süre sınırı)` : e.message;

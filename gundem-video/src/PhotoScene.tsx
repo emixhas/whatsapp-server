@@ -6,12 +6,16 @@ import { FPS } from "./types";
  * Benzer videonun GERÇEKÇİ sahnesi (kullanıcı isteği, 27 Ekim: "benzerini sıfırdan yap gönderilerimiz çok basit çizimlerle oluyor; rakipler
  * çok gerçekçi üretiyor"): sahnenin yapay zekâ ile üretilmiş fotoğrafları (scripts/image_gen.py, Mac'te yerel Z-Image-Turbo) sinematik
  * hareketle oynar. Çekimler seslendirme süresine (seconds) eşit bölünür, son çekim bekleme (hold) boyunca sürer; her çekimde tohuma göre
- * yavaş yakınlaşma ya da uzaklaşma + hafif kayma ve dönme (ölçek hep ≥ 1,04: kenar açılmaz), çekimler arası 14 karelik çapraz geçiş;
- * üstünde hafif renk düzeltmesi, gezinen sıcak ışık, vinyet ve film greni. Sağ altta küçük "yapay zekâ ile canlandırıldı" etiketi (badge;
- * boşsa yok): gerçek görüntü sanılmasın. scripts/render_scenes.mjs sessiz mp4'e çizer (SvgScene gibi; FullFrame oynatır).
+ * yavaş yakınlaşma ya da uzaklaşma + hafif kayma ve dönme, çekimler arası 14 karelik çapraz geçiş; üstünde hafif renk düzeltmesi, gezinen
+ * sıcak ışık, vinyet ve film greni. Sağ altta küçük "yapay zekâ ile canlandırıldı" etiketi (badge; boşsa yok): gerçek görüntü sanılmasın.
+ * scripts/render_scenes.mjs sessiz mp4'e çizer (SvgScene gibi; FullFrame oynatır).
+ * Hareket ölçülü (28 Ekim, "görseller çok çok gerçekçi olsun" isteği; araştırma): ölçek 1,045-1,10 (eskiden 1,04-1,17: en yakında 1080
+ * piksellik kareye ~615 özgün piksel düşüyordu), kayma en çok ±15/±20 px, dönme en çok ±0,5°: 1152x2048 kare en yakında bile neredeyse
+ * birebir örneklenir. Kenar açılmaz: en kötü anda (tam dönme + tam kayma) gereken ölçek cos θ + (1920/1080) sin θ + 15/540 ≈ 1,043, en
+ * küçük ölçek 1,045. Işık, gren ve renk düzeltmesi hafif: fotoğrafın kendi ışığını ve dokusunu bozmasın.
  */
 export type PhotoSceneProps = {
-  /** public/ altına göre sahnenin fotoğrafları (1080x1920 jpg) */
+  /** public/ altına göre sahnenin fotoğrafları (9:16 jpg: 1152x2048, eski kurulumda 1080x1920) */
   images: string[];
   /** seslendirme süresi, sn: çekimler bu süreye bölünür */
   seconds: number;
@@ -32,7 +36,7 @@ export const calculatePhotoSceneMetadata: CalculateMetadataFunction<PhotoScenePr
 const shotMove = (k: number, seed: number) => {
   const r = (n: string) => random(`ph-${seed}-${k}-${n}`);
   const zoomIn = r("z") < 0.62;
-  return { s0: zoomIn ? 1.04 : 1.17, s1: zoomIn ? 1.17 : 1.05, dx: (r("x") - 0.5) * 80, dy: (r("y") - 0.5) * 100, rot: (r("r") - 0.5) * 1.4 };
+  return { s0: zoomIn ? 1.045 : 1.1, s1: zoomIn ? 1.1 : 1.05, dx: (r("x") - 0.5) * 60, dy: (r("y") - 0.5) * 80, rot: (r("r") - 0.5) * 1.0 };
 };
 
 const grain = (n: number) =>
@@ -58,7 +62,7 @@ export const PhotoScene = ({ images, seconds, seed = 1, badge = "Yapay zekâ ile
       <AbsoluteFill key={k} style={{ opacity: op }}>
         <Img src={staticFile(src)} style={{ width: "100%", height: "100%", objectFit: "cover",
           transform: `translate(${(m.dx * (p - 0.5)).toFixed(2)}px, ${(m.dy * (p - 0.5)).toFixed(2)}px) scale(${sc.toFixed(4)}) rotate(${(m.rot * p).toFixed(3)}deg)`,
-          filter: "contrast(1.06) saturate(1.06) brightness(1.02)" }} />
+          filter: "contrast(1.04) saturate(1.04) brightness(1.01)" }} />
       </AbsoluteFill>
     );
   });
@@ -68,9 +72,9 @@ export const PhotoScene = ({ images, seconds, seed = 1, badge = "Yapay zekâ ile
   return (
     <AbsoluteFill style={{ background: "#0b0d12", overflow: "hidden" }}>
       {layers}
-      <AbsoluteFill style={{ background: `radial-gradient(circle at ${lx.toFixed(1)}% ${ly.toFixed(1)}%, rgba(255,176,96,.15), rgba(255,176,96,0) 46%)`, mixBlendMode: "screen" }} />
+      <AbsoluteFill style={{ background: `radial-gradient(circle at ${lx.toFixed(1)}% ${ly.toFixed(1)}%, rgba(255,176,96,.07), rgba(255,176,96,0) 46%)`, mixBlendMode: "screen" }} />
       <AbsoluteFill style={{ background: "radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 52%, rgba(0,0,0,.5) 100%)" }} />
-      <AbsoluteFill style={{ opacity: 0.08, mixBlendMode: "overlay", backgroundImage: grain(Math.floor(frame / 2) % 40 + s), backgroundSize: "540px 960px" }} />
+      <AbsoluteFill style={{ opacity: 0.06, mixBlendMode: "overlay", backgroundImage: grain(Math.floor(frame / 2) % 40 + s), backgroundSize: "540px 960px" }} />
       {badge ? (
         <div style={{ position: "absolute", right: 34, top: 1232, padding: "8px 18px", borderRadius: 999, background: "rgba(0,0,0,.58)",
           color: "rgba(255,255,255,.92)", fontFamily: theme.font, fontSize: 28, fontWeight: 700, letterSpacing: 0.5, opacity: badgeIn }}>

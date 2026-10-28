@@ -30,7 +30,8 @@ const OUT = path.join(ROOT, "out"), WORK = path.join(ROOT, "work"), DATA = path.
 const PORT = Number(process.env.PANEL_PORT || 3131);
 for (const d of [OUT, WORK, DATA, THUMBS, path.join(DATA, "reports")]) mkdirSync(d, { recursive: true });
 const PY = existsSync(path.join(ROOT, ".venv/bin/python3")) ? path.join(ROOT, ".venv/bin/python3") : "python3";
-const ENV = { ...process.env, PATH: `${ROOT}/.venv/bin:${process.env.HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}` };
+// /usr/sbin ve /sbin sonda: launchd servisinin PATH'inde yok, sysctl (Apple Silicon ve bellek denetimi) orada (inceleme, 28 Ekim)
+const ENV = { ...process.env, PATH: `${ROOT}/.venv/bin:${process.env.HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH}:/usr/sbin:/sbin` };
 const isMac = process.platform === "darwin";
 
 const app = express();
@@ -74,7 +75,7 @@ const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2));
 const SETTINGS = path.join(DATA, "settings.json");
 const defaults = { autopublish: { youtube: false, instagram: false, tiktok: false }, dailyReportHour: 9, metricsSyncMinutes: 20, channelName: "Türkiye Gündemi", hashtags: "#gündem #haber #türkiye #sondakika #shorts",
   assistantName: "Emixhas", wakeWords: ["emixhas", "emiks has", "emiks", "emix", "emixas", "emikhas", "emihas", "e mix has", "emiş has", "emişhas"], fullAuthority: true,
-  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0, maleSpeed: 1.07, femaleSpeed: 1.0 }, audio: { masterLufs: -12, voiceCompress: true }, music: { enabled: true, levelDb: -20, duckDb: 6 }, image: { enabled: true, maxImages: 16, maxMinutes: 15 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, newsLevel: "top", autoNews: { maxPerDay: 12 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
+  voice: { engine: "auto", name: "Yelda", rate: 195, piperLength: 0.85, piperNoise: 0.5 }, narrationEngine: "auto", narration: { mode: "single", voice: "auto", voiceA: "vox-kadin", voiceB: "vox-erkek", femaleGainDb: 3, maleGainDb: 0, maleSpeed: 1.07, femaleSpeed: 1.0 }, audio: { masterLufs: -12, voiceCompress: true }, music: { enabled: true, levelDb: -20, duckDb: 6 }, image: { enabled: true, maxPhotos: 28, maxPhotoMinutes: 480 }, tunnelAutoStart: false, claudeModel: "opus", mynet: { enabled: true, url: "https://www.mynet.com/", count: 6, intervalMin: 30, maxPerDay: 3, duration: 30 }, youtubePolicy: { onlyValuable: true, extraDailyMax: 3, extraKeywords: [] }, newsLevel: "top", autoNews: { maxPerDay: 12 }, anlikAutoPublish: true, media: { video: true, maxVideoSeconds: 20, allowYoutubeEmbeds: true }, claudeEffort: { script: "medium", brain: "high", chat: "low" },
   chatterbox: { port: 3139, refVoice: "voices/ref.wav", exaggeration: 0.45, cfg: 0.5 },
   turkishVoice: { python: ".venv-tr/bin/python", trendyolBin: ".venv-tr/bin/trendyol-tts", mlxModel: "models/Trendyol-TTS-mlx", torchModel: "Trendyol/Trendyol-TTS", baseModel: "openbmb/VoxCPM2", backend: "auto", cfg: 2.0, steps: 16, seed: 42, refVoice: "", emaSpeed: 1.0 },
   stageVoice: { enabled: true, macSpeaker: true, quietFrom: 23, quietTo: 8 }, muted: false,
@@ -1837,7 +1838,12 @@ const imageCfg = () => { const v = settings().image; return { enabled: true, ...
 const imageOn = () => { const v = imageCfg().enabled; return !(v === false || v === 0 || ["false", "0", "kapalı"].includes(String(v).trim().toLowerCase())); };
 const imageSupported = () => process.platform === "darwin" && (process.arch === "arm64" || /apple/i.test(cpus()[0]?.model || ""));
 const IMAGE_VENV = path.join(ROOT, ".venv-image", "bin", "python"), IMAGE_READY = path.join(ROOT, "models", "image", "READY.json");
-const imageReady = () => imageSupported() && existsSync(IMAGE_VENV) && existsSync(IMAGE_READY);
+// sürüm 2 (28 Ekim: tam hassasiyet / 8 bit yerel kopya, 1152x2048) model klasörü de yerinde olmalı; sürüm 1 (eski 4 bit) indirme önbelleğinde
+const imageReady = () => {
+  if (!(imageSupported() && existsSync(IMAGE_VENV) && existsSync(IMAGE_READY))) return false;
+  const i = readJson(IMAGE_READY, {});
+  return !(Number(i?.version) >= 2) || (typeof i.model === "string" && existsSync(i.model));
+};
 const photoLikely = () => imageOn() && imageReady();
 let imageInstall = null; // panelden kurulum: {startedAt, lines, done, ok}
 // kurulum sürüyor mu: panelin başlattığı kurulum ya da install_image.sh'in kilidi (models/image/.kuruluyor içinde PID; inceleme, 28 Ekim: güncelleme
@@ -1847,9 +1853,15 @@ const imageInstalling = () => {
   if (imageInstall && !imageInstall.done) return true;
   try { const pid = Number(readFileSync(IMAGE_LOCK, "utf8").trim()); if (!(pid > 0)) return false; process.kill(pid, 0); return true; } catch (e) { return e?.code === "EPERM"; }
 };
+const IMAGE_TIERS = { bf16: "tam hassasiyet", q8: "8 bit", q6: "6 bit", q4: "4 bit", q4hazir: "4 bit" };
+// panel durumu: sürüm (2 en yüksek gerçekçilik; 1 eski 4 bit kurulum → "⬆ Yükselt"), düzey, boyut, deneme fotoğrafının süresi; fallback: en
+// yüksek düzey kurulamadı, hazır 4 bit kuruldu ("disk", "indirme": yeniden denenebilir → "⬆ Yükselt"; "bellek": bu Mac'te kalıcı)
 function imageStatus() {
-  const info = readJson(IMAGE_READY, {});
-  return { supported: imageSupported(), installed: existsSync(IMAGE_VENV), ready: imageReady(), enabled: imageOn(), testSec: Number(info.testSec) || null,
+  const info = readJson(IMAGE_READY, {}) || {}, v2 = Number(info.version) >= 2, ready = imageReady();
+  const fallback = v2 && ["disk", "indirme", "bellek"].includes(info.fallback) ? info.fallback : "";
+  return { supported: imageSupported(), installed: existsSync(IMAGE_VENV), ready, enabled: imageOn(), testSec: Number(v2 ? info.genSec : info.testSec) || null,
+    version: v2 ? 2 : existsSync(IMAGE_READY) ? 1 : 0, tier: v2 ? IMAGE_TIERS[info.tier] || String(info.tier || "") : "4 bit",
+    size: v2 && Number(info.width) > 0 ? `${info.width}x${info.height}` : "720x1280", fallback, upgrade: ready && (!v2 || fallback === "disk" || fallback === "indirme"),
     installing: imageInstalling(), installOk: imageInstall?.done ? imageInstall.ok : null, lines: imageInstall ? imageInstall.lines.slice(-4) : [] };
 }
 // Fragman analizi (kullanıcı isteği, 18 Ekim: "youtube videosunun linkini göndersem analiz edip kelimelere döküp çarpıcı bir kancalı
@@ -2462,7 +2474,9 @@ const ownerJobs = new Map(); let ownerSeq = 0;
 // özet gider (canlı sıra konumu, süren üretim); sıradan iptal edilen iş 2 dk içinde unutulur. Aynı adlı işler kuyruk numarasıyla ayrılır (#7).
 const OWNER_NOTE_MS = 4 * 60000, OWNER_NOTE_SLOW_MS = 10 * 60000, OWNER_WAIT_NOTE_MS = 30 * 60000;
 let ownerWaitNote = 0;
-function ownerJobStart(label) { const id = ++ownerSeq; let tag = ""; try { tag = vqTag(); } catch { /* kuyruk dışı */ } ownerJobs.set(id, { id, label: (String(label || "video").replace(/\s+/g, " ").slice(0, 70) + tag).trim(), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), notes: 0, seenQueuedAt: 0, seenRunningAt: 0, warn: "" }); return id; }
+// limitMin: işin süre sınırı (dk; fotoğraflı benzer videoda saatler): notlar en az 3 saat, uzun işte sınır + 90 dk (seslendirme, çizim, yayın)
+// boyunca sürer (inceleme, 28 Ekim: 3 saatte kesiliyordu, fotoğraflı iş sürerken sahibe hiç not gitmiyordu)
+function ownerJobStart(label, limitMin = 0) { const id = ++ownerSeq; let tag = ""; try { tag = vqTag(); } catch { /* kuyruk dışı */ } ownerJobs.set(id, { id, label: (String(label || "video").replace(/\s+/g, " ").slice(0, 70) + tag).trim(), startedAt: Date.now(), stage: "başladı", stageAt: Date.now(), lastNote: Date.now(), notes: 0, seenQueuedAt: 0, seenRunningAt: 0, warn: "", maxMs: Math.max(3 * 3600000, ((Number(limitMin) || 0) + 90) * 60000) }); return id; }
 function ownerJobStage(id, stage) { const j = ownerJobs.get(id); if (j && stage && stage !== j.stage) { j.stage = stage; j.stageAt = Date.now(); } }
 function ownerJobWarn(id, line) { const j = ownerJobs.get(id); if (j) j.warn = String(line).replace(/^\s*(?:!!|!|⚠️)\s*/, "").slice(0, 160); }
 function ownerJobEnd(id) { ownerJobs.delete(id); }
@@ -2474,8 +2488,10 @@ const OWNER_STAGES = [
   [/^⬛ videonun tamamı/, () => "videonun tamamı kare (1080x1080) kesiliyor (ffmpeg; uzun videoda birkaç dakika)"],
   [/^🎨 Claude videoyu inceliyor|^🎬 Claude|^✏️ Claude|kurgu planı/, () => "Claude senaryoyu ve sahneleri yazıyor (1-4 dk)"],
   [/^🎨 (\d+) sahne çiziliyor/, (m) => `sahneler çiziliyor (${m[1]} sahne, Remotion; sahne başına 1-3 dk)`],
-  [/^🎨 (\d+) gerçekçi görsel üretiliyor/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]} fotoğraf, bu Mac'te; fotoğraf başına 15-60 sn)`],
-  [/^🎨 görsel (\d+)\/(\d+) /, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]}/${m[2]} tamam)`],
+  [/^🎨 başka bir videonun gerçekçi görselleri üretiliyor/, () => "sırada: başka bir videonun gerçekçi fotoğrafları bitince bu videonunkiler üretilecek"],
+  [/^🎨 sıra geldi/, () => "sıra geldi; gerçekçi fotoğraflar üretilmeye başlıyor"],
+  [/^🎨 (\d+) gerçekçi görsel üretiliyor(?:.*toplam ~(.+?)(?:, \d+ tanesi önceki üretimden)?\))?/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]} fotoğraf, bu Mac'te${m[2] ? `; toplam ~${m[2]}` : ""})`],
+  [/^🎨 görsel (\d+)\/(\d+) (?:.*kalan ~([^;)]+))?/, (m) => `gerçekçi fotoğraflar üretiliyor (${m[1]}/${m[2]} tamam${m[3] ? `, kalan ~${m[3]}` : ""})`],
   [/^🎨 (\d+) sahne canlandırılıyor/, (m) => `sahneler canlandırılıyor (${m[1]} sahne, Remotion; sahne başına 1-2 dk)`],
   [/^🎨 (kanca|\d+\. sahne): (.{0,40})/, (m) => `sahne hazır: ${m[1]} — ${m[2].split(" — ")[0]}`],
   [/^♻️ /, () => "değişmeyen sahneler önceki sürümden alındı, değişenler çiziliyor"],
@@ -2505,7 +2521,7 @@ const ownerQueuePos = (id) => { const i = anlikQueue.findIndex((q) => q?.opts?.o
 function ownerTick(now = Date.now()) {
   const out = [], runId = ownerRunningId(), waiting = [];
   for (const j of [...ownerJobs.values()]) {
-    if (now - j.startedAt > 3 * 3600000) { ownerJobs.delete(j.id); continue; }
+    if (now - j.startedAt > (j.maxMs || 3 * 3600000)) { ownerJobs.delete(j.id); continue; }
     const pos = ownerQueuePos(j.id), running = runId === j.id;
     if (!running && pos) { // üretim sırasında bekliyor: tek tek mesaj yok, toplu özet; konum canlı (sıra değişir: sizin diğer işleriniz, acil fragman)
       const st = `üretim sırasında (${pos}. sırada; süren üretim bitince başlayacak)`; if (j.stage !== st) j.stage = st;
@@ -2534,13 +2550,21 @@ setInterval(() => { for (const t of ownerTick()) { try { wa.send(t).catch(() => 
 // düzeltmede önceki sürümün modu; panel anahtarı; motor). İnceleme, 28 Ekim: panel yalnız anahtara ve motora bakıyordu — "çizgi film olarak
 // benzerini yap" talimatına "gerçekçi fotoğraflarla canlandıracağım" diyor, anahtar kapalıyken "gerçekçi olsun" işinin süresini çizim işine
 // göre seçip yarıda kesiyordu. Python açılamazsa eski tahmin (anahtar + motor).
-async function visualModeOf(instruction, reviseJob) {
+// Fotoğraf modunda yanıt mesajların süre tahminini ("fotoğraf başına ~4 dk, video başına ~40 dk-1,6 saat"; kurulumdaki deneme fotoğrafından)
+// ve işin fotoğraf payını (dk) da verir (visualInfo).
+async function visualInfo(instruction, reviseJob) {
   const r = await py("wa_video.py", ["--visual-mode", JSON.stringify({ instruction: String(instruction || ""), ...(reviseJob ? { revise: String(reviseJob) } : {}) })]);
-  return r.json?.mode === "gercekci" || r.json?.mode === "cizim" ? r.json.mode : photoLikely() ? "gercekci" : "cizim";
+  const mode = r.json?.mode === "gercekci" || r.json?.mode === "cizim" ? r.json.mode : photoLikely() ? "gercekci" : "cizim";
+  return { mode, eta: mode === "gercekci" && typeof r.json?.eta === "string" ? r.json.eta.slice(0, 120) : "", jobMinutes: Number(r.json?.jobMinutes) || 0 };
 }
-// benzer videonun iş süresi sınırı (dk): çizimde 50; fotoğraflı işte analiz + Claude + üretim (image_gen sınırı: maxMinutes × 1,6 + 4) + Remotion +
-// gerekirse çizimle ikinci plan (~60 dk pay; eskiden toplam 75) + motor başka videonun fotoğraflarını üretiyorsa sıra (image_gen.WAIT_MAX 30 dk)
-const recreateTimeoutMin = (photo) => (photo ? 60 + 30 + Math.ceil(Math.max(3, Math.min(60, Number(imageCfg().maxMinutes) || 15)) * 1.6) + 4 : 50);
+const visualModeOf = async (instruction, reviseJob) => (await visualInfo(instruction, reviseJob)).mode;
+// benzer videonun iş süresi sınırı (dk): çizimde 50; fotoğraflı işte analiz + Claude + Remotion + gerekirse çizimle ikinci plan (~60 dk pay) +
+// fotoğraf payı (image_gen.job_minutes: başka videonun üretimini bekleme + kendi üretimi, ikisi de en çok "90 sn'lik videonun fotoğraflarının
+// tahmini süresi × 1,6 + 4 dk"; 28 Ekim: "süre önemli değil, görseller çok çok gerçekçi olsun" — fotoğraf başına 4 dk'da ~6 saat, yalnız bir şey
+// takılırsa dolar: üretici takılınca image_gen görsel başına bekçiyle durdurur). Python yanıt vermezse aynı hesap ayardan (fotoğraf başına 5 dk,
+// 28 fotoğraf).
+const photoJobMin = () => Math.ceil(2 * (240 + 1.6 * Math.min(Math.max(10, Math.min(1440, Number(imageCfg().maxPhotoMinutes) || 480)) * 60, 300 * 28)) / 60);
+const recreateTimeoutMin = (photo, jobMin) => (photo ? 60 + (Number(jobMin) > 0 ? Number(jobMin) : photoJobMin()) : 50);
 // benzer videonun sorunlu durumları kısa mesaj modunda da tek satır (kullanıcı kuralı: sorun varsa bildir): gerçekçi fotoğraflar hiç üretilemedi
 // (sahneler çizildi), bazı sahnelerin fotoğrafı/çizimi yerine yedek kondu; motor kurulu değil ipucu günde bir kez
 const IMAGE_HINT = path.join(DATA, "image_hint.json");
@@ -2559,7 +2583,8 @@ async function runVideoNews0(v) {
   if (rv) v.recreate = true;
   if (v.recreate === undefined) { v.recreate = !v.social && !v.trailer && !v.summary && recreateOn() && (recreateAsk(v.instruction) || reelsAsk(v.instruction)); if (v.recreate && reelsAsk(v.instruction)) v.instruction = reelsInstruction(v.instruction, await visualModeOf(v.instruction) === "gercekci"); } // WhatsApp videosunda "özet reels"
   const rc = !!v.recreate;
-  const photo = rc && await visualModeOf(v.instruction, rv?.job) === "gercekci"; // mesajlar ve iş süresi wa_video'nun kararıyla
+  const vis = rc ? await visualInfo(v.instruction, rv?.job) : { mode: "cizim", eta: "", jobMinutes: 0 }; // mesajlar ve iş süresi wa_video'nun kararıyla
+  const photo = vis.mode === "gercekci";
   // ⬛ kare (1:1) uzun video: link yolu socialVideoNews'te karar verir (v.kare); WhatsApp videosunda talimattan ("kare video")
   if (v.kare === undefined) v.kare = !v.social && !v.trailer && !v.summary && !rc && kareOn() && kareAsk(v.instruction);
   const kr = !!v.kare;
@@ -2571,13 +2596,13 @@ async function runVideoNews0(v) {
   push(`${rv ? "✏️" : kr ? "⬛" : "🎬"} ${rv ? `düzeltme (${rv.of}, ${rv.revision}. sürüm)` : rc ? "benzer video (sıfırdan)" : kr ? `kare uzun video (${v.social?.duration ? `${Math.round(Number(v.social.duration) / 60)} dk, ` : ""}videonun tamamı kendi sesiyle)` : v.trailer ? (auto ? "fragman analizi (fragman takibi: kanalda yeni fragman)" : "fragman analizi") : v.summary ? "uzun video özeti" : kindOf(v) === "mizah" ? "mizah videosu" : kindOf(v) === "trend" ? "viral video" : "video haberi"} hazırlanıyor (${rv ? "önceki sürümün planı" : `${v.files.length} video`}${v.social ? `, ${v.social.credit}` : ""}): ${String(v.instruction || (v.caption ? "(talimat yok; iletilen açıklama bilgi olarak)" : "(talimat yok)")).slice(0, 120)}`);
   if (rv) { if (v.src === "panel") await sendW(`✏️ Panelden düzeltme (${rv.revision}. sürüm): "${String(rv.instruction).slice(0, 120)}" — değişen sahneler yeniden çiziliyor, kalanlar korunuyor. Bitince video gelecek; eski sürüm yayınlanmayacak.`); }
   else if (!waBrief()) await sendW((kr ? `⬛ Videoyu inceliyorum: konuşmasını kelimelere döküyor, karelerine bakıyorum; sonra çarpıcı bir kanca, kısa giriş, bölüm başlıkları ve kapanış yazıp videonun TAMAMINI kendi sesiyle kare (1:1) uzun video yapacağım${v.social?.duration ? ` (kaynak ${Math.round(Number(v.social.duration) / 60)} dk; hazırlık 5-20 dk)` : " (hazırlık 5-20 dk)"}.`
-    : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp ${photo ? "sahneleri yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te üretilir, 10-25 dk; talimata \"çizgi film\" ya da \"çizimle\" yazarsanız çizerim)" : "sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk)"}.`
+    : rc ? `🎨 Videoyu izliyorum: konuşmasını ve ekrandaki yazıları kelimelere döküyor, karelerine ve sahne geçişlerine bakıyorum; sonra aynı hikâyeyi kendi cümlelerimizle yeniden yazıp ${photo ? `sahneleri yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te en yüksek kalitede üretilir${vis.eta ? `: ${vis.eta}` : ""}; talimata "çizgi film" ya da "çizimle" yazarsanız çizerim)` : "sahneleri sıfırdan çizeceğim (orijinal görüntü kullanılmaz; 3-10 dk)"}.`
     : v.trailer ? `🎬 Fragmanı inceliyorum: konuşmayı kelimelere döküyor, çekimlerden kareler çıkarıyorum; sonra çarpıcı bir kancayla "fragmanda ne anlatılıyor" kurgusunu yazıp kesimleri yapacağım (1-3 dk).`
     : v.summary ? `🎬 Videonun tamamını inceliyorum: konuşmasını baştan sona okuyup kareleri çıkarıyorum, en çarpıcı anları seçip HD indireceğim, sonra kurguyu yazacağım (uzun videoda 10-20 dk).`
     : `🎬 Videoyu inceliyorum: konuşmayı dinliyor, sahneleri ve kareleri çıkarıyorum, sonra kurguyu yazıp kesimleri yapacağım (1-3 dk).`) + tl);
   else if (!v.social) await sendW((kr ? "⬛ Başladı: videonuz kare (1:1) uzun video olarak hazırlanıyor (tamamı kendi sesiyle). Bitince video gelecek." : rc ? (photo ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri gerçekçi fotoğraflarla sıfırdan üretiliyor. Bitince video gelecek." : "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek.") : "🎬 Başladı: videonuzdan haber hazırlanıyor. Bitince video gelecek.") + tl);
   // sahibin uzun işi (ownerJobs): otomatik trend kuyruğu işi (quiet) değil
-  const oj = vqCtx()?.quiet || auto ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"));
+  const oj = vqCtx()?.quiet || auto ? 0 : ownerJobStart(rv ? `düzeltme (${rv.revision}. sürüm)` : v.social?.title || v.instruction || (v.files.length > 1 ? `${v.files.length} video` : "videonuz"), rc ? recreateTimeoutMin(photo, vis.jobMinutes) : 0);
   const jobFile = path.join(WORK, `wa_video_${Date.now()}.json`);
   // süre talimatta yazmıyorsa settings.waVideo.duration (fragmanda settings.trailer.duration)
   writeJson(jobFile, { videos: v.files, instruction: v.instruction, social: v.social || null, related: v.related || [], ...(v.trailer ? { trailer: true, film: v.film || "", ...(Number(v.maxSoundSeconds) > 0 ? { maxSoundSeconds: Number(v.maxSoundSeconds) } : {}), ...(Array.isArray(v.promoPrevious) && v.promoPrevious.length ? { promoPrevious: v.promoPrevious.slice(-6) } : {}) } : {}), // fragman takibi: orijinal sesli anların toplamı (trailerWatch.soundSeconds), aynı bölümün önceki tanıtımları
@@ -2585,11 +2610,11 @@ async function runVideoNews0(v) {
     ...(v.summary ? { summary: true, summaryProxy: !!v.summaryProxy } : {}), ...(rc ? { recreate: true } : {}), ...(kr ? { kare: true } : {}), ...(v.caption ? { caption: v.caption } : {}),
     ...(rv ? { revise: { job: rv.job, instruction: rv.instruction, of: rv.of, revision: rv.revision } } : {}) });
   // özet: videonun tamamının analizi + iki Claude çağrısı + HD anlar (en çok 60 dk); benzer video: Claude + sahnelerin çizimi (en çok 50 dk;
-  // gerçekçi fotoğraflarla 75 dk: fotoğraflar en çok ~28 dk, hiç üretilemezse çizimle ikinci plan);
+  // gerçekçi fotoğraflarla recreateTimeoutMin: fotoğraf payı + hiç üretilemezse çizimle ikinci plan);
   // satırlar anında loga (çerçeve 🖼, ekrandaki yazılar 📝, açıklamasız paylaşımın haber araması 🔎 dahil; inceleme, 19 Ekim: yanlış
   // kırpma logda hiç görünmüyordu)
   // kare: 10 dakikalık videonun dökümü (konuşma tanıma) + tamamının 1080x1080 kesimi uzun sürer (en çok 45 dk)
-  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? recreateTimeoutMin(photo) : kr ? 45 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|⬛|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
+  const r = await runLines(PY, ["scripts/wa_video.py", "--job", jobFile], { timeout: (v.summary ? 60 : rc ? recreateTimeoutMin(photo, vis.jobMinutes) : kr ? 45 : 25) * 60000, onLine: (l) => { if (/^(🎬|🎨|⬛|✂️|🔗|⚠️|🔊|📱|🖼|📝|🔎|  !)/.test(l)) push(l.trim()); if (oj) { const st = ownerStageOf(l.trim(), OWNER_STAGES); if (st) ownerJobStage(oj, st); if (/^(?:  ! |⚠️)/.test(l.trim())) ownerJobWarn(oj, l.trim()); } } });
   rmSync(jobFile, { force: true });
   let j = null; try { j = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch { /* yanıt yok */ }
   if (!j?.ok) {
@@ -2824,6 +2849,7 @@ const vq = makeVideoQueue({ DATA, app, push, sse, settings, socialVideoNews, soc
   // yeniden başlatma (karar 5): kilitteki üretim pid'i; panel kapalıyken çıkan kuyruk videosu (meta queue.no, iş başladıktan sonra) ve onay mesajı
   lockPid: () => { try { const pid = Number(readFileSync(path.join(WORK, "pipeline.lock", "pid"), "utf8").trim()); process.kill(pid, 0); return pid; } catch { return null; } },
   heldNos: () => { try { return wa.heldNos?.() || []; } catch { return []; } }, // bekleyen ve süresi dolan (24 saat) onayların numaraları başka videoya verilmez (7. tur)
+  notify: (t) => { try { wa.send(t).catch(() => {}); } catch { /* WhatsApp henüz kurulmadı */ } }, // sahibin sırada bayatlayan işi (inceleme, 28 Ekim)
   findProduced: (no, since) => { for (const f of readdirSync(OUT).filter((x) => x.endsWith(".json"))) { try { const p = path.join(OUT, f); if (statSync(p).mtimeMs < since - 1000) continue; const m = JSON.parse(readFileSync(p, "utf8")); if (Number(m?.queue?.no) === no && existsSync(p.replace(/\.json$/, ".mp4"))) return f.replace(/\.json$/, ".mp4"); } catch { /* bozuk */ } } return null; },
   onRecovered: (mp4) => { if (settings().whatsapp?.enabled) wa.notifyVideo(mp4, { ask: true, summary: [] }).catch((e) => push(`💬 kuyruk videosunun onay mesajı gönderilemedi: ${e.message}`)); },
   onTrend: (it, st, err) => { const u = it.trend ? it.url : igtUrlOf(it.url); if (u) igtMarkDone(u, st, { mode: it.mode || "haber", auto: it.source === "trend-auto", ...(err ? { error: err } : {}) }); } });
@@ -3715,24 +3741,29 @@ app.post("/api/schedule", async (req, res) => {
 // Ses kataloğu: kurulu sesler ve ön dinleme (scripts/voices.py). Liste 30 sn önbellekli.
 let voiceCache = { t: 0, rows: [] };
 const runPy = (args, timeoutMs) => new Promise((resolve) => execFile(PY, args, { cwd: ROOT, env: ENV, timeout: timeoutMs, maxBuffer: 4e6 }, (err, stdout, stderr) => resolve({ err, stdout: String(stdout || ""), stderr: String(stderr || "") })));
-// 📷 gerçekçi görsel motoru kurulumu (panel Ayarlar → 📡 → Kur): scripts/install_image.sh arka planda (mflux + Z-Image-Turbo ~6 GB, 10-40 dk);
-// adım satırları loga, bitince WhatsApp'a tek satır. Durum /api/status image alanında
+// 📷 gerçekçi görsel motoru kurulumu ve eski 4 bit kurulumun yükseltmesi (panel Ayarlar → 📡 → Kur / ⬆ Yükselt): scripts/install_image.sh
+// arka planda (mflux + Z-Image-Turbo asıl depo bir kez ~31 GB, kurulum sırasında ~47 GB boş disk; indirme + yerel kopya + 1152x2048 deneme
+// görselleri: internet ve Mac hızına göre 30 dk-3 saat, sınır 8 saat; yükseltme bitene kadar eski kurulum çalışır); adım ve uyarı satırları
+// loga, bitince WhatsApp'a tek satır. Durum /api/status image alanında
 app.post("/api/image/install", (_req, res) => {
   if (imageInstalling()) return res.json({ ok: true, already: true });
   if (!imageSupported()) return res.json({ ok: false, error: "Gerçekçi görsel motoru yalnız Apple Silicon (M1 ve üstü) Mac'te çalışır; benzer videolar çizimle üretilmeye devam eder." });
+  const up = imageStatus().upgrade;
   imageInstall = { startedAt: Date.now(), lines: [], done: false, ok: false };
-  push("📷 gerçekçi görsel motoru kuruluyor (mflux + Z-Image-Turbo, ~6 GB indirir; internet hızına göre 10-40 dk)");
-  runLines("bash", ["scripts/install_image.sh"], { timeout: 90 * 60000, onLine: (l) => {
+  push(`📷 gerçekçi görsel motoru ${up ? "en yüksek kaliteye yükseltiliyor (eski 4 bit motor bitene kadar çalışır)" : "kuruluyor"}: mflux + Z-Image-Turbo asıl model, bir kez ~31 GB indirir; internet ve Mac hızına göre 30 dk-3 saat`);
+  runLines("bash", ["scripts/install_image.sh"], { timeout: 8 * 3600000, onLine: (l) => {
     const t = String(l).replace(/\r/g, " ").trim(); if (!t) return;
     imageInstall.lines.push(t.slice(0, 300)); if (imageInstall.lines.length > 200) imageInstall.lines.shift();
-    if (/^(?:▶|✔|✖|\s*✔)/.test(t)) push(`📷 ${t.slice(0, 300)}`);
+    if (/^(?:▶|✔|✖|!)/.test(t)) push(`📷 ${t.slice(0, 300)}`);
   } }).then(async (r) => {
     imageInstall.done = true; imageInstall.ok = !!r.ok && imageReady();
     const why = String(imageInstall.lines.filter((x) => x.startsWith("✖")).pop() || String(r.stderr || "").trim().split("\n").pop() || "bilinmeyen hata").slice(0, 240);
-    push(imageInstall.ok ? "📷 ✔ gerçekçi görsel motoru hazır: benzer videolar artık gerçekçi fotoğraflarla üretilecek" : `📷 ✖ gerçekçi görsel motoru kurulamadı: ${why}`);
-    try { await sendW(imageInstall.ok ? "📷 Gerçekçi görsel motoru kuruldu. Benzer videolar artık yapay zekâ ile gerçekçi fotoğraflarla üretilecek." : `📷 Gerçekçi görsel motoru kurulamadı: ${why}`); } catch { /* WhatsApp kapalı */ }
+    const st = imageStatus(), what = st.version >= 2 ? ` (${st.tier}, ${st.size}${st.testSec ? `; fotoğraf başına ~${Math.max(1, Math.round(st.testSec / 60))} dk` : ""})` : "";
+    const fb = { disk: " En yüksek kalite için boş disk yetmedi (8 bit için ~47 GB boş gerekir): yer açıp panelden ⬆ Yükselt'e basın.", indirme: " Asıl model indirilemedi: panelden ⬆ Yükselt ile yeniden deneyin (inen dosyalar yeniden inmez).", bellek: " Asıl model bu Mac'in belleğinde açılamadı; hazır 4 bit kullanılıyor." }[st.fallback] || "";
+    push(imageInstall.ok ? `📷 ✔ gerçekçi görsel motoru hazır${what}: benzer videolar artık ${fb ? "bu düzeyde" : "en yüksek gerçekçilikte"} fotoğraflarla üretilecek${fb}` : `📷 ✖ gerçekçi görsel motoru kurulamadı: ${why}`);
+    try { await sendW(imageInstall.ok ? `📷 Gerçekçi görsel motoru ${up ? "yükseltildi" : "kuruldu"}${what}.${fb || " Benzer videolar artık en yüksek gerçekçilikte üretilecek."}` : `📷 Gerçekçi görsel motoru ${up ? "yükseltilemedi (eski motor çalışmaya devam ediyor)" : "kurulamadı"}: ${why}`); } catch { /* WhatsApp kapalı */ }
   });
-  res.json({ ok: true });
+  res.json({ ok: true, upgrade: up });
 });
 app.get("/api/voices", async (req, res) => {
   if (req.query.fresh || Date.now() - voiceCache.t > 30000) {
@@ -4311,9 +4342,9 @@ async function handleCommand(text, opts = {}) {
       const frSecs = trailerSecs(cmd.instruction);
       // benzer video (sıfırdan) fragman ve türden önce (socialVideoNews ile aynı öncelik)
       const rcAsk = recreateOn() && recreateAsk(cmd.instruction || "");
-      const rcPhoto = rcAsk && await visualModeOf(cmd.instruction) === "gercekci";
+      const rcVis = rcAsk ? await visualInfo(cmd.instruction) : null, rcPhoto = rcVis?.mode === "gercekci";
       reply = (rcAsk ? (waBrief() ? (rcPhoto ? "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri gerçekçi fotoğraflarla sıfırdan üretiliyor. Bitince video gelecek." : "🎨 Başladı: video izleniyor, kelimeleri çıkarılıp benzeri sıfırdan çiziliyor. Bitince video gelecek.")
-        : rcPhoto ? "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te üretilir). Her adımda haber vereceğim."
+        : rcPhoto ? `🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini yapay zekâ ile gerçekçi fotoğraflarla yeniden canlandıracağım (orijinal görüntü kullanılmaz; fotoğraflar bu Mac'te en yüksek kalitede üretilir${rcVis?.eta ? `: ${rcVis.eta}` : ""}). Her adımda haber vereceğim.`
         : "🎨 Videoyu indiriyorum; izleyip kelimelerini çıkaracağım, aynı hikâyeyi kendi cümlelerimizle yeniden yazıp sahnelerini sıfırdan çizeceğim (orijinal görüntü kullanılmaz). Her adımda haber vereceğim.")
         : fr ? (waBrief() ? `🎬 Başladı: fragman indiriliyor; kelimelere dökülüp ${frSecs} saniyelik fragman analizi hazırlanıyor. Bitince video gelecek.` : `🎬 Fragmanı indiriyorum; konuşmasını kelimelere döküp çekimlerini inceleyeceğim, çarpıcı bir kancayla ${frSecs} saniyelik "fragmanda ne anlatılıyor" videosu hazırlayacağım. Her adımda haber vereceğim.`)
         : waBrief() ? `🎬 Başladı: paylaşım indiriliyor, ${{ mizah: "mizah videosu (VİRAL etiketiyle; mizah olduğu sonda söylenir)", trend: "viral video" }[kindOf(cmd)] || "video"} hazırlanıyor. Bitince video gelecek.`

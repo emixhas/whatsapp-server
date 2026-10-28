@@ -406,8 +406,11 @@ def cut(clips: list, srcs: list, w: int, h: int, out: Path, audio: list | None =
 
 
 def still(src: Path, t: float, w: int, h: int, out: Path) -> bool:
+    """Videonun t. saniyesindeki (ya da fotoğrafın) karesi w x h'ye sığdırılmış, bulanık zeminli jpg. t = 0'da -ss verilmez: ffmpeg 6'da tek
+    fotoğraflı girdide "-ss 0.00" süzgeçten hiç kare geçirmiyor, çıktı boş kalıyordu (28 Ekim'de bulundu: gerçekçi sahnenin 1840x1120
+    karesi hiç üretilmiyor, yerine dikey kare kullanılıyordu); videoda 0. saniye zaten baştır."""
     fl = fit_filter(w, h, 0).replace("fps=30,", "")
-    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{t:.2f}", "-i", str(src), "-frames:v", "1",
+    r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *(["-ss", f"{t:.2f}"] if t > 0 else []), "-i", str(src), "-frames:v", "1",
                         "-filter_complex", fl, "-map", "[c0]", "-q:v", "2", str(out)], capture_output=True, text=True)
     return r.returncode == 0 and out.exists()
 
@@ -1046,7 +1049,28 @@ NO_FRAMES = {"cizim": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi 
                       "çizilmiş seç. Görebilseydin bakacağın şeyler",
              "gercekci": "Kareleri GÖREMİYORSUN (Read aracı kapalı): hikâyeyi dökümden ve açıklamadan çıkar, referansın görüntüsünü görmüş gibi "
                          "anlatma, fotoğrafları hikâyeye göre sen kur. Görebilseydin bakacağın şeyler"}
-PHOTO_COMPOSE = "vertical 9:16 composition, main subject in the upper two thirds of the frame, simple uncluttered lower third"
+# Kompozisyon cümlesi (photo_expand her tarifin sonuna ekler; FullFrame'de altyazı ~1350, başlık 1550'den aşağı; kancada büyük başlık
+# 520'den itibaren ortada; PhotoScene yavaşça yaklaşır, kenarlar kırpılır). Kancanın cümlesi ayrı: orta bant sade kalsın.
+PHOTO_COMPOSE = ("Vertical 9:16 composition, the main subject in the upper two thirds of the frame with some headroom and space from the "
+                 "edges, the bottom third calm and uncluttered")
+PHOTO_COMPOSE_HOOK = ("Vertical 9:16 composition, the main subject and any faces in the upper third of the frame, the middle and lower parts "
+                      "of the frame calm and plain, such as open sky, a bare wall, still water or deep shadow, space from the edges")
+PHOTO_FALLBACK = "Candid documentary photograph, medium shot at eye level, of this moment: {}"
+# Z-Image metin kodlayıcısı 512 belirteçte keser (mflux sessizce; sondaki stil ve kompozisyon düşerdi): tahmin bu sınırı geçerse tarifin son
+# cümleleri atılır (prompt_tokens gerçek Qwen sayısını %7-18 fazla tahmin eder: 500 → gerçek ≤ ~465 + 8 şablon belirteci)
+PROMPT_MAX_TOKENS = 500
+# gerçekçiliği bozan istem sözleri (prompts/benzer.md "Gerçekliği BOZAN sözler"): Claude yazsa da modele gitmez. Baş ad olarak kullanılanlar
+# ("a masterpiece of …", "a film still of …") "photograph" olur; yazı/logo olumsuzlaması ("no text", "without logos") atılır — yalnız öbeğin
+# sonundaysa (inceleme, 28 Ekim: "with no text or signage behind him" "or signage behind him" kalıp tabelayı istiyor, "a man with no words on
+# his shirt" "a man on his shirt" oluyordu; öbek ortasındaki olumsuzlama olduğu gibi kalır)
+_PHOTO_NOUN = re.compile(r"\b(?:masterpiece|film still|movie still|3d render|cgi render|octane render|unreal engine render|digital render)\b", re.I)
+_PHOTO_TAGS = re.compile(
+    r"\b(?:best quality|high quality|top quality|award[- ]winning|trending on \w+|octane render|unreal engine|"
+    r"(?:ultra[- ]?)?(?:4|8|16)k(?: resolution| uhd)?|uhd|ultra[- ]?hd|hdr|cgi|3d render|hyper[- ]?realistic|photo[- ]?realistic|"
+    r"hyper[- ]?detailed|ultra[- ]?detailed|highly detailed|intricate details?|cinematic)\b", re.I)
+_NEG_OBJ = r"(?:text|words?|letters|lettering|writing|captions?|subtitles?|logos?|watermarks?|signatures?|branding|brands?|labels?)"
+_PHOTO_NEG = re.compile(rf"(?:\s*[,;])?\s*\b(?:with\s+|and\s+)?(?:no|without)\s+(?:any\s+)?(?:visible\s+)?{_NEG_OBJ}"
+                        rf"(?:\s*(?:,|or|and|/)\s*(?:no\s+)?{_NEG_OBJ})*\b(?=\s*(?:[,.;:!?)]|$))", re.I)
 
 
 def visual_style(text: str) -> str | None:
@@ -1080,7 +1104,7 @@ def visual_mode(instruction: str, prev: str | None = None) -> tuple:
     want = visual_style(instruction)
     ok, why = image_gen.ready()
     hint = "" if ok or not image_gen.supported() else ("Gerçekçi fotoğraflar için görsel motorunu bir kez kurun: panel → Ayarlar → 📡 → "
-                                                        "📷 Gerçekçi görseller → Kur (~6 GB) ya da Mac'te: bash scripts/install_image.sh")
+                                                        "📷 Gerçekçi görseller → Kur (bir kez ~31 GB indirir) ya da Mac'te: bash scripts/install_image.sh")
     if want == "cizim":
         return "cizim", "talimatta çizim istendi", ""
     if want == "gercekci":
@@ -1101,7 +1125,9 @@ def visual_mode(instruction: str, prev: str | None = None) -> tuple:
 def visual_mode_cli(q: dict) -> dict:
     """Panelin sorusu (server.js visualModeOf): işin başında, WhatsApp'a "fotoğraflarla canlandıracağım" ya da "çizeceğim" denmeden ve iş süresi
     seçilmeden önce aynı karar (inceleme, 28 Ekim: panel yalnız anahtara ve motora bakıyordu; "çizgi film olarak yap" talimatına "gerçekçi
-    fotoğraflarla" diyor, anahtar kapalıyken "gerçekçi olsun" işini 50 dakikada kesiyordu). Düzeltmede önceki sürümün modu plan.json'dan."""
+    fotoğraflarla" diyor, anahtar kapalıyken "gerçekçi olsun" işini 50 dakikada kesiyordu). Düzeltmede önceki sürümün modu plan.json'dan.
+    Fotoğraf modunda mesajların süre tahmini ("fotoğraf başına ~4 dk, video başına ~40 dk-1,6 saat") ve işin fotoğraf payı (dk; server.js
+    recreateTimeoutMin) da gelir."""
     q = q if isinstance(q, dict) else {}
     prev = None
     if q.get("revise"):
@@ -1110,7 +1136,8 @@ def visual_mode_cli(q: dict) -> dict:
         except (OSError, ValueError, AttributeError):
             prev = "cizim"
     mode, why, note = visual_mode(str(q.get("instruction") or ""), prev)
-    return {"ok": True, "mode": mode, "why": why, "note": note}
+    photo = {"eta": image_gen.eta_text(), "jobMinutes": image_gen.job_minutes()} if mode == "gercekci" else {}
+    return {"ok": True, "mode": mode, "why": why, "note": note, **photo}
 
 
 def mode_text(text: str, mode: str) -> str:
@@ -1148,16 +1175,73 @@ def photo_style(plan: dict) -> str:
     return st if len(st) >= 8 else image_gen.STYLE_DEFAULT
 
 
-def photo_expand(prompt: str, chars: list, style: str) -> str:
-    """Tarif → modele giden tam metin: {Ad} karakterin tarifiyle değişir (bilinmeyen ad ayraçsız kalır), stil ve kompozisyon eklenir."""
+def photo_words(t: str) -> str:
+    """Gerçekçilik süzgeci: kalite etiketleri, "cinematic", "photorealistic" ve yazı/logo olumsuzlaması atılır, noktalama toparlanır."""
+    # sıfat gibi kullanılan ("a masterpiece photo of …") atılır, baş ad olan "photograph" olur ("photograph photo" olmasın)
+    t = re.sub(rf"{_PHOTO_NOUN.pattern}\s+(?=(?:photos?|photographs?|pictures?|images?|shots?|portraits?)\b)", "", str(t), flags=re.I)
+    t = _PHOTO_NEG.sub("", _PHOTO_TAGS.sub("\x01", _PHOTO_NOUN.sub("photograph", t)))
+    # a/an yalnız atılan sözün önündeyse sonraki kelimeye uyar ("a photorealistic old man" → "an old man", "an award-winning chef" → "a chef")
+    t = re.sub(r"\b([Aa])n?((?:[\s,;]*\x01)+[\s,;]*)(?=(\w))", lambda m: m.group(1) + ("n " if m.group(3).lower() in "aeiou" else " "), t)
+    t = t.replace("\x01", " ")
+    t = re.sub(r"\(\s*\)", " ", t)
+    t = re.sub(r"\s+([,.;:])", r"\1", t)
+    t = re.sub(r"([,;:])(?:\s*[,;:])+", r"\1", t)
+    t = re.sub(r"[,;:]+\s*(?=[.!?]|$)", "", t)
+    t = re.sub(r"\b(an?)\s+(?=[,.;:]|$)", "", t, flags=re.I)
+    t = re.sub(r"(^|[.!?]\s*)[,;:]\s*", r"\1", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def prompt_tokens(t: str) -> int:
+    """Z-Image metin kodlayıcısının (Qwen3 BPE) belirteç sayısı için yukarı yuvarlayan tahmin: İngilizce kelime 1,3, diğer kelime 3, her
+    rakam ve noktalama 1 (gerçek sayı tahminin %82-93'ü; rakamlı ve Türkçe sözlü istemde de)."""
+    ascii_words = len(re.findall(r"[A-Za-z]+", t))
+    other_words = len(re.findall(r"[^\W\d_]*[^\x00-\x7f\W\d_][^\W\d_]*", t))
+    return round(ascii_words * 1.3 + other_words * 3 + len(re.findall(r"\d", t)) + len(re.findall(r"[^\w\s]", t)))
+
+
+def _card_head(card: str) -> str:
+    """Karakterin ikinci anılışı: kartın baş öbeği "the" ile ("a Turkish fisherman in his early seventies" → "the Turkish fisherman …")."""
+    h = re.split(r"[,;]|\s(?:with|wearing|who|whose|dressed)\s", card, maxsplit=1)[0].strip()
+    return re.sub(r"^(?:a|an)\s+", "the ", h, flags=re.I) if len(h.split()) <= 12 else card
+
+
+def photo_expand(prompt: str, chars: list, style: str, hook: bool = False) -> str:
+    """Tarif → modele giden tam metin: {Ad} ilk geçtiği yerde karakterin kartıyla, sonra kartın baş öbeğiyle değişir (bilinmeyen ad ayraçsız
+    kalır); gerçekçiliği bozan sözler atılır (`photo_words`); stil ve kompozisyon (kancada `PHOTO_COMPOSE_HOOK`) eklenir; belirteç tahmini
+    `PROMPT_MAX_TOKENS`'u geçerse tarifin son cümleleri düşer (stil ve kompozisyon hep kalır)."""
     table = {_name_key(a): t for a, t in chars}
-    body = re.sub(r"\{([^{}]{1,40})\}", lambda m: table.get(_name_key(m.group(1)), m.group(1)), prompt)
-    body = re.sub(r"\s+", " ", re.sub(r"[{}\[\]<>]", " ", body)).strip().rstrip(" .,;:")
-    return f"{body}. {style.strip().rstrip(' .')}. {PHOTO_COMPOSE}."
+    seen = set()
+
+    def card(m):
+        k = _name_key(m.group(1))
+        if k not in table:
+            return m.group(1)
+        if k in seen:
+            return _card_head(table[k])
+        seen.add(k)
+        return table[k]
+
+    body = re.sub(r"\{([^{}]{1,40})\}", card, prompt)
+    body = photo_words(re.sub(r"\s+", " ", re.sub(r"[{}\[\]<>]", " ", body)).strip()).rstrip(" .,;:")
+    style = photo_words(style).strip().rstrip(" .,;:") or image_gen.STYLE_DEFAULT
+    if not re.search(r"photo", f"{body} {style}", re.I):  # fotoğraf türü sözü hep olsun (süzgeç "photorealistic"i atmış olabilir)
+        style = f"documentary photograph, {style}"
+    tail = f". {style[:1].upper()}{style[1:]}. {PHOTO_COMPOSE_HOOK if hook else PHOTO_COMPOSE}."
+    if prompt_tokens(body + tail) > PROMPT_MAX_TOKENS:
+        parts = re.split(r"(?<=[.!?;])\s+", body)
+        while len(parts) > 1 and prompt_tokens(" ".join(parts) + tail) > PROMPT_MAX_TOKENS:
+            parts.pop()
+        words = " ".join(parts).split()
+        while len(words) > 8 and prompt_tokens(" ".join(words) + tail) > PROMPT_MAX_TOKENS:
+            words.pop()
+        body = " ".join(words).rstrip(" .,;:")
+    body = re.sub(r"(^|[.!?]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), body)
+    return f"{body}{tail}"
 
 
 def seg_photos(s: dict, k: int) -> tuple:
-    """Sahnenin fotoğraf tarifleri (kanca en çok 2, sahne en çok 3; tekrarlanan atılır) ve tarifsiz sahnede sahnenin kendi tarifinin
+    """Sahnenin fotoğraf tarifleri (kanca en çok 2, sahne en çok 4; tekrarlanan atılır) ve tarifsiz sahnede sahnenin kendi tarifinin
     kullanıldığı (model Türkçeyi de anlar)."""
     g = s.get("gorseller")
     out = []
@@ -1168,18 +1252,20 @@ def seg_photos(s: dict, k: int) -> tuple:
         if len(x) >= 12 and x not in out:
             out.append(x)
     if out:
-        return out[:2 if k == 0 else 3], False
-    return [f"Photorealistic scene: {_clean(s.get('sahne') or s.get('title') or s.get('narration'))[:400]}"], True
+        return out[:2 if k == 0 else 4], False
+    return [PHOTO_FALLBACK.format(_clean(s.get("sahne") or s.get("title") or s.get("narration"))[:400])], True
 
 
-def photo_trim(lists: list, cap: int) -> list:
-    """Toplam fotoğraf `cap`i aşarsa en çok fotoğraflı sahnenin (eşitse sonrakinin) son fotoğrafı atılır; her sahnede en az bir fotoğraf."""
+def photo_trim(lists: list, cap: int, keep: frozenset | set = frozenset()) -> list:
+    """Toplam fotoğraf `cap`i aşarsa en çok fotoğraflı sahnenin (eşitse sonrakinin) son fotoğrafı atılır; her sahnede en az bir fotoğraf.
+    `keep`teki sahnelere dokunulmaz: düzeltmede değişmeyen sahne önceki sürümden aynen alınır, yeniden üretilmez (inceleme, 28 Ekim: bütçe
+    kırpması sahibin değinmediği sahnenin bir fotoğrafını atıyor, sahne yeniden üretilip görünür biçimde değişiyordu)."""
     lists = [list(x) for x in lists]
     while sum(len(x) for x in lists) > max(cap, len(lists)):
-        k = max(range(len(lists)), key=lambda i: (len(lists[i]), i))
-        if len(lists[k]) <= 1:
+        free = [i for i in range(len(lists)) if i not in keep and len(lists[i]) > 1]
+        if not free:
             break
-        lists[k].pop()
+        lists[max(free, key=lambda i: (len(lists[i]), i))].pop()
     return lists
 
 
@@ -1199,12 +1285,18 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
     if nfb:
         log(f"  ! {nfb} sahnede fotoğraf tarifi yoktu: sahnenin kendi tarifinden üretilecek")
     cap = image_gen.budget(target)
-    raw = photo_trim([r for r, _ in pairs], cap)
-    if sum(len(r) for r, _ in pairs) > sum(len(r) for r in raw):
-        log(f"🎨 fotoğraf sayısı bütçeye indirildi: {sum(len(r) for r, _ in pairs)} → {sum(len(r) for r in raw)} (en çok {cap})")
-    full = [[photo_expand(x, chars, style) for x in r] for r in raw]
     secs_l = [round(max(4.0 if k == 0 else 0.0, len(s["narration"].split()) / 2.4 + 0.8 + 1.5), 2) for k, s in enumerate(segs)]
     holds = [round(max(1.5, x * 0.3), 2) for x in secs_l]
+    # düzeltmede Claude'un aynen bıraktığı sahneler (fotoğraf tarifleri ve süresi önceki sürümdeki gibi): bütçe kırpması onlara dokunmaz
+    keep = set()
+    if prev is not None and prev_dir is not None and prev.get("mode") == "gercekci":
+        old = [(ps.get("secs"), [str(x) for x in ps.get("gorseller") or [] if isinstance(x, str)])
+               for ps in (prev.get("plan") or {}).get("segments") or [] if isinstance(ps, dict)]
+        keep = {k for k, (r, fb) in enumerate(pairs) if not fb and (secs_l[k], r) in old}
+    raw = photo_trim([r for r, _ in pairs], cap, keep)
+    if sum(len(r) for r, _ in pairs) > sum(len(r) for r in raw):
+        log(f"🎨 fotoğraf sayısı bütçeye indirildi: {sum(len(r) for r, _ in pairs)} → {sum(len(r) for r in raw)} (en çok {cap})")
+    full = [[photo_expand(x, chars, style, k == 0) for x in r] for k, r in enumerate(raw)]
     # tohum: aynı tarif önceki sürümde hangi tohumla üretildiyse o (ilk tohumda üretilemeyip +7919 ile üretilmiş olabilir; inceleme, 28 Ekim:
     # seslendirmesi değişen sahnenin birebir aynı tarifli fotoğrafı yeniden ve farklı üretiliyor, plan.json yanlış tohum yazıyordu)
     prev_seed = {}
@@ -1213,19 +1305,25 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
             for x in (ps.get("shots") or []) if isinstance(ps, dict) else []:
                 if isinstance(x, dict) and x.get("file") and isinstance(x.get("prompt"), str) and isinstance(x.get("seed"), int):
                     prev_seed.setdefault(x["prompt"], x["seed"])
-    reused, done = {}, {}
+    reused, done, reused_prompts = {}, {}, {}
     if prev is not None and prev_dir is not None and prev.get("mode") == "gercekci":
-        pool = [(i, ps) for i, ps in enumerate((prev.get("plan") or {}).get("segments") or []) if isinstance(ps, dict) and isinstance(ps.get("shots"), list)]
+        pplan = prev.get("plan") or {}
+        pool = [(i, ps) for i, ps in enumerate(pplan.get("segments") or []) if isinstance(ps, dict) and isinstance(ps.get("shots"), list)]
+        # sahne aynı sayılır: modele giden tam tarifler aynı YA DA Claude'un tarifleri, karakterleri ve stili aynı (inceleme, 28 Ekim: kodun tarif
+        # genişletmesi değişince — bu güncelleme gibi — önceki sürümün bütün sahneleri, sahibin değinmedikleri de, yeniden üretiliyordu)
+        same_look = photo_chars(pplan) == chars and photo_style(pplan) == style
         for k in range(len(segs)):
             for i, ps in pool:
                 sh = [x for x in ps["shots"] if isinstance(x, dict)]
                 parts = [(prev_dir / f"part-{i}{suf}", d / f"sahne-{k}{suf}") for suf in (".mp4", ".jpg", "-tall.jpg")]
                 fotos = [(prev_dir / str(x.get("file") or "-"), d / f"foto-{k}-{n}.jpg") for n, x in enumerate(sh)]
-                if (ps.get("secs") == secs_l[k] and [str(x.get("prompt") or "") for x in sh] == full[k] and all(x.get("file") for x in sh)
-                        and all(a.is_file() for a, _ in parts + fotos)):
+                same_in = same_look and (i == 0) == (k == 0) and seg_photos(ps, i) == pairs[k]
+                if (ps.get("secs") == secs_l[k] and len(sh) == len(full[k]) and ([str(x.get("prompt") or "") for x in sh] == full[k] or same_in)
+                        and all(x.get("file") for x in sh) and all(a.is_file() for a, _ in parts + fotos)):
                     for a, b in parts + fotos:
                         shutil.copyfile(a, b)
                     reused[k] = i
+                    reused_prompts[k] = [str(x.get("prompt") or "") for x in sh]  # fotoğraflar bu tariflerle üretilmişti
                     for n, x in enumerate(sh):  # plan.json önceki sürümün tohumunu yazsın
                         if isinstance(x.get("seed"), int):
                             prev_seed[full[k][n]] = x["seed"]
@@ -1307,8 +1405,8 @@ def photo_render(name: str, segs: list, plan: dict, d: Path, target: int, prev: 
                      "props": {"images": rel, "seconds": secs_l[k], "hold": holds[k], "seed": k + 1, "badge": badge}})
         scenes_out.append({"groups": len(rel), "seconds": round(secs_l[k] + holds[k], 2), "fallback": k in borrowed, "photos": len(rel),
                            "prompts": raw[k]})
-    shots_out = [[{"prompt": fp, "seed": seeds[(k, n)], "file": f"foto-{k}-{n}.jpg" if own[k][n] else None} for n, fp in enumerate(fl)]
-                 for k, fl in enumerate(full)]
+    shots_out = [[{"prompt": reused_prompts[k][n] if k in reused_prompts else fp, "seed": seeds[(k, n)], "file": f"foto-{k}-{n}.jpg" if own[k][n] else None}
+                  for n, fp in enumerate(fl)] for k, fl in enumerate(full)]
     return {"ok": True, "jobs": jobs, "scenes_out": scenes_out, "reused": reused, "done": done, "imgs": imgs, "borrowed": borrowed, "raw": raw,
             "shots": shots_out, "chars": chars, "style": style, "info": info, "public": public, "own": own}
 
@@ -1679,7 +1777,11 @@ def recreate_finish(name: str, tmp: Path, plan: dict, target: int, asked: bool, 
         img, tall = d / f"sahne-{k}.jpg", d / f"sahne-{k}-tall.jpg"
         if k not in reused and photo:  # gerçekçi sahne: kapak ve yedek kare sahnenin ilk fotoğrafından (köşe etiketi ve gren yok)
             still(ph["imgs"][k][0], 0.0, 1840, 1120, img)
-            shutil.copyfile(ph["imgs"][k][0], tall)
+            pr = probe(ph["imgs"][k][0])
+            if (pr["width"], pr["height"]) == (1080, 1920):
+                shutil.copyfile(ph["imgs"][k][0], tall)
+            else:  # yeni motorun karesi 1152x2048: dikey kapak ve kanca 1080x1920 bekler
+                still(ph["imgs"][k][0], 0.0, 1080, 1920, tall)
         elif k not in reused:  # önceki sürümden alınan sahnenin kareleri de kopyalandı
             t = max(0.0, secs - 0.2)  # bekleme sırasında: çizimin tamamı (kapak ve yedek)
             still(vid, t, 1840, 1120, img)

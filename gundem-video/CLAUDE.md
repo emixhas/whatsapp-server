@@ -1495,7 +1495,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   oluyor, rakip üreticileri görüyorum harika üretimler yapıyorlar, çok gerçekçi duruyor"): benzer videonun sahneleri SVG çizimi yerine yapay
   zekâ ile üretilmiş GERÇEKÇİ FOTOĞRAFLARLA anlatılır. Motor tamamen yerel ve ücretsiz: mflux 0.24.0 (MLX, Apple Silicon) + Z-Image-Turbo
   (Tongyi-MAI, 6 milyar parametre, Apache-2.0; önceden 4 bit nicemlenmiş `filipstrand/Z-Image-Turbo-mflux-4bit`, ~6 GB), 9 adım, 720x1280
-  üretilip 1080x1920'ye büyütülür (`scripts/image_gen.py`, `scripts/zimage_run.py`). Kurulum bir kez: `bash scripts/install_image.sh` ya da
+  üretilip 1080x1920'ye büyütülür (sürüm 1; 28 Ekim'den beri sürüm 2, aşağıda "En yüksek gerçekçilik") (`scripts/image_gen.py`, `scripts/zimage_run.py`). Kurulum bir kez: `bash scripts/install_image.sh` ya da
   panel Ayarlar → 📡 → "📷 Görsel motoru: … ⬇ Kur" (`POST /api/image/install`; arka planda, adım satırları loga "📷", bitince WhatsApp'a tek
   satır): ayrı ortam `.venv-image` (Python 3.11+; ses ve hizalama ortamlarına dokunmaz), model indirmesi certifi ile, 512x896 deneme fotoğrafı
   (`work/image_deneme.png`), `models/image/READY.json` {model, mflux, testSec (tek fotoğraf), loadSec}. Durum `/api/status` → `image`
@@ -1522,10 +1522,10 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   fotoğraflarla canlandıracağım" diyor, anahtar kapalıyken "gerçekçi olsun" işini çizim işinin süresinde kesiyordu): `server.js visualModeOf`
   → `python3 scripts/wa_video.py --visual-mode '{"instruction", "revise": <önceki iş>}'` → {mode, why, note} (Python açılamazsa eski tahmin);
   başlangıç mesajları, link yanıtı, özet reels satırı ve iş süresi (`recreateTimeoutMin`: çizim 50 dk, fotoğraf 60 + 30 (sıra) + ⌈maxMinutes ×
-  1,6⌉ + 4 dk, varsayılan 118) bu moddan.
+  1,6⌉ + 4 dk, varsayılan 118; 28 Ekim'den beri 60 + `image_gen.job_minutes()`) bu moddan.
   İstem: `prompts/benzer.md` ve `prompts/benzer_duzelt.md` iki modlu: "[[çizim]] … [[/çizim]]" ve "[[gerçekçi]] … [[/gerçekçi]]" satırları
   arası yalnız o modda kalır (`mode_text`; çizim modunda istem bu özellikten önceki istemle bayt bayt aynı). Gerçekçi modda Claude "görüntü
-  yönetmeni": her sahnede "gorseller" (1-3 İngilizce fotoğraf tarifi, kancada 1-2; her biri ayrı çekim: geniş plan, orta plan, yakın plan,
+  yönetmeni" (28 Ekim'den beri 7 parçalı 60-120 kelimelik tarifler, sahne başına 2-4 çekim: aşağıda): her sahnede "gorseller" (1-3 İngilizce fotoğraf tarifi, kancada 1-2; her biri ayrı çekim: geniş plan, orta plan, yakın plan,
   ayrıntı; 25-70 kelime: kim/ne, eylem, yer, ışık, çekim, duygu), plan düzeyinde "karakterler" ([{ad, tarif}]: tekrar eden karakterin
   İngilizce görünüşü; fotoğraf tarifinde {Ad} yazılır) ve "gorsel_stil" (tek İngilizce stil satırı); kompozisyon (ana konu üst üçte ikide,
   alt üçte bir sade: altyazı ve başlık orada; kancada orta alan sade), fotoğrafta yazı, logo, marka yok; gerçek kişi, telifli karakter, kan,
@@ -1533,7 +1533,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   logosu, sahte belge ya da plaka yok); Türkiye'de geçen hikâyede doğal Türkiye mekânları. Girdiye "gorsel_butcesi" {en_fazla_gorsel}.
   Kod (`photo_render`): tarif düzlenir (adres ve denetim karakteri atılır, en çok 1200 karakter, tekrarlanan atılır; tarifsiz sahnede
   "Photorealistic scene: <sahne tarifi>"), {Ad} karakterin tarifiyle değişir, sonuna stil ve sabit kompozisyon cümlesi eklenir
-  (`photo_expand`). Bütçe `image_gen.budget(hedef)`: ~3,5 sn'ye bir fotoğraf, en çok `settings.image.maxImages` (16) ve `maxMinutes` (15)
+  (`photo_expand`). Bütçe `image_gen.budget(hedef)` (sürüm 1 dönemi; 28 Ekim'den beri ~3,2 sn, maxPhotos 28, maxPhotoMinutes 480: aşağıda): ~3,5 sn'ye bir fotoğraf, en çok `settings.image.maxImages` (16) ve `maxMinutes` (15)
   içinde üretilebilecek kadar (fotoğraf süresi kurulumdaki denemeden: testSec × piksel oranı × 1,15 + 2 sn; deneme yoksa 45 sn), en az 4;
   aşarsa en çok fotoğraflı sahnenin sonuncusu atılır (her sahnede en az bir; log "🎨 fotoğraf sayısı bütçeye indirildi: 13 → 9"). Tohum
   tarifin crc32'si (aynı tarif aynı fotoğraf). `image_gen.generate` önbelleği `work/image_cache/` (model, boyut, adım, tohum, tarif; en çok
@@ -1544,7 +1544,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   biten 5 görsel kullanılıyor"). AYNI ANDA TEK ÜRETİM (inceleme, 28 Ekim: WhatsApp videosu, link ve düzeltme işleri aynı anda
   çalışabiliyor, iki Z-Image-Turbo süreci 16 GB Mac'te belleği taşırıyordu): `image_gen` üretim öncesi `work/image_cache/.uretim.lock` kilidini
   alır (fcntl.flock; süreç ölünce kendiliğinden bırakılır), alamazsa "🎨 başka bir videonun gerçekçi görselleri üretiliyor; o bitince
-  başlanacak" der ve bekler (en çok `WAIT_MAX` 30 dk; sonra bu videonun sahneleri çizime düşer); süre sınırı kilitten sonra başlar. Rosetta
+  başlanacak" der ve bekler (en çok `WAIT_MAX` 30 dk, 28 Ekim'den beri üretimin süre sınırı kadar; sonra bu videonun sahneleri çizime düşer); süre sınırı kilitten sonra başlar. Rosetta
   altındaki panelden üretici `arch -arm64` ile başlar. Üretici çalıştıysa üretilemeyen fotoğraf bir kez başka tohumla (+7919; kullanılan tohum plan.json'a);
   fotoğrafı hiç olmayan sahne en yakın sahnenin henüz ödünç verilmemiş fotoğrafını alır (önce öncekinin sonuncusu; art arda iki fotoğrafsız
   sahne aynı fotoğrafı almaz, hepsi verildiyse en yakınınki tekrar; "  ! 3. sahnenin fotoğrafı üretilemedi: 2. sahnenin fotoğrafı
@@ -1553,7 +1553,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (ikinci Claude çağrısı; "⚠️ gerçekçi fotoğraflar üretilemedi (…): sahneler çizimle yeniden planlanıyor"; `plan.photoFallback` → WhatsApp
   "⚠️ Gerçekçi fotoğraflar üretilemedi (…); sahneler çizimle yapıldı."). Sahneler Remotion `PhotoScene` (`src/PhotoScene.tsx`;
   `render_scenes.mjs` işte `comp: "PhotoScene"`): fotoğraflar seslendirme süresine eşit bölünür, son fotoğraf bekleme (hold) boyunca sürer; her
-  fotoğrafta tohuma göre yavaş yaklaşma ya da uzaklaşma + kayma + hafif dönme (ölçek ≥ 1,04: kenar açılmaz), 14 karelik çapraz geçiş, hafif renk
+  fotoğrafta tohuma göre yavaş yaklaşma ya da uzaklaşma + kayma + hafif dönme (ölçek ≥ 1,04, 28 Ekim'den beri 1,045-1,10: kenar açılmaz), 14 karelik çapraz geçiş, hafif renk
   düzeltmesi, gezinen sıcak ışık, vinyet, film greni; sağda altyazının hemen üstünde (top 1232) "🤖 Yapay zekâ ile canlandırıldı" etiketi
   (`settings.image.badge`; "" etiketsiz). Fotoğraflar projenin public/'ine DEĞİL işin analiz klasöründeki ayrı public klasörüne kopyalanır,
   çizici onu paketler (`SCENES_PUBLIC_DIR`; aynı anda çalışan üretimin public/'ine dokunulmaz, paketleme küçük kalır); Remotion iki denemede de
@@ -1577,7 +1577,7 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   "gerçekçi fotoğraflarla yeniden canlandıracağım (… 10-25 dk; talimata "çizgi film" ya da "çizimle" yazarsanız çizerim)", "*Sıfırdan
   üretildi*: 5 sahne, 9 gerçekçi fotoğraf (yapay zekâ, bu Mac'te; fotoğraflar N dk)", sahne satırlarında fotoğraf sayısı; sahibin işi aşamaları
   "gerçekçi fotoğraflar üretiliyor (3/9 tamam)", "sahneler canlandırılıyor"; düzeltme mesajı "N sahne yeniden üretildi". Ayar `image`
-  {enabled true, maxImages 16, maxMinutes 15, badge; model, width 720, height 1280, steps 9, perImageSec 240}; nesne değilse anahtar sayılır
+  {enabled true, maxImages 16, maxMinutes 15, badge; model, width 720, height 1280, steps 9, perImageSec 240} (28 Ekim'den beri {enabled, maxPhotos 28, maxPhotoMinutes 480, badge; uzman ayarları kurulumdan}: aşağıda); nesne değilse anahtar sayılır
   ("image": false ya da "kapalı" → kapalı; liste/sayı işleri çökertmez; `image_gen.cfg` = `server.js imageCfg`). Kurulum kilidi:
   `install_image.sh` `models/image/.kuruluyor`'a PID yazar (çıkışta silinir; canlı kilitte ikinci kurulum "zaten sürüyor" der), panel bunu
   da "kuruluyor" sayar ve kurulum sürerken kendini güncellemez/yeniden başlamaz (`imageInstalling`, `updateBusy`); Apple Silicon denetimi
@@ -1607,6 +1607,105 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   denetim), kurulum betiği (sahte uname/sysctl/arch: kilit yok/canlı/ölü, Rosetta'da `arch -arm64` ile yeniden başlama), panel işlevleri (44
   denetim: mesajlar ve iş süresi wa_video'nun moduyla, düzeltmede önceki iş, Python yanıt vermezse eski tahmin, TikTok satırı, ipucunun
   kalıcılığı, kurulum kilidi).
+  En yüksek gerçekçilik, motor sürüm 2 (kullanıcı isteği, 28 Ekim: "tam profesyonel benzerini üret istiyorum, daha gerçekçi, daha bol
+  detaylı; süre çok önemli değil, dilediğin kadar uzatabilirsin, süreyi kısıtlamayalım, ama görseller çok çok gerçekçi olsun"; araştırma:
+  mflux 0.24.0 kaynağı, Z-Image-Turbo'nun resmî ayarları, istem kılavuzları): yukarıdaki 720x1280, 9 adım, bütçe, süre sınırı ve istem
+  ayrıntıları eski kurulumundur (sürüm 1: çalışmaya devam eder; panel "⬆ Yükselt" der). Süre yüzünden kalite düşürülmez.
+  - Motor (`install_image.sh` ve yeni `scripts/image_setup.py` plan/save/test/cleanup): asıl depo `Tongyi-MAI/Z-Image-Turbo` (mflux'un
+    sabitlediği sürüm; bir kez ~31 GB indirilir). Düzey Mac'in belleğinden: 30 GB ve üstünde önce tam hassasiyet (bf16), 14 GB ve üstünde
+    (bellek okunamazsa da) 8, 6, 4 bit, son çare eski hazır 4 bit depo (`q4hazir`; 14 GB altında yalnız o). Seçilen düzeyde yerel kopya
+    `models/image/zimage-<düzey>` (mflux `save_model`; 8 bit ~11 GB, tam ~20 GB; belirteçleyiciler içinde, internetsiz açılır) → üretim
+    ayarlarıyla deneme görseli 1152x2048 (Z-Image'ın önerdiği en büyük 9:16 boyut; olmazsa aynı düzeyde 864x1536, `work/image_deneme.png`):
+    görsel üretilemezse ya da tepe bellek Mac'in belleğinin %80'ini geçerse (takas eder, bilgisayar yavaşlar) bir alt düzey; asıl depo bu
+    Mac'te hiç açılamazsa (bellek, indirme) yalnız hazır 4 bit denenir. İstenirse `IMAGE_SLOW_SEC=480 bash scripts/install_image.sh`:
+    1152x2048'de görsel bundan uzun sürerse 864x1536 (varsayılan kapalı). Disk: kurulum sırasında ~47 GB boş (tam hassasiyette ~57; yetmeyen
+    düzey atlanır, en az 16 GB ile hazır 4 bit; yarım kalmış indirme boş diske sayılır), bitince ~12 GB (tam ~21): indirme önbelleğindeki
+    asıl depo ve eski 4 bit depo, kullanılmayan düzey klasörleri silinir. Kopya önce `zimage-<düzey>.yeni`'ye kaydedilir, deneme geçince
+    son adım (`image_setup.py finalize`) ÜRETİM KİLİDİ altında kopyayı yerine taşır, READY.json'u yazar, önbelleği ve öbür düzeyleri siler
+    (bir video o an fotoğraf üretiyorsa onun bitmesi beklenir, "  ! bir videonun gerçekçi fotoğrafları üretiliyor; o bitince devam
+    edilecek"; deneme görseli de kilitle): yükseltme yarıda kalırsa eski kurulum bozulmaz; yeniden çalıştırınca inen dosyalar yeniden inmez.
+    Sürüm 2 kuruluysa betik hiçbir şey yapmaz (`--force` yeniden kurar), en yüksek düzey disk ya da indirme yüzünden kurulamadıysa yeniden
+    dener. `READY.json` sürüm 2: {version 2, model (yerel klasör), tier, mflux, ram, width, height, steps 8, scheduler "static_shift3",
+    genSec (deneme görseli, sn), loadSec, peakGB, testW, testH, tests, fallback?, at}; hazır sayılması için model klasörü de yerinde olmalı
+    (`server.js imageReady`, `image_gen.ready`). GERİ DÜŞÜŞ (`fallback`; inceleme, 28 Ekim: yarıda kalan 31 GB indirme ya da yetmeyen disk
+    eski 4 bit modeli kalıcı kılıyor, yarım indirme siliniyor, yeniden kurulum "zaten kurulu" diyordu): asıl depo kaydedilemezse
+    `image_setup.save` hatanın aşamasını verir ("disk": yer kalmadı; "indirme": hata indirme kodunda — huggingface_hub, ağ —; "yukleme":
+    bellek ya da başka) ve hazır 4 bit kurulursa READY.json'a nedeni yazılır: "disk" (asıl düzeylerin hiçbirine disk yetmedi ya da indirmede
+    disk doldu) ve "indirme"de yarım indirme silinmez, panel "⬆ Yükselt" göstermeye devam eder ("⚠️ en yüksek kalite için boş disk yetmedi …
+    yer açıp yükseltin" / "asıl model indirilemedi: yeniden deneyin"), yeniden çalıştırma kaldığı yerden sürer; "bellek"te (asıl model ya da
+    deneme görseli bu Mac'te sığmadı) karar kalıcıdır ("asıl model bu Mac'in belleğinde açılamadı, hazır 4 bit kullanılıyor"). 14 GB altı
+    bellekte hazır 4 bit zaten tek seçenek (geri düşüş sayılmaz). `image_setup.py` stdout'a yalnız sonuç satırını yazar (mflux "Downloading
+    model…" satırı stderr'e), kurulumun `jget`'i son satırı okur ve hiç hata vermez. sysctl macOS'ta yalnız /usr/sbin'de, panel launchd
+    servisi olarak çalışırken PATH'te yok (inceleme, 28 Ekim: panelden kurulum "yalnız Apple Silicon" deyip duruyordu): kurulum betiği
+    PATH'in sonuna /usr/sbin:/sbin ekler, `server.js` ENV de; `image_gen.supported` ve `image_setup.ram_gb` yoksa /usr/sbin/sysctl.
+  - Üretim (`zimage_run.py`): Z-Image-Turbo'nun kendi ayarı 8 adım ve sabit kaydırma 3 zamanlaması (mflux'a `register_contrib` ile
+    "static_shift3"; mflux'un "linear"ı 1 MP üstünde kaydırmayı büyütüyordu, 1152x2048'de ayrıntı son büyük adıma kalıyordu). Aşamalı
+    kodlama: bütün tarifler önce kodlanır, metin kodlayıcı (Qwen3-4B) bellekten atılır, sonra görseller üretilir (tepe bellek iki aşamanın
+    toplamı değil büyüğü: 16 GB Mac'te 8 bit sığar; kurulamazsa kodlayıcı bellekte kalarak eskisi gibi). MLX önbelleği sınırlı (bellek 24 GB
+    ve altında 1 GB, üstünde 4 GB) ve her görselden sonra boşaltılır; her görselde tepe bellek ve belirteç sayısı (512 sınırında kesilen
+    tarif: "  ! 3. görselin tarifi 512 belirteç sınırında kesildi (sonu modele gitmedi)"); kütüphane çıktısı stderr'e (stdout'ta yalnız
+    sonuç satırı). Yerel kopyada `HF_HUB_OFFLINE=1`; Mac'te `caffeinate -i` (saatler süren üretimde Mac uyumaz). Kare: üretim boyutu aynen
+    (1152x2048; büyütme ve keskinleştirme yok, jpg en yüksek kalite, renk 4:4:4), 1080'den dar üretim 1080x1920'ye büyütülür. Önbellek
+    anahtarına zamanlama eklendi (sürüm 1 anahtarı değişmedi).
+  - Bütçe ve süre (`image_gen`): `settings.image` {enabled, maxPhotos 28, maxPhotoMinutes 480, badge; uzman: model, width, height, steps,
+    scheduler, perImageSec; değerler sınırlanır}; eski maxImages/maxMinutes (16/15) okunmaz (panel her ayar kaydında varsayılanları
+    settings.json'a yazdığı için kullanıcının seçimi değil eski varsayılanın kopyasıdır). Fotoğraf süresi tahmini kurulumdaki denemeden:
+    genSec × (piksel oranı)^1,2 × adım oranı + 2 sn (deneme yoksa 300 sn). Bütçe ~3,2 sn'ye bir fotoğraf (60 sn'lik videoda 19), en çok
+    maxPhotos ve maxPhotoMinutes içinde üretilebilecek kadar, en az 4. Süre sınırları: üretim en çok 240 + 1,6 × min(maxPhotoMinutes,
+    90 sn'lik videonun bütçesi × tahmin) sn; görsel başına bekçi: ilerleme satırı perImageSec ya da tahminin 3 katı (en az 5 dk) gelmezse
+    "üretici N dakikadır ilerleme vermedi (takıldı), durduruldu" (model açılışında en az 15 dk ya da 3 × loadSec + 10 dk); başka videonun
+    üretimi en çok o sınır kadar beklenir; kilit beklendiyse ayar, önbellek ve hazırlık kilitten sonra yeniden okunur (bekleme sırasında
+    yükseltme bittiyse iş yeni motorla üretir). Sahibin işi aşaması beklerken "sırada: başka bir videonun gerçekçi fotoğrafları bitince bu
+    videonunkiler üretilecek", sonra "sıra geldi; …"; sahibin işinin "⏳ Hâlâ sürüyor" notları işin kendi süre sınırı boyunca sürer
+    (`ownerJobStart(label, limitMin)`: en az 3 saat, uzun işte sınır + 90 dk; eskiden 3 saatte kesiliyordu). Video kuyruğunda sahibin
+    linki süren üretimin arkasında beklerken bayatlamaz (`videoqueue.js`: yaş, sıraya girişten ya da kuyruğun son meşgul anından hangisi
+    sonraysa; otomatik trend işleri eskisi gibi sıraya girişten 6 saat), atılan sahip işi WhatsApp'a yazılır ("⏹ #5 6 saatten uzun sırada
+    bekledi, atlandı: … — yeniden istiyorsanız linki tekrar gönderin"; panel kapalıyken bayatlayanlar açılıştan 30 sn sonra). Panel iş süresi `recreateTimeoutMin(photo, jobMinutes)` = 60 + `image_gen.job_minutes()` (2 ×
+    sınır; `wa_video.py --visual-mode` yanıtında `eta`, `jobMinutes`; Python yanıt vermezse ayardan, fotoğraf başına 5 dk ve 28 fotoğrafla
+    516 dk). Log "🎨 19 gerçekçi görsel üretiliyor (Z-Image-Turbo 8 bit, 1152x2048, Mac'te yerel; görsel başına ~4 dk, toplam ~1,3 saat)",
+    "🎨 görsel 3/19 hazır (4 dk 5 sn; kalan ~1,1 saat)" (ilk görselde "; bellek 9,8 GB"); sahibin işi aşaması "gerçekçi fotoğraflar
+    üretiliyor (19 fotoğraf, bu Mac'te; toplam ~1,3 saat)", "(3/19 tamam, kalan ~1,1 saat)"; başlangıç mesajı "fotoğraflar bu Mac'te en
+    yüksek kalitede üretilir: fotoğraf başına ~4 dk, video başına ~37 dk-1,9 saat" (`image_gen.eta_text`: 30 ve 90 sn'lik videonun bütçesi).
+  - İstem (`prompts/benzer.md` [[gerçekçi]]; çizim modunda istem bayt bayt aynı): her fotoğraf tarifi 7 parçalı, 60-120 kelime (çekim
+    ölçeği ve açı; {Ad} ile konu; eylem; yer ve ayrıntılar; ışık ve saat; objektif ve alan derinliği; doku ve gerçeklik: gözenekler,
+    kırışıklar, aşınmış yüzeyler); sahne başına 2-4 farklı çekim (kanca 1-2); karakter kartları (yaş, yüz, saç, giysi; her tarifte aynı);
+    gerçekliği bozan sözler yasak (cinematic, photorealistic, 8k, masterpiece, film still, "no text" gibi: cildi plastikleştirir ya da yazıyı
+    çağırır); gorsel_stil kılavuzu; kancada büyük başlık karenin ortasını kapladığı için ana konu ve yüzler ÜST ÜÇTE BİRDE, orta ve alt
+    sade (gökyüzü, çıplak duvar, durgun su, gölge); öncelik satırı gerçekçi modda ayrı: talimat istese de gerçek kişi ya da ona benzetme,
+    kan, yara, ceset, birine doğrultulmuş silah, çıplaklık, çocukların güvenliği ve gerçek olayda temsilî fotoğraf kuralı uygulanır. Kod
+    (`wa_video`): `photo_words` süzgeci (kalite etiketleri, "cinematic", "photorealistic", yazı/logo olumsuzlaması atılır; baş ad olarak
+    "masterpiece"/"film still" → "photograph"; a/an düzelir), karakter kartı ilk anılışta tam, sonra baş öbeğiyle ("the Turkish fisherman"),
+    stil yoksa `image_gen.STYLE_DEFAULT` (belgesel fotoğraf, doğal renk ve gren, rötuşsuz), kompozisyon cümlesi (kancada
+    `PHOTO_COMPOSE_HOOK`), belirteç bekçisi (`prompt_tokens` tahmini `PROMPT_MAX_TOKENS` 500'ü geçerse tarifin son cümleleri düşer; stil ve
+    kompozisyon hep kalır); tarifsiz sahnede `PHOTO_FALLBACK` (belgesel fotoğraf, göz hizasında orta plan); sahne en çok 4, kanca en çok 2
+    fotoğraf; bütçe kırpması (`photo_trim`) düzeltmede değişmeyen sahnelere dokunmaz. Düzeltmede sahne korunur: modele giden tam tarifler
+    aynıysa YA DA Claude'un tarifleri (önceki sahnenin `seg_photos` sonucu), karakterleri ve stili aynıysa (kanca kancayla), süre ve çekim
+    sayısı aynıyken (inceleme, 28 Ekim: bu güncellemeden önce yapılmış videonun düzeltmesinde kodun yeni tarif genişletmesi yüzünden bütün
+    sahneler yeniden üretiliyordu); korunan sahnenin plan.json'daki tarifi fotoğrafın üretildiği eski tariftir. Süzgeç yazı/logo
+    olumsuzlamasını yalnız öbeğin sonundaysa atar ("with no text or signage behind him" olduğu gibi kalır: eskiden "or signage behind him"
+    kalıp tabelayı istiyordu); sıfat gibi kullanılan "masterpiece"/"film still" atılır ("a masterpiece photo of" → "a photo of").
+  - Görüntü: `PhotoScene` hareketi ölçülü (ölçek 1,045-1,10, eskiden 1,04-1,17; kayma en çok ±15/±20 px, dönme ±0,5°: kenar açılmaz, kare
+    en yakında bile neredeyse birebir örneklenir), renk düzeltmesi, ışık ve gren hafifledi; sahne klipleri PNG karelerle ve crf 14
+    (`render_scenes.mjs`; çizim sahneleri eskisi gibi jpg 92, crf 18); benzer videonun son çizimi PNG karelerle (`pipeline.sh` RECREATE'de
+    `--image-format=png`; `set -u` altında `${RECREATE:-0}`: inceleme, 28 Ekim — ilk hâli benzer video dışındaki bütün çizimleri
+    "RECREATE: unbound variable" ile durduruyordu). `wa_video.still` düzeltmesi: tek görselden kare alırken `-ss` verilmez (ffmpeg 6.1'de `-ss 0.00` + tek görsel
+    girdisi filter_complex'ten hiç kare çıkarmıyordu: fotoğraflı işte 1840x1120 kart hiç üretilmiyordu); dikey kart 1080x1920 ise kopyalanır,
+    değilse ölçeklenir.
+  - Panel: "📷 Görsel motoru: ✅ hazır (8 bit, 1152x2048; deneme fotoğrafı 4 dk)" (`imageStatus` version, tier, size, upgrade); eski kurulumda
+    uyarı ve "⬆ Yükselt" düğmesi, onay `ask()` ile (~31 GB indirir, ~47 GB boş disk, bitince ~12 GB, 30 dk-3 saat); kurulum sınırı 8 saat,
+    loga ▶/✔/✖/! satırları, bitince WhatsApp'a düzey, boyut ve fotoğraf başına süre; yükseltme bitene kadar eski motor çalışır. Anahtar metni
+    ve help.js satırları güncellendi; onay metni tam hassasiyetin disk sayılarını da verir (~57 GB / ~21 GB), kurulum disk tam hassasiyete
+    yetmezse söyler ("  ! Boş disk tam hassasiyete yetmiyor (57 GB gerekir, 50 GB boş): 8 bit kurulacak"). İsteğe bağlı Claude ile görsel denetimi (her fotoğrafa bakıp kötüsünü yeniden ürettirme) YAPILMADI:
+    kullanıcı kuralı "üretimde Claude en az kullanılsın" (istenirse eklenebilir; video başına bir Claude çağrısı daha).
+  - Sandbox'ta denendi (gerçek mflux 0.24.0 kodu CPU'da çalışan MLX ortamında, ağırlıklar yerine sahte model ve üretici; sahte Claude —
+    gerçek `claude` PATH'te değil, yerine konan tuzak hiç tetiklenmedi —): `zimage_run` 27 denetim (sigma düğümleri Z-Image'ın kendi
+    zamanlamasıyla aynı, aşamalı kodlamada kodlayıcı serbest kalıyor; model açılmadı, görsel hatası, stdout gürültüsü, 512 belirteç kesilmesi),
+    `image_gen` 57 denetim (sürüm 1 davranışı HEAD ile aynı: tahmin, önbellek anahtarı, kare boyutu; sürüm 2 boyutları, önbellek, internetsiz
+    ortam, bekçiler, kilit), kurulum betiği 19 senaryo (28 denetim: bellek düzeyleri, disk, kaydetme ve üretim hatası, tepe bellek, yavaşlık
+    seçeneği, yükseltme, --force, kilit, Mac olmayan), panel işlevleri 67 denetim (mesajlar, süre tahmini, iş süresi, aşama satırları,
+    kurulum ve yükseltme), HEAD ile yan yana 29 sahte iş (çizim modunda istemler ve sonuçlar aynı; fotoğraf modunda yalnız bilerek
+    değişenler), Remotion `PhotoScene` kareleri (8 tohum × 6 en kötü an: kenar açılmıyor). Gerçek Apple Silicon üretimi, indirme ve
+    fotoğraf kalitesi DENENMEDİ (sandbox'ta Mac ve model yok).
 - WhatsApp'a yalnız sahibin gönderdiği videolar (kullanıcı isteği, 23 Ekim: "kendi ürettiği haberleri vs bana göndermesin WhatsApp'tan; sadece
   benim gönderdiğim link veya videodaki ürettiklerini bana göndersin ve onayımı beklesin"): `settings.whatsapp.onlyUserVideos` (varsayılan açık;
   panel Ayarlar → WhatsApp → 📨 anahtarı). `whatsapp.js notifyVideo0` en başta: `force` yoksa ve anahtar açıksa `videoInfo(name).userVideo`

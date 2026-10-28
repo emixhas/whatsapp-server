@@ -140,8 +140,9 @@ _DEFAULTS = ({
         # levelDb altında (varsayılan -20 dB: çok az duyulur), konuşma aralarında duckDb (6) kadar açık
         "music": {"enabled": True, "levelDb": -20, "duckDb": 6},
         # Benzer videonun gerçekçi fotoğrafları (kullanıcı isteği, 27 Ekim; scripts/image_gen.py, Mac'te yerel Z-Image-Turbo): motor kuruluysa
-        # ve enabled açıksa benzer video çizim yerine fotoğraflarla; maxImages/maxMinutes video başına sınır, badge videodaki köşe etiketi
-        "image": {"enabled": True, "maxImages": 16, "maxMinutes": 15, "badge": "Yapay zekâ ile canlandırıldı"},
+        # ve enabled açıksa benzer video çizim yerine fotoğraflarla; maxPhotos/maxPhotoMinutes video başına fotoğraf sayısı ve üretim süresi (dk)
+        # sınırı (28 Ekim; eski maxImages/maxMinutes 16/15 okunmaz: panel varsayılanları her kayıtta settings.json'a yazıyordu), badge köşe etiketi
+        "image": {"enabled": True, "maxPhotos": 28, "maxPhotoMinutes": 480, "badge": "Yapay zekâ ile canlandırıldı"},
         "scheduleHours": 5,
         "chatterbox": {"port": 3139, "refVoice": "voices/ref.wav", "exaggeration": 0.4, "cfg": 0.55, "autoStart": False},
         # Türkçe doğal ses: Trendyol-TTS (VoxCPM2 tabanlı, MIT) + EMA Lightning (Apache-2.0). Kurulum: scripts/install_turkish_voice.sh
