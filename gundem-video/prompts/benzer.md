@@ -107,7 +107,7 @@ işin çizimin kendisi.
   birkaç şekilden. Kalabalık gerekiyorsa aynı figürü transform='translate(…)' ile tekrarla ya da <defs> içinde id verip
   <use href='#ad'/> ile çoğalt.
 - Ana çizim karenin y 200-1300 aralığında olsun ve bu alanı DOLDURSUN (küçük çizim ortada kaybolur): üstte (y 100-200) kategori etiketi,
-  y 1300'den sonra koyu geçiş, y 1330'dan itibaren altyazı, y 1500'den itibaren ekran başlığı var; y 1300 altını sade zemin (yer, çimen,
+  y 1300'den sonra koyu geçiş, y 1350'den itibaren altyazı, y 1550'den itibaren ekran başlığı var; y 1300 altını sade zemin (yer, çimen,
   masa, boş kâğıt) bırak. Kancada y 520-820 arasında büyük başlık durur: kancanın ana figürü başlığın altında (y 820-1300) ya da iki
   yanında olsun. Kenarlardan 60 px içeride kal (kamera yavaşça yaklaşır, kenarlar biraz kırpılır).
 - Yazı yok; gerekirse en çok 1-2 küçük etiket (<text>, 1-3 kelime, font-size en az 44). Başlık ve altyazı videoda ayrıca görünür.

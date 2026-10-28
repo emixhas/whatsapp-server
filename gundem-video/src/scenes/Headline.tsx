@@ -5,6 +5,14 @@ import { MediaBg } from "./MediaBg";
 import { fitFontSize, textWidth } from "../fit";
 import { theme } from "../theme";
 
+// Yerleşim (1080x1920; kullanıcı isteği, 28 Ekim: "en alt çok boş kalıyor; başlığı az daha aşağı alalım, alt yazıyı da onunla beraber
+// kaydıralım ki alan açılsın"): görsel kartı yerinde, yanan altyazı onun altında (eskiden 812, kartın hemen dibinde), numaralı başlık
+// bloğu aşağıda (eskiden 1110). İki satırlık başlık + kaynak ~1480'de biter; altındaki ~300 px YouTube/Instagram/TikTok'un başlık,
+// kanal adı ve düğme şeridinin altında kalır (oraya yazı konmaz), ilerleme çubuğu 1780'de.
+const CARD = { top: 220, left: 80, width: 920, height: 560 };
+const CAP_TOP = 902;
+const TITLE_TOP = 1260;
+
 type Props = {
   categoryLabel?: string; index: number; total: number; title: string; narration: string; source?: string; category?: string; breaking?: boolean; durationInFrames: number; words?: { w: string; s: number; e: number }[]; image?: string; images?: string[]; video?: string; videoDuration?: number; videoStart?: number; infoCard?: boolean };
 
@@ -41,7 +49,7 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
       </div>
 
       {/* görsel alanı: kaynak videosu ya da fotoğrafları varsa (birden çoksa slayt) + köşede illüstrasyon rozeti; yoksa illüstrasyon */}
-      <div style={{ position: "absolute", top: 220, left: 80, width: 920, height: 560, borderRadius: 32, background: theme.card, overflow: "hidden", transform: `scale(${0.9 + 0.1 * illuIn})`, opacity: illuIn }}>
+      <div style={{ position: "absolute", top: CARD.top, left: CARD.left, width: CARD.width, height: CARD.height, borderRadius: 32, background: theme.card, overflow: "hidden", transform: `scale(${0.9 + 0.1 * illuIn})`, opacity: illuIn }}>
         {image || video || images?.length ? (
           <>
             <MediaBg image={image} images={images} video={video} videoDuration={videoDuration} videoStart={videoStart} durationInFrames={durationInFrames} />
@@ -59,11 +67,11 @@ export const Headline = ({ categoryLabel, index, total, title, narration, source
         )}
       </div>
 
-      {/* yanan altyazı: görselin HEMEN altında (kullanıcı isteği: göz görselden kaymadan okusun); en çok 2 satır, başlık bloğuna (1110) binmez */}
-      <Captions words={words} top={812} size={78} maxHeight={1110 - 812 - 24} />
+      {/* yanan altyazı: görselin altında (kullanıcı isteği: göz görselden uzaklaşmadan okusun); en çok 2 satır, başlık bloğuna binmez */}
+      <Captions words={words} top={CAP_TOP} size={78} maxHeight={TITLE_TOP - CAP_TOP - 24} />
 
       {/* başlık bloğu: altyazının altında, ekranın alt bölümünde (kullanıcı isteği: başlık aşağıda) */}
-      <div style={{ position: "absolute", top: 1110, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>
+      <div style={{ position: "absolute", top: TITLE_TOP, left: 80, right: 80, transform: `translateX(${x}px)`, opacity: slide }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 28 }}>
           <div style={{ fontSize: 150, fontWeight: 900, color: st.accent, lineHeight: 0.85 }}>{String(index + 1).padStart(2, "0")}</div>
           <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 920 - 28 - textWidth(String(index + 1).padStart(2, "0"), 150), base: breaking ? 84 : 76, min: 48, maxLines: 3, upper: false }), fontWeight: 900, lineHeight: 1.06, paddingBottom: 6, overflowWrap: "normal", wordBreak: "keep-all" }}>{title}</div>

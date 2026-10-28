@@ -11,10 +11,13 @@ import { theme } from "../theme";
  * `sound`: orijinal sesli bölüm (kullanıcı isteği: "video kaç saniye ise sussun, video izlensin, sonra konuşmaya devam edilsin") —
  * videonun kendi sesi çalar, seslendirme yoktur, üstte "ORİJİNAL SES" rozeti, altyazı videodaki konuşmadan.
  * Yerleşim (kullanıcı isteği, 23 Ekim: "ana başlık daha aşağı inmeli, video daha büyük alanda oynamalı, altyazı daha küçülmeli,
- * altyazılarımızla uyumlu olmalı"): görüntü karenin üstten %72'sine kadar temiz kalır (karartma 1300'den sonra başlar), altyazı 1330-1480
- * arasında daha küçük (56 px, en çok 2 satır, yukarı büyür), numaralı başlık 1500'de (sayı 100 px, başlık 68 px), kaynak satırı onun
- * altında, ilerleme çubuğu 1800'de. Benzer videonun çizim alanı (prompts/benzer.md) bu yerleşime göre y 200-1300.
+ * altyazılarımızla uyumlu olmalı"; 28 Ekim: "en alt çok boş kalıyor; başlığı az daha aşağı alalım, alt yazıyı da onunla beraber
+ * kaydıralım ki alan açılsın"): görüntü karenin üstten %74'üne kadar temiz kalır (karartma ~1280'den sonra başlar), altyazı CAP_TOP'ta
+ * daha küçük (56 px, en çok 2 satır, yukarı büyür), numaralı başlık TITLE_TOP'ta (sayı 100 px, başlık 68 px), kaynak satırı onun altında,
+ * ilerleme çubuğu 1800'de (23 Ekim'den 28 Ekim'e altyazı 1330, başlık 1500'deydi). Benzer videonun çizim alanı (prompts/benzer.md) y 200-1300.
  */
+const CAP_TOP = 1380;
+const TITLE_TOP = 1550;
 type Props = {
   categoryLabel?: string; index: number; total: number; title: string; source?: string; category?: string; breaking?: boolean;
   durationInFrames: number; words?: { w: string; s: number; e: number }[]; video?: string; videoDuration?: number; sound?: boolean;
@@ -51,7 +54,7 @@ export const FullFrame = ({ categoryLabel, index, total, title, source, category
         )
       ) : null}
       {/* okunurluk: üst ve alt karartma, video ortada temiz kalır */}
-      <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(5,8,16,.78) 0%, rgba(5,8,16,0) 15%, rgba(5,8,16,0) 64%, rgba(5,8,16,.86) 76%, rgba(5,8,16,.94) 100%)" }} />
+      <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(5,8,16,.78) 0%, rgba(5,8,16,0) 15%, rgba(5,8,16,0) 66.6%, rgba(5,8,16,.86) 78.6%, rgba(5,8,16,.94) 100%)" }} />
       {breaking ? <AbsoluteFill style={{ background: theme.red, opacity: flash }} /> : null}
       {/* giriş ışık süpürmesi */}
       <AbsoluteFill style={{ background: `linear-gradient(105deg, transparent ${sweep - 18}%, rgba(255,255,255,.18) ${sweep}%, transparent ${sweep + 18}%)` }} />
@@ -85,12 +88,12 @@ export const FullFrame = ({ categoryLabel, index, total, title, source, category
         {sound ? null : <div style={{ fontSize: 40, fontWeight: 800, ...stroke }}>{index + 1} / {total}</div>}
       </div>
 
-      {/* yanan altyazı: seslendirme ya da videodaki konuşma; görüntünün altındaki koyu şeritte, daha küçük (56 px); tek satır 1330'da, iki
-          satır başlığa (1500) binmesin diye yukarı doğru büyür (limit) */}
-      <Captions words={words} top={1330} limit={1500 - 16} size={56} maxHeight={1500 - 16 - 1300} />
+      {/* yanan altyazı: seslendirme ya da videodaki konuşma; görüntünün altındaki koyu şeritte, daha küçük (56 px); tek satır CAP_TOP'ta,
+          iki satır başlığa binmesin diye yukarı doğru büyür (limit) */}
+      <Captions words={words} top={CAP_TOP} limit={TITLE_TOP - 16} size={56} maxHeight={TITLE_TOP - 16 - (CAP_TOP - 30)} />
 
-      {/* başlık bloğu: aşağıda (1500), Shorts arayüzünün üstünde; sayı ve başlık daha ölçülü, en çok 2 satır */}
-      <div style={{ position: "absolute", top: 1500, left: 70, right: 70, transform: `translateX(${interpolate(slide, [0, 1], [120, 0])}px)`, opacity: slide }}>
+      {/* başlık bloğu: aşağıda (TITLE_TOP); sayı ve başlık daha ölçülü, en çok 2 satır */}
+      <div style={{ position: "absolute", top: TITLE_TOP, left: 70, right: 70, transform: `translateX(${interpolate(slide, [0, 1], [120, 0])}px)`, opacity: slide }}>
         {sound ? (
           title ? <div lang="tr" style={{ fontSize: fitFontSize({ text: title, maxWidth: 940, base: 60, min: 38, maxLines: 2, upper: false }), fontWeight: 900, lineHeight: 1.08, ...stroke }}>{title}</div> : null
         ) : (

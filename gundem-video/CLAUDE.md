@@ -168,15 +168,18 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   (kontür ve kelime arası dahil), gruptan gruba sıçramasın diye en çok 2 satıra sığan en büyüğü (tek satır ancak %5'ten az küçülerek
   sığıyorsa), en az 48 px (yatayda 56); daha uzun grup yükseklik sınırı içinde 3. satıra geçer. İki satıra düşen üç kelimede kırılım
   dengeli (uzun satır en kısa, eşite yakınsa üst satır kısa: TRAFİK / KAZASINDA ÜÇ). Başlığa binmesin diye yerleşime göre yükseklik
-  sınırı; Headline/Hook 78 px, FullFrame 76 px (tek satır 1090'da, iki satır başlığa kadar yukarı büyür), Outro 72 px, yatay özette sola
+  sınırı; Headline/Hook 78 px, FullFrame 56 px (tek satır 1380'de, iki satır başlığa kadar yukarı büyür), Outro 72 px, yatay özette sola
   dayalı 62 px. Altyazı kaydırma `settings.captions.leadSec` (varsayılan 0,06 sn önde; panel Ayarlar → Gelişmiş "🔤 Altyazı
   kaydırma") → tts.py `episode.captionLead` → `setCaptionLead`. Konuşma tanıma modeli varsayılanı mlx-community/whisper-large-v3-turbo
   (Türkçede small'dan isabetli; açılamazsa bir kez small'a düşer); log "🔤 altyazı senkronu" konuşma tanımanın kelimelerin yüzde
   kaçını sesle doğrudan eşlediğini (`captionCoverage`) ya da çalışmadığını ve kurulum komutunu yazar. Ölçüm (espeak-ng Türkçe
   sentetik ses, gerçek kelime başlangıçlarıyla): duraklama çapası ort. 35-40 ms, en kötü 0,14 sn; hece tepesi ve tüm duraklamalara
   dinamik programlama denendi, daha kötü çıktı (patlamalı ünsüzlerin kapanması duraklama sanılıyor) — eklenmedi.
-- Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin HEMEN altında (top 812),
-  numara + başlık + kaynak onun altında (top 1110).
+- Shorts haber kartı (`Headline.tsx`, kullanıcı isteği): görsel 220-780, yanan altyazı görselin altında (top 902), numara + başlık +
+  kaynak onun altında (top 1260). Kullanıcı isteği, 28 Ekim: "en alt çok boş kalıyor; başlığı az daha aşağı alalım, alt yazıyı da onunla
+  beraber kaydıralım ki alan açılsın" (eskiden altyazı 812'de görselin dibinde, başlık 1110'da; altında ~480 px boş kalıyordu). İki satırlık
+  başlık + kaynak ~1480'de biter; altındaki ~300 px YouTube/Instagram/TikTok'un kendi başlık, kanal adı ve düğme şeridinin altında kaldığı
+  için yazısız kalır, ilerleme çubuğu 1780'de. Yerleşim sabitleri `CARD`, `CAP_TOP`, `TITLE_TOP`.
 - Formatlar `settings.formats` {sabah 05-11 45 sn "Güne Başlarken", ogle 11-17 30 sn "Son Dakika",
   aksam 17-05 90 sn "Günün Özeti"}; `FORMAT`/`DURATION` env verilmezse saat seçer. Prompt'a
   `__FORMAT_ADI__`, `__FORMAT_INTRO__`, `__FORMAT_TON__` gider; intro'da format etiketi görünür.
@@ -379,10 +382,11 @@ sürerken loga (⚙) yazar, başlıkta rozet olarak durur.
   video tüm kare (oranı uymayan bulanık zeminle), üst/alt karartma, giriş ışık süpürmesi, kategori renginde kenar çerçevesi + köşe süsleri,
   üstte kategori + sıra ya da SON DAKİKA şeridi (sesli bölümde dalga çubuklu "ORİJİNAL SES" rozeti), altyazı, numaralı başlık +
   "VİDEO/GÖRÜNTÜ: kaynak", ilerleme çubuğu. YERLEŞİM (kullanıcı isteği, 23 Ekim, gönderdiği kareye göre: "ana başlık daha aşağı inmeli, video
-  daha büyük alanda oynamalı, altyazı daha küçülmeli, altyazılarımızla uyumlu olmalı"): görüntü üstten %72'ye kadar temiz (karartma 1300'den
-  sonra), altyazı 1330'da 56 px (eskiden 1090'da 76 px; en çok 2 satır, yukarı büyür), numaralı başlık 1500'de (sayı 100 px, başlık 68 px, en
-  çok 2 satır; eskiden 1260'ta 140/72 px), kaynak satırı 28 px, ilerleme çubuğu 1800'de; 1600-1780 Shorts arayüzü payı olarak boş kalır.
-  Benzer videonun çizim alanı buna göre y 200-1300 (prompts/benzer.md; eski planlar 220-1080'de çizildiğinden yine görünür). Sandbox'ta
+  daha büyük alanda oynamalı, altyazı daha küçülmeli, altyazılarımızla uyumlu olmalı"; 28 Ekim: "en alt çok boş kalıyor; başlığı az daha aşağı
+  alalım, alt yazıyı da onunla beraber kaydıralım ki alan açılsın"): görüntü üstten %74'e kadar temiz (karartma ~1280'den sonra; 28 Ekim'e kadar
+  1230), altyazı 1380'de 56 px (en çok 2 satır, yukarı büyür; 23-28 Ekim'de 1330, ondan önce 1090'da 76 px), numaralı başlık 1550'de (sayı 100 px,
+  başlık 68 px, en çok 2 satır; 23-28 Ekim'de 1500, ondan önce 1260'ta 140/72 px), kaynak satırı 28 px, ilerleme çubuğu 1800'de; sabitler
+  `CAP_TOP`, `TITLE_TOP`. Benzer videonun çizim alanı y 200-1300 (prompts/benzer.md; eski planlar 220-1080'de çizildiğinden yine görünür). Sandbox'ta
   sentetik sahne videosuyla Remotion still (66. ve 170. kare) gözle doğrulandı. Kanca her zaman `Hook.tsx` (flaş, sarsıntı, punch-in). WhatsApp "Kurgu hazır"
   mesajı dikey düzeni ve sesli saniyeyi yazar. Sandbox'ta sahte planla dikey + sesli montaj, pipeline (sessiz ses) ve render denendi:
   sesli bölümde orijinal ses −19 dB, diğerlerinde yok; altyazı konuşmayla eş zamanlı.
