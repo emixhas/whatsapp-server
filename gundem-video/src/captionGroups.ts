@@ -2,9 +2,9 @@
 // sadece renklensin"; her zaman: "sesle kesinlikle eşit"). Kelimeler en çok GROUP kelimelik gruplara bölünür; kelime sonundaki
 // noktalama (. , ! ? ; : …) ve iki kelime arasında GAP sn'den uzun duraklama grubu erken kapatır (yan cümle iki gruba taşmaz,
 // duraklamadan sonra yeni grup başlar). Grubun BÜTÜN kelimeleri önceden gelir: grup ilk kelimesinden en çok EARLY sn önce (önceki
-// grup kalkmadan değil) bütün olarak belirir; her kelime tam söylendiği anda beyaza döner (söylenmemiş kelime sarı dolgulu, söylenen
-// beyaz dolgulu kalır; ikisinde de siyah kontür); grup son kelimesi bittikten LINGER sn sonra ya da sonraki grup gelince kalkar. Daha uzun duraklamada ekran boş
-// kalır. Kelimenin renklendiği an s − LEAD (scripts/caption_qa.py bunu ölçer).
+// grup kalkmadan değil) bütün olarak, beyaz belirir; o an seslendirilen kelime tam söylendiği anda sarı olur, sıradaki kelime
+// söylenince yeniden beyaza döner (Captions.tsx; ikisinde de siyah kontür); grup son kelimesi bittikten LINGER sn sonra ya da sonraki
+// grup gelince kalkar. Daha uzun duraklamada ekran boş kalır. Kelimenin renklendiği an s − LEAD (scripts/caption_qa.py bunu ölçer).
 export type Word = { w: string; s: number; e: number };
 export const GROUP = 3;
 const GAP = 0.6; // kelimeler arasında bundan uzun duraklama grubu kapatır (sn)
@@ -53,8 +53,8 @@ export function captionGroups(words: Word[]): Group[] {
 }
 
 /** t (sn, segment başından) anında ekrandaki grup: { key, words, ages } ya da null. Grubun bütün kelimeleri görünür;
- *  ages[k] < 0 → kelime henüz söylenmedi (sarı dolgu, siyah kontür); ≥ 0 → kaç sn önce beyaza döndü (beyaz dolgu; kısa büyüme
- *  animasyonu için). key: grubun ilk kelimesinin indeksi. */
+ *  ages[k] < 0 → kelime henüz söylenmedi; ≥ 0 → kaç sn önce söylenmeye başlandı (o an seslendirilen kelime, ages ≥ 0 olan son
+ *  kelimedir; sarı vurgunun geçişi için). key: grubun ilk kelimesinin indeksi. */
 export function currentGroup(words: Word[] | undefined, t: number): { key: number; words: Word[]; ages: number[] } | null {
   if (!words?.length) return null;
   const tt = t + LEAD;

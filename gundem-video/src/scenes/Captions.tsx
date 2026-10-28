@@ -5,19 +5,20 @@ import { fitText, textWidth, trUpper } from "../fit";
 import { theme } from "../theme";
 
 // Yanan altyazının görünümü (kullanıcı kararı, 20 Ekim: "3'er kelime halinde, orta büyüklükte"; 21 Ekim: "kelimeler önceden
-// gelsin, sadece renklensin"; 27 Ekim: "tüm cümle sarı, kelimeler vurgulandıkça beyaz"): grubun bütün kelimeleri baştan SARI
-// görünür — harfin içi canlı sarı, harflerin DIŞINA siyah kontür (~0,11 em) —; söylenen kelime tam söylendiği anda BEYAZ olur
-// (içi beyaz, dışı yine siyah kontür; kısa bir büyüme vurgusuyla) ve grup kalkana kadar beyaz kalır. Arkada yumuşak koyu gölge
-// (açık renkli görüntüde sarı ve beyaz da seçilsin); kutu yok, büyük harf (lang="tr": i → İ), kelime asla bölünmez. Kontür iki
-// katmanla çizilir: arkada kalın kontür -webkit-text-stroke, önde aynı yerde dolgu; böylece kontürün içe düşen yarısı dolgunun
-// altında kalır (paint-order desteğine bağlı değil).
-export const CAPTION_FILL = "#FFD400"; // söylenmemiş kelimenin içi (sarı)
-export const CAPTION_SAID = "#FFFFFF"; // söylenen kelimenin içi (beyaz)
+// gelsin, sadece renklensin"; 28 Ekim: "yazı beyaz gelsin, seslendirilen kelime sarı olsun; çok profesyonel ve oturaklı olmalı";
+// 27 Ekim'deki "tüm cümle sarı, söylenen beyaz" bunun tersiydi): grubun bütün kelimeleri baştan BEYAZ görünür — harfin içi beyaz,
+// harflerin DIŞINA siyah kontür (~0,11 em) —; o an seslendirilen kelime SARI olur, sıradaki kelime söylenince yeniden beyaza döner
+// (sarı vurgu kelimeden kelimeye geçer; son söylenen kelime grup kalkana kadar sarı kalır). Renk değişimi FADE sn'lik yumuşak
+// geçiş; büyüme, zıplama, kayma yok: punto ve yerleşim grup boyunca sabit. Arkada yumuşak koyu gölge (açık renkli görüntüde beyaz ve
+// sarı da seçilsin); kutu yok, büyük harf (lang="tr": i → İ), kelime asla bölünmez. Kontür iki katmanla çizilir: arkada kalın kontür
+// -webkit-text-stroke, önde aynı yerde dolgu; böylece kontürün içe düşen yarısı dolgunun altında kalır (paint-order desteğine bağlı değil).
+export const CAPTION_FILL = "#FFFFFF"; // kelimenin içi (beyaz)
+export const CAPTION_ACTIVE = "#FFD400"; // o an seslendirilen kelimenin içi (sarı)
 export const CAPTION_OUTLINE = "#000"; // her kelimenin dış kontürü (siyah)
 const OUTLINE = 0.11; // dış kontür (em)
 const GAP = 0.45; // kelime arası (em): yan yana iki kelimenin kontürleri birbirine değmesin
 const LH = 1.2; // satır yüksekliği (em): alt satırın İ noktası, Ğ şapkası üst satırın Ş çengeline, kontürüne değmesin
-const POP = 0.09; // kelimenin renklenmesi (sn): renk değişirken 1 → 1,06 → 1 büyüyüp küçülür
+const FADE = 0.06; // beyaz ↔ sarı geçişi (sn; 30 karede ~2 kare): sert sıçrama değil, yine de kelimeyle aynı anda
 const FLOOR = 40; // hiçbir düzen sığmazsa başlığa binmektense bu puntoya kadar küçülür
 const ONE = 0.95; // tek satır ancak çok satırlı puntonun en çok %5 altında sığıyorsa: kısa grup komşusundan küçük çıkmasın
 
@@ -66,13 +67,21 @@ function lineBreak(words: string[], fs: number, lines: number): number {
   return Math.max(a, b + gap + c) <= Math.max(a + gap + b, c) * 1.04 ? 1 : 2;
 }
 
-/** Grubu çizer (konumsuz): bütün kelimeler baştan görünür (sarı dolgu, siyah kontür); söylenen kelime söylendiği karede
- *  beyaza döner (beyaz dolgu, siyah kontür) ve POP sn'lik küçük bir büyüme vurgusu alır. align: Shorts'ta ortalı, yatay özette
- *  sola dayalı. */
+/** a rengiyle b rengi (#RRGGBB) arası, t ∈ [0, 1]. */
+function mix(a: string, b: string, t: number): string {
+  const ch = (c: string, i: number) => parseInt(c.slice(1 + 2 * i, 3 + 2 * i), 16);
+  return "#" + [0, 1, 2].map((i) => Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t).toString(16).padStart(2, "0")).join("");
+}
+
+/** Grubu çizer (konumsuz): bütün kelimeler baştan görünür (beyaz dolgu, siyah kontür); o an seslendirilen kelime sarı dolgulu
+ *  olur, sıradaki kelime söylenince yeniden beyaza döner (son kelime grup kalkana kadar sarı). Geçiş FADE sn; boy, yer sabit.
+ *  align: Shorts'ta ortalı, yatay özette sola dayalı. */
 export const CaptionText = ({ cap, align = "center" }: { cap: NonNullable<ReturnType<typeof useCaption>>; align?: "center" | "left" }) => {
   const { fs } = cap;
   const ow = Math.max(3, Math.round(fs * OUTLINE));
   const br = lineBreak(cap.words.map((w) => w.w), fs, cap.lines);
+  // k. kelimenin sarıya dönüşü (0 → 1, söylendiği andan FADE sn içinde); sarılık = kendi dönüşü − sonraki kelimenin dönüşü
+  const rise = (k: number) => (k < cap.ages.length ? Math.min(1, Math.max(0, cap.ages[k] / FADE)) : 0);
   return (
     <div key={cap.key} lang="tr" style={{
       display: "flex", flexWrap: "wrap", justifyContent: align === "left" ? "flex-start" : "center", columnGap: Math.round(fs * GAP), rowGap: 0,
@@ -82,19 +91,15 @@ export const CaptionText = ({ cap, align = "center" }: { cap: NonNullable<Return
       filter: "drop-shadow(0 0 2px rgba(0,0,0,.85)) drop-shadow(0 6px 14px rgba(0,0,0,.6))",
     }}>
       {cap.words.map((w, k) => {
-        const age = cap.ages[k];
-        const said = age >= 0; // söylendi: sarı → beyaz
-        const p = Math.min(1, Math.max(0, age / POP));
-        const pop = said ? 1 + 0.06 * Math.sin(Math.PI * p) : 1; // beyaza dönerken kısa vurgu, sonra aynı boy (yazı kaymaz)
-        const fill = said ? CAPTION_SAID : CAPTION_FILL;
+        const glow = Math.max(0, rise(k) - rise(k + 1)); // 0 beyaz … 1 sarı (o an seslendirilen kelime)
+        const fill = glow <= 0 ? CAPTION_FILL : glow >= 1 ? CAPTION_ACTIVE : mix(CAPTION_FILL, CAPTION_ACTIVE, glow);
         const outline = CAPTION_OUTLINE;
         return (
           <Fragment key={k}>
             {/* satır kırılımı: tam genişlikte, yüksekliksiz öğe sonraki kelimeyi alt satıra iter */}
             {k === br ? <span data-br style={{ flexBasis: "100%", height: 0 }} /> : null}
-            <span data-said={said ? 1 : 0} style={{
+            <span data-active={glow >= 0.5 ? 1 : 0} style={{
               position: "relative", display: "inline-block", whiteSpace: "nowrap", wordBreak: "keep-all", hyphens: "none",
-              transform: `scale(${pop})`, transformOrigin: "50% 60%",
             }}>
               <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: outline, WebkitTextStroke: `${2 * ow}px ${outline}` }}>{w.w}</span>
               <span style={{ position: "relative", color: fill }}>{w.w}</span>
